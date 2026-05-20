@@ -11,6 +11,7 @@ members = [
     "wolf-common",
     "wolf-gateway",
     "wolf-orchestrator",
+    "wolf-schema",
     "wolf-secrets",
 ]
 
@@ -1452,6 +1453,7 @@ dependencies = [
     { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "uvicorn", extra = ["standard"] },
     { name = "wolf-common" },
+    { name = "wolf-schema" },
     { name = "wolf-secrets" },
 ]
 
@@ -1473,8 +1475,20 @@ requires-dist = [
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
     { name = "wolf-common", editable = "packages/common" },
+    { name = "wolf-schema", editable = "packages/schema" },
     { name = "wolf-secrets", editable = "packages/secrets" },
 ]
+
+[[package]]
+name = "wolf-schema"
+version = "0.1.0"
+source = { editable = "packages/schema" }
+dependencies = [
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "pydantic", specifier = ">=2.0" }]
 
 [[package]]
 name = "wolf-secrets"

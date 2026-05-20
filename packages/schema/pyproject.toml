@@ -1,0 +1,15 @@
+[project]
+name = "wolf-schema"
+version = "0.1.0"
+description = "Canonical types shared across all Wolf services and tools"
+requires-python = ">=3.13"
+dependencies = [
+    "pydantic>=2.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["wolf_schema"]

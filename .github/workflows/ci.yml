@@ -35,8 +35,10 @@ jobs:
         run: |
           uv run mypy packages/common/wolf_common \
                        packages/secrets/wolf_secrets \
+                       packages/schema/wolf_schema \
                        services/orchestrator/app/tenancy \
                        services/orchestrator/app/audit \
+                       services/orchestrator/app/models \
                        --strict
 
   test:
@@ -78,6 +80,7 @@ jobs:
             --cov=services/orchestrator/app \
             --cov=packages/common/wolf_common \
             --cov=packages/secrets/wolf_secrets \
+            --cov=packages/schema/wolf_schema \
             --cov-report=term-missing \
             --cov-fail-under=80 \
             -v --tb=short

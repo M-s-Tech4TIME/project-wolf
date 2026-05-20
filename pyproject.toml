@@ -44,6 +44,12 @@ warn_unused_configs = true
 module = ["opensearchpy.*", "authlib.*", "structlog.*"]
 ignore_missing_imports = true
 
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+# Add repo root to sys.path so tools.model_probe.* is importable without
+# being a workspace package (tools/ has __init__.py but no pyproject.toml).
+pythonpath = ["."]
+
 [dependency-groups]
 dev = [
     "ruff>=0.15.13",

@@ -20,7 +20,7 @@ def _add_otel_context(
 ) -> EventDict:
     """Inject OpenTelemetry trace/span IDs when a span is active."""
     try:
-        from opentelemetry import trace  # type: ignore[import-untyped]
+        from opentelemetry import trace
 
         span = trace.get_current_span()
         if span.is_recording():

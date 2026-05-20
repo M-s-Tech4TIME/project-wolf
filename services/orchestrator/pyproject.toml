@@ -17,6 +17,7 @@ dependencies = [
     "authlib>=1.3",
     "wolf-common",
     "wolf-secrets",
+    "wolf-schema",
     # Test deps
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
@@ -28,6 +29,7 @@ dependencies = [
 [tool.uv.sources]
 wolf-common = { workspace = true }
 wolf-secrets = { workspace = true }
+wolf-schema = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

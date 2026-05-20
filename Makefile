@@ -36,11 +36,12 @@ test: ## Run the full test suite
 test-isolation: ## Run cross-tenant isolation test suite
 	uv run pytest tools/tenant_isolation_test/ -v --tb=short
 
-test-cov: ## Run tests with coverage (targets: tenancy, audit, auth)
+test-cov: ## Run tests with coverage (targets: tenancy, audit, auth, models, schema)
 	uv run pytest services/orchestrator/tests packages/ \
 		--cov=services/orchestrator/app \
 		--cov=packages/common/wolf_common \
 		--cov=packages/secrets/wolf_secrets \
+		--cov=packages/schema/wolf_schema \
 		--cov-report=term-missing \
 		--cov-fail-under=80
 
@@ -55,9 +56,14 @@ fmt: ## Format all Python with ruff
 typecheck: ## Type-check safety-critical packages with mypy (strict)
 	uv run mypy packages/common/wolf_common \
 	           packages/secrets/wolf_secrets \
+	           packages/schema/wolf_schema \
 	           services/orchestrator/app/tenancy \
 	           services/orchestrator/app/audit \
+	           services/orchestrator/app/models \
 	           --strict
+
+probe: ## Run the model probe (PROVIDER=ollama MODEL=llama3.2)
+	uv run python -m tools.model_probe --provider $(PROVIDER) --model $(MODEL)
 
 # ─── One-shot quality gate ────────────────────────────────────────────────────
 
