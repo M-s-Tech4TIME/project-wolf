@@ -1,0 +1,20 @@
+# Dev overlay: hot reload, verbose logging, exposed ports
+services:
+
+  orchestrator:
+    environment:
+      LOG_LEVEL: DEBUG
+      ENVIRONMENT: development
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ./services/orchestrator:/app
+      - ./packages:/packages
+
+  gateway:
+    environment:
+      LOG_LEVEL: DEBUG
+      ENVIRONMENT: development
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+    volumes:
+      - ./services/gateway:/app
+      - ./packages:/packages

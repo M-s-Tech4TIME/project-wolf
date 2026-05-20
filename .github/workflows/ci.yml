@@ -1,0 +1,108 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+      - name: Install dependencies
+        run: uv sync --all-packages
+      - name: Run ruff
+        run: uv run ruff check .
+
+  typecheck:
+    name: Type-check (mypy strict)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+      - name: Install dependencies
+        run: uv sync --all-packages
+      - name: Run mypy on safety-critical packages
+        run: |
+          uv run mypy packages/common/wolf_common \
+                       packages/secrets/wolf_secrets \
+                       services/orchestrator/app/tenancy \
+                       services/orchestrator/app/audit \
+                       --strict
+
+  test:
+    name: Test (pytest)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: wolf
+          POSTGRES_PASSWORD: wolf_test
+          POSTGRES_DB: wolf_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U wolf -d wolf_test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      DATABASE_URL: postgresql+asyncpg://wolf:wolf_test@localhost:5432/wolf_test
+      SECRET_KEY: test-secret-key-exactly-32-chars!!
+      ENVIRONMENT: test
+      SECRETS_BACKEND: file
+      SECRETS_FILE_PATH: /tmp/wolf_test_secrets.enc
+      SECRETS_FILE_KEY: test-fernet-key-change-in-prod====
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+      - name: Install dependencies
+        run: uv sync --all-packages
+      - name: Run migrations
+        run: uv run --package wolf-orchestrator alembic -c services/orchestrator/alembic.ini upgrade head
+      - name: Run tests with coverage
+        run: |
+          uv run pytest services/orchestrator/tests packages/ \
+            --cov=services/orchestrator/app \
+            --cov=packages/common/wolf_common \
+            --cov=packages/secrets/wolf_secrets \
+            --cov-report=term-missing \
+            --cov-fail-under=80 \
+            -v --tb=short
+
+  # Verify no execute tools can be imported from the orchestrator
+  safety-check:
+    name: Safety check (no execute tools in orchestrator)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check execute tools are absent from orchestrator
+        run: |
+          if grep -rE "execute_active_response|execute_rule|execute_config" services/orchestrator/; then
+            echo "ERROR: Execute tool found in orchestrator service!" && exit 1
+          fi
+          echo "OK: No execute tools in orchestrator."
+
+  # Prove at least one local model path exists (no paid dependency required)
+  local-model-check:
+    name: Verify local model path exists
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Ollama adapter exists
+        run: |
+          test -f services/orchestrator/app/models/ollama.py && \
+            echo "OK: Ollama adapter present." || \
+            (echo "ERROR: Ollama adapter missing!" && exit 1)

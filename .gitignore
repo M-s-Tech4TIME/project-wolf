@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+.env
+*.egg-info/
+
+# uv
+uv.lock.bak
+
+# Node
+node_modules/
+.next/
+.pnpm-store/
+
+# Build artifacts
+dist/
+build/
+
+# Test / coverage
+.coverage
+.pytest_cache/
+htmlcov/
+*.egg-info/
+
+# Secrets — never commit these
+*.enc
+*.pem
+*.key
+.env.*
+!.env.example
+
+# Docker volumes
+postgres_data/
+
+# IDE
+.idea/
+.vscode/
+*.swp
