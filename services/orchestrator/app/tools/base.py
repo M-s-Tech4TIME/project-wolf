@@ -110,3 +110,20 @@ def sanitize_tenant_id_from_args(args: dict[str, Any], _tenant_id: uuid.UUID) ->
     if "tenant_id" in args:
         return {k: v for k, v in args.items() if k != "tenant_id"}
     return args
+
+
+def strip_explicit_nulls(args: dict[str, Any]) -> dict[str, Any]:
+    """Drop keys whose value is exactly ``None``.
+
+    Small / mid-tier models (notably llama3.2) like to emit every parameter
+    of a tool schema explicitly, sending ``null`` for the optional ones.
+    Pydantic then rejects ``int``-typed fields whose value is ``None`` even
+    though those fields have a default — the model never had a chance to
+    use the default.  Dropping ``None`` values here lets the Pydantic
+    default kick in.
+
+    This is safe because every optional field on a Wolf tool input model
+    either has a default or is typed ``T | None``; in both cases dropping
+    the ``None`` is equivalent to "not specified".
+    """
+    return {k: v for k, v in args.items() if v is not None}

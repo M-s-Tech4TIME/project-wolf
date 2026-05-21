@@ -231,6 +231,47 @@ async def test_successful_call_audits_success(
 
 
 @pytest.mark.asyncio
+async def test_explicit_null_args_use_pydantic_defaults(
+    db: AsyncSession, tenant_ctx: TenantContext
+) -> None:
+    """Small models often emit ``null`` for optional fields; dispatcher
+    drops them so the InputModel's defaults apply."""
+    from app.tools.agents import ListAgentsTool
+    from app.tools.registry import runtime_registry
+
+    runtime_registry.register(ListAgentsTool())
+
+    server_api = MagicMock()
+    server_api.get = AsyncMock(
+        return_value={"data": {"affected_items": [], "total_affected_items": 0}}
+    )
+    os_client, _ = _fake_clients()
+
+    call = ToolCall(
+        id="c-nulls",
+        name="list_agents",
+        arguments={"status": None, "group": None, "limit": None, "offset": None},
+    )
+    result = await dispatch_tool_call(
+        call,
+        ctx=tenant_ctx,
+        db=db,
+        opensearch=os_client,
+        server_api=server_api,
+        limits=DEFAULT_LIMITS,
+    )
+    # If strip_explicit_nulls wasn't applied, the call would fail with
+    # tool.call.schema_invalid (limit/offset can't be None).  Successful
+    # dispatch here means the Pydantic defaults (limit=100, offset=0)
+    # were used.
+    assert result.success is True
+    server_api.get.assert_awaited_once()
+    params = server_api.get.await_args.kwargs["params"]
+    assert params["limit"] == 100
+    assert params["offset"] == 0
+
+
+@pytest.mark.asyncio
 async def test_model_supplied_tenant_id_is_stripped(
     db: AsyncSession, tenant_ctx: TenantContext
 ) -> None:

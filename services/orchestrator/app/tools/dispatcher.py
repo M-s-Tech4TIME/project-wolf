@@ -39,7 +39,11 @@ from app.guardrails.limits import GuardrailViolation, ResourceLimits
 from app.guardrails.rate_limit import TenantRateLimiter, default_rate_limiter
 from app.models.registry import registry as schema_registry
 from app.tenancy.context import TenantContext
-from app.tools.base import ToolExecContext, sanitize_tenant_id_from_args
+from app.tools.base import (
+    ToolExecContext,
+    sanitize_tenant_id_from_args,
+    strip_explicit_nulls,
+)
 from app.tools.registry import runtime_registry
 from app.wazuh.opensearch import WazuhOpenSearchClient
 from app.wazuh.server_api import WazuhServerApiClient
@@ -80,7 +84,9 @@ async def dispatch_tool_call(
     OpenSearch client, e.g.) — these are security incidents that must bubble.
     """
     start = time.perf_counter()
-    sanitized_args = sanitize_tenant_id_from_args(call.arguments, ctx.tenant_id)
+    sanitized_args = strip_explicit_nulls(
+        sanitize_tenant_id_from_args(call.arguments, ctx.tenant_id)
+    )
 
     # 1. Schema-registry validation: tool exists and is not execute-tier.
     try:

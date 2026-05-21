@@ -56,6 +56,12 @@ export function useChatStream(): UseChatStream {
   const [error, setError] = useState<string | null>(null);
   const startedAtRef = useRef<string>("");
   const questionRef = useRef<string>("");
+  // Refs mirror the React state so the "answer" event handler can read
+  // the freshest values even while pending setState updates are batched.
+  // Without this, the archived exchange's tool_events/citations were
+  // empty on fast streams.
+  const toolEventsRef = useRef<ToolEvent[]>([]);
+  const citationsRef = useRef<Citation[]>([]);
 
   const reset = useCallback(() => {
     setStatus({ phase: "idle" });
@@ -63,6 +69,8 @@ export function useChatStream(): UseChatStream {
     setToolEvents([]);
     setCitations([]);
     setError(null);
+    toolEventsRef.current = [];
+    citationsRef.current = [];
   }, []);
 
   const submit = useCallback(async (question: string) => {
@@ -74,6 +82,8 @@ export function useChatStream(): UseChatStream {
     setToolEvents([]);
     setCitations([]);
     setError(null);
+    toolEventsRef.current = [];
+    citationsRef.current = [];
     startedAtRef.current = new Date().toISOString();
     questionRef.current = trimmed;
 
@@ -135,9 +145,14 @@ export function useChatStream(): UseChatStream {
                   ? event.data.error
                   : undefined,
             };
-            setToolEvents((prev) => [...prev, tool]);
+            toolEventsRef.current = [...toolEventsRef.current, tool];
+            setToolEvents(toolEventsRef.current);
             if (tool.citation) {
-              setCitations((prev) => [...prev, tool.citation as Citation]);
+              citationsRef.current = [
+                ...citationsRef.current,
+                tool.citation as Citation,
+              ];
+              setCitations(citationsRef.current);
             }
             setStatus((s) => ({
               ...s,
@@ -151,12 +166,21 @@ export function useChatStream(): UseChatStream {
           case "answer": {
             const data = event.data;
             const completedAt = new Date().toISOString();
+            // Prefer the backend's authoritative citations on the answer
+            // event; fall back to what we collected from tool events if
+            // the payload didn't include them.
+            const backendCitations =
+              (data.citations as Citation[] | undefined) ?? [];
+            const finalCitations =
+              backendCitations.length > 0
+                ? backendCitations
+                : citationsRef.current;
             const completed: ChatExchange = {
               id: asString(data.loop_id) || crypto.randomUUID(),
               question: questionRef.current,
               answer: asString(data.content),
-              citations: (data.citations as Citation[] | undefined) ?? [],
-              tool_events: toolEvents,
+              citations: finalCitations,
+              tool_events: toolEventsRef.current,
               stop_reason:
                 (data.stop_reason as ChatExchange["stop_reason"]) ?? "answer",
               loop_id: asString(data.loop_id),
@@ -170,7 +194,8 @@ export function useChatStream(): UseChatStream {
               completed_at: completedAt,
             };
             setExchange(completed);
-            setCitations(completed.citations);
+            citationsRef.current = finalCitations;
+            setCitations(finalCitations);
             setStatus((s) => ({
               ...s,
               phase: "done",
@@ -191,7 +216,10 @@ export function useChatStream(): UseChatStream {
       setError(msg);
       setStatus({ phase: "error", message: msg });
     }
-  }, [toolEvents]);
+    // submit reads from refs and module-level helpers only; React state is
+    // *written* by it, not read.  Empty deps keeps the callback identity
+    // stable so callers don't re-bind on every status change.
+  }, []);
 
   return { status, exchange, toolEvents, citations, error, submit, reset };
 }
