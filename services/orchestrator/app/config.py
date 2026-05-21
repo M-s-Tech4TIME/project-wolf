@@ -43,6 +43,16 @@ class Settings(BaseSettings):
     # ── Gateway ────────────────────────────────────────────────────────────
     gateway_url: str = "http://wolf-gateway:8001"
 
+    # ── CORS ──────────────────────────────────────────────────────────────
+    # Comma-separated list of allowed origins for browser requests with
+    # credentials.  Add the URL the analyst's browser uses to reach the
+    # frontend.  Empty in production unless you explicitly configure it.
+    cors_allow_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [o.strip() for o in self.cors_allow_origins.split(",") if o.strip()]
+
     # ── Model defaults (per-tenant overrides come in a later phase) ────────
     default_model_provider: str = "ollama"  # anthropic | openai | ollama
     default_model_id: str = "llama3.2"
