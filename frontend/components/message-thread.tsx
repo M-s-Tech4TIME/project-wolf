@@ -1,0 +1,155 @@
+"use client";
+
+import { Bot, Loader2, User } from "lucide-react";
+
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import type { UseChatStream } from "@/hooks/use-chat-stream";
+import type { ChatExchange } from "@/lib/types";
+
+type Props = {
+  exchange: ChatExchange | null;
+  stream: UseChatStream;
+  pendingQuestion?: string;
+};
+
+export function MessageThread({ exchange, stream }: Props) {
+  const isRunning = stream.status.phase === "running";
+  const showStreamView = isRunning || stream.status.phase === "error";
+
+  return (
+    <ScrollArea className="flex-1">
+      <div className="mx-auto max-w-3xl px-4 py-6">
+        {!exchange && !showStreamView ? (
+          <EmptyState />
+        ) : null}
+
+        {/* The streaming view (live) */}
+        {showStreamView ? (
+          <StreamingView stream={stream} />
+        ) : null}
+
+        {/* The completed exchange (selected from history or just finished) */}
+        {!isRunning && exchange ? (
+          <CompletedExchange exchange={exchange} />
+        ) : null}
+      </div>
+    </ScrollArea>
+  );
+}
+
+function EmptyState() {
+  return (
+    <div className="py-16 text-center text-sm text-muted-foreground">
+      <Bot className="mx-auto mb-3 h-8 w-8 opacity-50" />
+      <p>Start an investigation by asking a question.</p>
+      <p className="mt-1 text-xs">
+        Wolf will use read-only tools against your Wazuh deployment and cite every source.
+      </p>
+    </div>
+  );
+}
+
+function CompletedExchange({ exchange }: { exchange: ChatExchange }) {
+  return (
+    <div className="space-y-6">
+      <UserBubble text={exchange.question} />
+      <AssistantBubble answer={exchange.answer} />
+      <div className="flex flex-wrap items-center gap-2 px-12 text-[10px] text-muted-foreground">
+        <Badge variant="secondary">{exchange.strategy}</Badge>
+        <Badge variant="outline">{exchange.model_id}</Badge>
+        <span>·</span>
+        <span>{exchange.step_count} steps</span>
+        <span>·</span>
+        <span>{exchange.tool_call_count} tool calls</span>
+        <span>·</span>
+        <span>
+          {exchange.input_tokens + exchange.output_tokens} tokens
+        </span>
+        {exchange.stop_reason !== "answer" ? (
+          <Badge variant="destructive">{exchange.stop_reason}</Badge>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function StreamingView({ stream }: { stream: UseChatStream }) {
+  return (
+    <div className="space-y-6">
+      <UserBubble text="(streaming…)" />
+      <div className="flex gap-3 px-2">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
+          {stream.status.phase === "running" ? (
+            <Loader2 className="h-4 w-4 animate-spin text-primary" />
+          ) : (
+            <Bot className="h-4 w-4 text-primary" />
+          )}
+        </div>
+        <div className="flex-1 space-y-3">
+          <div className="text-sm text-muted-foreground">
+            {stream.status.message ?? "Working…"}
+          </div>
+          {stream.toolEvents.length > 0 ? (
+            <ul className="space-y-1.5 text-xs">
+              {stream.toolEvents.map((te) => (
+                <li
+                  key={te.tool_call_id}
+                  className="flex items-center gap-2 rounded border border-border bg-card px-2 py-1.5"
+                >
+                  <Badge variant={te.success ? "secondary" : "destructive"}>
+                    {te.tool_name}
+                  </Badge>
+                  <span className="text-muted-foreground">
+                    {te.elapsed_ms}ms
+                  </span>
+                  {te.counts ? (
+                    <span className="text-muted-foreground">
+                      {Object.entries(te.counts)
+                        .map(([k, v]) => `${k}=${v}`)
+                        .join(" · ")}
+                    </span>
+                  ) : null}
+                  {te.error ? (
+                    <span className="text-destructive">{te.error}</span>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {stream.status.phase === "error" && stream.error ? (
+            <div className="rounded border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {stream.error}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function UserBubble({ text }: { text: string }) {
+  return (
+    <div className="flex justify-end gap-3">
+      <div className="max-w-xl rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground">
+        {text}
+      </div>
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">
+        <User className="h-4 w-4" />
+      </div>
+    </div>
+  );
+}
+
+function AssistantBubble({ answer }: { answer: string }) {
+  return (
+    <div className="flex gap-3">
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
+        <Bot className="h-4 w-4 text-primary" />
+      </div>
+      <div className="flex-1 whitespace-pre-wrap rounded-lg border border-border bg-card px-4 py-3 text-sm">
+        {answer || "(empty)"}
+      </div>
+    </div>
+  );
+}
