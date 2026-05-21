@@ -36,7 +36,7 @@ os.environ.setdefault("ENVIRONMENT", "test")
 os.environ.setdefault("SECRETS_BACKEND", "file")
 os.environ.setdefault("SECRETS_FILE_PATH", "/tmp/wolf_test_secrets.enc")  # noqa: S108
 os.environ.setdefault(
-    "SECRETS_FILE_KEY", "Y2FrZS1mZXJuZXQta2V5LWZvci10ZXN0aW5nPT0="
+    "SECRETS_FILE_KEY", "_KRS3GialojQA05LCxS3-JwSds9RBrZ1htT-BDO-I6U="
 )
 
 

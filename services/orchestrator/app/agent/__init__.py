@@ -1,0 +1,31 @@
+"""Agent loop, strategies, and model resolver.
+
+The agent loop is the top-level interface to the orchestrator's reasoning
+capability.  It drives a ModelProvider in a plan-act-observe loop, with the
+strategy chosen by the model's capability descriptor.
+"""
+
+from app.agent.loop import AgentAnswer, AgentLoop
+from app.agent.model_resolver import (
+    ModelProviderUnconfiguredError,
+    get_model_for_tenant,
+)
+from app.agent.strategies import (
+    FrontierStrategy,
+    GuidedStrategy,
+    PipelineStrategy,
+    Strategy,
+    strategy_for,
+)
+
+__all__ = [
+    "AgentAnswer",
+    "AgentLoop",
+    "FrontierStrategy",
+    "GuidedStrategy",
+    "ModelProviderUnconfiguredError",
+    "PipelineStrategy",
+    "Strategy",
+    "get_model_for_tenant",
+    "strategy_for",
+]

@@ -40,6 +40,7 @@ jobs:
                        services/orchestrator/app/audit \
                        services/orchestrator/app/wazuh \
                        services/orchestrator/app/guardrails \
+                       services/orchestrator/app/agent \
                        --strict
 
   test:

@@ -62,6 +62,7 @@ typecheck: ## Type-check safety-critical packages with mypy (strict)
 	           services/orchestrator/app/models \
 	           services/orchestrator/app/wazuh \
 	           services/orchestrator/app/guardrails \
+	           services/orchestrator/app/agent \
 	           --strict
 
 probe: ## Run the model probe (PROVIDER=ollama MODEL=llama3.2)

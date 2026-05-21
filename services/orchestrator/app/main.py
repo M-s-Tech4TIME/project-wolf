@@ -97,8 +97,10 @@ def create_app() -> FastAPI:
 
     # ── Routers ─────────────────────────────────────────────────────────────
     from app.api.auth import router as auth_router  # noqa: PLC0415
+    from app.api.chat import router as chat_router  # noqa: PLC0415
 
     app.include_router(auth_router)
+    app.include_router(chat_router)
 
     # ── Error handlers ──────────────────────────────────────────────────────
 

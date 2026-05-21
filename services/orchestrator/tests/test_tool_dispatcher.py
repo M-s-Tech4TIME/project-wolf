@@ -94,9 +94,13 @@ def _fake_clients() -> tuple[MagicMock, MagicMock]:
     return os_client, server_api
 
 
-async def _count_events(db: AsyncSession, event_type: str) -> int:
+async def _count_events(
+    db: AsyncSession, event_type: str, tenant_id: uuid.UUID
+) -> int:
     rows = await db.execute(
-        select(AuditEvent).where(AuditEvent.event_type == event_type)
+        select(AuditEvent)
+        .where(AuditEvent.event_type == event_type)
+        .where(AuditEvent.tenant_id == tenant_id)
     )
     return len(list(rows.scalars()))
 
@@ -120,7 +124,7 @@ async def test_unknown_tool_returns_failure_and_audits(
     )
     assert result.success is False
     await db.commit()
-    assert await _count_events(db, "tool.call.unknown") == 1
+    assert await _count_events(db, "tool.call.unknown", tenant_ctx.tenant_id) == 1
 
 
 @pytest.mark.asyncio
@@ -140,7 +144,7 @@ async def test_execute_tier_call_rejected_as_anomaly(
     )
     assert result.success is False
     await db.commit()
-    assert await _count_events(db, "tool.call.anomaly") == 1
+    assert await _count_events(db, "tool.call.anomaly", tenant_ctx.tenant_id) == 1
 
 
 @pytest.mark.asyncio
@@ -161,7 +165,7 @@ async def test_schema_invalid_input_returns_failure_and_audits(
     )
     assert result.success is False
     await db.commit()
-    assert await _count_events(db, "tool.call.schema_invalid") == 1
+    assert await _count_events(db, "tool.call.schema_invalid", tenant_ctx.tenant_id) == 1
 
 
 @pytest.mark.asyncio
@@ -192,7 +196,7 @@ async def test_rate_limit_exhaustion_returns_failure_and_audits(
     )
     assert result.success is False
     await db.commit()
-    assert await _count_events(db, "tool.call.rate_limited") == 1
+    assert await _count_events(db, "tool.call.rate_limited", tenant_ctx.tenant_id) == 1
 
 
 @pytest.mark.asyncio
@@ -223,7 +227,7 @@ async def test_successful_call_audits_success(
     assert result.tool_name == "search_alerts"
     assert "citation" in (result.result or {})
     await db.commit()
-    assert await _count_events(db, "tool.call.success") == 1
+    assert await _count_events(db, "tool.call.success", tenant_ctx.tenant_id) == 1
 
 
 @pytest.mark.asyncio

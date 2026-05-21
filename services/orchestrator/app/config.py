@@ -43,6 +43,15 @@ class Settings(BaseSettings):
     # ── Gateway ────────────────────────────────────────────────────────────
     gateway_url: str = "http://wolf-gateway:8001"
 
+    # ── Model defaults (per-tenant overrides come in a later phase) ────────
+    default_model_provider: str = "ollama"  # anthropic | openai | ollama
+    default_model_id: str = "llama3.2"
+    # Name of the secret in the secrets backend holding the API key (only
+    # needed for anthropic/openai).  Leave empty for ollama.
+    default_model_api_key_ref: str = ""
+    ollama_base_url: str = "http://localhost:11434"
+    openai_base_url: str = "https://api.openai.com/v1"
+
     @property
     def is_development(self) -> bool:
         return self.environment == "development"
