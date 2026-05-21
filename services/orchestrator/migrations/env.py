@@ -10,6 +10,7 @@ from logging.config import fileConfig
 
 import app.audit.models  # noqa: F401
 import app.tenancy.models  # noqa: F401
+import app.wazuh.models  # noqa: F401
 from alembic import context
 
 # Pull in all models so Alembic can discover them for --autogenerate.

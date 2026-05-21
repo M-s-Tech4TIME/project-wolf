@@ -38,7 +38,8 @@ jobs:
                        packages/schema/wolf_schema \
                        services/orchestrator/app/tenancy \
                        services/orchestrator/app/audit \
-                       services/orchestrator/app/models \
+                       services/orchestrator/app/wazuh \
+                       services/orchestrator/app/guardrails \
                        --strict
 
   test:
@@ -93,10 +94,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: Check execute tools are absent from orchestrator
         run: |
-          if grep -rE "execute_active_response|execute_rule|execute_config" services/orchestrator/; then
+          # Scan orchestrator app code (not tests — tests assert these names
+          # are REJECTED by the dispatcher, which requires referencing them).
+          if grep -rE "execute_active_response|execute_rule|execute_config" services/orchestrator/app/; then
             echo "ERROR: Execute tool found in orchestrator service!" && exit 1
           fi
-          echo "OK: No execute tools in orchestrator."
+          echo "OK: No execute tools in orchestrator app code."
 
   # Prove at least one local model path exists (no paid dependency required)
   local-model-check:

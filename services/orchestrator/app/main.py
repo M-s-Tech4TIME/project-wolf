@@ -45,6 +45,11 @@ async def lifespan(app: FastAPI) -> Any:  # noqa: ANN401
     # Run migrations on startup so `make up` → ready with no manual step.
     await _run_migrations()
 
+    # Register all Phase 2A read tools with the runtime + schema registries.
+    from app.tools.registration import register_all_read_tools  # noqa: PLC0415
+
+    register_all_read_tools()
+
     logger.info("orchestrator_ready")
     yield
     logger.info("orchestrator_stopping")

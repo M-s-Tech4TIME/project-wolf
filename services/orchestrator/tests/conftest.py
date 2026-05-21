@@ -54,6 +54,7 @@ async def engine() -> AsyncGenerator[AsyncEngine]:
 
     # Import all models so Base.metadata is populated.
     import app.tenancy.models  # noqa: F401
+    import app.wazuh.models  # noqa: F401
     from app.database import Base
 
     eng = create_async_engine(_DB_URL, echo=False)

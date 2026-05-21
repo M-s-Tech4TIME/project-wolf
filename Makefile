@@ -34,7 +34,7 @@ test: ## Run the full test suite
 	uv run pytest services/orchestrator/tests packages/ -v --tb=short
 
 test-isolation: ## Run cross-tenant isolation test suite
-	uv run pytest tools/tenant_isolation_test/ -v --tb=short
+	uv run pytest services/orchestrator/tests/test_cross_tenant_isolation.py tools/tenant_isolation_test/ -v --tb=short
 
 test-cov: ## Run tests with coverage (targets: tenancy, audit, auth, models, schema)
 	uv run pytest services/orchestrator/tests packages/ \
@@ -60,6 +60,8 @@ typecheck: ## Type-check safety-critical packages with mypy (strict)
 	           services/orchestrator/app/tenancy \
 	           services/orchestrator/app/audit \
 	           services/orchestrator/app/models \
+	           services/orchestrator/app/wazuh \
+	           services/orchestrator/app/guardrails \
 	           --strict
 
 probe: ## Run the model probe (PROVIDER=ollama MODEL=llama3.2)

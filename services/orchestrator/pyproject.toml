@@ -41,3 +41,6 @@ packages = ["app"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+# Add the project root so tests can import top-level `tools.*` packages
+# (e.g. tools.model_probe used by test_probe.py).
+pythonpath = ["../.."]

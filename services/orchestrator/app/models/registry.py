@@ -39,6 +39,10 @@ class ToolRegistry:
         """Return all registered tools including execute-tier (for gateway use)."""
         return list(self._tools.values())
 
+    def clear(self) -> None:
+        """Remove every registered tool — for test isolation only."""
+        self._tools.clear()
+
     def validate_model_call(self, name: str) -> ToolSchema:
         """Validate a model-originated tool call.
 
