@@ -1,8 +1,9 @@
 """Authentication API routes.
 
-POST /api/v1/auth/login   — local account login
-POST /api/v1/auth/logout  — clear session cookie
-GET  /api/v1/auth/me      — return current user info (requires auth)
+POST /api/v1/auth/login          — local account login
+POST /api/v1/auth/logout         — clear session cookie
+GET  /api/v1/auth/me             — return current user info (requires auth)
+GET  /api/v1/auth/me/tenants     — list tenants the user belongs to (requires auth)
 GET  /api/v1/auth/oidc/start     — redirect to OIDC IdP (when configured)
 GET  /api/v1/auth/oidc/callback  — OIDC code exchange (when configured)
 """
@@ -22,7 +23,7 @@ from app.auth.middleware import COOKIE_NAME
 from app.auth.oidc import get_authorization_url, oidc_is_configured
 from app.config import get_settings
 from app.database import get_db
-from app.tenancy.models import User, UserTenant
+from app.tenancy.models import Tenant, User, UserTenant
 
 logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
@@ -199,6 +200,47 @@ async def me(request: Request) -> MeResponse:
         tenant_id=uuid.UUID(str(session["tenant_id"])),
         role=str(session.get("role", "")),
     )
+
+
+class TenantMembership(BaseModel):
+    """One tenant the current user is a member of."""
+
+    id: uuid.UUID
+    slug: str
+    name: str
+    role: str
+
+
+@router.get("/me/tenants", response_model=list[TenantMembership])
+async def my_tenants(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> list[TenantMembership]:
+    """List all tenants the current user is a member of.
+
+    Used by the frontend's tenant switcher.  Only returns active tenants;
+    the user's per-tenant role comes from the user_tenants binding.
+    """
+    session: dict[str, Any] = getattr(request.state, "session", {})
+    user_id_raw = session.get("user_id")
+    if not user_id_raw:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated"
+        )
+    user_id = uuid.UUID(str(user_id_raw))
+
+    rows = await db.execute(
+        select(UserTenant, Tenant)
+        .join(Tenant, Tenant.id == UserTenant.tenant_id)
+        .where(UserTenant.user_id == user_id, Tenant.is_active.is_(True))
+        .order_by(Tenant.slug)
+    )
+    return [
+        TenantMembership(
+            id=tenant.id, slug=tenant.slug, name=tenant.name, role=binding.role
+        )
+        for binding, tenant in rows.all()
+    ]
 
 
 @router.get("/oidc/start")

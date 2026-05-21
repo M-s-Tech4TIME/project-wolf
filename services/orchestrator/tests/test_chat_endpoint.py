@@ -248,3 +248,80 @@ async def test_chat_validates_request_body(
     # Empty question rejected by Pydantic min_length=1.
     resp = await client.post("/api/v1/chat", json={"question": ""})
     assert resp.status_code == 422
+
+
+# ─── SSE streaming endpoint ──────────────────────────────────────────────────
+
+
+def _parse_sse(text: str) -> list[tuple[str, str]]:
+    """Split a raw SSE body into [(event_name, data_json), ...]."""
+    events: list[tuple[str, str]] = []
+    name: str | None = None
+    data_lines: list[str] = []
+    for raw_line in text.splitlines():
+        if raw_line.startswith("event:"):
+            name = raw_line[len("event:"):].strip()
+        elif raw_line.startswith("data:"):
+            data_lines.append(raw_line[len("data:"):].strip())
+        elif raw_line == "":
+            if name is not None:
+                events.append((name, "\n".join(data_lines)))
+            name = None
+            data_lines = []
+    if name is not None:  # trailing event without blank line
+        events.append((name, "\n".join(data_lines)))
+    return events
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_unauthenticated_returns_401(client: AsyncClient) -> None:
+    resp = await client.post("/api/v1/chat/stream", json={"question": "hi"})
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_emits_events_then_answer_then_done(
+    client: AsyncClient,
+    seed_tenant_and_user: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import json
+
+    provider = _MockProvider(
+        [
+            ChatResponse(
+                content="The fleet is quiet.",
+                tool_calls=[],
+                input_tokens=12,
+                output_tokens=18,
+                stop_reason="end_turn",
+                model_id="mock-claude",
+            )
+        ]
+    )
+    _patch_chat_module(
+        monkeypatch, provider=provider, tenant_id=seed_tenant_and_user["tenant_id"]
+    )
+    monkeypatch.setattr("app.api.chat._secrets_dep", lambda: _StubSecrets())
+    await _login(client, seed_tenant_and_user)
+
+    async with client.stream(
+        "POST", "/api/v1/chat/stream", json={"question": "all good?"}
+    ) as resp:
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("text/event-stream")
+        body = await resp.aread()
+
+    events = _parse_sse(body.decode())
+    types = [name for name, _ in events]
+    # Minimum expected sequence for an immediate answer.
+    assert types == [
+        "loop.started",
+        "step.started",
+        "model.call.completed",
+        "answer",
+        "done",
+    ]
+    answer_payload = json.loads(events[3][1])
+    assert answer_payload["content"] == "The fleet is quiet."
+    assert answer_payload["stop_reason"] == "answer"
