@@ -9,6 +9,7 @@ import structlog
 from app.tools.agents import GetAgentDetailTool, ListAgentsTool
 from app.tools.alerts import (
     AggregateAlertsTool,
+    CountAlertsBySeverityTool,
     GetAgentAlertHistoryTool,
     GetEventTimelineTool,
     SearchAlertsTool,
@@ -25,6 +26,7 @@ def register_all_read_tools() -> None:
     tools = [
         SearchAlertsTool(),
         AggregateAlertsTool(),
+        CountAlertsBySeverityTool(),
         GetEventTimelineTool(),
         GetAgentAlertHistoryTool(),
         ListAgentsTool(),

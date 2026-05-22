@@ -88,6 +88,20 @@ class SearchAlertsInput(BaseModel):
     def _coerce_time(cls, v: Any) -> Any:
         return parse_time_field(v)
 
+    @field_validator("min_level", mode="before")
+    @classmethod
+    def _coerce_min_level(cls, v: Any) -> Any:
+        # Small models sometimes emit a list of levels they want (e.g.
+        # [7, 8, 9, 10, 11] for "medium").  min_level is conceptually
+        # a single inclusive lower threshold, so take the minimum of any
+        # list-shaped input and let the rest of the schema enforce range.
+        if isinstance(v, list) and v:
+            try:
+                return min(int(x) for x in v)
+            except (ValueError, TypeError):
+                return v
+        return v
+
 
 class SearchAlertsOutput(BaseModel):
     hits: list[AlertHit]
@@ -152,7 +166,7 @@ class AggregateAlertsInput(BaseModel):
         description="Field to group by, e.g. 'agent.name', 'rule.id', 'rule.level'"
     )
     agent_id: str | None = None
-    size: int = Field(default=50, ge=1, le=500)
+    size: int = Field(default=50, ge=1, le=10000, description="Max buckets to return")
 
     @field_validator("time_from", "time_to", mode="before")
     @classmethod
@@ -294,6 +308,108 @@ class GetAgentAlertHistoryInput(BaseModel):
 class GetAgentAlertHistoryOutput(BaseModel):
     alerts: list[AlertHit]
     citation: Citation
+
+
+# ─── count_alerts_by_severity ─────────────────────────────────────────────────
+
+
+class SeverityCounts(BaseModel):
+    """Alert counts bucketed by Wazuh severity (derived from rule.level)."""
+
+    critical: int = Field(description="rule.level 15 or higher")
+    high: int = Field(description="rule.level 12, 13, or 14")
+    medium: int = Field(description="rule.level 7, 8, 9, 10, or 11")
+    low: int = Field(description="rule.level 0 through 6")
+    total: int
+
+
+class CountAlertsBySeverityInput(BaseModel):
+    """Count alerts in a time window, bucketed by Wazuh severity."""
+
+    time_from: datetime = Field(description=f"Window start. {_TIME_FIELD_HELP}")
+    time_to: datetime = Field(
+        default_factory=default_time_to,
+        description=f"Window end; defaults to 'now'. {_TIME_FIELD_HELP}",
+    )
+    agent_id: str | None = Field(
+        default=None, description="Optional: filter to one agent."
+    )
+
+    @field_validator("time_from", "time_to", mode="before")
+    @classmethod
+    def _coerce_time(cls, v: Any) -> Any:
+        return parse_time_field(v)
+
+
+class CountAlertsBySeverityOutput(BaseModel):
+    counts: SeverityCounts
+    citation: Citation
+
+
+class CountAlertsBySeverityTool(ReadTool):
+    name = "count_alerts_by_severity"
+    description = (
+        "Returns alert counts bucketed by Wazuh severity in a time "
+        "window. Severity comes from rule.level: Critical (15+), "
+        "High (12-14), Medium (7-11), Low (0-6). USE THIS for any "
+        "question about how many alerts of each severity — do not "
+        "try to compute severity buckets yourself with min_level or "
+        "aggregate_alerts; this tool does the bucketing server-side "
+        "and returns one clean object."
+    )
+    InputModel = CountAlertsBySeverityInput
+    OutputModel = CountAlertsBySeverityOutput
+
+    async def run(self, exec_ctx: ToolExecContext, args: BaseModel) -> BaseModel:
+        assert isinstance(args, CountAlertsBySeverityInput)
+        enforce_limits(
+            time_from=args.time_from,
+            time_to=args.time_to,
+            limits=exec_ctx.limits,
+        )
+        # Aggregate by rule.level — Wazuh levels are 0-15, so 20 buckets
+        # is plenty of headroom for any extension or unexpected value.
+        query = exec_ctx.opensearch.query_builder.aggregate_alerts(
+            time_from=args.time_from,
+            time_to=args.time_to,
+            group_by="rule.level",
+            agent_id=args.agent_id,
+            size=20,
+        )
+        body = await exec_ctx.opensearch.execute(query)
+        raw_buckets = (
+            body.get("aggregations", {}).get("buckets", {}).get("buckets", [])
+        )
+        critical = high = medium = low = 0
+        for b in raw_buckets:
+            try:
+                level = int(b.get("key", -1))
+            except (ValueError, TypeError):
+                continue
+            count = int(b.get("doc_count", 0))
+            if level >= 15:
+                critical += count
+            elif level >= 12:
+                high += count
+            elif level >= 7:
+                medium += count
+            elif level >= 0:
+                low += count
+
+        counts = SeverityCounts(
+            critical=critical,
+            high=high,
+            medium=medium,
+            low=low,
+            total=critical + high + medium + low,
+        )
+        return CountAlertsBySeverityOutput(
+            counts=counts,
+            citation=self.make_citation(
+                args.model_dump(mode="json"),
+                result_count=counts.total,
+            ),
+        )
 
 
 class GetAgentAlertHistoryTool(ReadTool):
