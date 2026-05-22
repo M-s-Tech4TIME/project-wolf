@@ -10,6 +10,7 @@ import type {
   LoopEvent,
   ToolEvent,
 } from "@/lib/types";
+import { randomId } from "@/lib/uuid";
 
 /**
  * State machine for a single streaming chat exchange.
@@ -36,6 +37,8 @@ export type UseChatStream = {
   toolEvents: ToolEvent[];
   citations: Citation[];
   error: string | null;
+  /** The user's question for the in-flight request (or empty when idle). */
+  currentQuestion: string;
   /** Submit a question with optional prior turns; rejects only on programmer errors. */
   submit: (question: string, history?: ConversationTurn[]) => Promise<void>;
   reset: () => void;
@@ -55,6 +58,7 @@ export function useChatStream(): UseChatStream {
   const [toolEvents, setToolEvents] = useState<ToolEvent[]>([]);
   const [citations, setCitations] = useState<Citation[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [currentQuestion, setCurrentQuestion] = useState<string>("");
   const startedAtRef = useRef<string>("");
   const questionRef = useRef<string>("");
   // Refs mirror the React state so the "answer" event handler can read
@@ -70,6 +74,7 @@ export function useChatStream(): UseChatStream {
     setToolEvents([]);
     setCitations([]);
     setError(null);
+    setCurrentQuestion("");
     toolEventsRef.current = [];
     citationsRef.current = [];
   }, []);
@@ -83,6 +88,7 @@ export function useChatStream(): UseChatStream {
     setToolEvents([]);
     setCitations([]);
     setError(null);
+    setCurrentQuestion(trimmed);
     toolEventsRef.current = [];
     citationsRef.current = [];
     startedAtRef.current = new Date().toISOString();
@@ -177,7 +183,7 @@ export function useChatStream(): UseChatStream {
                 ? backendCitations
                 : citationsRef.current;
             const completed: ChatExchange = {
-              id: asString(data.loop_id) || crypto.randomUUID(),
+              id: asString(data.loop_id) || randomId(),
               question: questionRef.current,
               answer: asString(data.content),
               citations: finalCitations,
@@ -222,5 +228,14 @@ export function useChatStream(): UseChatStream {
     // stable so callers don't re-bind on every status change.
   }, []);
 
-  return { status, exchange, toolEvents, citations, error, submit, reset };
+  return {
+    status,
+    exchange,
+    toolEvents,
+    citations,
+    error,
+    currentQuestion,
+    submit,
+    reset,
+  };
 }

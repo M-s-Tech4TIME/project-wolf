@@ -13,6 +13,7 @@ import type {
   Conversation,
   ConversationTurn,
 } from "@/lib/types";
+import { randomId } from "@/lib/uuid";
 
 /**
  * The chat UI:
@@ -61,7 +62,7 @@ export function ChatShell() {
       }
       // Start a fresh conversation seeded by this exchange.
       const newConvo: Conversation = {
-        id: crypto.randomUUID(),
+        id: randomId(),
         title: titleFromQuestion(ex.question),
         exchanges: [ex],
         created_at: ex.started_at,

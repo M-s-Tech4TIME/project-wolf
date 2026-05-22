@@ -3,6 +3,7 @@
 import { Bot, Loader2, User } from "lucide-react";
 import { useEffect, useRef } from "react";
 
+import { Markdown } from "@/components/markdown";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { UseChatStream } from "@/hooks/use-chat-stream";
@@ -40,7 +41,14 @@ export function MessageThread({ exchanges, stream }: Props) {
           />
         ))}
 
-        {showStreamView ? <StreamingView stream={stream} /> : null}
+        {showStreamView ? (
+          <>
+            {stream.currentQuestion ? (
+              <UserBubble text={stream.currentQuestion} />
+            ) : null}
+            <StreamingView stream={stream} />
+          </>
+        ) : null}
 
         <div ref={bottomRef} />
       </div>
@@ -160,8 +168,12 @@ function AssistantBubble({ answer }: { answer: string }) {
       <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
         <Bot className="h-4 w-4 text-primary" />
       </div>
-      <div className="flex-1 whitespace-pre-wrap rounded-lg border border-border bg-card px-4 py-3 text-sm">
-        {answer || "(empty)"}
+      <div className="flex-1 rounded-lg border border-border bg-card px-4 py-3">
+        {answer ? (
+          <Markdown>{answer}</Markdown>
+        ) : (
+          <div className="text-sm text-muted-foreground">(empty)</div>
+        )}
       </div>
     </div>
   );
