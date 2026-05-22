@@ -49,6 +49,85 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-05-22 — Switch dev default from llama3.2 to qwen3:4b
+
+**Session type:** claude-code (continuation, same dev environment)
+**Phase:** Phase 2 — Read path
+**Duration:** ~30 min
+**Branch / commit:** `main` — ADR 0004 `e092e21`, config flip
+`ca495df`, KNOWN_MODELS amendment `14cc727`, final session commit
+pending this entry.
+
+### What we did
+
+- Wrote `docs/decisions/0004-model-switch-llama3.2-to-qwen3-4b.md`
+  weighing the three earlier probe ADRs (0001/0002/0003).  Decision:
+  flip the dev default to qwen3:4b on probe-evidence + license
+  grounds; document that qwen3's grounding-discipline probe failure
+  raises Phase 3 grounding-validator priority but does not block the
+  switch (the agent loop's tool-gated path bounds the fabrication
+  risk).
+- Updated `docs/decisions/README.md` index with ADR 0004.
+- Changed `DEFAULT_MODEL_ID` from `llama3.2` to `qwen3:4b` in
+  `services/orchestrator/app/config.py` as a standalone one-line
+  commit referencing ADR 0004 (per doc 14's playbook).
+- Restarted orchestrator with the new default and ran a curl-driven
+  chat verification against the user's real Wazuh on `192.168.76.129`.
+- **Verification exposed a real issue**: chat worked but ran in
+  `pipeline` strategy with no tools — the static
+  `KNOWN_MODELS["qwen3:4b"]` entry (added in commit `e9cc316`) was
+  the conservative initial estimate (basic / pipeline) and shadowed
+  the probe-measured capability (mid / guided) at runtime.
+- Amended `KNOWN_MODELS["qwen3:4b"]` to match ADR 0002's measured
+  capability (mid / guided / full / schema_enforced / 8 steps) in
+  commit `14cc727`.
+- Re-restarted orchestrator and re-verified end-to-end: now runs in
+  `guided` strategy, calls `count_alerts_by_severity` once, returns
+  a grounded cited answer with concrete numbers ("15 alerts total,
+  all low severity").
+
+### What we decided
+
+- **`qwen3:4b` becomes the dev default.**  ADR 0004 is the canonical
+  rationale; future contributors should read it before considering
+  another switch.  Llama family stays in `KNOWN_MODELS` for operator
+  opt-in via env override.
+- **The qwen3:4b grounding-failure data point is not disqualifying**
+  — it's a Phase 3 priority signal, not a Phase 2 blocker.
+- **The remaining two `KNOWN_MODELS` amendments** (`llama3.2`,
+  `gemma3:4b`) stay deferred — neither is the current default, so the
+  static-vs-measured drift doesn't affect runtime behaviour today.
+  They'll move in a single sweep when convenient.
+
+### What broke / what we discovered
+
+- **Static `KNOWN_MODELS` entries can silently override probe-measured
+  capability at runtime.**  The conservative `qwen3:4b` defaults from
+  Task 4 of the previous session shadowed ADR 0002's measurements
+  because strategy selection reads the static descriptor, not the ADR
+  prose.  This is by design (static entries are the source of truth
+  the orchestrator boots from) but it means a probe ADR without a
+  matching static amendment doesn't actually change runtime behaviour
+  — a footgun worth keeping in mind for future probe → switch flows.
+- First inference on qwen3:4b after model swap took ~76s (cold
+  load); second inference ~169s including a single tool call.  The
+  CPU-only ceiling, not a regression.
+
+### What's next
+
+- Wire the 4 mock-only read tools to real Wazuh
+  (`get_event_timeline`, `get_agent_alert_history`, `get_agent_detail`,
+  `get_rule_definition`).
+- Verify Phase 2 exit criterion against a frontier API model — blocked
+  on an operator-supplied API key.
+- Batch-amend the remaining `KNOWN_MODELS` entries for `llama3.2`
+  (structured_output downgrade per ADR 0001) and `gemma3:4b`
+  (native_tool_calling downgrade per ADR 0003).
+- Begin Phase 3 (RAG + grounding validator) — the qwen3:4b
+  grounding-discipline result is the direct motivating evidence.
+
+---
+
 ## 2026-05-22 — Add model recommendations, session continuity tracking, and run the first capability probe
 
 **Session type:** claude-code (executing user's planning brief at

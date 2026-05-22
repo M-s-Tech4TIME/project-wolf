@@ -6,7 +6,7 @@
 >
 > For history of what changed when, see `CHANGELOG.md` (append-only).
 
-**Last updated:** 2026-05-22 by claude-code
+**Last updated:** 2026-05-22 (second session of the day) by claude-code
 
 ---
 
@@ -15,13 +15,14 @@
 **Current phase:** Phase 2 — Read path, end to end (per `docs/10-build-roadmap.md`).
 
 **Phase status:** Model abstraction layer complete (Phase 1). Read path
-foundation, agent loop with three strategies, and Next.js 16 frontend all
-built and operational. 9 read tools registered with the dispatcher; 5 of 9
-verified against the user's real Wazuh deployment, 4 of 9 mock-only.
-Capability probe (`tools/model_probe/`) built and unit-tested in Phase 1
-but **never run against the live Ollama on this hardware**. Current session
-adds doc 14 (model recommendations), the session-continuity protocol in
-doc 11, and `PROGRESS.md` + `CHANGELOG.md` themselves.
+foundation, agent loop with three strategies, and Next.js 16 frontend
+all built and operational. 9 read tools registered with the dispatcher;
+5 of 9 verified against the user's real Wazuh deployment, 4 of 9
+mock-only. **Dev default flipped from `llama3.2` to `qwen3:4b` per ADR
+0004** (probe-grounded decision; Apache 2.0 license; +0.07 overall
+probe score; same strategy tier).  Chat path re-verified end-to-end on
+qwen3:4b in `guided` mode (one tool call → `count_alerts_by_severity`,
+grounded cited answer).
 
 **Phase 2 exit criteria progress** (from `docs/10-build-roadmap.md`):
 - [x] Wazuh OpenSearch client with forced tenant filter (opt-in per tenant)
@@ -124,9 +125,12 @@ Status legend: ✅ working, 🟡 partial, ❌ broken/disabled, ⏳ planned only.
 
 **Model defaults** (in `services/orchestrator/app/config.py`):
 - `DEFAULT_MODEL_PROVIDER`: `ollama`
-- `DEFAULT_MODEL_ID`: `llama3.2`
+- `DEFAULT_MODEL_ID`: **`qwen3:4b`** (switched from `llama3.2` on
+  2026-05-22 per ADR 0004; Apache 2.0 license)
 - `OLLAMA_BASE_URL`: `http://localhost:11434`
 - Adapters active: Anthropic, OpenAI, Ollama
+- `llama3.2` remains in `KNOWN_MODELS` for operator opt-in via
+  `DEFAULT_MODEL_ID=llama3.2`.
 
 **Wazuh connection** (per `TenantWazuhConfig` for tenant `acme`):
 - Indexer: `https://192.168.76.129:9200` (self-signed; `verify_tls=False`)
@@ -148,24 +152,20 @@ Status legend: ✅ working, 🟡 partial, ❌ broken/disabled, ⏳ planned only.
 ## 4. What's next
 
 **Immediate next steps** (in priority order):
-1. **Write a `0004-model-switch-llama3.2-to-qwen3-4b.md` ADR** weighing
-   the three probe results (ADRs 0001/0002/0003).  qwen3:4b is the
-   Apache-licensed Profile A pick on this hardware; the open question
-   is whether qwen3:4b's grounding-discipline failure outweighs the
-   license advantage for **dev** use (it almost certainly does not for
-   the *recommended-for-shipping* default, which doc 14 already says
-   should not be Llama).
-2. After the switch ADR lands, change `DEFAULT_MODEL_ID` in
-   `services/orchestrator/app/config.py` in a separate commit that
-   references the ADR.
-3. Wire the 4 remaining read tools (`get_event_timeline`,
+1. Wire the 4 remaining read tools (`get_event_timeline`,
    `get_agent_alert_history`, `get_agent_detail`, `get_rule_definition`)
-   to real Wazuh.
-4. Verify the Phase 2 exit criterion against a frontier API model in
-   addition to the local-Ollama path that already works.
-5. Batch-amend the static `KNOWN_MODELS` entries for `llama3.2`,
-   `qwen3:4b`, and `gemma3:4b` to reflect measured capability (the
-   probe ADRs list the specific deltas).
+   to real Wazuh.  Currently mock-only.
+2. Verify the Phase 2 exit criterion against a frontier API model in
+   addition to the local-Ollama path that already works.  Blocked on
+   an Anthropic or OpenAI key in the secrets backend.
+3. Batch-amend the remaining static `KNOWN_MODELS` entries to reflect
+   measured capability — `llama3.2` (mid → mid match, but
+   structured_output should go prompt_coaxed → unreliable per
+   ADR 0001) and `gemma3:4b` (downgrade native_tool_calling to none
+   per ADR 0003).  qwen3:4b already amended in commit `14cc727`.
+4. Begin Phase 3 (RAG + grounding validator) per `docs/06` and
+   `docs/10` — note that qwen3:4b's grounding-discipline probe
+   failure makes the grounding validator higher priority.
 
 **Blocked / waiting:**
 - Frontier-API verification needs an Anthropic or OpenAI key in the
@@ -190,16 +190,11 @@ Status legend: ✅ working, 🟡 partial, ❌ broken/disabled, ⏳ planned only.
 Things that need a human call before they can proceed. Move resolved items
 to `CHANGELOG.md` as ADRs.
 
-- [ ] **Switch `DEFAULT_MODEL_ID` from `llama3.2` to `qwen3:4b`** —
-      probe evidence is in (ADRs 0001/0002/0003).  `qwen3:4b` wins on
-      overall score (0.75 vs 0.68) and license (Apache vs restricted),
-      and matches `llama3.2` at the strategy tier (both `guided`).  The
-      one wrinkle: qwen3:4b failed the grounding-discipline probe (0.00
-      vs llama3.2's 0.70), meaning it fabricated specific data when
-      asked without tools.  In Wolf's tool-gated agent loop the
-      fabrication risk is contained, but it raises Phase 3 grounding
-      validator priority.  `gemma3:4b` is out — no native tool calling.
-      Writing the switch ADR is the next action.
+- [x] **Switch `DEFAULT_MODEL_ID` from `llama3.2` to `qwen3:4b`** —
+      resolved in ADR 0004 (commit `e092e21`) + config flip
+      (commit `ca495df`) + KNOWN_MODELS amendment to match measured
+      probe capability (commit `14cc727`).  Verified end-to-end via
+      curl: guided strategy, one tool call, grounded answer.
 - [ ] Whether `count_alerts_by_severity` should remain a standalone tool
       or be folded into `aggregate_alerts` with a `bucket_by_severity`
       mode. Currently both registered; the prompt routes severity
@@ -248,9 +243,9 @@ to `CHANGELOG.md` as ADRs.
   relaxed session-continuity protocol (reading required only for new env /
   new session / different model; end-of-session update remains mandatory).
   In git as of commit `b093761`.
-- ADRs in `docs/decisions/`: 3 ADRs as of this session — 0001
-  (`llama3.2` baseline), 0002 (`qwen3:4b`), 0003 (`gemma3:4b`).  README
-  index in place.
+- ADRs in `docs/decisions/`: 4 ADRs — 0001 (`llama3.2` baseline), 0002
+  (`qwen3:4b`), 0003 (`gemma3:4b`), 0004 (default-model switch decision).
+  README index in place.
 - API docs: FastAPI auto-generates at `http://localhost:8000/docs`.
 - README: in git as of commit `c05cdce`.
 
@@ -264,24 +259,23 @@ citations through the Next.js frontend (`http://192.168.76.128:3000`).
 Multi-turn works. Markdown renders. The new `count_alerts_by_severity`
 tool gives correct severity breakdowns end to end.
 
-**This session ran the first live capability probes.** Three models
-probed on this hardware (ADRs 0001/0002/0003):
-- `llama3.2`: score 0.68 → mid/guided (matches static estimate)
-- `qwen3:4b`: score 0.75 → mid/guided (Apache-licensed; the winner)
-- `gemma3:4b`: score 0.25 → basic/pipeline (no native tool calling;
-  ruled out as a default candidate)
+**The default-model switch is done.** `DEFAULT_MODEL_ID` is `qwen3:4b`
+(Apache 2.0).  ADR 0004 captured the reasoning; commits `e092e21`
+(ADR), `ca495df` (config flip), `14cc727` (KNOWN_MODELS amendment to
+match measured capability) form the audit trail.  End-to-end
+re-verified: chat against the user's real Wazuh on `192.168.76.129`,
+qwen3:4b in `guided` mode, one tool call to `count_alerts_by_severity`,
+grounded cited answer ("15 alerts total, all low severity").
 
-**Single most important thing for the next session to know:** the next
-concrete action is to write `0004-model-switch-llama3.2-to-qwen3-4b.md`
-weighing the trade-off (qwen3:4b wins overall but failed
-grounding-discipline; see ADR 0002), then change `DEFAULT_MODEL_ID` in
-`services/orchestrator/app/config.py` in a **separate commit** that
-references the ADR.  Per doc 14's environment-change playbook the
-config change is one line and stands alone — do not bundle it with
-other work.
+**Single most important thing for the next session to know:** the
+mock-only read tools (`get_event_timeline`, `get_agent_alert_history`,
+`get_agent_detail`, `get_rule_definition`) are the next Phase 2 close-
+out — each is a few lines, but they need exercising against the real
+Wazuh to flip from 🟡 to ✅ in Section 2.  After that the only
+remaining Phase 2 item is frontier-API verification, which is blocked
+on the operator providing an API key.
 
 Operational note: services run as `nohup` background processes (not
 systemd / compose).  On host reboot you must restart Ollama, the
 orchestrator, and the frontend by hand.  Orchestrator needs the env
-vars in Section 3; the canonical bundle lived at `/tmp/orchestrator.env`
-this session.
+vars in Section 3; the canonical bundle lives at `/tmp/orchestrator.env`.
