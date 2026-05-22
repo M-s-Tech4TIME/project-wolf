@@ -55,7 +55,12 @@ class Settings(BaseSettings):
 
     # ── Model defaults (per-tenant overrides come in a later phase) ────────
     default_model_provider: str = "ollama"  # anthropic | openai | ollama
-    default_model_id: str = "llama3.2"
+    # Default model: qwen3:4b (Apache 2.0).  Switched from llama3.2 on
+    # 2026-05-22 per docs/decisions/0004-model-switch-llama3.2-to-qwen3-4b.md
+    # — license posture (Llama Community License is not OSI-open) plus a
+    # higher overall probe score on the dev hardware (0.75 vs 0.68).  Same
+    # strategy tier (`guided`) so agent-loop behaviour is unchanged.
+    default_model_id: str = "qwen3:4b"
     # Name of the secret in the secrets backend holding the API key (only
     # needed for anthropic/openai).  Leave empty for ollama.
     default_model_api_key_ref: str = ""
