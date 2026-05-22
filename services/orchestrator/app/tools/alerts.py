@@ -8,10 +8,17 @@ grounding validation can verify factual claims.
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.guardrails.limits import enforce_limits
 from app.tools.base import Citation, ReadTool, ToolExecContext
+from app.tools.timefmt import default_time_to, parse_time_field
+
+_TIME_FIELD_HELP = (
+    "Accepts ISO 8601 datetime (e.g. '2026-05-21T10:00:00Z') OR a "
+    "relative expression like 'now', 'now-15m', 'now-1h', 'now-24h', "
+    "'now-7d'."
+)
 
 # ─── Shared output building blocks ────────────────────────────────────────────
 
@@ -57,8 +64,16 @@ def _hit_to_alert(hit: dict[str, Any]) -> AlertHit:
 class SearchAlertsInput(BaseModel):
     """Query alerts by time range and optional filters."""
 
-    time_from: datetime = Field(description="Inclusive start of the time window")
-    time_to: datetime = Field(description="Inclusive end of the time window")
+    time_from: datetime = Field(
+        description=f"Inclusive start of the time window. {_TIME_FIELD_HELP}",
+    )
+    time_to: datetime = Field(
+        default_factory=default_time_to,
+        description=(
+            "Inclusive end of the time window. Defaults to 'now' if omitted. "
+            f"{_TIME_FIELD_HELP}"
+        ),
+    )
     agent_id: str | None = Field(default=None, description="Filter to one agent")
     rule_id: int | None = Field(default=None, description="Filter to one rule ID")
     min_level: int | None = Field(default=None, description="Minimum alert level (0-15)")
@@ -67,6 +82,11 @@ class SearchAlertsInput(BaseModel):
     )
     free_text: str | None = Field(default=None, description="Match in log/description text")
     size: int = Field(default=100, ge=1, le=1000, description="Max results to return")
+
+    @field_validator("time_from", "time_to", mode="before")
+    @classmethod
+    def _coerce_time(cls, v: Any) -> Any:
+        return parse_time_field(v)
 
 
 class SearchAlertsOutput(BaseModel):
@@ -123,13 +143,21 @@ class SearchAlertsTool(ReadTool):
 class AggregateAlertsInput(BaseModel):
     """Bucketed counts of alerts grouped by a field."""
 
-    time_from: datetime
-    time_to: datetime
+    time_from: datetime = Field(description=f"Window start. {_TIME_FIELD_HELP}")
+    time_to: datetime = Field(
+        default_factory=default_time_to,
+        description=f"Window end; defaults to 'now'. {_TIME_FIELD_HELP}",
+    )
     group_by: str = Field(
         description="Field to group by, e.g. 'agent.name', 'rule.id', 'rule.level'"
     )
     agent_id: str | None = None
     size: int = Field(default=50, ge=1, le=500)
+
+    @field_validator("time_from", "time_to", mode="before")
+    @classmethod
+    def _coerce_time(cls, v: Any) -> Any:
+        return parse_time_field(v)
 
 
 class AggregateBucket(BaseModel):
@@ -189,10 +217,18 @@ class AggregateAlertsTool(ReadTool):
 class GetEventTimelineInput(BaseModel):
     """Chronological events for one host across a window."""
 
-    time_from: datetime
-    time_to: datetime
+    time_from: datetime = Field(description=f"Window start. {_TIME_FIELD_HELP}")
+    time_to: datetime = Field(
+        default_factory=default_time_to,
+        description=f"Window end; defaults to 'now'. {_TIME_FIELD_HELP}",
+    )
     agent_id: str
     size: int = Field(default=200, ge=1, le=1000)
+
+    @field_validator("time_from", "time_to", mode="before")
+    @classmethod
+    def _coerce_time(cls, v: Any) -> Any:
+        return parse_time_field(v)
 
 
 class GetEventTimelineOutput(BaseModel):
@@ -241,10 +277,18 @@ class GetEventTimelineTool(ReadTool):
 class GetAgentAlertHistoryInput(BaseModel):
     """Alert history for one agent."""
 
-    time_from: datetime
-    time_to: datetime
+    time_from: datetime = Field(description=f"Window start. {_TIME_FIELD_HELP}")
+    time_to: datetime = Field(
+        default_factory=default_time_to,
+        description=f"Window end; defaults to 'now'. {_TIME_FIELD_HELP}",
+    )
     agent_id: str
     size: int = Field(default=200, ge=1, le=1000)
+
+    @field_validator("time_from", "time_to", mode="before")
+    @classmethod
+    def _coerce_time(cls, v: Any) -> Any:
+        return parse_time_field(v)
 
 
 class GetAgentAlertHistoryOutput(BaseModel):

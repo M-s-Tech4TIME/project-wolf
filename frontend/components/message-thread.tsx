@@ -1,6 +1,7 @@
 "use client";
 
 import { Bot, Loader2, User } from "lucide-react";
+import { useEffect, useRef } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -8,31 +9,40 @@ import type { UseChatStream } from "@/hooks/use-chat-stream";
 import type { ChatExchange } from "@/lib/types";
 
 type Props = {
-  exchange: ChatExchange | null;
+  exchanges: ChatExchange[];
   stream: UseChatStream;
-  pendingQuestion?: string;
 };
 
-export function MessageThread({ exchange, stream }: Props) {
+/**
+ * Renders every turn in the active conversation in order, then (if a
+ * stream is in-flight) the live streaming view at the bottom.
+ */
+export function MessageThread({ exchanges, stream }: Props) {
   const isRunning = stream.status.phase === "running";
   const showStreamView = isRunning || stream.status.phase === "error";
+  const empty = exchanges.length === 0 && !showStreamView;
+
+  const bottomRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [exchanges.length, isRunning]);
 
   return (
     <ScrollArea className="flex-1">
-      <div className="mx-auto max-w-3xl px-4 py-6">
-        {!exchange && !showStreamView ? (
-          <EmptyState />
-        ) : null}
+      <div className="mx-auto max-w-3xl space-y-6 px-4 py-6">
+        {empty ? <EmptyState /> : null}
 
-        {/* The streaming view (live) */}
-        {showStreamView ? (
-          <StreamingView stream={stream} />
-        ) : null}
+        {exchanges.map((ex, idx) => (
+          <CompletedExchange
+            key={ex.id}
+            exchange={ex}
+            showMeta={idx === exchanges.length - 1 && !showStreamView}
+          />
+        ))}
 
-        {/* The completed exchange (selected from history or just finished) */}
-        {!isRunning && exchange ? (
-          <CompletedExchange exchange={exchange} />
-        ) : null}
+        {showStreamView ? <StreamingView stream={stream} /> : null}
+
+        <div ref={bottomRef} />
       </div>
     </ScrollArea>
   );
@@ -50,79 +60,82 @@ function EmptyState() {
   );
 }
 
-function CompletedExchange({ exchange }: { exchange: ChatExchange }) {
+function CompletedExchange({
+  exchange,
+  showMeta,
+}: {
+  exchange: ChatExchange;
+  showMeta: boolean;
+}) {
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
       <UserBubble text={exchange.question} />
       <AssistantBubble answer={exchange.answer} />
-      <div className="flex flex-wrap items-center gap-2 px-12 text-[10px] text-muted-foreground">
-        <Badge variant="secondary">{exchange.strategy}</Badge>
-        <Badge variant="outline">{exchange.model_id}</Badge>
-        <span>·</span>
-        <span>{exchange.step_count} steps</span>
-        <span>·</span>
-        <span>{exchange.tool_call_count} tool calls</span>
-        <span>·</span>
-        <span>
-          {exchange.input_tokens + exchange.output_tokens} tokens
-        </span>
-        {exchange.stop_reason !== "answer" ? (
-          <Badge variant="destructive">{exchange.stop_reason}</Badge>
-        ) : null}
-      </div>
+      {showMeta ? (
+        <div className="flex flex-wrap items-center gap-2 px-12 text-[10px] text-muted-foreground">
+          <Badge variant="secondary">{exchange.strategy}</Badge>
+          <Badge variant="outline">{exchange.model_id}</Badge>
+          <span>·</span>
+          <span>{exchange.step_count} steps</span>
+          <span>·</span>
+          <span>{exchange.tool_call_count} tool calls</span>
+          <span>·</span>
+          <span>{exchange.input_tokens + exchange.output_tokens} tokens</span>
+          {exchange.stop_reason !== "answer" ? (
+            <Badge variant="destructive">{exchange.stop_reason}</Badge>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
 
 function StreamingView({ stream }: { stream: UseChatStream }) {
   return (
-    <div className="space-y-6">
-      <UserBubble text="(streaming…)" />
-      <div className="flex gap-3 px-2">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
-          {stream.status.phase === "running" ? (
-            <Loader2 className="h-4 w-4 animate-spin text-primary" />
-          ) : (
-            <Bot className="h-4 w-4 text-primary" />
-          )}
+    <div className="flex gap-3 px-2">
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
+        {stream.status.phase === "running" ? (
+          <Loader2 className="h-4 w-4 animate-spin text-primary" />
+        ) : (
+          <Bot className="h-4 w-4 text-primary" />
+        )}
+      </div>
+      <div className="flex-1 space-y-3">
+        <div className="text-sm text-muted-foreground">
+          {stream.status.message ?? "Working…"}
         </div>
-        <div className="flex-1 space-y-3">
-          <div className="text-sm text-muted-foreground">
-            {stream.status.message ?? "Working…"}
-          </div>
-          {stream.toolEvents.length > 0 ? (
-            <ul className="space-y-1.5 text-xs">
-              {stream.toolEvents.map((te) => (
-                <li
-                  key={te.tool_call_id}
-                  className="flex items-center gap-2 rounded border border-border bg-card px-2 py-1.5"
-                >
-                  <Badge variant={te.success ? "secondary" : "destructive"}>
-                    {te.tool_name}
-                  </Badge>
+        {stream.toolEvents.length > 0 ? (
+          <ul className="space-y-1.5 text-xs">
+            {stream.toolEvents.map((te) => (
+              <li
+                key={te.tool_call_id}
+                className="flex flex-wrap items-center gap-2 rounded border border-border bg-card px-2 py-1.5"
+              >
+                <Badge variant={te.success ? "secondary" : "destructive"}>
+                  {te.tool_name}
+                </Badge>
+                <span className="text-muted-foreground">
+                  {te.elapsed_ms}ms
+                </span>
+                {te.counts ? (
                   <span className="text-muted-foreground">
-                    {te.elapsed_ms}ms
+                    {Object.entries(te.counts)
+                      .map(([k, v]) => `${k}=${v}`)
+                      .join(" · ")}
                   </span>
-                  {te.counts ? (
-                    <span className="text-muted-foreground">
-                      {Object.entries(te.counts)
-                        .map(([k, v]) => `${k}=${v}`)
-                        .join(" · ")}
-                    </span>
-                  ) : null}
-                  {te.error ? (
-                    <span className="text-destructive">{te.error}</span>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-          {stream.status.phase === "error" && stream.error ? (
-            <div className="rounded border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              {stream.error}
-            </div>
-          ) : null}
-        </div>
+                ) : null}
+                {te.error ? (
+                  <span className="break-all text-destructive">{te.error}</span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        {stream.status.phase === "error" && stream.error ? (
+          <div className="rounded border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {stream.error}
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -131,7 +144,7 @@ function StreamingView({ stream }: { stream: UseChatStream }) {
 function UserBubble({ text }: { text: string }) {
   return (
     <div className="flex justify-end gap-3">
-      <div className="max-w-xl rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground">
+      <div className="max-w-xl whitespace-pre-wrap rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground">
         {text}
       </div>
       <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">

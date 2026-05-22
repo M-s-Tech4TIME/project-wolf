@@ -16,7 +16,7 @@ inside the dispatcher.  The audit trail is complete for any chat exchange.
 import asyncio
 import json
 from collections.abc import AsyncIterator
-from typing import Annotated
+from typing import Annotated, Literal
 
 import structlog
 from fastapi import APIRouter, Depends
@@ -41,10 +41,27 @@ router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
 _settings = get_settings()
 
 
+class ConversationTurn(BaseModel):
+    """One past turn the client wants the agent to remember.
+
+    Only ``user`` and ``assistant`` turns are supported; tool results from
+    prior turns are not re-played because they may be stale.  This keeps
+    the wire surface small and the contract honest.
+    """
+
+    role: Literal["user", "assistant"]
+    content: str = Field(max_length=20_000)
+
+
 class ChatRequestBody(BaseModel):
-    """User-supplied chat request.  Single-turn for Phase 2B."""
+    """User-supplied chat request.
+
+    For a new conversation, leave ``history`` empty.  For follow-up turns,
+    pass the prior user/assistant pairs in order so the agent has context.
+    """
 
     question: str = Field(min_length=1, max_length=4000)
+    history: list[ConversationTurn] = Field(default_factory=list, max_length=40)
 
 
 class ChatResponseBody(BaseModel):
@@ -98,6 +115,7 @@ async def chat(
         loop = AgentLoop(provider=provider, strategy=strategy)
         answer = await loop.run(
             question=body.question,
+            history=[(t.role, t.content) for t in body.history],
             ctx=ctx,
             db=db,
             opensearch=opensearch,
@@ -170,6 +188,7 @@ async def chat_stream(
                 loop = AgentLoop(provider=provider, strategy=strategy)
                 await loop.run(
                     question=body.question,
+                    history=[(t.role, t.content) for t in body.history],
                     ctx=ctx,
                     db=db,
                     opensearch=opensearch,

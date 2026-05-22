@@ -38,8 +38,23 @@ export type Citation = {
   result_count: number | null;
 };
 
+export type ConversationTurn = {
+  role: "user" | "assistant";
+  content: string;
+};
+
 export type ChatRequestBody = {
   question: string;
+  history?: ConversationTurn[];
+};
+
+/** A conversation thread on the client — many exchanges sharing context. */
+export type Conversation = {
+  id: string;
+  title: string;
+  exchanges: ChatExchange[];
+  created_at: string;
+  updated_at: string;
 };
 
 export type ChatResponseBody = {

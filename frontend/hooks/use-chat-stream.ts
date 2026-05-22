@@ -6,6 +6,7 @@ import { ApiError, chatStream } from "@/lib/api";
 import type {
   ChatExchange,
   Citation,
+  ConversationTurn,
   LoopEvent,
   ToolEvent,
 } from "@/lib/types";
@@ -35,8 +36,8 @@ export type UseChatStream = {
   toolEvents: ToolEvent[];
   citations: Citation[];
   error: string | null;
-  /** Submit a question; rejects only on programmer errors. */
-  submit: (question: string) => Promise<void>;
+  /** Submit a question with optional prior turns; rejects only on programmer errors. */
+  submit: (question: string, history?: ConversationTurn[]) => Promise<void>;
   reset: () => void;
 };
 
@@ -73,7 +74,7 @@ export function useChatStream(): UseChatStream {
     citationsRef.current = [];
   }, []);
 
-  const submit = useCallback(async (question: string) => {
+  const submit = useCallback(async (question: string, history: ConversationTurn[] = []) => {
     const trimmed = question.trim();
     if (!trimmed) return;
 
@@ -88,7 +89,7 @@ export function useChatStream(): UseChatStream {
     questionRef.current = trimmed;
 
     try {
-      await chatStream({ question: trimmed }, (event) => {
+      await chatStream({ question: trimmed, history }, (event) => {
         switch (event.type) {
           case "loop.started": {
             setStatus((s) => ({

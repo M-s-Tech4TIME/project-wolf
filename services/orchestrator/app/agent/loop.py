@@ -108,6 +108,7 @@ class AgentLoop:
         db: AsyncSession,
         opensearch: WazuhOpenSearchClient,
         server_api: WazuhServerApiClient,
+        history: list[tuple[str, str]] | None = None,
         event_callback: EventCallback | None = None,
     ) -> AgentAnswer:
         capability = self.provider.capability()
@@ -117,8 +118,14 @@ class AgentLoop:
         loop_id = uuid.uuid4().hex
         messages: list[Message] = [
             Message(role=MessageRole.system, content=self.strategy.system_prompt()),
-            Message(role=MessageRole.user, content=question),
         ]
+        # Replay prior user/assistant turns so follow-up questions have
+        # context.  Only role+content is replayed; we do not re-execute
+        # past tool calls because their results may be stale.
+        for role_str, content in history or []:
+            role = MessageRole.user if role_str == "user" else MessageRole.assistant
+            messages.append(Message(role=role, content=content))
+        messages.append(Message(role=MessageRole.user, content=question))
         citations: list[Citation] = []
         total_input_tokens = 0
         total_output_tokens = 0
