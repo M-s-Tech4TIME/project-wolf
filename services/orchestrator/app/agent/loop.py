@@ -19,6 +19,7 @@ and the final answer.  Non-streaming callers omit the callback and see only
 the AgentAnswer return value.
 """
 
+import traceback
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
@@ -157,13 +158,30 @@ class AgentLoop:
             except WolfError:
                 raise
             except Exception as exc:
-                logger.exception("agent_loop_model_call_failed", loop_id=loop_id)
-                await self._audit_model_failure(db, ctx, loop_id, step, str(exc))
+                # Capture both the type and message — many httpx exceptions
+                # have an empty str() and were silently logging as just
+                # "Model call failed:" with no detail.  Persist the
+                # traceback into the audit record so the next occurrence
+                # is forensically recoverable.
+                exc_type = type(exc).__name__
+                exc_msg = str(exc) or "(no message)"
+                detail = f"{exc_type}: {exc_msg}"
+                tb = "".join(traceback.format_exception(exc))
+                logger.error(
+                    "agent_loop_model_call_failed",
+                    loop_id=loop_id,
+                    exc_type=exc_type,
+                    detail=detail,
+                    traceback=tb,
+                )
+                await self._audit_model_failure(
+                    db, ctx, loop_id, step, detail, traceback=tb,
+                )
                 await _emit(event_callback, "model.call.failed", {
-                    "step": step, "detail": str(exc),
+                    "step": step, "detail": detail,
                 })
                 answer = AgentAnswer(
-                    content=f"Model call failed: {exc}",
+                    content=f"Model call failed ({exc_type}): {exc_msg}",
                     citations=citations,
                     step_count=step,
                     tool_call_count=tool_call_count,
@@ -300,14 +318,18 @@ class AgentLoop:
         loop_id: str,
         step: int,
         detail: str,
+        traceback: str | None = None,
     ) -> None:
+        event_data: dict[str, Any] = {
+            "loop_id": loop_id,
+            "step": step,
+            "detail": detail[:1000],
+            "provider": self.provider.capability().provider,
+        }
+        if traceback:
+            # Truncate to keep audit rows reasonable but long enough that
+            # the relevant frames survive.
+            event_data["traceback"] = traceback[:4000]
         await write_event_from_context(
-            db, ctx,
-            event_type="model.call.failure",
-            event_data={
-                "loop_id": loop_id,
-                "step": step,
-                "detail": detail[:1000],
-                "provider": self.provider.capability().provider,
-            },
+            db, ctx, event_type="model.call.failure", event_data=event_data,
         )
