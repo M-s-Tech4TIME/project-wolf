@@ -161,18 +161,20 @@ KNOWN_MODELS: dict[str, CapabilityDescriptor] = {
     # to refine on specific hardware.
     #
     # Profile A — CPU-only, 16-32 GB RAM, no GPU.
-    # Brief asked for recommended_strategy="basic" — mapped to AgentStrategy.pipeline
-    # because Wolf's strategy enum is frontier/guided/pipeline (pipeline = the
-    # deterministic-scaffolding strategy Wolf uses for basic-tier models).
+    # Static fields below match the LIVE PROBE measurement
+    # (docs/decisions/0002-model-probe-qwen3-4b.md, 2026-05-22):
+    # the conservative initial estimate (basic / pipeline / partial /
+    # prompt_coaxed) was upgraded across the board after the probe
+    # measured mid / guided / full / schema_enforced on the dev VM.
     "qwen3:4b": CapabilityDescriptor(
         model_id="qwen3:4b",
         provider="ollama",
         context_window=131_072,
-        native_tool_calling=NativeToolCalling.partial,
-        reasoning_tier=ReasoningTier.basic,
-        structured_output=StructuredOutput.prompt_coaxed,
-        max_safe_autonomous_steps=5,
-        recommended_strategy=AgentStrategy.pipeline,
+        native_tool_calling=NativeToolCalling.full,
+        reasoning_tier=ReasoningTier.mid,
+        structured_output=StructuredOutput.schema_enforced,
+        max_safe_autonomous_steps=8,
+        recommended_strategy=AgentStrategy.guided,
         license_class=LicenseClass.apache_2_0,
     ),
     "gemma3:4b": CapabilityDescriptor(
