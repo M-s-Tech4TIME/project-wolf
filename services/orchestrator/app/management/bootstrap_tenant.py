@@ -119,6 +119,7 @@ async def _upsert_wazuh_config(
     server_api_url: str,
     server_api_credential_key: str,  # noqa: A002
     verify_tls: bool,
+    inject_tenant_filter: bool,
 ) -> TenantWazuhConfig:
     existing = await db.scalar(
         select(TenantWazuhConfig).where(TenantWazuhConfig.tenant_id == tenant_id)
@@ -130,6 +131,7 @@ async def _upsert_wazuh_config(
         existing.server_api_url = server_api_url
         existing.server_api_credential_key = server_api_credential_key
         existing.verify_tls = verify_tls
+        existing.inject_tenant_filter = inject_tenant_filter
         existing.updated_at = datetime.now(UTC)
         return existing
     cfg = TenantWazuhConfig(
@@ -141,6 +143,7 @@ async def _upsert_wazuh_config(
         server_api_url=server_api_url,
         server_api_credential_key=server_api_credential_key,
         verify_tls=verify_tls,
+        inject_tenant_filter=inject_tenant_filter,
         created_at=datetime.now(UTC),
         updated_at=datetime.now(UTC),
     )
@@ -165,6 +168,7 @@ async def bootstrap_tenant(
     server_api_username: str,
     server_api_password: str,
     verify_tls: bool,
+    inject_tenant_filter: bool,
 ) -> dict[str, Any]:
     settings = get_settings()
     await _ensure_schema(settings.database_url)
@@ -187,6 +191,7 @@ async def bootstrap_tenant(
             server_api_url=server_api_url,
             server_api_credential_key=api_key,
             verify_tls=verify_tls,
+            inject_tenant_filter=inject_tenant_filter,
         )
         await db.commit()
         tenant_id = tenant.id
@@ -210,6 +215,7 @@ async def bootstrap_tenant(
         "user_id": str(user_id),
         "user_email": admin_email,
         "verify_tls": verify_tls,
+        "inject_tenant_filter": inject_tenant_filter,
     }
 
 
@@ -237,6 +243,30 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     tls.add_argument("--no-verify-tls", dest="verify_tls", action="store_false",
                      help="Skip TLS validation (self-signed certs).")
     p.set_defaults(verify_tls=True)
+
+    tf = p.add_mutually_exclusive_group()
+    tf.add_argument(
+        "--inject-tenant-filter",
+        dest="inject_tenant_filter",
+        action="store_true",
+        help=(
+            "Inject `term:{tenant_id:<id>}` into every OpenSearch query. "
+            "Use only for pooled-index multi-tenant Wazuh setups where every "
+            "alert is stamped with tenant_id at ingest."
+        ),
+    )
+    tf.add_argument(
+        "--no-inject-tenant-filter",
+        dest="inject_tenant_filter",
+        action="store_false",
+        help=(
+            "Do NOT inject the tenant_id filter (default). For "
+            "separate-deployment-per-tenant the credential is the "
+            "isolation boundary; filtering on a missing field would "
+            "silently return zero hits."
+        ),
+    )
+    p.set_defaults(inject_tenant_filter=False)
     return p.parse_args(argv)
 
 
@@ -257,6 +287,7 @@ def main(argv: list[str] | None = None) -> int:
         server_api_username=args.server_api_username,
         server_api_password=args.server_api_password,
         verify_tls=args.verify_tls,
+        inject_tenant_filter=args.inject_tenant_filter,
     ))
     sys.stdout.write(json.dumps(result, indent=2) + "\n")
     return 0

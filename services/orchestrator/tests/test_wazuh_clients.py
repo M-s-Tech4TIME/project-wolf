@@ -38,6 +38,7 @@ def connection(tenant_id: uuid.UUID) -> WazuhConnection:
         server_api_username="wolf_api",
         server_api_password="secret",  # noqa: S106 — test fixture
         verify_tls=True,
+        inject_tenant_filter=True,
     )
 
 

@@ -33,19 +33,21 @@ def _connection_for(tenant_id: uuid.UUID) -> WazuhConnection:
         server_api_username=f"tenant-{tenant_id}-api",
         server_api_password="secret",  # noqa: S106 — test fixture
         verify_tls=True,
+        inject_tenant_filter=True,
     )
 
 
 # ─── Test: query builders for different tenants do not produce equal queries ─
 
 
-def test_two_tenant_builders_produce_distinct_queries() -> None:
-    a = TenantScopedQueryBuilder(uuid.uuid4())
-    b = TenantScopedQueryBuilder(uuid.uuid4())
+def test_two_tenant_builders_with_filter_produce_distinct_queries() -> None:
+    """Pinning the multi-tenant pooled-index mode: filter is per-tenant."""
+    a = TenantScopedQueryBuilder(uuid.uuid4(), inject_tenant_filter=True)
+    b = TenantScopedQueryBuilder(uuid.uuid4(), inject_tenant_filter=True)
     now = datetime.now(UTC)
     qa = a.search_alerts(time_from=now - timedelta(hours=1), time_to=now)
     qb = b.search_alerts(time_from=now - timedelta(hours=1), time_to=now)
-    # The two queries must differ at minimum in the tenant filter clause.
+    # The two queries differ in the term:{tenant_id} clause.
     assert qa != qb
 
 

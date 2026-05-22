@@ -41,7 +41,10 @@ class WazuhOpenSearchClient:
         client: httpx.AsyncClient | None = None,
     ) -> None:
         self._connection = connection
-        self._qb = TenantScopedQueryBuilder(connection.tenant_id)
+        self._qb = TenantScopedQueryBuilder(
+            connection.tenant_id,
+            inject_tenant_filter=connection.inject_tenant_filter,
+        )
         self._owns_client = client is None
         self._client = client or httpx.AsyncClient(
             base_url=connection.opensearch_url,
@@ -90,9 +93,16 @@ class WazuhOpenSearchClient:
     def _assert_tenant_filter_present(self, query: dict[str, Any]) -> None:
         """Sanity check: the query must contain the tenant filter clause.
 
-        Defense in depth — the query builder always includes it, but a hand-
-        crafted query slipping through would be rejected here.
+        Defense in depth — the query builder always includes it (when
+        injection is configured for this tenant), but a hand-crafted
+        query slipping through would be rejected here.
+
+        Skipped entirely when the tenant's WazuhConfig has
+        `inject_tenant_filter=False` — in that mode the credential is
+        the isolation boundary and no per-query filter is expected.
         """
+        if not self._connection.inject_tenant_filter:
+            return
         filters = query.get("query", {}).get("bool", {}).get("filter", [])
         expected = str(self._connection.tenant_id)
         for clause in filters:

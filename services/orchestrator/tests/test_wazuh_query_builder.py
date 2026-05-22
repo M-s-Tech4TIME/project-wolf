@@ -25,7 +25,13 @@ def _tenant_filter_value(query: dict[str, Any]) -> str | None:
 
 @pytest.fixture
 def builder() -> TenantScopedQueryBuilder:
-    return TenantScopedQueryBuilder(uuid.UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"))
+    # These tests pin the multi-tenant pooled-index behaviour, so the
+    # filter is explicitly enabled.  Default (False) is exercised in a
+    # separate test below.
+    return TenantScopedQueryBuilder(
+        uuid.UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+        inject_tenant_filter=True,
+    )
 
 
 @pytest.fixture
@@ -77,8 +83,8 @@ def test_agent_alert_history_includes_tenant_filter(
 def test_different_tenants_get_different_filters(
     time_window: tuple[datetime, datetime],
 ) -> None:
-    tenant_a = TenantScopedQueryBuilder(uuid.uuid4())
-    tenant_b = TenantScopedQueryBuilder(uuid.uuid4())
+    tenant_a = TenantScopedQueryBuilder(uuid.uuid4(), inject_tenant_filter=True)
+    tenant_b = TenantScopedQueryBuilder(uuid.uuid4(), inject_tenant_filter=True)
     qa = tenant_a.search_alerts(time_from=time_window[0], time_to=time_window[1])
     qb = tenant_b.search_alerts(time_from=time_window[0], time_to=time_window[1])
     assert _tenant_filter_value(qa) != _tenant_filter_value(qb)
@@ -90,14 +96,43 @@ def test_different_tenants_get_different_filters(
 def test_no_raw_query_method_exists(builder: TenantScopedQueryBuilder) -> None:
     """The builder must not expose a method that bypasses the tenant filter."""
     method_names = {n for n in dir(builder) if not n.startswith("_")}
-    # Any new public method must build queries via the tenant_filter path —
-    # this test will fail on additions that don't, prompting a deliberate review.
+    # Any new public method must build queries via the mandatory_filters
+    # path — this test will fail on additions that don't, prompting a
+    # deliberate review.  `inject_tenant_filter` is the read-only
+    # property that surfaces the per-tenant configuration; it is not a
+    # query constructor.
     assert method_names == {
         "search_alerts",
         "aggregate_alerts",
         "event_timeline",
         "agent_alert_history",
+        "inject_tenant_filter",
     }
+
+
+# ─── inject_tenant_filter=False (the default for standalone Wazuh) ────────────
+
+
+def test_default_mode_omits_tenant_filter_entirely(
+    time_window: tuple[datetime, datetime],
+) -> None:
+    """Standalone-deployment default: no term:{tenant_id} clause anywhere."""
+    standalone = TenantScopedQueryBuilder(uuid.uuid4())  # inject=False default
+    q = standalone.search_alerts(time_from=time_window[0], time_to=time_window[1])
+    assert _tenant_filter_value(q) is None
+    # The timestamp range is still the only mandatory filter.
+    filters = q["query"]["bool"]["filter"]
+    assert any("range" in f and "timestamp" in f["range"] for f in filters)
+
+
+def test_default_mode_aggregate_omits_tenant_filter(
+    time_window: tuple[datetime, datetime],
+) -> None:
+    standalone = TenantScopedQueryBuilder(uuid.uuid4())
+    q = standalone.aggregate_alerts(
+        time_from=time_window[0], time_to=time_window[1], group_by="rule.level"
+    )
+    assert _tenant_filter_value(q) is None
 
 
 # ─── Optional filters are additive, not replacing the tenant filter ──────────

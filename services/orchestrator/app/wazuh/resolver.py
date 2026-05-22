@@ -66,6 +66,7 @@ async def get_wazuh_connection(
         server_api_username=server_api_creds["username"],
         server_api_password=server_api_creds["password"],
         verify_tls=row.verify_tls,
+        inject_tenant_filter=row.inject_tenant_filter,
     )
 
 

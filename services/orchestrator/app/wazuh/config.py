@@ -26,3 +26,4 @@ class WazuhConnection:
     server_api_username: str
     server_api_password: str
     verify_tls: bool
+    inject_tenant_filter: bool = False

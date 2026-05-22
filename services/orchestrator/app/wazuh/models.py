@@ -60,6 +60,17 @@ class TenantWazuhConfig(Base):
     # required to disable for self-signed certs (doc 07 §Transport security).
     verify_tls: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
+    # Whether to inject a `term: {tenant_id: <id>}` clause into every
+    # OpenSearch query.  Default FALSE because vanilla Wazuh alert
+    # documents do not carry a `tenant_id` field — the filter would
+    # silently match zero docs.  Set TRUE only for pooled-index multi-
+    # tenant deployments where you have stamped `tenant_id` onto every
+    # alert at ingest time.  For separate-deployment-per-tenant (the
+    # common case), the credential alone provides isolation.
+    inject_tenant_filter: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+
     # Provisioning validation timestamp — null until the platform has connected
     # with the credentials and confirmed the deployment identity (doc 05).
     validated_at: Mapped[datetime | None] = mapped_column(

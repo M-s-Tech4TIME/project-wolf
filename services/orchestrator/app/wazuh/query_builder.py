@@ -30,8 +30,14 @@ class TenantScopedQueryBuilder:
     `tenant_id`.
     """
 
-    def __init__(self, tenant_id: uuid.UUID) -> None:
+    def __init__(
+        self,
+        tenant_id: uuid.UUID,
+        *,
+        inject_tenant_filter: bool = False,
+    ) -> None:
         self._tenant_id = str(tenant_id)
+        self._inject_tenant_filter = inject_tenant_filter
 
     # ── Public query constructors ─────────────────────────────────────────
 
@@ -50,7 +56,7 @@ class TenantScopedQueryBuilder:
     ) -> dict[str, Any]:
         """Build a query for the `search_alerts` tool."""
         filters: list[dict[str, Any]] = [
-            self._tenant_filter(),
+            *self._mandatory_filters(),
             self._timestamp_range(time_from, time_to),
         ]
         if agent_id is not None:
@@ -90,7 +96,7 @@ class TenantScopedQueryBuilder:
     ) -> dict[str, Any]:
         """Build an aggregation query (alerts grouped by a field)."""
         filters: list[dict[str, Any]] = [
-            self._tenant_filter(),
+            *self._mandatory_filters(),
             self._timestamp_range(time_from, time_to),
         ]
         if agent_id is not None:
@@ -112,7 +118,7 @@ class TenantScopedQueryBuilder:
     ) -> dict[str, Any]:
         """Build a chronological timeline query for one host/agent."""
         filters: list[dict[str, Any]] = [
-            self._tenant_filter(),
+            *self._mandatory_filters(),
             self._timestamp_range(time_from, time_to),
             {"term": {"agent.id": agent_id}},
         ]
@@ -141,15 +147,26 @@ class TenantScopedQueryBuilder:
 
     # ── Internal builders ─────────────────────────────────────────────────
 
-    def _tenant_filter(self) -> dict[str, Any]:
-        """The mandatory tenant filter clause.
+    @property
+    def inject_tenant_filter(self) -> bool:
+        """Whether this builder adds the term:{tenant_id} filter to queries."""
+        return self._inject_tenant_filter
 
-        Note: this filter is **always** included.  For per-tenant Wazuh
-        deployments where alerts do not carry a `tenant_id` field, this
-        clause yields zero matches against the field, which is the
-        fail-closed default we want for any leaked cross-tenant query.
+    def _mandatory_filters(self) -> list[dict[str, Any]]:
+        """The forced filter clauses prepended to every query.
+
+        When `inject_tenant_filter` is TRUE, contains the `tenant_id`
+        term filter — required for pooled-index multi-tenant deployments
+        where every alert is stamped with `tenant_id` at ingest.
+
+        When FALSE (default), returns an empty list.  Vanilla Wazuh
+        alerts do NOT carry a `tenant_id` field, so the filter would
+        silently match zero docs — fail-closed is wrong here because the
+        per-tenant *credential* is the actual isolation boundary.
         """
-        return {"term": {"tenant_id": self._tenant_id}}
+        if not self._inject_tenant_filter:
+            return []
+        return [{"term": {"tenant_id": self._tenant_id}}]
 
     def _timestamp_range(self, time_from: datetime, time_to: datetime) -> dict[str, Any]:
         return {
