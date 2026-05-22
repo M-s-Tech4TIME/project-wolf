@@ -75,5 +75,6 @@ implies. Any rollback path.
 | 0001 | `model-probe-llama3.2-baseline.md` — first live probe of llama3.2 on the dev VM (CPU-only) | accepted |
 | 0002 | `model-probe-qwen3-4b.md` — qwen3:4b probe; recommended Apache-licensed candidate | accepted |
 | 0003 | `model-probe-gemma3-4b.md` — gemma3:4b probe; ruled out (no native tool calling) | accepted |
+| 0004 | `model-switch-llama3.2-to-qwen3-4b.md` — dev default flipped to qwen3:4b | accepted |
 
 _Update this table whenever you add a new ADR._
