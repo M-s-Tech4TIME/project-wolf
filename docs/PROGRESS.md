@@ -6,143 +6,282 @@
 >
 > For history of what changed when, see `CHANGELOG.md` (append-only).
 
-**Last updated:** [DATE] by [SESSION: human/claude-code]
+**Last updated:** 2026-05-22 by claude-code
 
 ---
 
 ## 1. Where we are right now
 
-**Current phase:** [e.g., "Phase 2 — Read path, end to end" from `docs/10-build-roadmap.md`]
+**Current phase:** Phase 2 — Read path, end to end (per `docs/10-build-roadmap.md`).
 
-**Phase status:** [e.g., "5 of 9 read tools wired to real Wazuh; 4 mock-only; orchestrator agent loop working; capability probe built but not yet run against live Ollama"]
+**Phase status:** Model abstraction layer complete (Phase 1). Read path
+foundation, agent loop with three strategies, and Next.js 16 frontend all
+built and operational. 9 read tools registered with the dispatcher; 5 of 9
+verified against the user's real Wazuh deployment, 4 of 9 mock-only.
+Capability probe (`tools/model_probe/`) built and unit-tested in Phase 1
+but **never run against the live Ollama on this hardware**. Current session
+adds doc 14 (model recommendations), the session-continuity protocol in
+doc 11, and `PROGRESS.md` + `CHANGELOG.md` themselves.
 
-**Phase exit criteria progress:**
-- [ ] [Criterion 1 from roadmap]
-- [x] [Criterion that's done]
-- [ ] [Criterion in progress]
+**Phase 2 exit criteria progress** (from `docs/10-build-roadmap.md`):
+- [x] Wazuh OpenSearch client with forced tenant filter (opt-in per tenant)
+- [x] Wazuh Server API client (read endpoints only)
+- [x] Tool registry with strict input/output Pydantic schemas
+- [x] First read tools: 9 of 9 implemented (5 verified live, 4 mock-only)
+- [x] Agent loop with three strategies (frontier / guided / pipeline)
+- [x] Resource guardrails (time window, result count, per-tenant rate limit)
+- [x] Audit logging on every model call and every tool call
+- [x] Minimal UI: login, tenant picker, ask question, see cited answer
+- [ ] Analyst question end-to-end on **both** a frontier model AND a local
+      Ollama model — currently only verified on local Ollama (`llama3.2`)
+      against the real Wazuh; frontier-API confirmation pending.
 
 ---
 
 ## 2. What's currently built and working
 
-Group by service/layer. Mark each item with status: ✅ working, 🟡 partial, ❌ broken/disabled.
+Status legend: ✅ working, 🟡 partial, ❌ broken/disabled, ⏳ planned only.
 
 ### Orchestrator (`services/orchestrator/`)
-- ✅ FastAPI app skeleton
-- ✅ Model abstraction layer (`app/models/`): Anthropic, OpenAI, Ollama adapters
-- ✅ Capability descriptor + KNOWN_MODELS registry
-- ✅ Tool registry (`app/tools/registration.py`)
-- 🟡 Read tools — 5/9 verified against real Wazuh, 4/9 mock-only
-- ❌ [anything intentionally disabled]
+- ✅ FastAPI app, lifespan-driven Alembic migrations on startup
+- ✅ Auth: bcrypt local accounts, JWT HS256 cookies, OIDC adapter stub
+- ✅ Immutable `TenantContext`, AuthMiddleware, append-only audit log
+- ✅ Model abstraction layer (`app/models/`): Anthropic, OpenAI, Ollama adapters (httpx-based, no SDK deps)
+- ✅ `CapabilityDescriptor` + `KNOWN_MODELS` registry
+- ✅ Tool registry + dispatcher (`app/tools/`): tier enforcement,
+      Pydantic input/output validation, audit on every branch
+- 🟡 9 read tools registered (`app/tools/registration.py`):
+    - ✅ verified live: `search_alerts`, `aggregate_alerts`,
+          `count_alerts_by_severity`, `list_agents`, `get_cluster_health`
+    - 🟡 mock-only (httpx mocked, not yet hit live Wazuh):
+          `get_event_timeline`, `get_agent_alert_history`,
+          `get_agent_detail`, `get_rule_definition`
+- ✅ Agent loop with three strategies (`app/agent/`): frontier / guided /
+      pipeline; `LoopEvent` emission for SSE; multi-turn `history` support
+- ✅ Endpoints: `POST /api/v1/auth/{login,logout}`, `GET /me`,
+      `GET /me/tenants`, `POST /api/v1/chat`, `POST /api/v1/chat/stream`
+- ✅ Per-tenant Wazuh resolver + secrets backend (encrypted-file)
+- ✅ Bootstrap CLI (`app.management.bootstrap_tenant`) and smoke-test CLI
+      (`app.management.smoke_wazuh`)
 
 ### Gateway (`services/gateway/`)
-- [status]
+- ⏳ Not started. Stub package only. Per the architecture, execute tools
+      live here exclusively (Phase 4+ work).
 
-### Frontend (`services/frontend/`)
-- [status]
+### Frontend (`frontend/`)
+- ✅ Next.js 16 (Turbopack) + React 19 + Tailwind 4
+- ✅ shadcn/ui primitives, Lucide icons
+- ✅ Auth flow: login page, cookie-credentialed fetch, protected routes
+- ✅ Tenant switcher (consumes `/me/tenants`)
+- ✅ Multi-turn conversations: sidebar shows conversations, message thread
+      replays the active conversation, `history` sent with every submit
+- ✅ SSE streaming: consumes `/api/v1/chat/stream`, renders LoopEvents
+      (tool calls, citations) live
+- ✅ Markdown rendering for assistant answers (react-markdown + remark-gfm)
+- ✅ Citations panel
+- ✅ `randomId()` fallback for HTTP / non-localhost contexts
 
 ### Shared packages (`packages/`)
-- ✅ `schema/wolf_schema/` — canonical types
+- ✅ `common/wolf_common/`: structlog JSON logging, OpenTelemetry tracing,
+      error taxonomy
+- ✅ `secrets/wolf_secrets/`: abstract `SecretsBackend` protocol,
+      Fernet-encrypted file backend
+- ✅ `schema/wolf_schema/`: canonical types (`ToolSchema`, `ToolCall`,
+      `ToolResult`, `ToolTier`, `CapabilityDescriptor`, `ChatRequest`,
+      `ChatResponse`, `Message`)
 
 ### Tooling (`tools/`)
-- ✅ `model_probe/` — built, **not yet run** against live Ollama
-- ✅ `tenant_isolation_test/` — [status]
-- ✅ `seed_knowledge/` — [status]
+- ✅ `model_probe/`: built in Phase 1; 12 unit tests passing;
+      **probed live against `llama3.2`, `qwen3:4b`, `gemma3:4b` on this
+      hardware on 2026-05-22** — see ADRs 0001/0002/0003.  sys.path
+      bootstrap added to `__main__.py` to resolve the two-`app/`-packages
+      collision that blocked the CLI invocation (commit `e9cc316`).
+- ⏳ `tenant_isolation_test/`: stub only; the live isolation tests live in
+      `services/orchestrator/tests/test_cross_tenant_isolation.py`
+- ⏳ `seed_knowledge/`: stub only (Phase 3 RAG work)
 
 ### Infrastructure
-- ✅ Docker Engine on dev VM (192.168.76.128)
-- ✅ Postgres + pgvector container
-- ✅ Ollama at localhost:11434 running llama3.2:latest
-- ✅ Wazuh at 192.168.76.129 (sibling VM, VMware NAT)
-- ❌ [Keycloak / OpenBao / etc. — note if not yet up]
+- ✅ Postgres 17 + pgvector on `localhost:5432`
+- ✅ Ollama on `localhost:11434` with `llama3.2:latest` (3B, Q4_K_M, ~2 GB)
+- ✅ User's real Wazuh on `192.168.76.129` (Indexer :9200, Server API :55000,
+      self-signed TLS)
+- ✅ CI workflow (lint / typecheck / test / safety-check / local-model-check)
+- ❌ Docker Compose stack: not the current dev path; services run as
+      foreground / `nohup` processes
+- ❌ Keycloak / OpenBao: not yet up — local accounts + encrypted-file
+      secrets are the current dev path
 
 ---
 
 ## 3. Current configuration
 
-The minimum a new session needs to know to be productive immediately.
-
 **Dev environment:**
-- Host: VM, 16 GB RAM, CPU-only (no GPU)
-- OS: [Ubuntu 24.04 / etc.]
-- Python: 3.13.x (`uv` managed)
-- Node: 24 LTS
+- Host: VM at `192.168.76.128`, ~16 GB RAM, CPU-only (no GPU detected by Ollama)
+- OS: Ubuntu 24.04.4 LTS (Noble Numbat)
+- Python: 3.13 (pinned in `.python-version`, managed via `uv`)
+- Node: 24 LTS (pinned in `.nvmrc`); installed locally at `~/.local/node24`
+- `npm`: 11.6.1
 
-**Model defaults:**
+**Model defaults** (in `services/orchestrator/app/config.py`):
 - `DEFAULT_MODEL_PROVIDER`: `ollama`
 - `DEFAULT_MODEL_ID`: `llama3.2`
+- `OLLAMA_BASE_URL`: `http://localhost:11434`
 - Adapters active: Anthropic, OpenAI, Ollama
 
-**Wazuh connection:**
-- Indexer: `https://192.168.76.129:9200` (or actual)
-- Server API: `https://192.168.76.129:55000` (or actual)
-- Credentials: in [secrets backend location]
+**Wazuh connection** (per `TenantWazuhConfig` for tenant `acme`):
+- Indexer: `https://192.168.76.129:9200` (self-signed; `verify_tls=False`)
+- Server API: `https://192.168.76.129:55000`
+- Credentials: in encrypted-file secrets backend at `.local/secrets.enc`
+- `inject_tenant_filter=False` (standalone Wazuh deployment, no per-doc tenant_id)
 
-**Service ports (dev):**
+**Service ports (dev, bound `0.0.0.0` for LAN access):**
 - Orchestrator: `8000`
-- Gateway: `8001`
 - Frontend: `3000`
+- Ollama: `127.0.0.1:11434`
 - Postgres: `5432`
-- Keycloak: `8080`
-- Ollama: `11434`
+- Gateway: `8001` (not yet running)
+
+**CORS allow-origins:** `http://localhost:3000,http://127.0.0.1:3000,http://192.168.76.128:3000`
 
 ---
 
 ## 4. What's next
 
 **Immediate next steps** (in priority order):
-1. [Next concrete task — e.g., "Run capability probe against llama3.2 on this hardware"]
-2. [Second task]
-3. [Third task]
+1. **Write a `0004-model-switch-llama3.2-to-qwen3-4b.md` ADR** weighing
+   the three probe results (ADRs 0001/0002/0003).  qwen3:4b is the
+   Apache-licensed Profile A pick on this hardware; the open question
+   is whether qwen3:4b's grounding-discipline failure outweighs the
+   license advantage for **dev** use (it almost certainly does not for
+   the *recommended-for-shipping* default, which doc 14 already says
+   should not be Llama).
+2. After the switch ADR lands, change `DEFAULT_MODEL_ID` in
+   `services/orchestrator/app/config.py` in a separate commit that
+   references the ADR.
+3. Wire the 4 remaining read tools (`get_event_timeline`,
+   `get_agent_alert_history`, `get_agent_detail`, `get_rule_definition`)
+   to real Wazuh.
+4. Verify the Phase 2 exit criterion against a frontier API model in
+   addition to the local-Ollama path that already works.
+5. Batch-amend the static `KNOWN_MODELS` entries for `llama3.2`,
+   `qwen3:4b`, and `gemma3:4b` to reflect measured capability (the
+   probe ADRs list the specific deltas).
 
 **Blocked / waiting:**
-- [Anything blocked, and on what]
+- Frontier-API verification needs an Anthropic or OpenAI key in the
+  configured secrets backend (not blocking dev, only the formal exit check).
 
 **Deferred** (deliberately not doing now):
-- [Things we explicitly chose not to do yet, with one-line reason]
+- Phase 3 (RAG + grounding validator) — pending Phase 2 close-out.
+  qwen3:4b's grounding-fabrication probe result makes Phase 3 *more*
+  important if/when qwen becomes the default, not less.
+- Phase 4 (gateway service + propose/execute tools) — structural, separate
+  service; not until Phase 2 ships.
+- Docker Compose stack as the primary dev path — current `nohup` flow is
+  fine; revisit when adding more services.
+- Refactor of the two-`app/`-packages collision (services/gateway/app/ and
+  services/orchestrator/app/ both named `app`).  The probe sys.path
+  bootstrap works around it; a deeper fix (rename one) is larger surgery.
 
 ---
 
 ## 5. Active decisions and open questions
 
-Things that need a human call before they can proceed. Move resolved items to
-`CHANGELOG.md` as ADRs.
+Things that need a human call before they can proceed. Move resolved items
+to `CHANGELOG.md` as ADRs.
 
-- [ ] [e.g., "Switch DEFAULT_MODEL_ID from llama3.2 to qwen3:4b after probe — pending probe results"]
-- [ ] [e.g., "Choose between Qdrant and pgvector for production — currently using pgvector by default"]
+- [ ] **Switch `DEFAULT_MODEL_ID` from `llama3.2` to `qwen3:4b`** —
+      probe evidence is in (ADRs 0001/0002/0003).  `qwen3:4b` wins on
+      overall score (0.75 vs 0.68) and license (Apache vs restricted),
+      and matches `llama3.2` at the strategy tier (both `guided`).  The
+      one wrinkle: qwen3:4b failed the grounding-discipline probe (0.00
+      vs llama3.2's 0.70), meaning it fabricated specific data when
+      asked without tools.  In Wolf's tool-gated agent loop the
+      fabrication risk is contained, but it raises Phase 3 grounding
+      validator priority.  `gemma3:4b` is out — no native tool calling.
+      Writing the switch ADR is the next action.
+- [ ] Whether `count_alerts_by_severity` should remain a standalone tool
+      or be folded into `aggregate_alerts` with a `bucket_by_severity`
+      mode. Currently both registered; the prompt routes severity
+      questions to the new one.
 
 ---
 
 ## 6. Known issues and tech debt
 
-Things that work but should be fixed. Not blockers.
-
-- [Description of issue — file/line if applicable — severity]
+- Llama 3.2 on CPU-only inference is slow (~30-60s for first token cold
+  start). Functional but a real UX limit; switching to `qwen3:4b` would
+  also benefit here.
+- Small-model fabrication: `llama3.2` occasionally embellishes details
+  beyond what the tool returned. Phase 3's grounding validator is the
+  designed solution.
+- `services/orchestrator/app/tools/cluster.py` `manager_healthy` flag
+  trusts the API responding == healthy; doesn't probe deeper signals.
+  Adequate for Phase 2.
 
 ---
 
 ## 7. Test coverage status
 
-- Unit tests: [pass count] passing, [fail/skip count] failing/skipped
-- Integration tests: [status]
-- Cross-tenant isolation suite: [status, when last run, against which tenants]
-- CI: [last green run, against which commit]
+- **128 backend tests passing** (`pytest services/orchestrator/tests packages/`)
+- **0 failures**, **0 skipped**
+- ruff: clean across the workspace
+- mypy strict: 33 source files clean
+  (`packages/{common,secrets,schema}/*` and
+  `services/orchestrator/app/{tenancy,audit,wazuh,guardrails,agent}`)
+- Cross-tenant isolation suite: in
+  `services/orchestrator/tests/test_cross_tenant_isolation.py`, runs as
+  part of the main suite. All 4 negative tests pass.
+- Frontend: `next build` clean, `next lint` clean. No frontend test
+  framework wired yet — deferred.
+- CI: configured (`.github/workflows/ci.yml`) but not yet run against a
+  remote (the repo's `main` is ahead of `origin/main` by 8 commits as of
+  this session start).
 
 ---
 
 ## 8. Documentation status
 
-- Planning bundle (`docs/00-13`): [in git? last reviewed?]
-- ADRs in `docs/decisions/`: [count, last added]
-- API docs: [auto-generated? location?]
-- README: [last reviewed]
+- Planning bundle (`docs/00-13`): in git as of commit `c05cdce` (today).
+- `docs/14-model-recommendations.md`: in git as of commit `b093761` (today).
+- `docs/11-claude-code-instructions.md`: updated this session with the
+  relaxed session-continuity protocol (reading required only for new env /
+  new session / different model; end-of-session update remains mandatory).
+  In git as of commit `b093761`.
+- ADRs in `docs/decisions/`: 3 ADRs as of this session — 0001
+  (`llama3.2` baseline), 0002 (`qwen3:4b`), 0003 (`gemma3:4b`).  README
+  index in place.
+- API docs: FastAPI auto-generates at `http://localhost:8000/docs`.
+- README: in git as of commit `c05cdce`.
 
 ---
 
 ## 9. Hand-off note for next session
 
-A short paragraph in plain English: if a brand-new Claude Code session opens
-this file tomorrow, on this machine or another, what is the single most
-important thing it needs to know to be useful?
+Phase 2 is functionally complete: a chat session against the user's real
+Wazuh (192.168.76.129) on `llama3.2`/Ollama returns grounded answers with
+citations through the Next.js frontend (`http://192.168.76.128:3000`).
+Multi-turn works. Markdown renders. The new `count_alerts_by_severity`
+tool gives correct severity breakdowns end to end.
 
-> [Free-form note. Updated at end of every session.]
+**This session ran the first live capability probes.** Three models
+probed on this hardware (ADRs 0001/0002/0003):
+- `llama3.2`: score 0.68 → mid/guided (matches static estimate)
+- `qwen3:4b`: score 0.75 → mid/guided (Apache-licensed; the winner)
+- `gemma3:4b`: score 0.25 → basic/pipeline (no native tool calling;
+  ruled out as a default candidate)
+
+**Single most important thing for the next session to know:** the next
+concrete action is to write `0004-model-switch-llama3.2-to-qwen3-4b.md`
+weighing the trade-off (qwen3:4b wins overall but failed
+grounding-discipline; see ADR 0002), then change `DEFAULT_MODEL_ID` in
+`services/orchestrator/app/config.py` in a **separate commit** that
+references the ADR.  Per doc 14's environment-change playbook the
+config change is one line and stands alone — do not bundle it with
+other work.
+
+Operational note: services run as `nohup` background processes (not
+systemd / compose).  On host reboot you must restart Ollama, the
+orchestrator, and the frontend by hand.  Orchestrator needs the env
+vars in Section 3; the canonical bundle lived at `/tmp/orchestrator.env`
+this session.

@@ -1,0 +1,79 @@
+# Architectural Decision Records (ADRs)
+
+This directory holds the **architectural decision records** for Wolf — short,
+date-stamped write-ups of decisions that shape the system's structure,
+defaults, or constraints.
+
+## What an ADR is
+
+An ADR captures a single decision and the reasoning behind it: what we
+chose, what we rejected, why, and what we'd do differently if the trade-off
+changed. ADRs are append-only. We never rewrite a past ADR — if a decision
+is later reversed, the new ADR references the old one as superseded.
+
+## When to write one
+
+Write an ADR whenever a decision:
+
+- Changes a project default (default model, default storage backend,
+  default port, etc.).
+- Locks in a structural choice the whole codebase will depend on.
+- Records the result of a measurement that future decisions will rely on
+  (e.g. capability-probe results, benchmark numbers).
+- Documents a deliberate deviation from the planning bundle (`docs/00-13`).
+
+Routine fixes, small refactors, and one-off task completions belong in
+`docs/CHANGELOG.md`, not here.
+
+## Naming convention
+
+```
+0NNN-short-kebab-title.md
+```
+
+- `0NNN` is a four-digit zero-padded sequence number starting at `0001`.
+  Increment by one for each new ADR; never re-use numbers.
+- `short-kebab-title` is a lowercase, hyphen-separated phrase that gives
+  a reader the gist without opening the file.
+
+Examples:
+
+- `0001-model-probe-llama3.2-baseline.md`
+- `0042-storage-postgres-over-sqlite.md`
+- `0103-model-switch-llama3.2-to-qwen3-4b.md` (would reference 0001)
+
+## File template
+
+```markdown
+# 0NNN — <title>
+
+**Date:** YYYY-MM-DD
+**Status:** proposed | accepted | superseded by 0NNN | deprecated
+**Decider:** human / claude-code / mixed
+**Related:** links to other ADRs, doc sections, or commits
+
+## Context
+What problem are we solving? What changed in the environment that made
+this decision necessary now?
+
+## Decision
+The choice we're making, stated in one or two sentences.
+
+## Alternatives considered
+- **<Alt A>** — why not.
+- **<Alt B>** — why not.
+
+## Consequences
+What becomes easier / harder as a result. Any follow-up work this
+implies. Any rollback path.
+```
+
+## Index of ADRs in this directory
+
+| # | Title | Status |
+|---|---|---|
+| 0001 | `model-probe-llama3.2-baseline.md` — first live probe of llama3.2 on the dev VM (CPU-only) | accepted |
+| 0002 | `model-probe-qwen3-4b.md` — qwen3:4b probe; recommended Apache-licensed candidate | accepted |
+| 0003 | `model-probe-gemma3-4b.md` — gemma3:4b probe; ruled out (no native tool calling) | accepted |
+
+_Update this table whenever you add a new ADR._
