@@ -3,6 +3,7 @@
 from wolf_schema.capability import (
     AgentStrategy,
     CapabilityDescriptor,
+    LicenseClass,
     NativeToolCalling,
     ReasoningTier,
     StructuredOutput,
@@ -15,6 +16,7 @@ __all__ = [
     "CapabilityDescriptor",
     "ChatRequest",
     "ChatResponse",
+    "LicenseClass",
     "Message",
     "MessageRole",
     "NativeToolCalling",

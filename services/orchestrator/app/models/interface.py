@@ -6,6 +6,7 @@ from typing import Protocol, runtime_checkable
 from wolf_schema import CapabilityDescriptor, ChatRequest, ChatResponse
 from wolf_schema.capability import (
     AgentStrategy,
+    LicenseClass,
     NativeToolCalling,
     ReasoningTier,
     StructuredOutput,
@@ -45,6 +46,7 @@ KNOWN_MODELS: dict[str, CapabilityDescriptor] = {
         structured_output=StructuredOutput.schema_enforced,
         max_safe_autonomous_steps=20,
         recommended_strategy=AgentStrategy.frontier,
+        license_class=LicenseClass.proprietary,
     ),
     "claude-sonnet-4-6": CapabilityDescriptor(
         model_id="claude-sonnet-4-6",
@@ -55,6 +57,7 @@ KNOWN_MODELS: dict[str, CapabilityDescriptor] = {
         structured_output=StructuredOutput.schema_enforced,
         max_safe_autonomous_steps=15,
         recommended_strategy=AgentStrategy.frontier,
+        license_class=LicenseClass.proprietary,
     ),
     "claude-haiku-4-5": CapabilityDescriptor(
         model_id="claude-haiku-4-5",
@@ -65,6 +68,7 @@ KNOWN_MODELS: dict[str, CapabilityDescriptor] = {
         structured_output=StructuredOutput.schema_enforced,
         max_safe_autonomous_steps=10,
         recommended_strategy=AgentStrategy.guided,
+        license_class=LicenseClass.proprietary,
     ),
     # OpenAI ─────────────────────────────────────────────────────────────────
     "gpt-4o": CapabilityDescriptor(
@@ -76,6 +80,7 @@ KNOWN_MODELS: dict[str, CapabilityDescriptor] = {
         structured_output=StructuredOutput.schema_enforced,
         max_safe_autonomous_steps=15,
         recommended_strategy=AgentStrategy.frontier,
+        license_class=LicenseClass.proprietary,
     ),
     "gpt-4o-mini": CapabilityDescriptor(
         model_id="gpt-4o-mini",
@@ -86,10 +91,15 @@ KNOWN_MODELS: dict[str, CapabilityDescriptor] = {
         structured_output=StructuredOutput.schema_enforced,
         max_safe_autonomous_steps=10,
         recommended_strategy=AgentStrategy.guided,
+        license_class=LicenseClass.proprietary,
     ),
     # Ollama / local models ──────────────────────────────────────────────────
     # Capability here is for the base model family; actual performance varies
     # by quantisation.  Run the model probe to get empirical measurements.
+    #
+    # Llama family: Llama Community License (700M MAU cap, naming
+    # requirements) — kept for backward compatibility and dev convenience
+    # but flagged `restricted` per docs/14.  Not Wolf's recommended default.
     "llama3.2": CapabilityDescriptor(
         model_id="llama3.2",
         provider="ollama",
@@ -99,6 +109,7 @@ KNOWN_MODELS: dict[str, CapabilityDescriptor] = {
         structured_output=StructuredOutput.prompt_coaxed,
         max_safe_autonomous_steps=8,
         recommended_strategy=AgentStrategy.guided,
+        license_class=LicenseClass.restricted,
     ),
     "llama3.2:1b": CapabilityDescriptor(
         model_id="llama3.2:1b",
@@ -109,6 +120,7 @@ KNOWN_MODELS: dict[str, CapabilityDescriptor] = {
         structured_output=StructuredOutput.unreliable,
         max_safe_autonomous_steps=3,
         recommended_strategy=AgentStrategy.pipeline,
+        license_class=LicenseClass.restricted,
     ),
     "llama3.1:8b": CapabilityDescriptor(
         model_id="llama3.1:8b",
@@ -119,6 +131,7 @@ KNOWN_MODELS: dict[str, CapabilityDescriptor] = {
         structured_output=StructuredOutput.prompt_coaxed,
         max_safe_autonomous_steps=8,
         recommended_strategy=AgentStrategy.guided,
+        license_class=LicenseClass.restricted,
     ),
     "mistral:7b": CapabilityDescriptor(
         model_id="mistral:7b",
@@ -129,6 +142,7 @@ KNOWN_MODELS: dict[str, CapabilityDescriptor] = {
         structured_output=StructuredOutput.prompt_coaxed,
         max_safe_autonomous_steps=4,
         recommended_strategy=AgentStrategy.pipeline,
+        license_class=LicenseClass.apache_2_0,
     ),
     "qwen2.5:7b": CapabilityDescriptor(
         model_id="qwen2.5:7b",
@@ -139,6 +153,64 @@ KNOWN_MODELS: dict[str, CapabilityDescriptor] = {
         structured_output=StructuredOutput.prompt_coaxed,
         max_safe_autonomous_steps=7,
         recommended_strategy=AgentStrategy.guided,
+        license_class=LicenseClass.apache_2_0,
+    ),
+    # ─── New (docs/14) Apache/MIT-licensed candidates ─────────────────────
+    # These are STATIC ESTIMATES per docs/14-model-recommendations.md and
+    # the published documentation of each model.  Run the capability probe
+    # to refine on specific hardware.
+    #
+    # Profile A — CPU-only, 16-32 GB RAM, no GPU.
+    # Brief asked for recommended_strategy="basic" — mapped to AgentStrategy.pipeline
+    # because Wolf's strategy enum is frontier/guided/pipeline (pipeline = the
+    # deterministic-scaffolding strategy Wolf uses for basic-tier models).
+    "qwen3:4b": CapabilityDescriptor(
+        model_id="qwen3:4b",
+        provider="ollama",
+        context_window=131_072,
+        native_tool_calling=NativeToolCalling.partial,
+        reasoning_tier=ReasoningTier.basic,
+        structured_output=StructuredOutput.prompt_coaxed,
+        max_safe_autonomous_steps=5,
+        recommended_strategy=AgentStrategy.pipeline,
+        license_class=LicenseClass.apache_2_0,
+    ),
+    "gemma3:4b": CapabilityDescriptor(
+        model_id="gemma3:4b",
+        provider="ollama",
+        context_window=131_072,
+        native_tool_calling=NativeToolCalling.partial,
+        reasoning_tier=ReasoningTier.basic,
+        structured_output=StructuredOutput.prompt_coaxed,
+        max_safe_autonomous_steps=5,
+        recommended_strategy=AgentStrategy.pipeline,
+        license_class=LicenseClass.apache_2_0,
+    ),
+    # Profile B — modest GPU (6-8 GB VRAM).  Expected first-real-deployment tier.
+    # Brief asked for recommended_strategy="mid" — mapped to AgentStrategy.guided
+    # (Wolf's mid-tier strategy is "guided agent with checkpoints").
+    "qwen3:8b": CapabilityDescriptor(
+        model_id="qwen3:8b",
+        provider="ollama",
+        context_window=131_072,
+        native_tool_calling=NativeToolCalling.full,
+        reasoning_tier=ReasoningTier.mid,
+        structured_output=StructuredOutput.prompt_coaxed,
+        max_safe_autonomous_steps=10,
+        recommended_strategy=AgentStrategy.guided,
+        license_class=LicenseClass.apache_2_0,
+    ),
+    # Profile C / inference API — premium open agentic model.
+    "glm-5.1": CapabilityDescriptor(
+        model_id="glm-5.1",
+        provider="ollama",
+        context_window=128_000,
+        native_tool_calling=NativeToolCalling.full,
+        reasoning_tier=ReasoningTier.frontier,
+        structured_output=StructuredOutput.schema_enforced,
+        max_safe_autonomous_steps=20,
+        recommended_strategy=AgentStrategy.frontier,
+        license_class=LicenseClass.mit,
     ),
 }
 

@@ -11,8 +11,27 @@ Examples:
 import argparse
 import os
 import sys
+from pathlib import Path
 
-from tools.model_probe.probe import run_probe_sync
+# The probe defers its provider-adapter imports (e.g. `from app.models.ollama
+# import OllamaAdapter`) until --provider is parsed.  Those adapters live in
+# the orchestrator service package at services/orchestrator/app/.
+#
+# Subtlety: both services/orchestrator and services/gateway expose a package
+# named `app` (each service's internal namespace).  uv's editable installs
+# put both on sys.path, and the gateway entry comes first by default — so
+# `import app` resolves to services/gateway/app/, which has no `models`.
+# We MUST insert the orchestrator dir at sys.path[0] (not just "if absent")
+# so it wins the ambiguous name.  This is local to the probe CLI; production
+# code never imports across services this way.
+_ORCHESTRATOR_DIR = Path(__file__).resolve().parents[2] / "services" / "orchestrator"
+if _ORCHESTRATOR_DIR.is_dir():
+    _path_str = str(_ORCHESTRATOR_DIR)
+    # Drop any later occurrence so position 0 wins unambiguously.
+    sys.path[:] = [p for p in sys.path if p != _path_str]
+    sys.path.insert(0, _path_str)
+
+from tools.model_probe.probe import run_probe_sync  # noqa: E402
 
 
 def _build_parser() -> argparse.ArgumentParser:
