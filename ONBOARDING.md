@@ -32,8 +32,7 @@ project-wolf/
 ├── packages/              # Shared Python libraries (common, secrets, schema)
 ├── services/
 │   ├── orchestrator/      # FastAPI service — the brain (agent loop, tools, auth, audit)
-│   ├── gateway/           # FastAPI service — Phase 4+ propose/execute path (stub today)
-│   └── frontend/          # NOTE: empty placeholder; real frontend is in /frontend/ at repo root
+│   └── gateway/           # FastAPI service — Phase 4+ propose/execute path (stub today)
 ├── frontend/              # Next.js 16 app (login, chat, citations, tenant switcher)
 ├── tools/                 # CLIs: model_probe, seed_knowledge, tenant_isolation_test
 ├── deploy/                # Dockerfiles, Compose, k8s manifests
@@ -94,7 +93,7 @@ them costs you more time than reading them.
 - **Python 3.13** — pinned in [`.python-version`](.python-version), managed by `uv`.
 - **Node.js 24 LTS** — pinned in [`.nvmrc`](.nvmrc). Any 24.x works.
 - **`uv`** — Python project / dependency manager. Install: `curl -LsSf https://astral.sh/uv/install.sh | sh`.
-- **`npm`** (ships with Node 24) — used to install the frontend's dependencies. The repo's `pnpm-workspace.yaml` is stale (see Gotcha #2); use `npm` for the frontend.
+- **`npm`** (ships with Node 24) — used to install the frontend's dependencies in [`frontend/`](frontend/).
 - **Docker + Docker Compose v2** — only for Postgres in dev. Services run directly on the host.
 - **Ollama** — local model runtime. Install: `curl -fsSL https://ollama.com/install.sh | sh`. https://ollama.com.
 
@@ -147,8 +146,6 @@ cd frontend
 npm install
 cd ..
 ```
-
-(Not `services/frontend/` — see Gotcha #2.)
 
 ### 3.4 Start Postgres
 
@@ -411,7 +408,7 @@ printf 'sk-...' | uv run python -m app.management.set_secret \
 # Override the model envs (OpenAI-compatible adapter)
 export DEFAULT_MODEL_PROVIDER=openai
 export DEFAULT_MODEL_ID=nvidia/nemotron-3-super-120b-a12b:free
-export OPENAI_BASE_URL=https://openrouter.ai/api    # NOT .../api/v1 — see Gotcha #3
+export OPENAI_BASE_URL=https://openrouter.ai/api    # NOT .../api/v1 — see Gotcha #2
 export DEFAULT_MODEL_API_KEY_REF=model.openrouter.api_key
 
 # Restart orchestrator with this env
@@ -453,14 +450,7 @@ install, whichever one Python finds first on `sys.path` wins.
 - **The deeper fix** (rename one of the packages) is deferred. ADR
   0005 §"Three real issues" documents this as recurring tech debt.
 
-### Gotcha #2 — `pnpm-workspace.yaml` and `services/frontend/` are stale
-
-The real frontend lives at the repo root in `/frontend/`. The
-`services/frontend/` directory and `pnpm-workspace.yaml` (which points
-at it) are leftovers from an earlier layout. Use `npm` in `/frontend/`.
-A cleanup commit removing the stale entries is welcome.
-
-### Gotcha #3 — `OPENAI_BASE_URL` must NOT include `/v1`
+### Gotcha #2 — `OPENAI_BASE_URL` must NOT include `/v1`
 
 The OpenAI adapter appends `/v1/chat/completions` itself. Setting
 `OPENAI_BASE_URL=https://openrouter.ai/api/v1` produces a doubled `/v1`
@@ -468,7 +458,7 @@ and a 404. Correct: `https://openrouter.ai/api`. Documented inline on
 the OpenRouter `KNOWN_MODELS` entries in
 [`services/orchestrator/app/models/interface.py`](services/orchestrator/app/models/interface.py).
 
-### Gotcha #4 — `inject_tenant_filter` is opt-in for a reason
+### Gotcha #3 — `inject_tenant_filter` is opt-in for a reason
 
 A stock Wazuh deployment does not stamp `tenant_id` on documents.
 If you set `TenantWazuhConfig.inject_tenant_filter=True` against a
@@ -478,7 +468,7 @@ filtering correctly, the data just doesn't carry the field. Leave it
 turn it on for MSSP deployments where ingestion stamps the field at
 indexing time. See [`docs/05-multi-tenancy.md`](docs/05-multi-tenancy.md).
 
-### Gotcha #5 — LAN access needs three settings
+### Gotcha #4 — LAN access needs three settings
 
 If you want to reach the orchestrator + frontend from a different
 machine on the LAN (e.g. a browser on your laptop hitting the VM's
@@ -488,7 +478,7 @@ IP), check all three:
 2. **`CORS_ALLOW_ORIGINS`** in `.env` includes the LAN-IP origin (e.g. `http://192.168.1.50:3000`).
 3. **`allowedDevOrigins`** in [`frontend/next.config.ts`](frontend/next.config.ts) includes the LAN IP (Next 16 enforces this for cross-origin dev requests).
 
-### Gotcha #6 — Models occasionally send `{"limit": null}`
+### Gotcha #5 — Models occasionally send `{"limit": null}`
 
 Small models sometimes emit explicit-null fields for optional
 parameters. The dispatcher strips them
@@ -496,7 +486,7 @@ parameters. The dispatcher strips them
 `strip_explicit_nulls`). If you add a new tool with optional fields,
 this protection is already in place — don't disable it.
 
-### Gotcha #7 — Relative-time strings on alert tools
+### Gotcha #6 — Relative-time strings on alert tools
 
 Some models pass `time_from="now-24h"` instead of an ISO timestamp.
 [`services/orchestrator/app/tools/alerts.py`](services/orchestrator/app/tools/alerts.py)
@@ -596,9 +586,9 @@ In rough order of "what to try first":
 |---|---|---|
 | `/api/v1/auth/login` returns 404 | uvicorn picked up gateway's `app/` | Gotcha #1; `cd services/orchestrator` first |
 | Chat returns "no tools called" or empty answer | Model entry in `KNOWN_MODELS` says `recommended_strategy='pipeline'` for a model that can actually do native tool calls | Re-probe; amend entry; see commit `14cc727` for the pattern |
-| Read tools return 0 results | `inject_tenant_filter=True` on a vanilla Wazuh | Gotcha #4; flip to False |
-| Hosted API returns 404 | `OPENAI_BASE_URL` includes `/v1` | Gotcha #3 |
-| LAN browser can't load the frontend | One of three things misconfigured | Gotcha #5 |
+| Read tools return 0 results | `inject_tenant_filter=True` on a vanilla Wazuh | Gotcha #3; flip to False |
+| Hosted API returns 404 | `OPENAI_BASE_URL` includes `/v1` | Gotcha #2 |
+| LAN browser can't load the frontend | One of three things misconfigured | Gotcha #4 |
 | `loop_error` mid-conversation | Model adapter raised; check the audit table for the captured exception type + traceback (commit `e09b4e5`) | `services/orchestrator/app/agent/loop.py` |
 | Tests fail on a clean checkout | First check Postgres is up and migrations are applied | `make test` after `docker compose up -d postgres` + `make migrate-local` |
 | mypy complains about a new file | The strict gate covers the safety-critical packages listed in the [`Makefile`](Makefile) `typecheck` target | Add explicit types or move it outside the gated set with justification |
