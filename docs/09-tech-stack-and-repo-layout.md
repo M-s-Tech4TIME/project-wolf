@@ -114,22 +114,37 @@ Recommended default local models the platform must test against:
 | **Grafana** | latest | Dashboards. |
 | **OpenTelemetry Collector** | latest | Trace export. |
 
-### Container, build, CI
+### Delivery channels and build tooling
+
+Wolf is delivered via two channels — one primary, one supplementary —
+per [ADR 0007](decisions/0007-native-distribution-via-system-packages-and-install-script.md)
+and [ADR 0008](decisions/0008-native-primary-docker-supplementary.md).
+
+**Primary: native system packages** (`.deb`/`.rpm` + systemd units,
+fronted by a one-line install script). Specified in
+[`docs/16-distribution-and-packaging.md`](16-distribution-and-packaging.md).
+This is where operator-facing polish goes. Implementation is queued
+for post-Phase 4.
+
+**Supplementary: container images** (Dockerfiles + `docker-compose.yml`
+in the repo). Baseline-supported, not promoted. Serves operators who
+want to build their own images — typically for Kubernetes deployment
+on infrastructure that expects containers. No polished `docker compose
+up`-and-done experience is committed; no Helm chart investment is
+committed near-term.
 
 | Component | Version | Notes |
 |---|---|---|
-| **Docker Engine** | latest | Container runtime. |
-| **Docker Compose v2** | latest | Single-host stack. |
-| **Kubernetes** | 1.30+ | For larger deployments; manifests/Helm in a later phase. |
+| **Docker Engine** | latest | Container runtime. Used by the supplementary container channel. |
+| **Docker Compose v2** | latest | Single-host container stack. |
+| **Kubernetes** | 1.30+ | For operators who build their own images on top of Wolf's Dockerfiles. Wolf does not ship k8s manifests today. |
 | **GitHub Actions** | n/a | CI. (Or GitLab CI, or Forgejo Actions — the workflow files are runner-agnostic in principle.) |
 
-A second delivery channel — **native system packages** (`.deb`/`.rpm` + systemd
-units, fronted by a one-line install script) — is committed to as a peer of the
-container channel per [ADR 0007](decisions/0007-native-distribution-via-system-packages-and-install-script.md)
-and specified in [`docs/16-distribution-and-packaging.md`](16-distribution-and-packaging.md).
-Both channels serve the same codebase. Operators on RHEL/Ubuntu without Docker
-use the native channel; operators with Docker use containers. Implementation of
-the native channel is queued for post-Phase 4.
+The repo's [`Makefile`](../Makefile) marks which targets serve which
+channel. Native-dev targets (`test`, `lint`, `typecheck`, `migrate-local`,
+`probe`) are the day-to-day path; container targets (`up`, `down`,
+`dev`, `logs`, `migrate`) build and run the container stack for
+operators who want to use it.
 
 ### License
 

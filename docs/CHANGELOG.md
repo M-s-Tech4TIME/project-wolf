@@ -164,7 +164,7 @@ here so the changelog matches the git log.
 - `<earlier in session>` — saved the new-machine handoff prompt as
   `prompts/HANDOFF-NEW-MACHINE.md` (was previously only inline in
   chat); appended this follow-up note to the CHANGELOG entry.
-- `<this commit>` — committed ADR 0007 + `docs/16-distribution-and-packaging.md`
+- `<later in session>` — committed ADR 0007 + `docs/16-distribution-and-packaging.md`
   + auto-memory entry + small pointers in `docs/09` (Container/build/CI
   section), `docs/decisions/README.md` (index row), `ONBOARDING.md`
   (Tier 2 reading order).  ADR 0007 records the decision to deliver
@@ -187,6 +187,32 @@ here so the changelog matches the git log.
   commitment" (env-driven config, no hard-coded container paths,
   management CLIs remain usable as plain `python -m ...`, frontend
   on Next.js `output: 'standalone'`).
+- `<this commit>` — committed ADR 0008 + cross-document repositioning
+  to reflect "native primary, Docker supplementary."  Follow-up to
+  ADR 0007's "peer" framing after the project owner clarified that
+  native is where polish and operator-facing investment go; Docker
+  remains baseline-supported (Dockerfiles, compose, Makefile targets
+  stay; `make up` keeps passing) for operators who want to build
+  their own container images (typically for k8s).  Concrete
+  operational change: dev environment switches from Docker Postgres
+  to system Postgres 17 + pgvector (apt-installed, systemd-managed),
+  matching the production install path operators will use via the
+  forthcoming install script.  Files touched: `docs/decisions/0008-...md`
+  (new ADR), `docs/decisions/0007-...md` (amendment footer noting
+  the positioning change), `docs/decisions/README.md` (index row +
+  0007 status annotation), `docs/16-distribution-and-packaging.md`
+  (new "Development against this channel" section), `docs/09-tech-stack-and-repo-layout.md`
+  (§"Container, build, CI" repositioned), `ONBOARDING.md`
+  (§2 reclassifies Docker from mandatory to optional + adds
+  PostgreSQL line, §3.4 rewritten to lead with system Postgres
+  install steps + keep Docker as alternative, §5 reboot section
+  notes systemd auto-start), `Makefile` (comment block clarifying
+  which targets serve native dev vs container channel),
+  `docker-compose.yml` (top-of-file comment marking it the
+  container-channel deployment stack), `docs/PROGRESS.md`
+  (§3 dev posture, §8 ADR count).  Auto-memory entry
+  `native_distribution_commitment.md` updated to reflect "native
+  primary" instead of "peer."
 
 ---
 

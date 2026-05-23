@@ -1,3 +1,14 @@
+# This file defines Wolf's SUPPLEMENTARY container-channel deployment stack.
+#
+# Per ADR 0008 (docs/decisions/0008-native-primary-docker-supplementary.md),
+# Wolf's PRIMARY delivery channel is native system packages (.deb/.rpm +
+# systemd). The container channel is baseline-supported, not promoted —
+# Dockerfiles and this compose file remain so operators who want to build
+# their own container images (typically for Kubernetes) can.
+#
+# Recommended dev workflow uses system Postgres, NOT this stack.
+# See ONBOARDING.md §3.4 for the recommended dev setup.
+
 services:
 
   # ─── Data layer ─────────────────────────────────────────────────────────────

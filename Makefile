@@ -1,6 +1,18 @@
 .PHONY: up down dev build test lint typecheck migrate seed fmt help
 
-# ─── Docker ───────────────────────────────────────────────────────────────────
+# Per ADR 0008 (docs/decisions/0008-native-primary-docker-supplementary.md):
+# native delivery is Wolf's PRIMARY channel; Docker is supplementary.
+#
+# - Native-dev targets (the day-to-day path):
+#     test, test-isolation, test-cov, lint, typecheck, fmt, check,
+#     migrate-local, probe, install, help
+#
+# - Container-channel targets (build/run the supplementary stack):
+#     up, down, dev, logs, migrate, revision
+#
+# Native dev assumes system Postgres 17 + pgvector (see ONBOARDING.md §3.4).
+
+# ─── Docker (supplementary container channel) ────────────────────────────────
 
 up: ## Start the full stack (Postgres, orchestrator, gateway)
 	docker compose up --build -d

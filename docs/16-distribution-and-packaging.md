@@ -274,6 +274,26 @@ decided when the work is queued (post-Phase 4).
 
 ---
 
+## Development against this channel
+
+Per [ADR 0008](decisions/0008-native-primary-docker-supplementary.md),
+the **development environment uses the same Postgres install path
+operators will use** — system Postgres 17 + pgvector installed via the
+PostgreSQL APT repo (or distro equivalent), managed by systemd. This is
+deliberate: dev/prod parity for the native channel catches install-time
+issues (file permissions, FHS layout, systemd integration, distro quirks)
+during development rather than letting operators hit them.
+
+The orchestrator, frontend, and gateway continue to run directly on the
+developer's host (not in containers) for hot-reload speed. Only the
+Postgres install path differs from earlier dev practice — it moves from
+Docker container to system service.
+
+The full step-by-step is in [`ONBOARDING.md`](../ONBOARDING.md) §3.
+Docker-Postgres remains a documented *alternative* for contributors who
+prefer it (macOS contributors, anyone running multiple Postgres-using
+projects, anyone wanting `docker compose down -v` reset convenience).
+
 ## How current code should accommodate this commitment
 
 The implementation is not yet started, but ongoing development must

@@ -95,11 +95,12 @@ them costs you more time than reading them.
 - **Node.js 24 LTS** — pinned in [`.nvmrc`](.nvmrc). Any 24.x works.
 - **`uv`** — Python project / dependency manager. Install: `curl -LsSf https://astral.sh/uv/install.sh | sh`.
 - **`npm`** (ships with Node 24) — used to install the frontend's dependencies in [`frontend/`](frontend/).
-- **Docker + Docker Compose v2** — only for Postgres in dev. Services run directly on the host.
+- **PostgreSQL 17 + pgvector** — installed natively via your distro's package manager. Recommended dev path; matches the production install per [ADR 0008](docs/decisions/0008-native-primary-docker-supplementary.md). See §3.4 for install steps. (Docker Postgres is a supported alternative — also documented in §3.4.)
 - **Ollama** — local model runtime. Install: `curl -fsSL https://ollama.com/install.sh | sh`. https://ollama.com.
 
 ### Optional
 
+- **Docker + Docker Compose v2** — only needed if you choose the alternative dev path of running Postgres in Docker, or if you want to exercise the supplementary container channel (`make up`). See [ADR 0008](docs/decisions/0008-native-primary-docker-supplementary.md) for why Docker is supplementary rather than primary.
 - **A GPU** — drastically improves model latency. The four-family matrix in [`docs/15-supported-model-matrix.md`](docs/15-supported-model-matrix.md) expects workstation-GPU hardware (24+ GB VRAM) to be fully exercised. CPU-only is the floor, not the ceiling.
 - **A reachable Wazuh deployment** — Indexer (default :9200) and Server API (default :55000). Required for live-data smoke tests, not for unit tests.
 
@@ -110,7 +111,7 @@ them costs you more time than reading them.
 | 8000 | Orchestrator (FastAPI) | 0.0.0.0 | LAN-reachable for browser access |
 | 8001 | Gateway (FastAPI) | 0.0.0.0 | Stub today; will be needed Phase 4+ |
 | 3000 | Frontend (Next.js dev) | 0.0.0.0 | LAN-reachable |
-| 5432 | Postgres | 0.0.0.0 | docker compose default |
+| 5432 | Postgres | 127.0.0.1 | System Postgres default (Docker alternative binds 0.0.0.0) |
 | 11434 | Ollama | 127.0.0.1 | Local only by default |
 
 ---
@@ -148,15 +149,58 @@ npm install
 cd ..
 ```
 
-### 3.4 Start Postgres
+### 3.4 Install and start Postgres 17 + pgvector
+
+**Recommended path — system Postgres** (matches the production install
+per [ADR 0008](docs/decisions/0008-native-primary-docker-supplementary.md)):
+
+On Ubuntu 24.04 / Debian 12 (adapt for other distros):
+
+```bash
+# Add the official PostgreSQL APT repo (Ubuntu ships 16, not 17)
+sudo install -d /usr/share/postgresql-common/pgdg
+sudo curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+    -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] \
+    https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | \
+    sudo tee /etc/apt/sources.list.d/pgdg.list
+
+# Install Postgres 17 + pgvector
+sudo apt update
+sudo apt install -y postgresql-17 postgresql-17-pgvector
+
+# Service starts automatically; verify it's up
+sudo systemctl status postgresql
+
+# Create the wolf role and DB
+sudo -u postgres psql <<EOF
+CREATE ROLE wolf WITH LOGIN PASSWORD 'wolf_dev_password';
+CREATE DATABASE wolf OWNER wolf;
+\c wolf
+CREATE EXTENSION IF NOT EXISTS vector;
+EOF
+```
+
+On RHEL 9 / Rocky 9, replace `apt` with `dnf` and use the
+[PostgreSQL YUM repository](https://www.postgresql.org/download/linux/redhat/)
+instead of the APT one. The package names and `psql` bootstrap commands
+are the same.
+
+The `DATABASE_URL` default in [`.env.example`](.env.example) already
+points at `postgresql+asyncpg://wolf:wolf_dev_password@localhost:5432/wolf`
+— no change needed for the system-Postgres path.
+
+**Alternative path — Docker Postgres:** If you prefer Docker (macOS
+contributors, anyone running multiple Postgres-using projects, anyone
+wanting fast reset via `docker compose down -v`):
 
 ```bash
 docker compose up -d postgres
 ```
 
-This is the only container the dev workflow uses by default. The
-orchestrator and frontend run directly on the host so hot-reload works
-without rebuilding images.
+Same `DATABASE_URL` works because the compose file binds Postgres to
+`localhost:5432`. The codebase doesn't care which path you choose;
+`DATABASE_URL` is the only contract.
 
 ### 3.5 Generate dev secrets
 
@@ -367,8 +411,11 @@ and [`docs/14-model-recommendations.md`](docs/14-model-recommendations.md)
 ### Restart the stack after a reboot
 
 ```bash
-# 1. Postgres (if Docker isn't set to auto-start)
-docker compose up -d postgres
+# 1. Postgres — system Postgres auto-starts on boot via systemd;
+#    no action needed. Verify with:
+sudo systemctl status postgresql
+# (If you chose the Docker-Postgres alternative path, use:
+#    docker compose up -d postgres)
 
 # 2. Ollama
 ollama serve &

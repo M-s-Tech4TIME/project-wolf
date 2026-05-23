@@ -145,8 +145,16 @@ Status legend: ✅ working, 🟡 partial, ❌ broken/disabled, ⏳ planned only.
 - Orchestrator: `8000`
 - Frontend: `3000`
 - Ollama: `127.0.0.1:11434`
-- Postgres: `5432`
+- Postgres: `127.0.0.1:5432` (system Postgres per ADR 0008; Docker alternative binds `0.0.0.0`)
 - Gateway: `8001` (not yet running)
+
+**Dev environment posture (per ADR 0008):** native is Wolf's primary
+delivery channel; the dev environment uses system Postgres 17 +
+pgvector (apt-installed, systemd-managed) to match the production
+install path operators will use. Docker remains a supplementary
+alternative for dev Postgres (documented in `ONBOARDING.md` §3.4)
+and is the supplementary container-channel deployment for operators
+who want to build their own images.
 
 **CORS allow-origins:** `http://localhost:3000,http://127.0.0.1:3000,http://192.168.76.128:3000`
 
@@ -254,14 +262,15 @@ to `CHANGELOG.md` as ADRs.
   relaxed session-continuity protocol (reading required only for new env /
   new session / different model; end-of-session update remains mandatory).
   In git as of commit `b093761`.
-- ADRs in `docs/decisions/`: 7 ADRs — 0001 (`llama3.2` baseline), 0002
+- ADRs in `docs/decisions/`: 8 ADRs — 0001 (`llama3.2` baseline), 0002
   (`qwen3:4b`), 0003 (`gemma3:4b`), 0004 (default-model switch
   decision), 0005 (Phase 2 frontier-API exit-criterion verification),
   0006 (commitment to native support for four model families — Qwen 3,
   Llama 3, Gemma 3, GLM 5.1 ~32B), 0007 (native non-container
   delivery channel will be `.deb`/`.rpm` + systemd, fronted by a
-  one-line install script — GitLab-style hybrid).  README index in
-  place.
+  one-line install script — GitLab-style hybrid), 0008 (native
+  delivery is primary; Docker is baseline-supported, not promoted;
+  dev environment uses system Postgres).  README index in place.
 - `docs/15-supported-model-matrix.md`: directive document for the
   four-family commitment (added 2026-05-23 alongside ADR 0006).
 - `docs/16-distribution-and-packaging.md`: living spec for the
