@@ -163,12 +163,21 @@ who want to build their own images.
 ## 4. What's next
 
 **Immediate next steps** (in priority order):
-1. **Project owner is arranging a GPU-equipped dev machine** so the
-   four-family supported-model matrix (ADR 0006 / `docs/15`) can be
-   exercised end-to-end.  Wolf-side work is unblocked: when the new
-   hardware lands, the four pending probe ADRs (GLM 5.1 ~32B, Gemma
-   3 12B/27B, Qwen 3 14B/32B, larger Llama) can be written following
-   the ADR 0001/0002/0003 pattern.
+1. **New dev machine is an RTX 4050 Laptop (6 GB VRAM)** — Profile B
+   tight end per `docs/13`.  Wolf-side work is unblocked for the
+   smaller probes.  The four pending workstation-class probe ADRs
+   (GLM 5.1 ~32B, Gemma 3 12B/27B, Qwen 3 14B/32B, larger Llama)
+   remain blocked on workstation-class hardware (24+ GB VRAM).
+   What this hardware DOES unlock: qwen3:8b probe on GPU (tight
+   fit), qwen3.5:4b probe on GPU (Qwen 3.5 released ~late May 2026;
+   treated as a Qwen-3-family variant per ADR 0006), and gemma3:4b
+   GPU re-probe (optional — already CPU-probed in ADR 0003).
+   Qwen 3.5 4B is the most interesting near-term probe: if it
+   matches or beats qwen3:4b's ADR 0002 results, a follow-up ADR
+   could flip DEFAULT_MODEL_ID (same pattern as ADR 0004) — but
+   only after license verification (Apache 2.0 not yet confirmed
+   from the Ollama page; verify against the model card / Alibaba
+   release notes).
 2. **Begin Phase 3 (RAG + grounding validator) per `docs/06` and
    `docs/10`.**  Phase 2 is closed at the exit-criteria level (ADR
    0005).  Phase 3's grounding validator is the designed solution

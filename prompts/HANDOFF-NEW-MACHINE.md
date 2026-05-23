@@ -101,20 +101,28 @@ Your concrete next work, in priority order:
      The dev machine is a laptop with an NVIDIA RTX 4050 Laptop
      GPU (6 GB VRAM, Profile B tight end per docs/13). At Q4_K_M
      the usable VRAM budget is ~4.5-5 GB after KV cache + display
-     server overhead. Pull these four:
+     server overhead. Pull these five:
 
-       ollama pull qwen3:4b     # Apache 2.0, steady-state default
-       ollama pull gemma3:4b    # Gemma family coverage
-       ollama pull llama3.2:3b  # Llama family coverage
-       ollama pull qwen3:8b     # TIGHT FIT — may need reduced ctx;
-                                 # only one tight-fit model loaded at
-                                 # a time (use `ollama ps` to verify
-                                 # PROCESSOR is 100% GPU not CPU).
+       ollama pull qwen3:4b      # Apache 2.0, steady-state default
+       ollama pull qwen3.5:4b    # NEW: Qwen 3.5 released ~late May 2026.
+                                  # Treated as a Qwen-3-family variant
+                                  # per ADR 0006. License unverified
+                                  # from Ollama page — confirm Apache
+                                  # 2.0 before adding to KNOWN_MODELS.
+                                  # 256K context window (vs Qwen 3's
+                                  # 128K) may help Phase 3 RAG.
+       ollama pull gemma3:4b     # Gemma family coverage
+       ollama pull llama3.2:3b   # Llama family coverage
+       ollama pull qwen3:8b      # TIGHT FIT — may need reduced ctx;
+                                  # only one tight-fit model loaded at
+                                  # a time (use `ollama ps` to verify
+                                  # PROCESSOR is 100% GPU not CPU).
 
-     Do NOT pull qwen3:14b, qwen3:32b, gemma3:12b, gemma3:27b,
-     glm-5.1, or llama3:70b on this hardware. They will download
-     (10-40 GB each) then fail to load because they exceed VRAM.
-     Those probe ADRs remain blocked on workstation-class GPU
+     Do NOT pull qwen3:14b, qwen3:32b, qwen3.5:9b (was 8B in Qwen 3,
+     grown to 9B in 3.5 — exceeds 6 GB), qwen3.5:27b+, gemma3:12b,
+     gemma3:27b, glm-5.1, or llama3:70b on this hardware. They will
+     download (6-80 GB each) then fail to load because they exceed
+     VRAM. Those probe ADRs remain blocked on workstation-class GPU
      hardware (24+ GB VRAM).
 
      Before pulling, confirm Ollama sees the GPU:
@@ -133,12 +141,22 @@ Your concrete next work, in priority order:
      (status: accepted; full probe transcript; reasoning_tier and
      recommended_strategy decision; KNOWN_MODELS entry amendment
      if measured capability differs from the static estimate).
-     The next available ADR number is 0009. Expect two genuinely
+     The next available ADR number is 0009. Expect three genuinely
      new probes on this hardware:
        - qwen3:8b on GPU (was unprobed; now possible at tight fit)
-       - llama3:8b on GPU if pulled (same caveat)
+       - qwen3.5:4b on GPU (newly released Qwen 3.5; verify license
+         is Apache 2.0 before writing the KNOWN_MODELS entry; if the
+         probe shows it matches or beats qwen3:4b's ADR 0002 results,
+         consider a follow-up ADR flipping DEFAULT_MODEL_ID from
+         qwen3:4b → qwen3.5:4b — same pattern as ADR 0004's
+         llama3.2 → qwen3:4b switch)
+       - qwen3.5:4b cross-comparison vs qwen3:4b on the same hardware
+         (Qwen 3 ran on CPU per ADR 0002; this is the first chance
+         to compare them on equal GPU footing)
      gemma3:4b was already probed on CPU (ADR 0003); a GPU re-probe
-     is optional and mostly just shows faster latency.
+     is optional and mostly just shows faster latency. llama3:8b is
+     optional (skip if qwen3:8b already saturates the tight-fit
+     VRAM budget).
 
   E. Optional regression guard: run `make up` once to confirm the
      supplementary container channel still builds and runs on this

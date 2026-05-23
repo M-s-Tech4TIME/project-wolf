@@ -213,6 +213,29 @@ here so the changelog matches the git log.
   (§3 dev posture, §8 ADR count).  Auto-memory entry
   `native_distribution_commitment.md` updated to reflect "native
   primary" instead of "peer."
+- `<this commit>` — added Qwen 3.5 to the new-machine probe plan.
+  Qwen 3.5 released on Ollama ~late May 2026 (~2 days before this
+  commit per the library page); falls under ADR 0006's "Qwen 3
+  family" commitment as a minor revision (3.x).  Sizes available:
+  0.8B, 2B, 4B, 9B, 27B, 35B, 122B (plus MLX + cloud variants).
+  On the RTX 4050 Laptop's 6 GB VRAM, qwen3.5:4b (3.4 GB on disk,
+  ~3.5 GB VRAM at Q4) fits comfortably — the 9B (was 8B in Qwen 3,
+  grown) doesn't.  Key new things vs Qwen 3: 256K context window
+  (vs 128K — relevant for Phase 3 RAG), multimodal text+image on
+  most variants (Wolf doesn't use this today).  Two things NOT
+  confirmed from the Ollama library page: native tool calling
+  (Qwen 3 had it, Qwen 3.5 almost certainly does, but probe will
+  verify) and license class (Qwen 3 was Apache 2.0, but Qwen 3.5
+  page doesn't state — verify before adding to KNOWN_MODELS with
+  `license_class`).  Files touched: `prompts/HANDOFF-NEW-MACHINE.md`
+  (Step C pull list extended to five models adding qwen3.5:4b with
+  caveats; Step D probe expectations updated to three new probes
+  including the qwen3:4b vs qwen3.5:4b cross-comparison and the
+  potential follow-up default-flip ADR if qwen3.5:4b wins), and
+  `docs/PROGRESS.md` §4 (next steps narrative updated to surface
+  qwen3.5:4b as the most interesting near-term probe).  No code
+  changes; the model abstraction layer already handles new family
+  variants via the standard KNOWN_MODELS + probe + ADR workflow.
 
 ---
 
