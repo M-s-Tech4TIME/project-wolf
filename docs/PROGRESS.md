@@ -6,7 +6,7 @@
 >
 > For history of what changed when, see `CHANGELOG.md` (append-only).
 
-**Last updated:** 2026-05-22 (second session of the day) by claude-code
+**Last updated:** 2026-05-22 (third session of the day) by claude-code
 
 ---
 
@@ -14,28 +14,29 @@
 
 **Current phase:** Phase 2 — Read path, end to end (per `docs/10-build-roadmap.md`).
 
-**Phase status:** Model abstraction layer complete (Phase 1). Read path
+**Phase status:** Model abstraction layer complete (Phase 1).  Read path
 foundation, agent loop with three strategies, and Next.js 16 frontend
-all built and operational. 9 read tools registered with the dispatcher;
-5 of 9 verified against the user's real Wazuh deployment, 4 of 9
-mock-only. **Dev default flipped from `llama3.2` to `qwen3:4b` per ADR
-0004** (probe-grounded decision; Apache 2.0 license; +0.07 overall
-probe score; same strategy tier).  Chat path re-verified end-to-end on
-qwen3:4b in `guided` mode (one tool call → `count_alerts_by_severity`,
-grounded cited answer).
+all built and operational.  **9 of 9 read tools verified against the
+user's real Wazuh deployment** via `smoke_wazuh --all-tools` (2026-05-22).
+**Dev default flipped from `llama3.2` to `qwen3:4b` per ADR 0004**
+(probe-grounded decision; Apache 2.0 license; +0.07 overall probe score;
+same strategy tier).  Chat path re-verified end-to-end on qwen3:4b in
+`guided` mode (one tool call → `count_alerts_by_severity`, grounded
+cited answer).
 
 **Phase 2 exit criteria progress** (from `docs/10-build-roadmap.md`):
 - [x] Wazuh OpenSearch client with forced tenant filter (opt-in per tenant)
 - [x] Wazuh Server API client (read endpoints only)
 - [x] Tool registry with strict input/output Pydantic schemas
-- [x] First read tools: 9 of 9 implemented (5 verified live, 4 mock-only)
+- [x] First read tools: **9 of 9 verified live** against real Wazuh
 - [x] Agent loop with three strategies (frontier / guided / pipeline)
 - [x] Resource guardrails (time window, result count, per-tenant rate limit)
 - [x] Audit logging on every model call and every tool call
 - [x] Minimal UI: login, tenant picker, ask question, see cited answer
 - [ ] Analyst question end-to-end on **both** a frontier model AND a local
-      Ollama model — currently only verified on local Ollama (`llama3.2`)
-      against the real Wazuh; frontier-API confirmation pending.
+      Ollama model — currently only verified on local Ollama (`qwen3:4b`,
+      previously `llama3.2`) against the real Wazuh; frontier-API
+      confirmation pending an operator-provided API key.
 
 ---
 
@@ -51,12 +52,12 @@ Status legend: ✅ working, 🟡 partial, ❌ broken/disabled, ⏳ planned only.
 - ✅ `CapabilityDescriptor` + `KNOWN_MODELS` registry
 - ✅ Tool registry + dispatcher (`app/tools/`): tier enforcement,
       Pydantic input/output validation, audit on every branch
-- 🟡 9 read tools registered (`app/tools/registration.py`):
-    - ✅ verified live: `search_alerts`, `aggregate_alerts`,
-          `count_alerts_by_severity`, `list_agents`, `get_cluster_health`
-    - 🟡 mock-only (httpx mocked, not yet hit live Wazuh):
-          `get_event_timeline`, `get_agent_alert_history`,
-          `get_agent_detail`, `get_rule_definition`
+- ✅ 9 read tools registered (`app/tools/registration.py`) — **9/9 now
+      verified against real Wazuh** (2026-05-22) via
+      `smoke_wazuh --all-tools`:
+      `search_alerts`, `aggregate_alerts`, `count_alerts_by_severity`,
+      `get_event_timeline`, `get_agent_alert_history`, `list_agents`,
+      `get_agent_detail`, `get_rule_definition`, `get_cluster_health`
 - ✅ Agent loop with three strategies (`app/agent/`): frontier / guided /
       pipeline; `LoopEvent` emission for SSE; multi-turn `history` support
 - ✅ Endpoints: `POST /api/v1/auth/{login,logout}`, `GET /me`,
@@ -152,18 +153,15 @@ Status legend: ✅ working, 🟡 partial, ❌ broken/disabled, ⏳ planned only.
 ## 4. What's next
 
 **Immediate next steps** (in priority order):
-1. Wire the 4 remaining read tools (`get_event_timeline`,
-   `get_agent_alert_history`, `get_agent_detail`, `get_rule_definition`)
-   to real Wazuh.  Currently mock-only.
-2. Verify the Phase 2 exit criterion against a frontier API model in
+1. Verify the Phase 2 exit criterion against a frontier API model in
    addition to the local-Ollama path that already works.  Blocked on
    an Anthropic or OpenAI key in the secrets backend.
-3. Batch-amend the remaining static `KNOWN_MODELS` entries to reflect
+2. Batch-amend the remaining static `KNOWN_MODELS` entries to reflect
    measured capability — `llama3.2` (mid → mid match, but
    structured_output should go prompt_coaxed → unreliable per
    ADR 0001) and `gemma3:4b` (downgrade native_tool_calling to none
    per ADR 0003).  qwen3:4b already amended in commit `14cc727`.
-4. Begin Phase 3 (RAG + grounding validator) per `docs/06` and
+3. Begin Phase 3 (RAG + grounding validator) per `docs/06` and
    `docs/10` — note that qwen3:4b's grounding-discipline probe
    failure makes the grounding validator higher priority.
 
@@ -267,13 +265,15 @@ re-verified: chat against the user's real Wazuh on `192.168.76.129`,
 qwen3:4b in `guided` mode, one tool call to `count_alerts_by_severity`,
 grounded cited answer ("15 alerts total, all low severity").
 
-**Single most important thing for the next session to know:** the
-mock-only read tools (`get_event_timeline`, `get_agent_alert_history`,
-`get_agent_detail`, `get_rule_definition`) are the next Phase 2 close-
-out — each is a few lines, but they need exercising against the real
-Wazuh to flip from 🟡 to ✅ in Section 2.  After that the only
-remaining Phase 2 item is frontier-API verification, which is blocked
-on the operator providing an API key.
+**Single most important thing for the next session to know:** all 9
+read tools are now live-verified.  The only Phase 2 work remaining is
+the frontier-API exit-criterion confirmation, which is blocked on the
+operator providing an Anthropic or OpenAI key (set
+`DEFAULT_MODEL_API_KEY_REF` to the secrets backend key holding it).
+Everything else is Phase 3 entry: RAG + grounding validator.  Run
+`uv run python -m app.management.smoke_wazuh --tenant-slug acme
+--all-tools` any time you want to re-verify every read tool against
+the live deployment (e.g. after a Wazuh upgrade).
 
 Operational note: services run as `nohup` background processes (not
 systemd / compose).  On host reboot you must restart Ollama, the

@@ -128,6 +128,117 @@ pending this entry.
 
 ---
 
+## 2026-05-22 — Verify all 9 read tools against real Wazuh; add `--all-tools` smoke mode
+
+**Session type:** claude-code (continuous follow-on session)
+**Phase:** Phase 2 — Read path (close-out)
+**Duration:** ~30 min
+**Branch / commit:** `main` — see commit below this entry's date
+
+### What we did
+
+- Exercised the four previously-mock-only read tools against the
+  operator's real Wazuh deployment by calling each tool's `run()`
+  directly through a synthesized `ToolExecContext`:
+  `get_event_timeline`, `get_agent_alert_history`, `get_agent_detail`,
+  `get_rule_definition`.  **All four succeeded first try** — no
+  field-shape mismatches between the unit-test mocks and the real
+  Server-API / OpenSearch responses.
+- Extended `app/management/smoke_wazuh.py` with a `--all-tools` mode
+  that exercises every registered read tool against the live
+  deployment (calls `run()` through a ToolExecContext, bypassing the
+  dispatcher's session requirement but going through full Pydantic
+  input/output validation and the real HTTP layer).  Usage:
+  `uv run python -m app.management.smoke_wazuh --tenant-slug acme \
+   --all-tools --agent-id 000 --rule-id 5402`.
+- Re-verified all 9 tools end-to-end against the live Wazuh:
+  list_agents (1), get_agent_detail (1), get_cluster_health,
+  get_rule_definition (1), search_alerts (5), aggregate_alerts (3),
+  count_alerts_by_severity (23 total), get_event_timeline (5),
+  get_agent_alert_history (5).  **9/9 ✓.**
+- Updated `docs/PROGRESS.md` Section 2 to reflect the new
+  live-verified status (all 🟡 read-tool entries flipped to ✅), and
+  Section 4 to drop the now-completed wiring step.
+
+### What we decided
+
+- No bugs found, no fixes needed.  The unit-test mocks were written
+  with care and matched real shapes accurately enough that the live
+  exercise passed without code changes.
+- Kept the existing `smoke_test()` (clients-only mode) as the default
+  for quick connectivity checks; `--all-tools` is opt-in for the
+  fuller verification.
+
+### What broke / what we discovered
+
+- Nothing broke.  The discovery is non-news but worth recording:
+  Wazuh's Server API and OpenSearch response shapes for `/agents`,
+  `/rules`, and alert documents are stable enough that mock-driven
+  unit tests stay accurate against a real deployment.
+
+### What's next
+
+- Frontier-API exit-criterion verification (blocked on operator API key).
+- Batch-amend the static `KNOWN_MODELS` entries for `llama3.2` and
+  `gemma3:4b` per ADRs 0001 and 0003 (cosmetic — neither is the
+  current default).
+- Begin Phase 3 (RAG + grounding validator) per docs/06.
+
+---
+
+## 2026-05-22 — Switch dev default model `llama3.2` → `qwen3:4b`
+
+**Session type:** claude-code (continuous session)
+**Phase:** Phase 2
+**Duration:** ~30 min
+**Branch / commit:** `main` — `e092e21` (ADR 0004), `ca495df`
+(config flip), `14cc727` (KNOWN_MODELS amendment), `4324bce`
+(PROGRESS/CHANGELOG update for switch)
+
+### What we did
+
+- Wrote ADR 0004 weighing the three probe results
+  (`docs/decisions/0004-model-switch-llama3.2-to-qwen3-4b.md`).
+- Flipped `DEFAULT_MODEL_ID` from `llama3.2` to `qwen3:4b` in
+  `services/orchestrator/app/config.py` as a standalone commit.
+- Verification surfaced that the static `KNOWN_MODELS["qwen3:4b"]`
+  entry (deliberately-conservative Task 4 estimate: basic/pipeline)
+  shadowed the probe-measured capability (mid/guided) at runtime —
+  qwen3:4b was running in pipeline strategy.  Amended the static
+  entry to match measurement per ADR 0002.
+- Re-verified end-to-end: chat against real Wazuh, qwen3:4b in
+  `guided` mode, one tool call to `count_alerts_by_severity`,
+  grounded cited answer ("15 alerts total, all low severity").
+
+### What we decided
+
+- Land the three changes as three separate commits (ADR, config flip,
+  static-entry amendment) so each is independently revertable.
+- Keep `llama3.2` in `KNOWN_MODELS` — operators who want it just set
+  `DEFAULT_MODEL_ID=llama3.2` in `.env`.
+
+### What broke / what we discovered
+
+- The static `KNOWN_MODELS["qwen3:4b"]` from Task 4 silently overrode
+  the probe-measured capability, causing the model to run in the
+  wrong strategy after the flip.  Verification caught it.  Lesson:
+  any time we add a new model to `KNOWN_MODELS` from an estimate, we
+  must amend it as soon as the probe runs.
+- Earlier in the session, a single mid-conversation `loop_error`
+  surfaced as "Model call failed:" with empty detail (the Ollama
+  adapter's swallowed exception).  Added diagnostic capture in
+  commit `e09b4e5` (logs exception type + traceback to audit data)
+  so the next occurrence is debuggable.
+
+### What's next
+
+- Wire the 4 mock-only read tools to real Wazuh (now done — see entry
+  above).
+- Frontier-API exit-criterion verification (still pending key).
+- Phase 3 entry.
+
+---
+
 ## 2026-05-22 — Add model recommendations, session continuity tracking, and run the first capability probe
 
 **Session type:** claude-code (executing user's planning brief at
