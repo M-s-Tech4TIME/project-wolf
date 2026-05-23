@@ -78,6 +78,7 @@ implies. Any rollback path.
 | 0004 | `model-switch-llama3.2-to-qwen3-4b.md` — dev default flipped to qwen3:4b | accepted |
 | 0005 | `phase2-exit-criterion-frontier-verification.md` — frontier-API exit criterion met (Nemotron 120B via OpenRouter) | accepted |
 | 0006 | `supported-model-families-commitment.md` — Wolf commits to native local support for four families (Qwen 3, Llama 3, Gemma 3, GLM 5.1 ~32B) | accepted |
-| 0007 | `native-distribution-via-system-packages-and-install-script.md` — native delivery channel will be `.deb`/`.rpm` + systemd, fronted by an install script (GitLab-style hybrid) | accepted |
+| 0007 | `native-distribution-via-system-packages-and-install-script.md` — native delivery channel will be `.deb`/`.rpm` + systemd, fronted by an install script (GitLab-style hybrid) | accepted (positioning amended by 0008) |
+| 0008 | `native-primary-docker-supplementary.md` — native delivery is primary; Docker is baseline-supported (not promoted); dev environment uses system Postgres | accepted |
 
 _Update this table whenever you add a new ADR._

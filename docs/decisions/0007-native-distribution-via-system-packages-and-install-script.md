@@ -173,3 +173,28 @@ maintained at `docs/16-distribution-and-packaging.md`.
   installs), the project can pivot to omnibus (Option B) by
   writing a new ADR that cites this one as superseded. The
   underlying Wolf code is the same in either case.
+
+---
+
+## Amendment (2026-05-23) — positioning clarified by ADR 0008
+
+The Decision section above frames the container track and native track
+as peers ("the container-first delivery story remains the recommended
+path for Docker-comfortable operators; this ADR adds a second track, it
+does not replace the first").
+
+[ADR 0008](0008-native-primary-docker-supplementary.md), accepted
+later the same day, sharpens this positioning:
+
+- **Native is Wolf's primary delivery channel** — where polish,
+  ergonomics, and operator-facing investment go.
+- **Docker is baseline-supported, not promoted** — Dockerfiles,
+  `docker-compose.yml`, and Makefile docker targets remain, build,
+  and pass `make up` smoke. They serve operators who want to build
+  their own container images (typically for Kubernetes). No polished
+  compose-deployment experience is committed.
+
+This amendment is a *positioning* change, not a *substance* change —
+both ADRs commit to the same code paths and the same Apache 2.0
+distribution. Read ADR 0008 for the full reasoning, the alternatives
+weighed, and the concrete operational consequences.
