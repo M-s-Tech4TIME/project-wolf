@@ -123,6 +123,14 @@ Recommended default local models the platform must test against:
 | **Kubernetes** | 1.30+ | For larger deployments; manifests/Helm in a later phase. |
 | **GitHub Actions** | n/a | CI. (Or GitLab CI, or Forgejo Actions — the workflow files are runner-agnostic in principle.) |
 
+A second delivery channel — **native system packages** (`.deb`/`.rpm` + systemd
+units, fronted by a one-line install script) — is committed to as a peer of the
+container channel per [ADR 0007](decisions/0007-native-distribution-via-system-packages-and-install-script.md)
+and specified in [`docs/16-distribution-and-packaging.md`](16-distribution-and-packaging.md).
+Both channels serve the same codebase. Operators on RHEL/Ubuntu without Docker
+use the native channel; operators with Docker use containers. Implementation of
+the native channel is queued for post-Phase 4.
+
 ### License
 
 **Apache 2.0** — permissive, explicit patent grant, MSSP-friendly. GPL/AGPL are

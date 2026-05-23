@@ -161,9 +161,32 @@ here so the changelog matches the git log.
   that the CLI is fully idempotent and re-running it with the same
   `--tenant-slug` is the supported update / credential-rotation path
   (no dedicated update CLI needed).
-- `<this commit>` — saved the new-machine handoff prompt as
+- `<earlier in session>` — saved the new-machine handoff prompt as
   `prompts/HANDOFF-NEW-MACHINE.md` (was previously only inline in
   chat); appended this follow-up note to the CHANGELOG entry.
+- `<this commit>` — committed ADR 0007 + `docs/16-distribution-and-packaging.md`
+  + auto-memory entry + small pointers in `docs/09` (Container/build/CI
+  section), `docs/decisions/README.md` (index row), `ONBOARDING.md`
+  (Tier 2 reading order).  ADR 0007 records the decision to deliver
+  Wolf natively (non-container) via `.deb`/`.rpm` system packages +
+  systemd units, fronted by a one-line install script that handles
+  prerequisite-repo setup (GitLab-style hybrid: Tailscale / Caddy /
+  k3s / Docker also use this pattern).  Three alternatives weighed:
+  GitLab-style omnibus (Option B, rejected as too expensive
+  engineering for the marginal gain), Snap/Flatpak (Option C,
+  rejected due to confinement friction with local sockets and
+  secrets), and pure Option A without script wrapper (rejected as
+  too much friction with three third-party repos to add manually).
+  doc 16 specifies the package set, file layout (FHS-conformant),
+  `wolf` CLI surface, supported distro matrix, security posture,
+  and implementation work-breakdown (~3-4 weeks of focused work
+  when the slot arrives).  Implementation deliberately queued for
+  post-Phase 4 to avoid repackaging churn before the deployable
+  surface stabilizes; current code must continue to honor
+  constraints in doc 16 §"How current code should accommodate this
+  commitment" (env-driven config, no hard-coded container paths,
+  management CLIs remain usable as plain `python -m ...`, frontend
+  on Next.js `output: 'standalone'`).
 
 ---
 

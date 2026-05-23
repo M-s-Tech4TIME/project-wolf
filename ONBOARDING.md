@@ -75,6 +75,7 @@ them costs you more time than reading them.
 - Touching tenancy or auth? → [`docs/05-multi-tenancy.md`](docs/05-multi-tenancy.md), [`docs/07-security-and-threat-model.md`](docs/07-security-and-threat-model.md).
 - Starting Phase 3 (RAG)? → [`docs/06-knowledge-and-rag.md`](docs/06-knowledge-and-rag.md), [`docs/10-build-roadmap.md`](docs/10-build-roadmap.md) §"Phase 3".
 - Setting up new hardware? → [`docs/13-system-requirements.md`](docs/13-system-requirements.md).
+- Working on distribution / packaging (post-Phase 4)? → [`docs/16-distribution-and-packaging.md`](docs/16-distribution-and-packaging.md), [ADR 0007](docs/decisions/0007-native-distribution-via-system-packages-and-install-script.md).
 - Vocabulary check? → [`docs/12-glossary.md`](docs/12-glossary.md).
 
 ### Tier 3 — Reference

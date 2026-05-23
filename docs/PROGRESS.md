@@ -254,13 +254,19 @@ to `CHANGELOG.md` as ADRs.
   relaxed session-continuity protocol (reading required only for new env /
   new session / different model; end-of-session update remains mandatory).
   In git as of commit `b093761`.
-- ADRs in `docs/decisions/`: 6 ADRs — 0001 (`llama3.2` baseline), 0002
+- ADRs in `docs/decisions/`: 7 ADRs — 0001 (`llama3.2` baseline), 0002
   (`qwen3:4b`), 0003 (`gemma3:4b`), 0004 (default-model switch
   decision), 0005 (Phase 2 frontier-API exit-criterion verification),
   0006 (commitment to native support for four model families — Qwen 3,
-  Llama 3, Gemma 3, GLM 5.1 ~32B).  README index in place.
+  Llama 3, Gemma 3, GLM 5.1 ~32B), 0007 (native non-container
+  delivery channel will be `.deb`/`.rpm` + systemd, fronted by a
+  one-line install script — GitLab-style hybrid).  README index in
+  place.
 - `docs/15-supported-model-matrix.md`: directive document for the
   four-family commitment (added 2026-05-23 alongside ADR 0006).
+- `docs/16-distribution-and-packaging.md`: living spec for the
+  native-distribution channel committed to in ADR 0007 (added
+  2026-05-23).  Implementation queued for post-Phase 4.
 - `ONBOARDING.md` (repo root): single-entry onboarding doc — from
   `git clone` to first chat request — for a new contributor or a new
   Claude Code session on a different machine (added 2026-05-23).
