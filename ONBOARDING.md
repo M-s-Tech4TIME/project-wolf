@@ -211,50 +211,62 @@ For the broader supported-model matrix, see
 On a GPU-equipped machine, also pull the larger sizes you intend to
 exercise (e.g. `ollama pull qwen3:32b`, `ollama pull glm-5.1`).
 
-### 3.9 Bootstrap a tenant and an admin user
+### 3.9 Bootstrap a tenant, admin user, and Wazuh connection
+
+A single command creates the tenant, admin user, the
+`TenantWazuhConfig` row, and stashes the Wazuh credentials in the
+encrypted secrets backend. **All Wazuh fields are required** — the
+CLI cannot create a tenant without them. If you don't have a Wazuh
+handy yet, see "If you don't have a Wazuh yet" below.
 
 ```bash
 cd services/orchestrator
 uv run python -m app.management.bootstrap_tenant \
     --tenant-slug acme \
     --tenant-name "Acme SecOps" \
-    --user-email admin@example.com \
-    --user-password 'choose-a-strong-password'
+    --admin-email admin@example.com \
+    --admin-password 'choose-a-strong-password' \
+    --opensearch-url https://wazuh.example:9200 \
+    --opensearch-username wolf_ro \
+    --opensearch-password '<indexer-password>' \
+    --server-api-url https://wazuh.example:55000 \
+    --server-api-username wolf_ro \
+    --server-api-password '<api-password>' \
+    --no-verify-tls
 cd ../..
 ```
 
-This creates one tenant (`acme`), one admin user, and writes the
-initial state needed for login. If you already have a database with
-tenants, skip this step.
+**Notes:**
 
-### 3.10 (Optional) Wire a real Wazuh
+- The command is **fully idempotent**. Re-running with the same
+  `--tenant-slug` updates URLs and re-stashes credentials in place;
+  user/role bindings are preserved. This is also the supported way
+  to *update* a tenant's Wazuh config later — see §5 "Update an
+  existing tenant's Wazuh config."
+- `--no-verify-tls` is correct for typical Wazuh deployments
+  (self-signed certs from the default install). Use `--verify-tls`
+  in production with proper PKI.
+- Wazuh credentials are written to the secrets backend; they are
+  never persisted to the database. The DB stores only the secret-key
+  *reference* the resolver looks up at request time.
+- Full flag reference: `uv run python -m app.management.bootstrap_tenant --help`,
+  or read the docstring at the top of
+  [`services/orchestrator/app/management/bootstrap_tenant.py`](services/orchestrator/app/management/bootstrap_tenant.py).
 
-If you have a Wazuh deployment to point Wolf at:
+**If you don't have a Wazuh yet:** pass placeholder values that satisfy
+arg validation. The tenant + auth + agent loop will all work; only
+tool calls that actually hit Wazuh will fail at request time:
 
 ```bash
-cd services/orchestrator
-
-# Stash the Wazuh credentials in the encrypted secrets backend.
-# These commands read the value from stdin so the secret never touches
-# shell history or argv.
-printf 'YOUR_INDEXER_PASSWORD' | uv run python -m app.management.set_secret \
-    --key tenant.acme.wazuh.indexer.password
-printf 'YOUR_API_PASSWORD' | uv run python -m app.management.set_secret \
-    --key tenant.acme.wazuh.api.password
-
-# Wire the URLs and usernames to the tenant.
-# (See app/management/bootstrap_tenant.py for the full flag set, including
-# --wazuh-indexer-url, --wazuh-api-url, --wazuh-indexer-user, --wazuh-api-user,
-# and --wazuh-verify-tls. Re-run bootstrap_tenant with these flags or use the
-# tenancy admin endpoints once they exist.)
-
-cd ../..
+# Placeholder pattern — login works, tool calls will error on connect
+--opensearch-url https://localhost:9200 \
+--opensearch-username placeholder --opensearch-password placeholder \
+--server-api-url https://localhost:55000 \
+--server-api-username placeholder --server-api-password placeholder \
+--no-verify-tls
 ```
 
-Without this step, the read tools will return zero results (no Wazuh
-configured for the tenant) — auth and the agent loop still work.
-
-### 3.11 Start the services
+### 3.10 Start the services
 
 In two separate terminals (or use `nohup` / `tmux`):
 
@@ -272,7 +284,7 @@ npm run dev -- --hostname 0.0.0.0 --port 3000
 uvicorn. See Gotcha #1 — running it from repo root picks up the
 gateway's `app/` package instead of orchestrator's.
 
-### 3.12 First request
+### 3.11 First request
 
 ```bash
 # Health check
@@ -314,7 +326,7 @@ make typecheck           # mypy strict on safety-critical packages
 make check               # lint + typecheck + test
 ```
 
-### 4.3 Live smoke against your real Wazuh (only if you wired one in 3.10)
+### 4.3 Live smoke against your real Wazuh (only if you wired one in 3.9)
 
 ```bash
 cd services/orchestrator
@@ -373,20 +385,43 @@ cd ..
 
 ### Add a new tenant
 
+Same command as §3.9 — `bootstrap_tenant` is the entry point.
+Substitute the new tenant's values:
+
 ```bash
 cd services/orchestrator
 uv run python -m app.management.bootstrap_tenant \
     --tenant-slug <slug> --tenant-name "<Display Name>" \
-    --user-email <email> --user-password <password>
+    --admin-email <email> --admin-password <password> \
+    --opensearch-url <url> --opensearch-username <user> --opensearch-password <pw> \
+    --server-api-url <url> --server-api-username <user> --server-api-password <pw> \
+    --no-verify-tls
 cd ../..
 ```
 
-### Wire a different Wazuh to an existing tenant
+### Update an existing tenant's Wazuh config
 
-Stash the credentials with `set_secret` (Section 3.10 pattern), then
-update the tenant's `TenantWazuhConfig` row. Today this is done via
-re-running `bootstrap_tenant` with the wazuh flags, or directly in the
-DB. A dedicated CLI / admin endpoint is unwritten.
+Re-run `bootstrap_tenant` with the same `--tenant-slug` and the changed
+fields (all required flags must still be passed — the CLI does not
+accept partial updates). It will:
+
+- Update the tenant row's URLs / TLS flag / `inject_tenant_filter` flag.
+- Re-stash both Wazuh credential blobs in the secrets backend.
+- Re-hash and overwrite the admin user's password (if you pass a new one).
+- Preserve the user↔tenant role binding.
+
+The docstring at the top of
+[`bootstrap_tenant.py`](services/orchestrator/app/management/bootstrap_tenant.py)
+documents this contract. A smaller-surface "update only" CLI is a
+welcome future ergonomic improvement; today, re-running
+`bootstrap_tenant` is the supported path.
+
+### Rotate a tenant's Wazuh credentials
+
+Re-run `bootstrap_tenant` with the same `--tenant-slug`, the same URLs,
+and the new credentials in `--opensearch-password` / `--server-api-password`.
+The secrets backend is overwritten in place; the resolver will pick up
+the new values on its next lookup (per-request, no caching).
 
 ### Flip the default model
 
@@ -474,7 +509,7 @@ If you want to reach the orchestrator + frontend from a different
 machine on the LAN (e.g. a browser on your laptop hitting the VM's
 IP), check all three:
 
-1. **Orchestrator bound `0.0.0.0`**, not `127.0.0.1` (the `--host 0.0.0.0` flag in Section 3.11).
+1. **Orchestrator bound `0.0.0.0`**, not `127.0.0.1` (the `--host 0.0.0.0` flag in Section 3.10).
 2. **`CORS_ALLOW_ORIGINS`** in `.env` includes the LAN-IP origin (e.g. `http://192.168.1.50:3000`).
 3. **`allowedDevOrigins`** in [`frontend/next.config.ts`](frontend/next.config.ts) includes the LAN IP (Next 16 enforces this for cross-origin dev requests).
 
