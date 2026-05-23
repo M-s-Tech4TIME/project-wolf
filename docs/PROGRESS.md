@@ -156,12 +156,7 @@ Status legend: ✅ working, 🟡 partial, ❌ broken/disabled, ⏳ planned only.
 1. Verify the Phase 2 exit criterion against a frontier API model in
    addition to the local-Ollama path that already works.  Blocked on
    an Anthropic or OpenAI key in the secrets backend.
-2. Batch-amend the remaining static `KNOWN_MODELS` entries to reflect
-   measured capability — `llama3.2` (mid → mid match, but
-   structured_output should go prompt_coaxed → unreliable per
-   ADR 0001) and `gemma3:4b` (downgrade native_tool_calling to none
-   per ADR 0003).  qwen3:4b already amended in commit `14cc727`.
-3. Begin Phase 3 (RAG + grounding validator) per `docs/06` and
+2. Begin Phase 3 (RAG + grounding validator) per `docs/06` and
    `docs/10` — note that qwen3:4b's grounding-discipline probe
    failure makes the grounding validator higher priority.
 

@@ -128,6 +128,50 @@ pending this entry.
 
 ---
 
+## 2026-05-22 — Amend `KNOWN_MODELS` for `llama3.2` and `gemma3:4b` per probe ADRs
+
+**Session type:** claude-code (continuous session)
+**Phase:** Phase 2 — close-out cleanup
+**Duration:** ~5 min
+**Branch / commit:** `main` — see commit below this entry's date
+
+### What we did
+
+- Aligned `KNOWN_MODELS["llama3.2"]` with ADR 0001's measurements:
+  `native_tool_calling` upgraded `partial` → `full`;
+  `structured_output` downgraded `prompt_coaxed` → `unreliable`.
+  Reasoning tier and strategy were already correct.
+- Aligned `KNOWN_MODELS["gemma3:4b"]` with ADR 0003's measurements:
+  `native_tool_calling` downgraded `partial` → `none` (Gemma 3 4B has
+  no native tool calling — Ollama returns HTTP 400 on any chat with
+  `tools`); `structured_output` upgraded `prompt_coaxed` →
+  `schema_enforced`; `max_safe_autonomous_steps` tightened 5 → 3.
+- Added inline comments on each amended entry citing the ADR that
+  grounded the change.
+- Updated PROGRESS §4 to drop the completed cleanup item.
+
+### What we decided
+
+- Cosmetic cleanup; neither model is the current default
+  (`qwen3:4b` holds that since commit `ca495df`).  But aligning
+  static estimates with measured truth keeps `KNOWN_MODELS` honest
+  for any operator who reads it as documentation.
+
+### What broke / what we discovered
+
+- Nothing.  128 backend tests still pass; ruff + mypy strict clean.
+  No code branches on the amended fields (they inform strategy
+  selection but not behaviour at the strategy level for these two
+  models — `gemma3:4b` was already `pipeline` and `llama3.2` was
+  already `guided`).
+
+### What's next
+
+- Frontier-API exit-criterion verification (blocked on operator key).
+- Phase 3 entry — RAG + grounding validator per docs/06.
+
+---
+
 ## 2026-05-22 — Verify all 9 read tools against real Wazuh; add `--all-tools` smoke mode
 
 **Session type:** claude-code (continuous follow-on session)

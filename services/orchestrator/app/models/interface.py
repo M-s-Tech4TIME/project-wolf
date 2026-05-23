@@ -100,13 +100,22 @@ KNOWN_MODELS: dict[str, CapabilityDescriptor] = {
     # Llama family: Llama Community License (700M MAU cap, naming
     # requirements) — kept for backward compatibility and dev convenience
     # but flagged `restricted` per docs/14.  Not Wolf's recommended default.
+    #
+    # Two fields below were amended to match the LIVE PROBE measurement
+    # (docs/decisions/0001-model-probe-llama3.2-baseline.md, 2026-05-22):
+    # native_tool_calling was estimated `partial` and measured `full`;
+    # structured_output was estimated `prompt_coaxed` and measured
+    # `unreliable` (the model emits a syntactically correct tool call but
+    # cannot reliably hold a free-form JSON document under schema
+    # constraint — JSON test failed at column 25 of line 28).  Strategy
+    # tier (`mid` / `guided`) was correct.
     "llama3.2": CapabilityDescriptor(
         model_id="llama3.2",
         provider="ollama",
         context_window=128_000,
-        native_tool_calling=NativeToolCalling.partial,
+        native_tool_calling=NativeToolCalling.full,
         reasoning_tier=ReasoningTier.mid,
-        structured_output=StructuredOutput.prompt_coaxed,
+        structured_output=StructuredOutput.unreliable,
         max_safe_autonomous_steps=8,
         recommended_strategy=AgentStrategy.guided,
         license_class=LicenseClass.restricted,
@@ -177,14 +186,22 @@ KNOWN_MODELS: dict[str, CapabilityDescriptor] = {
         recommended_strategy=AgentStrategy.guided,
         license_class=LicenseClass.apache_2_0,
     ),
+    # Static fields below match the LIVE PROBE measurement
+    # (docs/decisions/0003-model-probe-gemma3-4b.md, 2026-05-22):
+    # native_tool_calling downgraded `partial` → `none` because Gemma 3
+    # 4B is trained without native tool-calling and Ollama returns HTTP
+    # 400 on any chat request that includes a `tools` parameter;
+    # structured_output upgraded `prompt_coaxed` → `schema_enforced`
+    # because the JSON-adherence probe task passed cleanly; max steps
+    # tightened 5 → 3.  Strategy tier (`basic` / `pipeline`) was correct.
     "gemma3:4b": CapabilityDescriptor(
         model_id="gemma3:4b",
         provider="ollama",
         context_window=131_072,
-        native_tool_calling=NativeToolCalling.partial,
+        native_tool_calling=NativeToolCalling.none,
         reasoning_tier=ReasoningTier.basic,
-        structured_output=StructuredOutput.prompt_coaxed,
-        max_safe_autonomous_steps=5,
+        structured_output=StructuredOutput.schema_enforced,
+        max_safe_autonomous_steps=3,
         recommended_strategy=AgentStrategy.pipeline,
         license_class=LicenseClass.apache_2_0,
     ),
