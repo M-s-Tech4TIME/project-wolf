@@ -76,5 +76,6 @@ implies. Any rollback path.
 | 0002 | `model-probe-qwen3-4b.md` — qwen3:4b probe; recommended Apache-licensed candidate | accepted |
 | 0003 | `model-probe-gemma3-4b.md` — gemma3:4b probe; ruled out (no native tool calling) | accepted |
 | 0004 | `model-switch-llama3.2-to-qwen3-4b.md` — dev default flipped to qwen3:4b | accepted |
+| 0005 | `phase2-exit-criterion-frontier-verification.md` — frontier-API exit criterion met (Nemotron 120B via OpenRouter) | accepted |
 
 _Update this table whenever you add a new ADR._

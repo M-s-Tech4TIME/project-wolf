@@ -14,15 +14,15 @@
 
 **Current phase:** Phase 2 — Read path, end to end (per `docs/10-build-roadmap.md`).
 
-**Phase status:** Model abstraction layer complete (Phase 1).  Read path
-foundation, agent loop with three strategies, and Next.js 16 frontend
-all built and operational.  **9 of 9 read tools verified against the
-user's real Wazuh deployment** via `smoke_wazuh --all-tools` (2026-05-22).
-**Dev default flipped from `llama3.2` to `qwen3:4b` per ADR 0004**
-(probe-grounded decision; Apache 2.0 license; +0.07 overall probe score;
-same strategy tier).  Chat path re-verified end-to-end on qwen3:4b in
-`guided` mode (one tool call → `count_alerts_by_severity`, grounded
-cited answer).
+**Phase status:** **Phase 2 closed** (all exit-criteria bullets ticked
+as of 2026-05-22).  Model abstraction layer complete (Phase 1).  Read
+path foundation, agent loop with three strategies, and Next.js 16
+frontend all built and operational.  9 of 9 read tools verified live
+against the user's real Wazuh.  Dev default is `qwen3:4b` (ADR 0004).
+Both halves of the "tested on a frontier model AND a local Ollama
+model" exit criterion satisfied — qwen3:4b for local-Ollama,
+`nvidia/nemotron-3-super-120b-a12b:free` via OpenRouter for the
+frontier-API half (ADR 0005).
 
 **Phase 2 exit criteria progress** (from `docs/10-build-roadmap.md`):
 - [x] Wazuh OpenSearch client with forced tenant filter (opt-in per tenant)
@@ -33,10 +33,12 @@ cited answer).
 - [x] Resource guardrails (time window, result count, per-tenant rate limit)
 - [x] Audit logging on every model call and every tool call
 - [x] Minimal UI: login, tenant picker, ask question, see cited answer
-- [ ] Analyst question end-to-end on **both** a frontier model AND a local
-      Ollama model — currently only verified on local Ollama (`qwen3:4b`,
-      previously `llama3.2`) against the real Wazuh; frontier-API
-      confirmation pending an operator-provided API key.
+- [x] Analyst question end-to-end on **both** a frontier model AND a local
+      Ollama model.  Local-Ollama: `qwen3:4b` in `guided` mode, ~76s
+      cold, grounded cited answer.  Frontier-API: `nvidia/nemotron-3-
+      super-120b-a12b:free` via OpenRouter in `frontier` mode, 17s,
+      structured "Answer / Evidence / Citations" reply.  Both verified
+      against the operator's real Wazuh on the same day (ADR 0005).
 
 ---
 
@@ -153,12 +155,20 @@ Status legend: ✅ working, 🟡 partial, ❌ broken/disabled, ⏳ planned only.
 ## 4. What's next
 
 **Immediate next steps** (in priority order):
-1. Verify the Phase 2 exit criterion against a frontier API model in
-   addition to the local-Ollama path that already works.  Blocked on
-   an Anthropic or OpenAI key in the secrets backend.
-2. Begin Phase 3 (RAG + grounding validator) per `docs/06` and
-   `docs/10` — note that qwen3:4b's grounding-discipline probe
-   failure makes the grounding validator higher priority.
+1. **Begin Phase 3 (RAG + grounding validator) per `docs/06` and
+   `docs/10`.**  Phase 2 is now closed at the exit-criteria level (ADR
+   0005).  Phase 3's grounding validator is the designed solution for
+   the qwen3:4b grounding-discipline failure surfaced by ADR 0002.
+
+**Phase 3 design touchpoints** (the order doc 06 implies):
+- Vector store interface; pgvector implementation
+- Ingestion pipeline (structure-aware chunking, metadata extraction)
+- Seed corpora: Wazuh docs (via `tools/seed_knowledge`), ATT&CK
+- Hybrid retrieval (vector + BM25)
+- The `query_runbook` tool with metadata filters as first-class args
+- The grounding validator: rejects ungrounded factual claims
+- Per-tenant private corpus partition (storage-level isolation per
+  doc 05's "RAG store" enforcement layer)
 
 **Blocked / waiting:**
 - Frontier-API verification needs an Anthropic or OpenAI key in the
@@ -236,8 +246,9 @@ to `CHANGELOG.md` as ADRs.
   relaxed session-continuity protocol (reading required only for new env /
   new session / different model; end-of-session update remains mandatory).
   In git as of commit `b093761`.
-- ADRs in `docs/decisions/`: 4 ADRs — 0001 (`llama3.2` baseline), 0002
-  (`qwen3:4b`), 0003 (`gemma3:4b`), 0004 (default-model switch decision).
+- ADRs in `docs/decisions/`: 5 ADRs — 0001 (`llama3.2` baseline), 0002
+  (`qwen3:4b`), 0003 (`gemma3:4b`), 0004 (default-model switch
+  decision), 0005 (Phase 2 frontier-API exit-criterion verification).
   README index in place.
 - API docs: FastAPI auto-generates at `http://localhost:8000/docs`.
 - README: in git as of commit `c05cdce`.
@@ -260,15 +271,23 @@ re-verified: chat against the user's real Wazuh on `192.168.76.129`,
 qwen3:4b in `guided` mode, one tool call to `count_alerts_by_severity`,
 grounded cited answer ("15 alerts total, all low severity").
 
-**Single most important thing for the next session to know:** all 9
-read tools are now live-verified.  The only Phase 2 work remaining is
-the frontier-API exit-criterion confirmation, which is blocked on the
-operator providing an Anthropic or OpenAI key (set
-`DEFAULT_MODEL_API_KEY_REF` to the secrets backend key holding it).
-Everything else is Phase 3 entry: RAG + grounding validator.  Run
-`uv run python -m app.management.smoke_wazuh --tenant-slug acme
---all-tools` any time you want to re-verify every read tool against
-the live deployment (e.g. after a Wazuh upgrade).
+**Single most important thing for the next session to know:** Phase 2
+is fully closed.  The next phase is Phase 3 — RAG + grounding
+validator per `docs/06-knowledge-and-rag.md`.  Start by reading that
+doc and the relevant sections of `docs/10-build-roadmap.md` (Phase 3
+block), then plan the slice.
+
+Operator notes:
+- OpenRouter API key is stashed in `.local/secrets.enc` under
+  `model.openrouter.api_key`.  Operator pasted it once for the ADR
+  0005 verification; it should be rotated via openrouter.ai/keys.
+- To re-run the frontier verification any time, flip three env vars
+  (DEFAULT_MODEL_PROVIDER=openai, DEFAULT_MODEL_ID=nvidia/nemotron-3-
+  super-120b-a12b:free, OPENAI_BASE_URL=https://openrouter.ai/api),
+  restart orchestrator, run the chat.  No key re-share needed.
+- Run `uv run python -m app.management.smoke_wazuh --tenant-slug acme
+  --all-tools` any time you want to re-verify every read tool against
+  the live deployment (e.g. after a Wazuh upgrade).
 
 Operational note: services run as `nohup` background processes (not
 systemd / compose).  On host reboot you must restart Ollama, the

@@ -231,6 +231,51 @@ KNOWN_MODELS: dict[str, CapabilityDescriptor] = {
         recommended_strategy=AgentStrategy.frontier,
         license_class=LicenseClass.mit,
     ),
+    # ─── Hosted-inference open models via OpenAI-compatible APIs ──────────
+    # These models reach Wolf via Wolf's existing OpenAIAdapter by
+    # overriding OPENAI_BASE_URL — no adapter changes required.  The
+    # OpenRouter base URL is https://openrouter.ai/api (the adapter appends
+    # /v1/chat/completions).
+    #
+    # `:free` is OpenRouter's slug suffix for free-tier routes, but the
+    # actual behaviour varies by upstream provider — some `:free` routes
+    # require a small credit deposit on the OpenRouter account because the
+    # upstream meters them.  The two entries below were verified as
+    # *truly* free (no deposit required) on 2026-05-22.
+
+    # DeepSeek V4 Flash — listed by OpenRouter as `:free` but in practice
+    # the upstream provider (Crucible) returns 402 unless the OpenRouter
+    # account has credits.  Kept here as the canonical DeepSeek slug for
+    # operators who do top up their OpenRouter balance.
+    "deepseek/deepseek-v4-flash:free": CapabilityDescriptor(
+        model_id="deepseek/deepseek-v4-flash:free",
+        provider="openai",
+        context_window=1_048_576,  # 1M tokens — OpenRouter-reported
+        native_tool_calling=NativeToolCalling.full,
+        reasoning_tier=ReasoningTier.frontier,
+        structured_output=StructuredOutput.schema_enforced,
+        max_safe_autonomous_steps=20,
+        recommended_strategy=AgentStrategy.frontier,
+        license_class=LicenseClass.mit,
+    ),
+    # NVIDIA Nemotron-3 Super 120B — truly free on OpenRouter (no credit
+    # deposit needed as of 2026-05-22).  120B-parameter MoE reasoning
+    # model; serves Wolf as the no-deposit frontier verification path.
+    # License is the NVIDIA Open Model License — restrictive, similar
+    # spirit to Llama's community license, NOT OSI-open.  Acceptable for
+    # exit-criterion verification; NOT a recommended-for-shipping default
+    # per doc 14's license filter.
+    "nvidia/nemotron-3-super-120b-a12b:free": CapabilityDescriptor(
+        model_id="nvidia/nemotron-3-super-120b-a12b:free",
+        provider="openai",
+        context_window=128_000,
+        native_tool_calling=NativeToolCalling.full,
+        reasoning_tier=ReasoningTier.frontier,
+        structured_output=StructuredOutput.schema_enforced,
+        max_safe_autonomous_steps=15,
+        recommended_strategy=AgentStrategy.frontier,
+        license_class=LicenseClass.restricted,
+    ),
 }
 
 

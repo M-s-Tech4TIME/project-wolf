@@ -128,6 +128,78 @@ pending this entry.
 
 ---
 
+## 2026-05-22 — Phase 2 exit criterion: frontier-API verification
+
+**Session type:** claude-code (continuous session)
+**Phase:** Phase 2 — close-out
+**Duration:** ~45 min
+**Branch / commit:** `main` — see commit below this entry's date
+
+### What we did
+
+- Added `app/management/set_secret.py` — small CLI that reads a value
+  from stdin (no shell history exposure) and stashes it in the
+  configured secrets backend.  Smoke-tested with a throwaway value
+  (round-trip verified, secret never echoed).
+- Stashed the operator's OpenRouter API key under
+  `model.openrouter.api_key` in `.local/secrets.enc`.
+- Added two `KNOWN_MODELS` entries for OpenRouter-hosted open models:
+  `deepseek/deepseek-v4-flash:free` (kept for operators who fund the
+  account, since DeepSeek's `:free` route gates on credit deposit) and
+  `nvidia/nemotron-3-super-120b-a12b:free` (truly free, NVIDIA Open
+  Model License — restricted, fine for verification not default).
+- Ran the Phase 2 frontier-API verification end-to-end against the
+  operator's real Wazuh using Nemotron 120B.  Result: `frontier`
+  strategy, one tool call to `count_alerts_by_severity`, grounded
+  cited answer in 17 seconds.  Captured verbatim in ADR 0005.
+- Restored the steady-state config (DEFAULT_MODEL_ID stays `qwen3:4b`
+  in config.py; the verification was env-only).
+- Updated PROGRESS.md: Phase 2 exit-criteria bullet flipped from `[ ]`
+  to `[x]`; Section 1 marked Phase 2 closed; Section 4 reordered with
+  Phase 3 (RAG + grounding validator) as the next step.
+
+### What we decided
+
+- Use `nvidia/nemotron-3-super-120b-a12b:free` rather than a
+  DeepSeek-family model for the actual verification because DeepSeek's
+  free routes on OpenRouter all gate on credit deposit (HTTP 402 with
+  zero-credit accounts).  Nemotron is the strongest of the no-deposit
+  free options that genuinely worked.
+- Accept the license caveat: Nemotron uses the NVIDIA Open Model
+  License (restricted by doc 14's filter), so it is the
+  verification-path model, NOT the recommended-default model.  Doc 14
+  isolation holds: dev default stays Apache (qwen3:4b).
+- Keep both new `KNOWN_MODELS` entries permanently — the
+  DeepSeek-flash one as the canonical slug for operators who do top
+  up OpenRouter, the Nemotron one as the verified no-deposit path.
+
+### What broke / what we discovered
+
+- **`OPENAI_BASE_URL` must NOT include `/v1`**: OpenAIAdapter posts
+  to `{base_url}/v1/chat/completions`.  Setting the env to
+  `https://openrouter.ai/api/v1` produced `.../api/v1/v1/chat/...`
+  and 404'd.  Correct: `https://openrouter.ai/api`.  Documented
+  inline on the OpenRouter entries.
+- **The two-`app/`-packages collision struck again.**  Same root
+  cause as ADR 0001's probe CLI bug — gateway's `app/` wins the path
+  race over orchestrator's when uvicorn is launched from project
+  root.  Workaround (`cd services/orchestrator` first) is documented
+  in PROGRESS §3 and now in ADR 0005's "issues surfaced" section.
+- **OpenRouter `:free` suffix is not a binding promise.**  Three of
+  the five candidate `:free` routes we tried returned errors because
+  their upstream providers meter independently of OpenRouter's free
+  classification; account needed credits even for "free" routes.
+  Documented in ADR 0005.
+
+### What's next
+
+- Phase 3 — RAG + grounding validator per docs/06.  Read that doc
+  plus the Phase 3 block of docs/10-build-roadmap.md, then plan the
+  slice.  qwen3:4b's grounding-discipline failure (ADR 0002) is the
+  direct motivation for the grounding validator.
+
+---
+
 ## 2026-05-22 — Amend `KNOWN_MODELS` for `llama3.2` and `gemma3:4b` per probe ADRs
 
 **Session type:** claude-code (continuous session)
