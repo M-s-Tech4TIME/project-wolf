@@ -6,7 +6,7 @@
 >
 > For history of what changed when, see `CHANGELOG.md` (append-only).
 
-**Last updated:** 2026-05-22 (third session of the day) by claude-code
+**Last updated:** 2026-05-23 by claude-code
 
 ---
 
@@ -155,10 +155,18 @@ Status legend: ✅ working, 🟡 partial, ❌ broken/disabled, ⏳ planned only.
 ## 4. What's next
 
 **Immediate next steps** (in priority order):
-1. **Begin Phase 3 (RAG + grounding validator) per `docs/06` and
-   `docs/10`.**  Phase 2 is now closed at the exit-criteria level (ADR
-   0005).  Phase 3's grounding validator is the designed solution for
-   the qwen3:4b grounding-discipline failure surfaced by ADR 0002.
+1. **Project owner is arranging a GPU-equipped dev machine** so the
+   four-family supported-model matrix (ADR 0006 / `docs/15`) can be
+   exercised end-to-end.  Wolf-side work is unblocked: when the new
+   hardware lands, the four pending probe ADRs (GLM 5.1 ~32B, Gemma
+   3 12B/27B, Qwen 3 14B/32B, larger Llama) can be written following
+   the ADR 0001/0002/0003 pattern.
+2. **Begin Phase 3 (RAG + grounding validator) per `docs/06` and
+   `docs/10`.**  Phase 2 is closed at the exit-criteria level (ADR
+   0005).  Phase 3's grounding validator is the designed solution
+   for the qwen3:4b grounding-discipline failure surfaced by ADR
+   0002.  Can start on the current CPU-only VM in parallel with the
+   GPU hardware arrival.
 
 **Phase 3 design touchpoints** (the order doc 06 implies):
 - Vector store interface; pgvector implementation
@@ -246,10 +254,16 @@ to `CHANGELOG.md` as ADRs.
   relaxed session-continuity protocol (reading required only for new env /
   new session / different model; end-of-session update remains mandatory).
   In git as of commit `b093761`.
-- ADRs in `docs/decisions/`: 5 ADRs — 0001 (`llama3.2` baseline), 0002
+- ADRs in `docs/decisions/`: 6 ADRs — 0001 (`llama3.2` baseline), 0002
   (`qwen3:4b`), 0003 (`gemma3:4b`), 0004 (default-model switch
-  decision), 0005 (Phase 2 frontier-API exit-criterion verification).
-  README index in place.
+  decision), 0005 (Phase 2 frontier-API exit-criterion verification),
+  0006 (commitment to native support for four model families — Qwen 3,
+  Llama 3, Gemma 3, GLM 5.1 ~32B).  README index in place.
+- `docs/15-supported-model-matrix.md`: directive document for the
+  four-family commitment (added 2026-05-23 alongside ADR 0006).
+- `ONBOARDING.md` (repo root): single-entry onboarding doc — from
+  `git clone` to first chat request — for a new contributor or a new
+  Claude Code session on a different machine (added 2026-05-23).
 - API docs: FastAPI auto-generates at `http://localhost:8000/docs`.
 - README: in git as of commit `c05cdce`.
 
@@ -257,30 +271,49 @@ to `CHANGELOG.md` as ADRs.
 
 ## 9. Hand-off note for next session
 
-Phase 2 is functionally complete: a chat session against the user's real
-Wazuh (192.168.76.129) on `llama3.2`/Ollama returns grounded answers with
-citations through the Next.js frontend (`http://192.168.76.128:3000`).
-Multi-turn works. Markdown renders. The new `count_alerts_by_severity`
-tool gives correct severity breakdowns end to end.
+Phase 2 is functionally complete and closed at the exit-criteria
+level (ADR 0005).  The default-model switch is done (`qwen3:4b`,
+Apache 2.0, ADR 0004).  End-to-end re-verified on the user's real
+Wazuh (192.168.76.129): qwen3:4b in `guided` mode, one tool call to
+`count_alerts_by_severity`, grounded cited answer.  Multi-turn,
+markdown, citations, tenant switcher all work in the Next.js 16
+frontend at `http://192.168.76.128:3000`.
 
-**The default-model switch is done.** `DEFAULT_MODEL_ID` is `qwen3:4b`
-(Apache 2.0).  ADR 0004 captured the reasoning; commits `e092e21`
-(ADR), `ca495df` (config flip), `14cc727` (KNOWN_MODELS amendment to
-match measured capability) form the audit trail.  End-to-end
-re-verified: chat against the user's real Wazuh on `192.168.76.129`,
-qwen3:4b in `guided` mode, one tool call to `count_alerts_by_severity`,
-grounded cited answer ("15 alerts total, all low severity").
+**This session (2026-05-23) added two product-direction artifacts and
+one onboarding artifact:**
 
-**Single most important thing for the next session to know:** Phase 2
-is fully closed.  The next phase is Phase 3 — RAG + grounding
-validator per `docs/06-knowledge-and-rag.md`.  Start by reading that
-doc and the relevant sections of `docs/10-build-roadmap.md` (Phase 3
-block), then plan the slice.
+1. **ADR 0006 + `docs/15-supported-model-matrix.md`** — formal
+   commitment to natively supporting four model families locally in
+   dev: Qwen 3, Llama 3, Gemma 3, GLM 5.1 ~32B.  Production posture is
+   user-choice (operators pick one or multiple, including hosted
+   APIs).  Six-item "natively support" checklist defines the quality
+   bar; four probe ADRs are now expected when workstation-GPU
+   hardware lands.
+2. **`ONBOARDING.md` at repo root** — single-entry onboarding doc
+   covering: 60-second orientation, mandatory reading order, system
+   requirements, first-time setup from a clean clone (12 steps),
+   verification (tests / lint / smoke / probe), operational tasks,
+   seven real gotchas with fixes, session-continuity protocol, file
+   reference table, troubleshooting matrix.  Written specifically to
+   make a different-machine resume seamless.
 
-Operator notes:
+**Single most important thing for the next session to know:** the
+project owner is arranging a GPU dev machine.  When you (Claude Code
+on the new machine) resume, **read `ONBOARDING.md` first**, then
+`docs/PROGRESS.md` (this file), then `docs/CHANGELOG.md` recent
+entries, then ADRs 0001–0006.  The next concrete work is either (a)
+the four pending probe ADRs once Ollama is set up on the GPU machine
+with the larger models pulled, or (b) Phase 3 design and the
+grounding validator — both can be done in parallel.
+
+Operator notes (unchanged from 2026-05-22 session):
 - OpenRouter API key is stashed in `.local/secrets.enc` under
   `model.openrouter.api_key`.  Operator pasted it once for the ADR
   0005 verification; it should be rotated via openrouter.ai/keys.
+  **NB:** `.local/` is gitignored — the encrypted secrets blob and
+  Fernet key live only on the current dev VM.  A new dev machine
+  starts from a fresh `.env` and an empty secrets backend (see
+  `ONBOARDING.md` §3.5 and §3.10).
 - To re-run the frontier verification any time, flip three env vars
   (DEFAULT_MODEL_PROVIDER=openai, DEFAULT_MODEL_ID=nvidia/nemotron-3-
   super-120b-a12b:free, OPENAI_BASE_URL=https://openrouter.ai/api),

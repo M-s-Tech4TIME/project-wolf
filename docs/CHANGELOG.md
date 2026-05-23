@@ -49,6 +49,96 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-05-23 — Supported-model commitment (ADR 0006 + doc 15) + ONBOARDING.md
+
+**Session type:** claude-code (new conversation, same dev environment)
+**Phase:** Phase 2 closed; pre-Phase-3 setup
+**Duration:** ~90 min (discussion + writing)
+**Branch / commit:** `main` — uncommitted at time of this entry; will
+be committed as part of the same set of commits that adds this entry.
+
+### What we did
+
+- Walked the project owner through the locally-hostable agentic-LLM
+  landscape across four hardware tiers, with targeted side-discussions
+  of GLM 5.1 and Kimi K2 (the latter ruled out for the matrix because
+  even sparse it does not fit any non-multi-GPU local profile).
+- Captured the owner's product direction as a load-bearing commitment:
+  Wolf must natively support **four** model families locally in
+  development — Qwen 3 (4B/8B/14B/32B), Llama 3 (3.x/4 line), Gemma 3
+  (4B/12B/27B), GLM 5.1 ~32B dense.  Production posture is user-choice
+  (operators pick one or multiple, including hosted APIs).
+- Created `docs/15-supported-model-matrix.md` — the living directive
+  doc.  Defines the four families with sizes and licenses, the
+  six-item "natively support" checklist (KNOWN_MODELS entry + live
+  probe + ADR + agent-loop test + strategy assignment + smoke
+  coverage + doc 14 entry), the dev quality bar (efficient / robust /
+  stable / reliable) with specifics, the production user-choice
+  posture, and the current implementation gaps ordered by priority.
+- Created `docs/decisions/0006-supported-model-families-commitment.md`
+  — the point-in-time ADR with full reasoning, five alternatives
+  considered (single-default rejected, wider matrix rejected, drop
+  Llama rejected, include Kimi K2 rejected, defer-until-Phase-3
+  rejected), and six consequences including the four expected probe
+  ADRs.
+- Updated `docs/decisions/README.md` index table with ADR 0006 row.
+- Added auto-memory entry `supported_model_matrix.md` + one-line
+  pointer in `~/.claude/.../memory/MEMORY.md` so future Claude Code
+  sessions on other machines pick up the commitment without needing
+  to find doc 15 first.
+- Wrote `ONBOARDING.md` at repo root — 11-section comprehensive
+  onboarding doc for a new contributor (human or AI) on a different
+  machine: 60-second orientation, mandatory reading order with three
+  tiers, system requirements, first-time setup from a clean clone
+  (12 numbered steps), verification (tests / lint / smoke / probe),
+  common operational tasks, seven real gotchas with fixes, the
+  session-continuity protocol, file-location reference table, and a
+  troubleshooting matrix.
+- Updated this CHANGELOG and `docs/PROGRESS.md` accordingly.
+
+### What we decided
+
+- Four-family native-support commitment (ADR 0006).  Llama stays in
+  the matrix even though it's not Wolf's *recommended* default per
+  doc 14 — "supported" and "recommended" are distinct concerns.
+- GLM 5.1 anchored at ~32B (dense) rather than the smaller 9B.  The
+  project owner is arranging GPU hardware that can run the 32B class,
+  so the matrix targets the right tier.
+- ADR 0006 alongside doc 15 (rather than only one of them).  doc 15
+  is the living matrix; ADR 0006 is the frozen decision record.  Six
+  months from now "why these four?" is answered in ADR 0006; "what's
+  the current state?" is answered in doc 15.  Both are needed.
+- `ONBOARDING.md` at repo root (not `docs/16-onboarding.md`).
+  Discoverability after `git clone` matters more than fitting the
+  numbered docs/ scheme.  The doc points heavily into docs/ for
+  detail.
+
+### What broke / what we discovered
+
+- `pnpm-workspace.yaml` and `services/frontend/` are stale — the
+  real Next.js app lives at `/frontend/` at the repo root.  Flagged
+  as Gotcha #2 in `ONBOARDING.md` but not fixed in this session;
+  cleanup commit deferred.
+- Repo `main` is 25 commits ahead of `origin/main` as of the start
+  of this session.  All 25 are legitimate Phase 2 work from earlier
+  sessions that was never pushed.  The push at the end of this
+  session will publish all of them at once.
+
+### What's next
+
+- Push everything (this session's commits + the 25 unpushed Phase 2
+  commits) to `origin/main` so the GitHub remote becomes the
+  canonical state.
+- Hand off to the new GPU dev machine (when it arrives) with the
+  session-handoff prompt produced at the end of this session.
+- Once on the GPU machine: pull the four families at the larger
+  sizes, run probes, write the four expected probe ADRs (one per
+  family / size that needs measurement).
+- In parallel or after: begin Phase 3 (RAG + grounding validator)
+  per `docs/06` and `docs/10`.
+
+---
+
 ## 2026-05-22 — Switch dev default from llama3.2 to qwen3:4b
 
 **Session type:** claude-code (continuation, same dev environment)
