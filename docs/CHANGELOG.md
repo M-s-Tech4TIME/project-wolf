@@ -137,6 +137,34 @@ be committed as part of the same set of commits that adds this entry.
 - In parallel or after: begin Phase 3 (RAG + grounding validator)
   per `docs/06` and `docs/10`.
 
+### Follow-up commits later in the same session
+
+This entry was written before the following cleanup work; recording
+here so the changelog matches the git log.
+
+- `8da5389` — removed stale `pnpm-workspace.yaml` and empty
+  `services/frontend/` directory (the deferred cleanup mentioned
+  above).  Updated `ONBOARDING.md` accordingly: dropped Gotcha #2,
+  renumbered #3-#7 → #2-#6, fixed three inline cross-references and
+  the §0 repo-layout block.
+- `7917fc5` — fixed factually wrong `bootstrap_tenant` flag names in
+  `ONBOARDING.md` §3.9/§3.10 (real flags are `--admin-email`,
+  `--admin-password`, `--opensearch-url`, `--opensearch-username`,
+  `--opensearch-password`, `--server-api-url`, `--server-api-username`,
+  `--server-api-password`, `--verify-tls`/`--no-verify-tls` — not the
+  `--user-*` / `--wazuh-*` names previously documented).  Also
+  corrected the structural misstatement that `bootstrap_tenant`
+  supports a two-step "create tenant first, wire Wazuh later" flow —
+  the CLI requires all Wazuh fields up front.  Merged §3.9 + §3.10
+  into a single accurate step with a "no Wazuh yet" placeholder
+  pattern; renumbered §3.11/§3.12 → §3.10/§3.11.  Clarified in §5
+  that the CLI is fully idempotent and re-running it with the same
+  `--tenant-slug` is the supported update / credential-rotation path
+  (no dedicated update CLI needed).
+- `<this commit>` — saved the new-machine handoff prompt as
+  `prompts/HANDOFF-NEW-MACHINE.md` (was previously only inline in
+  chat); appended this follow-up note to the CHANGELOG entry.
+
 ---
 
 ## 2026-05-22 — Switch dev default from llama3.2 to qwen3:4b
