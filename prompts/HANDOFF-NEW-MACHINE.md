@@ -45,17 +45,22 @@ session ran on a different VM and ended at the current HEAD on main.
 
 Before you do anything else, read these in order:
 
-  1. ONBOARDING.md at repo root — this is written specifically for
-     you. It covers setup from a clean clone, system requirements,
-     gotchas, troubleshooting, and a file-location reference.
+  1. ONBOARDING.md at repo root — written specifically for you.
+     Covers setup from a clean clone, system requirements, gotchas,
+     troubleshooting, and a file-location reference.
   2. docs/PROGRESS.md — live project state. Tells you exactly what
      exists, what works, and what's next.
   3. docs/CHANGELOG.md — read the top 2–3 entries to understand the
      most recent sessions.
-  4. docs/decisions/README.md plus every ADR it lists (0001–0006).
-     The ADRs are why things are the way they are.
+  4. docs/decisions/README.md plus every ADR it lists (0001–0008).
+     The ADRs are why things are the way they are. Pay particular
+     attention to ADRs 0006, 0007, and 0008 — they set the strategic
+     posture you must follow.
   5. docs/15-supported-model-matrix.md — the four-family commitment
      that drove the move to this GPU-equipped machine.
+  6. docs/16-distribution-and-packaging.md — the native delivery
+     channel spec. Read the §"Development against this channel"
+     section before setting up Postgres.
 
 After you've read those, the state in one paragraph:
 
@@ -64,21 +69,28 @@ a local Ollama model (qwen3:4b, the steady-state default per ADR 0004)
 and a hosted frontier-tier model (Nemotron 120B via OpenRouter). 9 of
 9 read tools verified live. 128 backend tests passing. mypy strict
 clean. Next.js 16 frontend functional. ADR 0006 commits Wolf to
-natively supporting four model families locally — Qwen 3, Llama 3,
-Gemma 3, GLM 5.1 ~32B — and four probe ADRs are pending the GPU
-hardware you are now running on.
+natively supporting four model families locally (Qwen 3, Llama 3,
+Gemma 3, GLM 5.1 ~32B); four probe ADRs are pending the GPU hardware
+you are now running on. ADR 0007 + ADR 0008 commit Wolf to native
+.deb/.rpm + systemd + install-script delivery as the PRIMARY channel;
+Docker is supplementary (baseline-supported, not promoted). Dev uses
+system Postgres to match that posture.
 
 Your concrete next work, in priority order:
 
-  A. Get the dev environment running on this machine. Follow
-     ONBOARDING.md §3 (clean-clone setup) step by step: install uv,
-     Node 24, Docker, Ollama; uv sync --all-packages; npm install
-     in /frontend/; docker compose up -d postgres; generate the two
-     dev secrets and write .env; run alembic migrations; bootstrap
-     a tenant (bootstrap_tenant requires Wazuh fields — use the
-     "no Wazuh yet" placeholder pattern in §3.9 if you don't have
-     a Wazuh handy); start orchestrator and frontend. Verify with
-     ONBOARDING.md §4 (make check + curl-driven chat).
+  A. Get the dev environment running. Follow ONBOARDING.md §3 step
+     by step — note that §3.4 leads with SYSTEM Postgres install
+     (PostgreSQL APT/YUM repo + apt/dnf install + createrole +
+     createdb + CREATE EXTENSION vector). Docker Postgres is a
+     supported alternative but not the recommended path; use system
+     Postgres unless you have a specific reason not to. Install uv,
+     Node 24, Ollama; uv sync --all-packages; npm install in
+     /frontend/; generate the two dev secrets and write .env; run
+     alembic migrations; bootstrap a tenant (bootstrap_tenant
+     requires Wazuh fields — use the "no Wazuh yet" placeholder
+     pattern in §3.9 if you don't have a Wazuh handy); start
+     orchestrator and frontend. Verify with §4 (make check +
+     curl-driven chat).
 
   B. Confirm everything passes: `make check` (128 tests + lint +
      typecheck strict). If anything fails on this machine that was
@@ -98,11 +110,18 @@ Your concrete next work, in priority order:
      ADR 0001/0002/0003 template exactly (status: accepted; full
      probe transcript; reasoning_tier and recommended_strategy
      decision; KNOWN_MODELS entry amendment if measured capability
-     differs from the static estimate). These are ADRs 0007, 0008,
-     0009, 0010 (or however many family/size combos you end up
-     measuring).
+     differs from the static estimate). The next available ADR
+     number is 0009 (0001–0008 are taken); these will be ADRs 0009,
+     0010, 0011... however many family/size combos you end up
+     measuring.
 
-  E. After the probes: either start Phase 3 (RAG + grounding
+  E. Optional regression guard: run `make up` once to confirm the
+     supplementary container channel still builds and runs on this
+     hardware. This is the cheap check ADR 0008 calls for to
+     prevent Docker bit-rot. If it fails, surface the failure but
+     don't fix it as a side-quest — note it for follow-up.
+
+  F. After the probes: either start Phase 3 (RAG + grounding
      validator per docs/06 and docs/10) or address whichever Phase
      2 leftover is highest leverage. Check with me before committing
      to either direction.
@@ -112,12 +131,21 @@ Important constraints (do not skip):
   - Read ONBOARDING.md §6 (gotchas) before launching uvicorn. The
     two-app/-packages collision will bite you if you start uvicorn
     from repo root. Always cd services/orchestrator first.
+  - System Postgres on this machine starts via systemd at boot;
+    you do not need `docker compose up -d postgres`. Verify with
+    `sudo systemctl status postgresql`.
   - .local/secrets.enc is gitignored and lives only on the previous
     VM. You start with an empty secrets backend on this machine.
-    The OpenRouter API key from ADR 0005 is NOT here; if you need
-    to re-run the hosted-API verification, the owner will need to
-    re-stash it via the set_secret CLI pattern documented in
-    ONBOARDING.md §5 "Use a hosted API instead of Ollama."
+    The OpenRouter API key from ADR 0005 is NOT here; if I need
+    to re-run the hosted-API verification, I will re-stash it via
+    the set_secret CLI pattern documented in ONBOARDING.md §5
+    "Use a hosted API instead of Ollama."
+  - Native is the primary delivery channel (ADR 0008). Do not add
+    Docker-specific code paths during development. The code stays
+    distro-agnostic (env-driven config, no hard-coded container
+    paths, management CLIs usable as plain `python -m`, frontend
+    on Next.js `output: 'standalone'`). See doc 16 §"How current
+    code should accommodate this commitment" for the full list.
   - End-of-session protocol per docs/11: update docs/PROGRESS.md,
     append an entry to docs/CHANGELOG.md, commit. Non-negotiable.
   - Do not push to origin/main without checking with me first.
