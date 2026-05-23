@@ -97,23 +97,48 @@ Your concrete next work, in priority order:
      passing on the previous VM, that's a real signal — surface it
      before moving on, don't paper over it.
 
-  C. Pull the four families at the sizes the GPU can run. Start
-     with: `ollama pull qwen3:4b qwen3:8b qwen3:14b qwen3:32b
-     llama3:8b gemma3:4b gemma3:12b gemma3:27b glm-5.1`. Check
-     VRAM headroom with `ollama ps` after a quick query against
-     each.
+  C. Pull the family sizes this hardware can actually run.
+     The dev machine is a laptop with an NVIDIA RTX 4050 Laptop
+     GPU (6 GB VRAM, Profile B tight end per docs/13). At Q4_K_M
+     the usable VRAM budget is ~4.5-5 GB after KV cache + display
+     server overhead. Pull these four:
 
-  D. Run capability probes against each new size. The pattern is
-     `uv run python -m tools.model_probe --provider ollama
-     --model <name>`. Capture the output, then write one ADR per
-     family/size combination that needs measuring — follow the
-     ADR 0001/0002/0003 template exactly (status: accepted; full
-     probe transcript; reasoning_tier and recommended_strategy
-     decision; KNOWN_MODELS entry amendment if measured capability
-     differs from the static estimate). The next available ADR
-     number is 0009 (0001–0008 are taken); these will be ADRs 0009,
-     0010, 0011... however many family/size combos you end up
-     measuring.
+       ollama pull qwen3:4b     # Apache 2.0, steady-state default
+       ollama pull gemma3:4b    # Gemma family coverage
+       ollama pull llama3.2:3b  # Llama family coverage
+       ollama pull qwen3:8b     # TIGHT FIT — may need reduced ctx;
+                                 # only one tight-fit model loaded at
+                                 # a time (use `ollama ps` to verify
+                                 # PROCESSOR is 100% GPU not CPU).
+
+     Do NOT pull qwen3:14b, qwen3:32b, gemma3:12b, gemma3:27b,
+     glm-5.1, or llama3:70b on this hardware. They will download
+     (10-40 GB each) then fail to load because they exceed VRAM.
+     Those probe ADRs remain blocked on workstation-class GPU
+     hardware (24+ GB VRAM).
+
+     Before pulling, confirm Ollama sees the GPU:
+       nvidia-smi             # should list the RTX 4050 Laptop
+       ollama run qwen3:4b "hi"
+       ollama ps              # PROCESSOR column must say "100% GPU"
+
+     If PROCESSOR shows CPU, the NVIDIA driver is missing or too
+     old. Fix that first (sudo ubuntu-drivers install; reboot) —
+     otherwise every probe will measure CPU latency, not GPU.
+
+  D. Run capability probes against the new sizes. Pattern:
+       uv run python -m tools.model_probe --provider ollama --model <name>
+     Capture the output, then write one ADR per family/size
+     combination — follow the ADR 0001/0002/0003 template exactly
+     (status: accepted; full probe transcript; reasoning_tier and
+     recommended_strategy decision; KNOWN_MODELS entry amendment
+     if measured capability differs from the static estimate).
+     The next available ADR number is 0009. Expect two genuinely
+     new probes on this hardware:
+       - qwen3:8b on GPU (was unprobed; now possible at tight fit)
+       - llama3:8b on GPU if pulled (same caveat)
+     gemma3:4b was already probed on CPU (ADR 0003); a GPU re-probe
+     is optional and mostly just shows faster latency.
 
   E. Optional regression guard: run `make up` once to confirm the
      supplementary container channel still builds and runs on this
