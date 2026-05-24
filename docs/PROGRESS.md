@@ -6,7 +6,7 @@
 >
 > For history of what changed when, see `CHANGELOG.md` (append-only).
 
-**Last updated:** 2026-05-23 by claude-code
+**Last updated:** 2026-05-24 by claude-code
 
 ---
 
@@ -120,11 +120,17 @@ Status legend: ✅ working, 🟡 partial, ❌ broken/disabled, ⏳ planned only.
 ## 3. Current configuration
 
 **Dev environment:**
-- Host: VM at `192.168.76.128`, ~16 GB RAM, CPU-only (no GPU detected by Ollama)
-- OS: Ubuntu 24.04.4 LTS (Noble Numbat)
-- Python: 3.13 (pinned in `.python-version`, managed via `uv`)
-- Node: 24 LTS (pinned in `.nvmrc`); installed locally at `~/.local/node24`
-- `npm`: 11.6.1
+- Host: Linux laptop, GPU-equipped (migrated from CPU-only VM 2026-05-24)
+- GPU: NVIDIA GeForce RTX 4050 Laptop (6 GB VRAM, driver 595.71.05, CUDA 13.2)
+  — Profile B tight-end per `docs/13`. All four pre-pulled models confirmed
+  100% GPU offload via `ollama ps`; qwen3:8b at 85% GPU / 15% CPU spillover
+  (tight fit; see ADR 0010).
+- OS: Ubuntu 24.04 (system Postgres 17 + pgvector via PostgreSQL APT repo)
+- Python: 3.13.13 (pinned in `.python-version`, managed via `uv` 0.11.16)
+- Node: 24.16.0 LTS, npm 11.13.0
+- Ollama: 0.24.0 — pulled models: qwen3:4b, qwen3.5:4b, qwen3:8b, gemma3:4b, llama3.2:3b
+- Wazuh: real deployment at `192.168.245.128` (Indexer :9200, Server API :55000,
+  self-signed TLS; credentials in operator-supplied `credentials/` drop, gitignored)
 
 **Model defaults** (in `services/orchestrator/app/config.py`):
 - `DEFAULT_MODEL_PROVIDER`: `ollama`
@@ -142,11 +148,19 @@ Status legend: ✅ working, 🟡 partial, ❌ broken/disabled, ⏳ planned only.
 - `inject_tenant_filter=False` (standalone Wazuh deployment, no per-doc tenant_id)
 
 **Service ports (dev, bound `0.0.0.0` for LAN access):**
-- Orchestrator: `8000`
-- Frontend: `3000`
+- Orchestrator: `8000` (running)
+- Frontend: `3000` (running, Next.js 16 dev server)
 - Ollama: `127.0.0.1:11434`
-- Postgres: `127.0.0.1:5432` (system Postgres per ADR 0008; Docker alternative binds `0.0.0.0`)
+- Postgres: `127.0.0.1:5432` (system Postgres per ADR 0008)
 - Gateway: `8001` (not yet running)
+
+**Wazuh tenant 'acme' on this machine** — bootstrapped 2026-05-24:
+- Indexer: `https://192.168.245.128:9200`
+- Server API: `https://192.168.245.128:55000`
+- `verify_tls=False`, `inject_tenant_filter=False`
+- Verified end-to-end: chat → guided strategy → `count_alerts_by_severity` tool
+  → grounded answer ("325 alerts in 24h, 143 medium + 182 low") in 20.8s
+  (vs ~76s cold on previous CPU-only VM — the GPU win materialized).
 
 **Dev environment posture (per ADR 0008):** native is Wolf's primary
 delivery channel; the dev environment uses system Postgres 17 +
@@ -163,27 +177,23 @@ who want to build their own images.
 ## 4. What's next
 
 **Immediate next steps** (in priority order):
-1. **New dev machine is an RTX 4050 Laptop (6 GB VRAM)** — Profile B
-   tight end per `docs/13`.  Wolf-side work is unblocked for the
-   smaller probes.  The four pending workstation-class probe ADRs
-   (GLM 5.1 ~32B, Gemma 3 12B/27B, Qwen 3 14B/32B, larger Llama)
-   remain blocked on workstation-class hardware (24+ GB VRAM).
-   What this hardware DOES unlock: qwen3:8b probe on GPU (tight
-   fit), qwen3.5:4b probe on GPU (Qwen 3.5 released ~late May 2026;
-   treated as a Qwen-3-family variant per ADR 0006), and gemma3:4b
-   GPU re-probe (optional — already CPU-probed in ADR 0003).
-   Qwen 3.5 4B is the most interesting near-term probe: if it
-   matches or beats qwen3:4b's ADR 0002 results, a follow-up ADR
-   could flip DEFAULT_MODEL_ID (same pattern as ADR 0004) — but
-   only after license verification (Apache 2.0 not yet confirmed
-   from the Ollama page; verify against the model card / Alibaba
-   release notes).
-2. **Begin Phase 3 (RAG + grounding validator) per `docs/06` and
+1. **Begin Phase 3 (RAG + grounding validator) per `docs/06` and
    `docs/10`.**  Phase 2 is closed at the exit-criteria level (ADR
-   0005).  Phase 3's grounding validator is the designed solution
-   for the qwen3:4b grounding-discipline failure surfaced by ADR
-   0002.  Can start on the current CPU-only VM in parallel with the
-   GPU hardware arrival.
+   0005); the new GPU hardware unblocks the two small-end probes
+   (now done — ADRs 0009 + 0010), so there are no remaining probes
+   blocking on this hardware. Phase 3's grounding validator is the
+   designed solution for the qwen3:4b grounding-discipline failure
+   surfaced by ADR 0002 (and re-confirmed for qwen3:8b in ADR 0010).
+2. **Pending workstation-class probe ADRs remain blocked on
+   workstation GPU hardware (24+ GB VRAM):** GLM 5.1 ~32B (priority
+   #1 per doc 15 — zero measured data), Gemma 3 12B/27B, Qwen 3
+   14B/32B. Not blocking Phase 3 work.
+3. **Optional follow-up: qwen3.5:4b re-probe** after the next
+   Ollama qwen3.5 release. ADR 0009's `none`/`unreliable` measurement
+   may be a chat-template/glue issue (failure mode is "model emits
+   invalid JSON" — Ollama accepted the tools param, qwen3.5 just
+   returned bad output); worth verifying before the regression is
+   treated as permanent.
 
 **Phase 3 design touchpoints** (the order doc 06 implies):
 - Vector store interface; pgvector implementation
@@ -271,7 +281,7 @@ to `CHANGELOG.md` as ADRs.
   relaxed session-continuity protocol (reading required only for new env /
   new session / different model; end-of-session update remains mandatory).
   In git as of commit `b093761`.
-- ADRs in `docs/decisions/`: 8 ADRs — 0001 (`llama3.2` baseline), 0002
+- ADRs in `docs/decisions/`: 10 ADRs — 0001 (`llama3.2` baseline), 0002
   (`qwen3:4b`), 0003 (`gemma3:4b`), 0004 (default-model switch
   decision), 0005 (Phase 2 frontier-API exit-criterion verification),
   0006 (commitment to native support for four model families — Qwen 3,
@@ -279,7 +289,11 @@ to `CHANGELOG.md` as ADRs.
   delivery channel will be `.deb`/`.rpm` + systemd, fronted by a
   one-line install script — GitLab-style hybrid), 0008 (native
   delivery is primary; Docker is baseline-supported, not promoted;
-  dev environment uses system Postgres).  README index in place.
+  dev environment uses system Postgres), 0009 (qwen3.5:4b GPU probe —
+  regression vs qwen3:4b on tool calling; supported but no default
+  flip), 0010 (qwen3:8b GPU probe — same measured capability as
+  qwen3:4b, tight VRAM fit with 85% GPU/15% CPU; KNOWN_MODELS
+  amended).  README index in place.
 - `docs/15-supported-model-matrix.md`: directive document for the
   four-family commitment (added 2026-05-23 alongside ADR 0006).
 - `docs/16-distribution-and-packaging.md`: living spec for the

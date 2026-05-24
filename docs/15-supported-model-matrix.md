@@ -158,11 +158,12 @@ The principle from `docs/00-vision-and-scope.md` holds: **no paid
 dependency is ever required.** A clean local deployment using any of the
 four families above must always be a viable production path.
 
-## Implementation status — as of 2026-05-23
+## Implementation status — as of 2026-05-24
 
 | Family | Smallest size | Largest size | Status |
 |---|---|---|---|
-| Qwen 3 | 4B (probed, ADR 0002) | 32B | 4B/8B in `KNOWN_MODELS`; 14B/32B entries present but unprobed |
+| Qwen 3 | 4B (CPU probe ADR 0002, GPU re-confirmed in ADR 0009/0010) | 32B | 4B + 8B (GPU probe ADR 0010, tight fit) in `KNOWN_MODELS`; 14B/32B entries present but unprobed (require workstation GPU) |
+| Qwen 3.5 | 4B (GPU probe ADR 0009; regression — see ADR) | — | 4B in `KNOWN_MODELS` as `basic`/`pipeline` per probe; license Apache 2.0 confirmed |
 | Llama 3 | 3B (probed, ADR 0001) | — | 3.2 in `KNOWN_MODELS`; larger sizes pending workstation hardware |
 | Gemma 3 | 4B (probed, ADR 0003) | — | 4B in `KNOWN_MODELS`; 12B/27B entries pending |
 | GLM 5.1 | — | ~32B (entry, unprobed) | Static `KNOWN_MODELS` entry only — no probe yet, no live verification |
@@ -177,7 +178,12 @@ four families above must always be a viable production path.
    ADR.
 3. **Qwen 3 14B / 32B live probes** on the same workstation
    hardware.
-4. **CI `test-local` job formalization** so every matrix model is
+4. **qwen3.5:4b re-probe** after the next Ollama qwen3.5 release or
+   the official model-card publication — ADR 0009's `none` /
+   `unreliable` measurement may be a chat-template/glue issue rather
+   than a model-level limitation. Worth re-checking before assuming
+   the regression is permanent.
+5. **CI `test-local` job formalization** so every matrix model is
    exercised on every PR, not only the current default.
 
 ## Maintenance

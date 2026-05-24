@@ -37,6 +37,9 @@ postgres_data/
 # Local dev state (SQLite files, scratch secrets blob, etc.)
 .local/
 
+# Operator-supplied credential drop (per-machine; never committed)
+credentials/
+
 # IDE
 .idea/
 .vscode/

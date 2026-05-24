@@ -206,17 +206,41 @@ KNOWN_MODELS: dict[str, CapabilityDescriptor] = {
         license_class=LicenseClass.apache_2_0,
     ),
     # Profile B — modest GPU (6-8 GB VRAM).  Expected first-real-deployment tier.
-    # Brief asked for recommended_strategy="mid" — mapped to AgentStrategy.guided
-    # (Wolf's mid-tier strategy is "guided agent with checkpoints").
+    # Static fields below match the LIVE PROBE measurement
+    # (docs/decisions/0010-model-probe-qwen3-8b.md, 2026-05-24, RTX 4050 Laptop):
+    # structured_output upgraded `prompt_coaxed` → `schema_enforced`;
+    # max_safe_autonomous_steps tightened 10 → 8 (same grounding-fabrication
+    # pattern qwen3:4b shows in ADR 0002).  Strategy tier (`guided`) and
+    # reasoning_tier (`mid`) confirmed.
     "qwen3:8b": CapabilityDescriptor(
         model_id="qwen3:8b",
         provider="ollama",
         context_window=131_072,
         native_tool_calling=NativeToolCalling.full,
         reasoning_tier=ReasoningTier.mid,
-        structured_output=StructuredOutput.prompt_coaxed,
-        max_safe_autonomous_steps=10,
+        structured_output=StructuredOutput.schema_enforced,
+        max_safe_autonomous_steps=8,
         recommended_strategy=AgentStrategy.guided,
+        license_class=LicenseClass.apache_2_0,
+    ),
+    # Qwen 3.5 family — minor revision of Qwen 3 (released on Ollama
+    # ~2026-05-22).  Static fields match the LIVE PROBE measurement
+    # (docs/decisions/0009-model-probe-qwen3.5-4b.md, 2026-05-24, RTX 4050
+    # Laptop).  qwen3.5:4b regresses on tool_call_formatting and
+    # json_schema_adherence vs qwen3:4b on the same hardware; the failure
+    # mode (model emits invalid JSON rather than Ollama rejecting tools)
+    # may be a chat-template issue worth re-probing after the next
+    # Ollama qwen3.5 release.  License: Apache 2.0 (confirmed via Qwen 3.5
+    # release notes — open-weight tiers 0.8B–397B-A17B).
+    "qwen3.5:4b": CapabilityDescriptor(
+        model_id="qwen3.5:4b",
+        provider="ollama",
+        context_window=262_144,
+        native_tool_calling=NativeToolCalling.none,
+        reasoning_tier=ReasoningTier.basic,
+        structured_output=StructuredOutput.unreliable,
+        max_safe_autonomous_steps=4,
+        recommended_strategy=AgentStrategy.pipeline,
         license_class=LicenseClass.apache_2_0,
     ),
     # Profile C / inference API — premium open agentic model.

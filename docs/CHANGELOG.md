@@ -49,6 +49,154 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-05-24 — New-machine handoff: GPU dev laptop, qwen3:8b + qwen3.5:4b probes
+
+**Session type:** claude-code (new conversation, **new dev machine** — RTX 4050 Laptop GPU)
+**Phase:** Phase 2 closed; pre-Phase-3 setup completed
+**Duration:** ~75 min
+**Branch / commit:** `main` — starting commit `a890a5b`, final session commit
+pending this entry.
+
+### What we did
+
+- **Resumed from a clean clone** on the new GPU-equipped laptop following
+  `prompts/HANDOFF-NEW-MACHINE.md`. Operator had pre-staged Python 3.13.13,
+  uv 0.11.16, Node 24.16.0, Ollama 0.24.0 (with qwen3:4b, qwen3.5:4b,
+  gemma3:4b, llama3.2:3b already pulled), Docker 29.5.2, and system
+  Postgres 17.10 + pgvector. NVIDIA RTX 4050 Laptop GPU detected (6 GB
+  VRAM, driver 595.71.05, CUDA 13.2).
+- **Found `credentials/` drop** at repo root containing real Wazuh
+  credentials (user `wolf`, password, indexer URL `https://192.168.245.128:9200`,
+  Server API URL `https://192.168.245.128:55000`) plus the local Postgres
+  password. Was untracked but **not gitignored**; added `credentials/`
+  to `.gitignore` immediately to prevent accidental commit.
+- **Setup from clean clone** per ONBOARDING.md §3: `uv sync --all-packages`,
+  `npm install` in frontend, generated `SECRET_KEY` + `SECRETS_FILE_KEY`,
+  wrote `.env` (mode 0600) with `DEFAULT_MODEL_ID=qwen3:4b`, ran
+  `alembic upgrade head` (3 migrations clean), bootstrapped tenant `acme`
+  with the real Wazuh URLs.
+- **Verified end-to-end against real Wazuh** at `192.168.245.128`:
+  curl-driven login → chat → tool call (`count_alerts_by_severity`) →
+  grounded answer ("325 alerts in 24h, 143 medium + 182 low") in **20.8s**
+  (vs ~76s cold on the previous CPU-only VM — clean GPU win). Strategy:
+  `guided`. Model: `qwen3:4b`.
+- **`make check`: 128 passed, lint + mypy strict clean.** Same baseline
+  as the previous VM, on the new hardware.
+- **Confirmed Ollama GPU offload** via `ollama ps` for all four pre-pulled
+  models: qwen3:4b (3.5 GB, 100% GPU), qwen3.5:4b (5.9 GB, 100% GPU —
+  surprisingly large for a 4B; the 256K-ctx capability inflates KV cache
+  reservation), gemma3:4b (4.3 GB, 100% GPU), llama3.2:3b (2.8 GB, 100% GPU).
+- **Pulled qwen3:8b** (~5.2 GB on disk). Loads at PROCESSOR=**85% GPU /
+  15% CPU** at default 4096 ctx — the brief's "tight fit" prediction
+  was exactly right. VRAM use 4985 MB of 6141 MB.
+- **Ran three model probes** via `uv run python -m tools.model_probe`:
+  - **qwen3:4b GPU re-probe** — score 0.75, descriptor identical to
+    ADR 0002's CPU measurement. Confirms the probe is hardware-agnostic
+    at the capability tier; provides the baseline for the qwen3.5:4b
+    cross-comparison.
+  - **qwen3.5:4b GPU probe** — score **0.50** (regression). FAIL on
+    `tool_call_formatting` and `json_schema_adherence` (model emitted
+    invalid JSON across all 3 structured-output retry attempts); PASS
+    on `multi_step_reasoning` and `grounding_discipline`. Measured
+    descriptor: `basic` / `none` / `unreliable` / 4 / `pipeline`.
+  - **qwen3:8b GPU probe** — score 0.75. Identical descriptor to
+    qwen3:4b at the static fields (`mid` / `full` / `schema_enforced` /
+    8 / `guided`). Two amendments to the existing `KNOWN_MODELS`
+    estimate: `structured_output` upgraded `prompt_coaxed` →
+    `schema_enforced`; `max_safe_autonomous_steps` tightened 10 → 8.
+- **License-verified qwen3.5:4b as Apache 2.0** via Qwen 3.5 release
+  notes (open-weight tiers 0.8B–397B-A17B). Ollama page didn't state
+  it directly. Cleared the ADR 0006 prerequisite for `license_class`
+  in the `KNOWN_MODELS` entry.
+- **Wrote two ADRs and amended `KNOWN_MODELS`:**
+  - ADR 0009 — qwen3.5:4b GPU probe + cross-comparison vs qwen3:4b.
+    Records the regression honestly; decides NOT to flip
+    `DEFAULT_MODEL_ID` (handoff brief's condition: only flip if 3.5
+    matches/beats 3; it does not). Adds `KNOWN_MODELS["qwen3.5:4b"]`
+    with the measured `basic`/`pipeline`/Apache-2.0 descriptor.
+  - ADR 0010 — qwen3:8b GPU probe (tight VRAM fit, 85% GPU /
+    15% CPU). Records same-descriptor result as qwen3:4b; decides
+    NOT to flip default (no measured-capability win + worse latency
+    under VRAM pressure). Amends `KNOWN_MODELS["qwen3:8b"]` to match
+    probe (structured_output upgrade, max_steps tighten).
+- Updated `docs/decisions/README.md` index (rows for 0009 and 0010),
+  `docs/15-supported-model-matrix.md` Implementation-status table
+  (Qwen 3 8B status flipped, Qwen 3.5 row added, qwen3.5:4b re-probe
+  added as gap #4), and `docs/PROGRESS.md` §3 (dev environment now
+  GPU-equipped) + §4 (next steps) + §8 (ADR count 8 → 10).
+- Re-ran `make check` after the `KNOWN_MODELS` edits: **128 passed**,
+  lint + mypy strict still clean.
+
+### What we decided
+
+- **qwen3.5:4b is supported but not recommended** (ADR 0009). Stays in
+  `KNOWN_MODELS` per ADR 0006's family-commitment principle; operators
+  who select it via env override get documented `pipeline` behavior.
+  No default flip. License verified Apache 2.0.
+- **qwen3:8b is officially supported on Profile B tight-end** (ADR 0010).
+  Operators with more VRAM (12+ GB) may prefer it; on this 6 GB GPU
+  it offers no measured capability win and has CPU-spillover latency
+  cost, so `qwen3:4b` remains the dev default.
+- **`DEFAULT_MODEL_ID` stays `qwen3:4b`.** Both new probes failed to
+  produce a default-flip candidate; the ADR 0004 pattern is not
+  triggered.
+- **Skipped optional probes:** gemma3:4b GPU re-probe (already CPU-probed
+  ADR 0003; capability descriptor would not change), llama3.2:3b GPU
+  re-probe (same reasoning — ADR 0001 capability is hardware-agnostic).
+  Per handoff brief these were explicitly optional.
+
+### What broke / what we discovered
+
+- **`uv run alembic upgrade head` fails without sourcing `.env` first.**
+  configparser's `BasicInterpolation` can't resolve `%(DATABASE_URL)s`
+  unless the variable is in the process env at alembic-config-load time
+  (before `env.py` runs its `set_main_option` override). ONBOARDING.md
+  §3.7 doesn't mention this. Worth a doc fix: prepend
+  `set -a && source ../../.env && set +a &&` to the alembic command,
+  or move the env load earlier in §3.6.
+- **`GET /me` 404s.** ONBOARDING.md §11 references `GET /me` for the
+  authenticated user lookup; that route doesn't exist (tried both
+  `/me` and `/api/v1/me`). The `/api/v1/auth/login` POST works and
+  returns the user payload, so it's not blocking — but the doc claim
+  is wrong. Worth a quick grep + correction in the next doc sweep.
+- **Test suite + Postgres has a latent event-loop scoping bug.**
+  Running `make check` with `DATABASE_URL` exported to system Postgres
+  (which is what my initial `set -a && source .env && set +a` did)
+  triggered 32 pytest errors with `RuntimeError: ... attached to a
+  different loop` in asyncpg. The conftest defaults to SQLite for
+  local dev — passing 128/128 without `DATABASE_URL` set. CI presumably
+  handles Postgres correctly somehow; worth understanding before
+  Phase 3 adds pgvector tests that may need the real DB locally.
+- **qwen3.5:4b's `native_tool_calling = none` failure mode is
+  structurally different from gemma3:4b's.** Gemma earns `none` because
+  Ollama returns HTTP 400 on any `tools=[...]` request — model is
+  structurally untrained. qwen3.5:4b: Ollama accepts the request and
+  the model returns invalid JSON. Smells like a chat-template/glue
+  issue in Ollama's qwen3.5 release, not necessarily a model limit.
+  ADR 0009 records the descriptor at face value but flags a re-probe
+  as the right follow-up.
+- **qwen3.5:4b VRAM (5.9 GB at 4096 ctx)** is dramatically larger than
+  qwen3:4b's (3.5 GB) despite similar disk size — the 256K-ctx
+  capability inflates KV-cache reservation up-front. On this 6 GB
+  GPU it fits at default but won't tolerate much context increase.
+
+### What's next
+
+- **Phase 3 (RAG + grounding validator)** per `docs/06` and `docs/10`
+  Phase 3 block. Now unblocked — no probes left on this hardware.
+  Grounding validator is the designed mitigation for both ADR 0002's
+  qwen3:4b grounding fail and ADR 0010's qwen3:8b grounding fail.
+- **Doc sweep** for the three drift points discovered (ONBOARDING §3.7
+  alembic env load, §11 `GET /me` 404, test-suite Postgres scoping).
+  Small; can fold into the start of the next session.
+- **Optional follow-up:** qwen3.5:4b re-probe after the next Ollama
+  qwen3.5 release.
+- **Still blocked on workstation-GPU hardware (24+ GB VRAM):** GLM 5.1
+  ~32B probe, Gemma 3 12B/27B probes, Qwen 3 14B/32B probes. Per ADR
+  0006 these remain expected probe ADRs but are not blocking Phase 3.
+
+---
+
 ## 2026-05-23 — Supported-model commitment (ADR 0006 + doc 15) + ONBOARDING.md
 
 **Session type:** claude-code (new conversation, same dev environment)

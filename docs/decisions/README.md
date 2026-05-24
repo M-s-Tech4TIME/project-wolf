@@ -80,5 +80,7 @@ implies. Any rollback path.
 | 0006 | `supported-model-families-commitment.md` — Wolf commits to native local support for four families (Qwen 3, Llama 3, Gemma 3, GLM 5.1 ~32B) | accepted |
 | 0007 | `native-distribution-via-system-packages-and-install-script.md` — native delivery channel will be `.deb`/`.rpm` + systemd, fronted by an install script (GitLab-style hybrid) | accepted (positioning amended by 0008) |
 | 0008 | `native-primary-docker-supplementary.md` — native delivery is primary; Docker is baseline-supported (not promoted); dev environment uses system Postgres | accepted |
+| 0009 | `model-probe-qwen3.5-4b.md` — qwen3.5:4b GPU probe; regression vs qwen3:4b on tool calling; supported but not recommended; NO default flip | accepted |
+| 0010 | `model-probe-qwen3-8b.md` — qwen3:8b GPU probe (tight fit 85% GPU/15% CPU); same measured capability as qwen3:4b; KNOWN_MODELS amended | accepted |
 
 _Update this table whenever you add a new ADR._
