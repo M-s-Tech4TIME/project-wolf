@@ -49,6 +49,87 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-05-24 — Opportunistic probe: IBM Granite 3.3 8B (ADR 0011)
+
+**Session type:** claude-code (same session as the new-machine handoff entry below)
+**Phase:** Phase 2 closed; pre-Phase-3 setup
+**Duration:** ~20 min
+**Branch / commit:** `main` — starting commit `600740d`, final commit
+pending this entry.
+
+### What we did
+
+- Operator asked which fully-free open-source agentic models were
+  realistic challengers to qwen3:4b on the new GPU hardware, with
+  the license filter relaxed. Triage surfaced IBM Granite 3.3 8B as
+  the most interesting candidate (Apache 2.0, marketed by IBM for
+  agentic tool use, dedicated tools-trained variant in the family).
+- **Pulled `granite3.3:8b`** (~4.9 GB on disk). Loads at PROCESSOR=
+  **88% GPU / 12% CPU** at default 4096 ctx — slightly less CPU
+  spillover than qwen3:8b's 85%/15% but the same tight-fit class.
+  VRAM 5053 MB of 6141 MB.
+- **Ran the probe** — score **0.25**. PASS `tool_call_formatting`
+  (IBM's agentic positioning works at the format level); FAIL the
+  other three: `json_schema_adherence` (response shape mismatch),
+  `multi_step_reasoning` (invalid JSON — same failure shape as
+  qwen3.5:4b in ADR 0009), and `grounding_discipline` (fabrication —
+  same weakness as qwen3:4b/qwen3:8b). Measured descriptor:
+  `basic` / `full` / `unreliable` / 3 / `pipeline`.
+- **License-verified Apache 2.0** via the Ollama page
+  (https://ollama.com/library/granite3.3).
+- **Wrote ADR 0011** marking the probe explicitly opportunistic per
+  ADR 0006's "wider matrix" alternatives section. KNOWN_MODELS entry
+  added with an inline comment flagging it as **opportunistic
+  registration** — *not* part of the four-family supported matrix.
+  Operators selecting it via env override get documented pipeline
+  behavior.
+- Updated `docs/decisions/README.md` index. `docs/15-supported-model-matrix.md`
+  is **unchanged** — Granite stays out of the bounded matrix
+  deliberately, preserving ADR 0006's narrow commitment.
+
+### What we decided
+
+- **Granite 3.3 8B is NOT a default-flip candidate.** Despite being
+  2× qwen3:4b's parameter count and IBM's explicit agentic
+  positioning, it regresses on three of four probe tasks on this
+  hardware. `DEFAULT_MODEL_ID` stays `qwen3:4b`.
+- **Granite stays in `KNOWN_MODELS` as opportunistic registration**
+  (ADR 0005/Nemotron precedent) — the registry documents what Wolf
+  knows about, not what it recommends. Operators get an honest
+  measurement to base their own choice on.
+- **No expansion of the four-family matrix in doc 15.** ADR 0006's
+  narrowness is deliberate; adding a fifth family on one probe
+  result would erode the design.
+- **A future agent-loop smoke test of Granite under `guided`
+  strategy is the right follow-up** if/when the "marketing says
+  agents, probe says pipeline" question becomes load-bearing.
+  Granite's `native_tool_calling: full` is real and Wolf's typed
+  dispatcher might let it perform better at runtime than the
+  static descriptor predicts. Deferred; not in scope for this
+  drop-in probe.
+
+### What broke / what we discovered
+
+- **"Purpose-built for agents" doesn't automatically equal
+  Wolf-loop fit.** Granite's tool-call format is correct (its
+  agentic claim is real at the protocol level), but Wolf's
+  structured-output fallback expects a specific `answer` /
+  `tool` envelope shape that Granite doesn't reliably produce.
+  Useful data point for evaluating any future vendor claim of
+  "agentic" — the probe is the truth, not the marketing.
+- **Same fabrication weakness as Qwen family** on the no-tools
+  grounding-discipline test. Phase 3's grounding validator is the
+  cross-model mitigation; this probe is the second independent
+  confirmation that the validator is the right design.
+
+### What's next
+
+- Phase 3 (RAG + grounding validator) per `docs/06` and `docs/10` —
+  unchanged from the prior session entry. Granite probe complete;
+  no further model exploration needed before Phase 3.
+
+---
+
 ## 2026-05-24 — New-machine handoff: GPU dev laptop, qwen3:8b + qwen3.5:4b probes
 
 **Session type:** claude-code (new conversation, **new dev machine** — RTX 4050 Laptop GPU)

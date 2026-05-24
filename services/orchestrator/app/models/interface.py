@@ -243,6 +243,26 @@ KNOWN_MODELS: dict[str, CapabilityDescriptor] = {
         recommended_strategy=AgentStrategy.pipeline,
         license_class=LicenseClass.apache_2_0,
     ),
+    # Opportunistic registration per ADR 0006 — Granite is NOT part of
+    # the four-family supported matrix; this entry exists for operators
+    # who want to try it via DEFAULT_MODEL_ID env override.  Static
+    # fields below match the LIVE PROBE measurement (docs/decisions/
+    # 0011-model-probe-granite3.3-8b.md, 2026-05-24, RTX 4050 Laptop):
+    # native_tool_calling=full (the agentic positioning is real at the
+    # format level) but structured-output fallback fails Wolf's expected
+    # response shape, dropping reasoning_tier to basic and strategy to
+    # pipeline.  License: Apache 2.0.
+    "granite3.3:8b": CapabilityDescriptor(
+        model_id="granite3.3:8b",
+        provider="ollama",
+        context_window=131_072,
+        native_tool_calling=NativeToolCalling.full,
+        reasoning_tier=ReasoningTier.basic,
+        structured_output=StructuredOutput.unreliable,
+        max_safe_autonomous_steps=3,
+        recommended_strategy=AgentStrategy.pipeline,
+        license_class=LicenseClass.apache_2_0,
+    ),
     # Profile C / inference API — premium open agentic model.
     "glm-5.1": CapabilityDescriptor(
         model_id="glm-5.1",
