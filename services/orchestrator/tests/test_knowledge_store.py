@@ -154,6 +154,127 @@ async def test_query_runbook_raises_when_store_not_configured() -> None:
 # ─── EmbeddingProvider factory ──────────────────────────────────────────────
 
 
+# ─── Hybrid retrieval (RRF fusion) ──────────────────────────────────────────
+
+
+def test_rrf_constants_are_sensible() -> None:
+    """Cormack et al. 2009 robust default is k=60; candidates ≥ limit so the
+    fusion has room to rescue chunks that ranked mid-tier in one leg."""
+    from app.knowledge.store import RANKER_CANDIDATE_LIMIT, RRF_K
+
+    assert RRF_K == 60
+    assert RANKER_CANDIDATE_LIMIT >= 10
+
+
+def test_retrieved_chunk_carries_rrf_score() -> None:
+    """rrf_score is the fused score (higher = more relevant); None when
+    callers don't go through the fusion path."""
+    from app.knowledge.store import RetrievedChunk
+
+    chunk = RetrievedChunk(
+        id=uuid.uuid4(),
+        content="x",
+        source_type="wazuh_doc",
+        tenant_id=None,
+        chunk_metadata={},
+        distance=0.5,
+        rrf_score=0.0325,
+    )
+    assert chunk.rrf_score == 0.0325
+
+    chunk_no_rrf = RetrievedChunk(
+        id=uuid.uuid4(),
+        content="x",
+        source_type="wazuh_doc",
+        tenant_id=None,
+        chunk_metadata={},
+        distance=0.5,
+    )
+    assert chunk_no_rrf.rrf_score is None
+
+
+@pytest.mark.asyncio
+async def test_rrf_fusion_combines_both_legs_correctly() -> None:
+    """Chunks present in both legs get boosted vs chunks present in only one.
+
+    Mocks the two internal helpers so the test exercises the fusion math
+    without needing pgvector or a real Postgres. The fusion formula is:
+        score = sum(1 / (RRF_K + rank_in_leg))
+    so a chunk at rank 1 in both legs scores 2 * (1/(60+1)) = 0.03279...
+    A chunk at rank 1 in one leg only scores 1/61 = 0.01639...
+    """
+    from unittest.mock import AsyncMock, patch
+
+    from app.knowledge.store import PgvectorKnowledgeStore
+
+    in_both = uuid.uuid4()
+    vector_only = uuid.uuid4()
+    fts_only = uuid.uuid4()
+
+    # Mock the SA row fetch — return synthetic rows matching the IDs.
+    class _Row:
+        def __init__(self, chunk_id: uuid.UUID, source_type: str) -> None:
+            self.id = chunk_id
+            self.content = "test"
+            self.source_type = source_type
+            self.tenant_id = None
+            self.chunk_metadata = {}
+
+    rows = {
+        in_both: _Row(in_both, "wazuh_doc"),
+        vector_only: _Row(vector_only, "attack"),
+        fts_only: _Row(fts_only, "runbook"),
+    }
+
+    class _StubEmbedder:
+        model_id = "stub"
+        dimension = 768
+
+        async def embed(self, texts: list[str]) -> list[list[float]]:
+            return [[0.0] * 768 for _ in texts]
+
+    class _StubSession:
+        async def execute(self, stmt: Any) -> Any:
+            # The store fetches rows for the top-K IDs after fusion.
+            # Return all three rows; the store filters by RRF ordering.
+            class _Result:
+                def all(self_inner) -> list[tuple[Any, float]]:
+                    return [(rows[in_both], 0.10), (rows[vector_only], 0.20), (rows[fts_only], 0.50)]
+
+            return _Result()
+
+    store = PgvectorKnowledgeStore(_StubSession(), _StubEmbedder())
+
+    # Force the two leg helpers to return the rankings under test.
+    with (
+        patch.object(
+            store,
+            "_vector_candidates",
+            AsyncMock(return_value={in_both: 1, vector_only: 2}),
+        ),
+        patch.object(
+            store,
+            "_fts_candidates",
+            AsyncMock(return_value={in_both: 1, fts_only: 2}),
+        ),
+    ):
+        results = await store.search(
+            tenant_id=uuid.uuid4(),
+            query_text="anything",
+            limit=10,
+        )
+
+    # The chunk present in both legs MUST rank above singletons.
+    assert results[0].id == in_both
+    assert results[0].rrf_score is not None
+    # Singletons: vector_only (rank 2) and fts_only (rank 2) score the same.
+    # Both should appear, in some order, after in_both.
+    rest_ids = {r.id for r in results[1:]}
+    assert rest_ids == {vector_only, fts_only}
+    # Score math (RRF_K=60): in_both ≈ 1/61 + 1/61 ≈ 0.0328; singletons ≈ 1/62.
+    assert results[0].rrf_score > results[1].rrf_score
+
+
 def test_factory_returns_ollama_adapter_by_default() -> None:
     from app.config import Settings
     from app.knowledge.embeddings import (

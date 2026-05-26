@@ -17,8 +17,8 @@ import uuid
 from datetime import UTC, datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import DateTime, Index, String, Text, Uuid
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import Computed, DateTime, Index, String, Text, Uuid
+from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -68,6 +68,15 @@ class KnowledgeChunk(Base):
     # Re-embedding trigger: a swap of embedding_model forces a planned
     # re-embed of every chunk produced by the prior model.
     embedding_model: Mapped[str] = mapped_column(String(100), nullable=False)
+    # Generated lexical-search column — Postgres populates it from `content`
+    # on insert/update. Wolf never writes here directly. Migration 0005
+    # defines the GENERATED ALWAYS AS clause; this declaration just tells
+    # SQLAlchemy the column exists so hybrid search can reference it.
+    content_tsv: Mapped[str] = mapped_column(
+        TSVECTOR,
+        Computed("to_tsvector('english', content)", persisted=True),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_now
     )
