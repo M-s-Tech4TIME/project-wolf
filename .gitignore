@@ -40,6 +40,9 @@ postgres_data/
 # Operator-supplied credential drop (per-machine; never committed)
 credentials/
 
+# Slice 3 seed downloads — cached ATT&CK + Wazuh ruleset archives
+.local/seed_knowledge_cache/
+
 # IDE
 .idea/
 .vscode/

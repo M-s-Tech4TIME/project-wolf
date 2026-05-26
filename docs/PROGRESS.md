@@ -6,7 +6,7 @@
 >
 > For history of what changed when, see `CHANGELOG.md` (append-only).
 
-**Last updated:** 2026-05-27 by claude-code
+**Last updated:** 2026-05-27 by claude-code (Slice 3 ship + end-to-end)
 
 ---
 
@@ -14,23 +14,24 @@
 
 **Current phase:** Phase 3 — Knowledge & RAG (per `docs/10-build-roadmap.md`).
 
-**Phase status:** **Phase 3 Slices 1, 1.5, and 2 (A+B) shipped**.
-Phase 2 closed (ADR 0005). Slice 1: vertical RAG operational
-end-to-end. Slice 1.5: sentence-transformers second adapter behind
-optional dep + decision ADR 0012. Slice 2A (hybrid retrieval):
-migration 0005 added a `content_tsv` generated column + GIN index,
-`PgvectorKnowledgeStore.search()` now fuses vector (cosine) and FTS
-(`ts_rank_cd`) candidates via Reciprocal Rank Fusion (k=60). Slice 2B
-(grounding validator): `app/grounding/` module with LLM-as-judge
-that flags unsupported factual claims `[unverified]` inline,
-hooked into `AgentLoop.run()` before the answer event, surfaced as
-`grounding_supported / unsupported / unverifiable` on the chat
-response. `make check` 162 passed (128 prior + 19 Slice-1/1.5
-knowledge tests + 16 Slice-2 validator tests). End-to-end on the
-real Wazuh confirms pipeline works; judge-model strength on hard
-cases is a documented limitation (qwen3:4b plays safe with
-"unverifiable" labels rather than catching subtle embellishment —
-follow-up queued).
+**Phase status:** **Phase 3 shipped end-to-end** (Slices 1, 1.5, 2A, 2B,
+and 3). Phase 2 closed (ADR 0005). Phase 3 vertical:
+RAG-over-real-corpus integrated into the agent loop with hybrid
+retrieval + grounding validator surfacing inline `[unverified]`
+markers on unsupported claims. Slice 3 added the production-grade
+ingesters under `tools/seed_knowledge/`: MITRE ATT&CK STIX (697
+techniques, matrix v19.1) and the Wazuh ruleset XML (4473 rules from
+v4.9.2). The dev DB now carries **5170 shared chunks + 3
+tenant-private** = 5173 total. `make check` 174 passed (128 prior +
+19 knowledge + 16 validator + 11 ingester tests). End-to-end verified
+against a brand-new dedicated agent at 192.168.245.129
+(`linux-test-agent`, id 001): SSH brute-force triggered 9× rule 5710
++ 1× rule 5712 in Wazuh, Wolf chat investigated with 3 tool calls
+(`search_alerts` + `get_rule_definition` + `query_runbook`) fusing
+live Wazuh data with retrieved ATT&CK + ruleset documentation; the
+grounding validator caught a false-negative claim in one run
+(marked `[unverified]`) and degraded gracefully when the judge LLM
+returned malformed JSON on a harder run.
 
 **Phase 2 exit criteria progress** (from `docs/10-build-roadmap.md`):
 - [x] Wazuh OpenSearch client with forced tenant filter (opt-in per tenant)
@@ -202,25 +203,35 @@ who want to build their own images.
 ## 4. What's next
 
 **Immediate next steps** (in priority order):
-1. **Phase 3 Slice 3 — real seed corpora.** `tools/seed_knowledge`
-   scrapers for Wazuh docs + ATT&CK enterprise-attack.json. Replaces
-   the 9-chunk dev inline seed; gives Slice 1.5's precision benchmark
-   real material to evaluate against and gives Slice 2B's grounding
-   validator more diverse evidence to judge on.
-2. **Phase 3 Slice 2 follow-up — stronger grounding judge.** Slice 2B
-   shipped the architecture; qwen3:4b as the judge under-flags subtle
-   embellishments (defaults to "unverifiable" on hard cases). Options
-   to evaluate: (a) route the validator to Nemotron 120B via the
-   existing OpenRouter path (ADR 0005's hosted-API mechanism) for
-   stronger judging; (b) refine the judge prompt with explicit
-   negative examples; (c) add a heuristic-overlap fallback that flags
-   claims with low token overlap to citations. Worth an ADR-level
-   evaluation once Slice 3's real corpus produces enough verdict
-   samples to measure precision/recall on.
-3. **`wolf reembed` helper** (queued from ADR 0012). Currently
-   flipping `EMBEDDING_PROVIDER` without re-embedding silently
-   degrades retrieval; the helper diffs `KnowledgeChunk.embedding_model`
+1. ~~Phase 3 Slice 3 — real seed corpora.~~ **Shipped 2026-05-27.**
+   `tools/seed_knowledge` brings in 697 ATT&CK techniques + 4473
+   Wazuh rules. End-to-end retest on the new dedicated agent at
+   192.168.245.129 confirmed full pipeline: trigger brute force
+   → Wazuh alerts → Wolf chat draws on both live alerts AND real
+   ATT&CK/ruleset documentation.
+2. **Stronger grounding judge** (now urgent with the rich corpus).
+   qwen3:4b's judge JSON is unreliable at high evidence-prompt
+   volumes — on the Slice 3 rich-corpus run the validator degraded
+   gracefully (counts surfaced as None) because the judge returned
+   malformed JSON. Options to evaluate: (a) route the validator to
+   Nemotron 120B via the existing OpenRouter path (ADR 0005's
+   hosted-API mechanism); (b) refine the judge prompt with explicit
+   negative examples; (c) add a heuristic-overlap fallback that
+   flags claims with low token overlap to citations. Worth an ADR
+   now that real-corpus material exists to benchmark against.
+3. **`search_alerts` agent-name lookup.** During the Slice 3 retest
+   qwen3:4b passed `agent_id="linux-test-agent"` (the name) instead
+   of `"001"` (the numeric ID) — Wazuh returned 0 hits. Adding an
+   `agent_name` alias that resolves via a `list_agents` lookup
+   eliminates this class of small-model confusion.
+4. **`wolf reembed` helper** (queued from ADR 0012). Flipping
+   `EMBEDDING_PROVIDER` without re-embedding silently degrades
+   retrieval; the helper diffs `KnowledgeChunk.embedding_model`
    against the active provider and re-embeds the mismatches.
+5. **Frontend integration of grounding verdict.** The chat response
+   now carries `grounding_supported / unsupported / unverifiable`
+   counts and the answer text contains `[unverified]` markers. The
+   Next.js chat UI doesn't render these specially yet.
 4. ~~Investigate Wazuh Server API 401 against `192.168.245.128`.~~
    **Resolved 2026-05-26.** Root cause: Wazuh Indexer and Server API
    maintain separate user databases; the operator's initial credential
@@ -297,8 +308,9 @@ to `CHANGELOG.md` as ADRs.
 
 ## 7. Test coverage status
 
-- **162 backend tests passing** (128 prior + 19 knowledge-layer tests
-  across Slices 1/1.5/2A + 16 grounding-validator tests in Slice 2B)
+- **174 backend tests passing** (128 prior + 19 knowledge-layer tests
+  across Slices 1/1.5/2A + 16 grounding-validator tests in Slice 2B
+  + 11 ingester-parser tests in Slice 3)
 - **0 failures**, **0 skipped**
 - ruff: clean across the workspace
 - mypy strict: 33 source files clean

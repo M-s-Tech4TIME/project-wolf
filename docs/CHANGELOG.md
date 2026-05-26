@@ -49,6 +49,172 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-05-27 — Phase 3 Slice 3: real seed corpora + live end-to-end on new agent
+
+**Session type:** claude-code (continuation)
+**Phase:** Phase 3 — Slice 3 of 3 + full-stack live retest
+**Duration:** ~60 min
+**Branch / commit:** `main` — starting commit `e0e94f4`, this entry's
+commit pending.
+
+### What we did
+
+- Operator provisioned a dedicated test agent at `192.168.245.129`
+  (`linux-test-agent`, Wazuh agent id 001, status active) — confirmed
+  via the Wazuh Server API's `/agents` endpoint. Reachable from the
+  dev host; SSH on port 22 (OpenSSH 9.6 on Ubuntu 24.04).
+- Built `tools/seed_knowledge/` — the production-grade ingesters:
+  - `attack.py` — downloads MITRE/CTI's `enterprise-attack.json`
+    (pinned to the master branch; cached under
+    `.local/seed_knowledge_cache/`), parses the STIX bundle, filters
+    to active `attack-pattern` objects (excludes `revoked` +
+    `x_mitre_deprecated`), emits one ChunkInput per technique with
+    metadata (`technique`, `title`, `attack_version`,
+    `kill_chain_phases`, `is_subtechnique`, `parent_technique`).
+    Content lead is the ATT&CK ID for clean FTS keyword hits.
+  - `wazuh_rules.py` — downloads the Wazuh release archive
+    (pinned to `v4.9.2`), iterates rule XML files under
+    `ruleset/rules/`, wraps each file in a synthetic `<root>` before
+    `ElementTree.fromstring()` (Wazuh files are top-level `<group>`
+    elements — not strictly well-formed XML), emits one ChunkInput
+    per `<rule>` with metadata (`rule_id`, `level`, `title`,
+    `ruleset_file`, `groups`, `mitre`, `wazuh_version`).
+  - `__main__.py` — driver CLI with `--source attack | wazuh_rules
+    | all`, `--replace-shared` (deletes existing tenant_id-NULL
+    chunks before re-ingesting), `--cache-dir`, `--limit`, and
+    SHA-256-of-content idempotency (re-running without
+    `--replace-shared` skips chunks already in the DB).
+- Idempotency by design: tenant-private chunks (`tenant_id IS NOT
+  NULL`) are never touched by the ingester. Operator-local
+  customisation (e.g. the ACME SOC runbooks) survives a corpus
+  refresh.
+- Ran the full clean ingest: `--source all --replace-shared`.
+  - Deleted 16 existing shared chunks (the dev-seed corpus from
+    Slice 1 + the 5 ATT&CK chunks from the smoke test).
+  - 697 ATT&CK techniques parsed from matrix v19.1, all 697 inserted.
+  - 4473 Wazuh rules parsed from v4.9.2; 1 file with a
+    well-formedness defect (`0910-ms-exchange-proxylogon_rules.xml`)
+    logged and skipped (graceful degradation contract).
+  - Total runtime 2 min 4 s on the RTX 4050 (embed bottleneck:
+    nomic-embed-text via Ollama at ~30 ms/chunk).
+  - Final DB state: **5170 shared chunks + 3 tenant-private chunks**.
+- Confirmed retrieval quality on the rich corpus by direct store
+  smoke-test (bypassing the chat endpoint):
+  - "rule 5712 sshd brute force" → Rule 5712 chunk #1 (FTS exact-
+    match), Rule 5763 #2, Rule 5714 #3.
+  - "T1110 brute force" → Exim brute-force rule #1, T1110 #2,
+    Proxmox brute-force rule #3 (interesting cross-source ranking;
+    T1110 not #1 but in the top 3).
+  - "attacker uses valid credentials to log into another host" →
+    T1021.004 SSH #1, T1556 Modify Authentication Process #2, T1078
+    Valid Accounts #3 — pure semantic retrieval, all three perfectly
+    on-topic.
+- 11 new parser tests in `tests/test_seed_knowledge_ingesters.py`:
+  ATT&CK STIX parsing (techniques, subtechniques, deprecated filter,
+  non-attack-pattern skip, missing-id skip, FTS ID-front content);
+  Wazuh rule parsing (multi-rule extraction, content-starts-with-id,
+  malformed-file graceful, missing-description skip, zip iteration).
+  `make check` clean: **174 passed** (128 prior + 19 knowledge + 16
+  validator + 11 ingester). Lint + mypy strict still clean.
+- **End-to-end live demo on the new agent**:
+  - Triggered 12 SSH brute-force attempts from this host against
+    `attacker_user_1` through `attacker_user_12` on
+    `192.168.245.129`. All failed (`Permission denied`); 3 dropped
+    by SSH's pre-auth connection cap (`kex_exchange_identification:
+    read: Connection reset by peer`).
+  - Wazuh ingested 10 alerts on agent 001 within 15 s of the burst:
+    9× rule 5710 (level 5, sshd non-existent user) + 1× rule 5712
+    (level 10, sshd brute force composite). Pattern matches doc 06's
+    canonical example and our seeded runbooks exactly.
+  - First Wolf chat ("investigate SSH brute-force on
+    linux-test-agent in the last 10 minutes") found 0 hits because
+    qwen3:4b passed `agent_id="linux-test-agent"` (the name) instead
+    of `"001"` (the numeric ID). The model concluded "no alerts
+    were found"; **the grounding validator flagged that conclusion
+    as `unsupported`** — exactly the right behaviour because
+    "search returned 0 hits" is NOT evidence of absence. Final
+    answer carried two `[unverified]` markers inline.
+  - Second Wolf chat with the agent ID stated explicitly ran the
+    full pipeline: 4 steps, 3 tool calls
+    (`search_alerts` + `get_rule_definition` + `query_runbook`),
+    answer drew on real ATT&CK T1110 content from the freshly-
+    ingested STIX bundle (cited specific TrendMicro and Crashoverride
+    references that are in MITRE's source corpus). The grounding
+    validator's judge LLM returned malformed JSON on this prompt
+    (large evidence section); the validator degraded gracefully,
+    returned the original answer un-annotated, and surfaced
+    `grounding_*` counts as `None`. Both behaviours are the
+    documented contract.
+
+### What we decided
+
+- **`tools/seed_knowledge` is the canonical corpus channel.** The
+  Slice-1 inline `seed_dev_knowledge.py` survives because it's
+  useful for tests + fresh-machine bring-up before the network
+  ingest runs, but the dev DB's authoritative material now comes
+  from real MITRE + Wazuh sources.
+- **Pin both sources, don't follow `master`.** ATT&CK gets bumped
+  by changing `ATTACK_URL` (currently `master` for matrix v19.1)
+  and clearing the cache; Wazuh ruleset gets bumped by changing
+  `WAZUH_VERSION`. Re-embedding the entire corpus is the deliberate
+  cost of a version bump — `--replace-shared` makes it explicit.
+- **No prose Wazuh docs in this slice.** Scope discipline: XML
+  rules + JSON ATT&CK give us realistic corpus volume (~5k chunks)
+  without HTML-scraping edge cases. If operators want the user-
+  manual prose later, a separate Slice 3.5 can add HTML scraping
+  for selected pages.
+- **The agent-name vs agent-ID confusion is a tool-side fix**, not
+  a validator failure. Adding `agent_name` as a synonym in
+  `search_alerts` (lookup against `list_agents`) is the right
+  remediation; logged as a Phase-3-follow-up.
+
+### What broke / what we discovered
+
+- **Wazuh rule files aren't valid XML on their own.** They have a
+  top-level `<group>` element (not `<rules>` or anything that
+  declares itself a root). ElementTree refuses to parse them
+  directly. Fix: wrap each file in a synthetic `<root>` before
+  parsing. Documented in the ingester.
+- **One ruleset file is genuinely malformed**
+  (`0910-ms-exchange-proxylogon_rules.xml` at line 57 col 56).
+  Parser logs a warning and skips; the other 4473 rules ingest
+  cleanly. Likely an upstream Wazuh ruleset issue worth raising
+  with them, but out of scope here.
+- **ATT&CK STIX bundle structure**: matrix version is on the
+  `x-mitre-collection` object, not the technique entries. Parser
+  reads it once before iterating; bundle defaults `attack_version`
+  to `"unknown"` if the schema changes.
+- **The grounding validator catches false-negative claims too.**
+  On the agent-name-vs-ID confusion run, the model concluded "no
+  alerts were found" off a single 0-hit search — and the validator
+  marked both that conclusion claim and the follow-on as
+  `unsupported`. This is a Real Result: doc 06's validator design
+  catches "we didn't find it so it's not there" reasoning, not just
+  fabrication.
+- **qwen3:4b's judge JSON is unreliable at high evidence-prompt
+  volumes.** On the rich-corpus run the judge's response wasn't
+  parseable; validator degraded gracefully. Pushes the stronger-
+  judge follow-up (Nemotron via OpenRouter, prompt refinement,
+  or heuristic+LLM hybrid) up the priority list.
+- **5170 chunks is a real number, not a toy.** Hybrid retrieval +
+  the HNSW vector index handle this volume without measurable
+  latency change vs the 9-chunk seed. pgvector scales here.
+
+### What's next
+
+- **Stronger grounding judge** (now the top follow-up — Slice 2's
+  architecture is sound; the model is the dial).
+- **`search_alerts` agent-name lookup** — small, contained fix.
+- **`wolf reembed` helper** queued from ADR 0012.
+- **Frontend integration of grounding markers** — the chat UI
+  doesn't render `[unverified]` or the validation counts specially
+  yet.
+- **Phase 4 entry** — propose tools + the approval gateway.
+  Phase 3 closure ratifies the read-side foundation Phase 4 depends
+  on.
+
+---
+
 ## 2026-05-27 — Phase 3 Slice 2A + 2B: hybrid retrieval + grounding validator
 
 **Session type:** claude-code (continuation)
