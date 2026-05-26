@@ -151,6 +151,55 @@ async def test_query_runbook_raises_when_store_not_configured() -> None:
         await tool.run(exec_ctx, args)
 
 
+# ─── EmbeddingProvider factory ──────────────────────────────────────────────
+
+
+def test_factory_returns_ollama_adapter_by_default() -> None:
+    from app.config import Settings
+    from app.knowledge.embeddings import (
+        OllamaEmbeddingAdapter,
+        make_embedding_provider,
+    )
+
+    settings = Settings(
+        embedding_provider="ollama",
+        embedding_model="nomic-embed-text",
+        embedding_dimension=768,
+    )
+    provider = make_embedding_provider(settings)
+    assert isinstance(provider, OllamaEmbeddingAdapter)
+    assert provider.dimension == 768
+    assert provider.model_id == "ollama:nomic-embed-text"
+
+
+def test_factory_rejects_unknown_provider() -> None:
+    from app.config import Settings
+    from app.knowledge.embeddings import make_embedding_provider
+
+    settings = Settings(embedding_provider="not-a-real-runtime")
+    with pytest.raises(ValueError, match="Unknown embedding_provider"):
+        make_embedding_provider(settings)
+
+
+def test_factory_accepts_sentence_transformers_aliases() -> None:
+    """The factory accepts the canonical name plus common aliases."""
+    from app.config import Settings
+    from app.knowledge.embeddings import make_embedding_provider
+
+    # Without the optional extra, this would raise ImportError from inside
+    # the adapter constructor — that's the contract; we don't try to
+    # instantiate here, just verify the factory routes to the right branch.
+    # Since sentence-transformers IS installed in dev, construction
+    # succeeds. We assert the dispatch is correct.
+    for alias in ("sentence-transformers", "sentence_transformers", "st"):
+        settings = Settings(
+            embedding_provider=alias,
+            embedding_model="BAAI/bge-base-en-v1.5",
+        )
+        provider = make_embedding_provider(settings)
+        assert provider.model_id.startswith("st:")
+
+
 @pytest.mark.asyncio
 async def test_query_runbook_passes_filters_to_store() -> None:
     """Tool builds metadata_filters from rule_id/technique and forwards to store."""

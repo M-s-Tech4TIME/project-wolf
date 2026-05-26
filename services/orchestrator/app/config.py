@@ -67,6 +67,21 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
     openai_base_url: str = "https://api.openai.com/v1"
 
+    # ── Embedding stack (Phase 3 — knowledge layer) ────────────────────────
+    # `ollama` (default) reuses the Ollama daemon already running for the LLM
+    # — no torch in the orchestrator's wheel set; recommended per ADR 0007.
+    # `sentence-transformers` runs in-process and requires the optional
+    # `embeddings-local` extra (`uv sync --extra embeddings-local`).
+    embedding_provider: str = "ollama"  # ollama | sentence-transformers
+    # Model identifier for the active provider.
+    #   - ollama:                Ollama tag, e.g. "nomic-embed-text"
+    #   - sentence-transformers: HuggingFace name, e.g. "BAAI/bge-base-en-v1.5"
+    # Both default to a 768-dim model so the knowledge_chunks.embedding
+    # column width is honored without a migration.
+    embedding_model: str = "nomic-embed-text"
+    # Hard contract — must match knowledge_chunks.embedding column width.
+    embedding_dimension: int = 768
+
     @property
     def is_development(self) -> bool:
         return self.environment == "development"

@@ -29,7 +29,7 @@ from app.agent import AgentLoop, get_model_for_tenant, strategy_for
 from app.agent.events import LoopEvent
 from app.config import get_settings
 from app.database import get_db
-from app.knowledge.embeddings import OllamaEmbeddingAdapter
+from app.knowledge.embeddings import make_embedding_provider
 from app.knowledge.store import PgvectorKnowledgeStore
 from app.secrets_factory import get_secrets_backend
 from app.tenancy.context import TenantContext, require_tenant_context
@@ -110,7 +110,7 @@ async def chat(
 
     connection = await get_wazuh_connection(ctx, db, secrets)
     knowledge_store = PgvectorKnowledgeStore(
-        db, OllamaEmbeddingAdapter(_settings.ollama_base_url)
+        db, make_embedding_provider(_settings)
     )
 
     async with (
@@ -180,7 +180,7 @@ async def chat_stream(
     strategy = strategy_for(capability)
     connection = await get_wazuh_connection(ctx, db, secrets)
     knowledge_store = PgvectorKnowledgeStore(
-        db, OllamaEmbeddingAdapter(_settings.ollama_base_url)
+        db, make_embedding_provider(_settings)
     )
 
     queue: asyncio.Queue[LoopEvent | None] = asyncio.Queue()

@@ -27,6 +27,17 @@ dependencies = [
     "aiosqlite>=0.20",
 ]
 
+[project.optional-dependencies]
+# Embedding-stack alternative — in-process via sentence-transformers + torch.
+# Kept OPTIONAL so the default install set stays torch-free per ADR 0007's
+# native-packaging constraints. Opt-in: `uv sync --extra embeddings-local`.
+# Used when EMBEDDING_PROVIDER=sentence-transformers; the default is the
+# Ollama-hosted adapter which has no extra Python deps.
+embeddings-local = [
+    "sentence-transformers>=3.0",
+    "torch>=2.4",
+]
+
 [tool.uv.sources]
 wolf-common = { workspace = true }
 wolf-secrets = { workspace = true }

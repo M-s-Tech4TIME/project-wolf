@@ -83,5 +83,6 @@ implies. Any rollback path.
 | 0009 | `model-probe-qwen3.5-4b.md` — qwen3.5:4b GPU probe; regression vs qwen3:4b on tool calling; supported but not recommended; NO default flip | accepted |
 | 0010 | `model-probe-qwen3-8b.md` — qwen3:8b GPU probe (tight fit 85% GPU/15% CPU); same measured capability as qwen3:4b; KNOWN_MODELS amended | accepted |
 | 0011 | `model-probe-granite3.3-8b.md` — opportunistic probe of IBM Granite 3.3 8B (Apache 2.0); 0.25 score; native tool calling works but structured-output fails Wolf's schema; outside ADR 0006 matrix | accepted |
+| 0012 | `embedding-stack-ollama-vs-sentence-transformers.md` — keep both adapters; default Ollama (lean wheels, ADR 0007); sentence-transformers as opt-in extra `embeddings-local` for throughput / precision workloads | accepted |
 
 _Update this table whenever you add a new ADR._

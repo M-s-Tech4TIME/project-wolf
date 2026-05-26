@@ -29,7 +29,7 @@ from sqlalchemy import select
 
 from app.config import get_settings
 from app.database import db_session
-from app.knowledge.embeddings import OllamaEmbeddingAdapter
+from app.knowledge.embeddings import make_embedding_provider
 from app.knowledge.store import ChunkInput, PgvectorKnowledgeStore
 from app.tenancy.models import Tenant
 
@@ -170,7 +170,7 @@ async def main() -> int:
         return 2
 
     settings = get_settings()
-    embedder = OllamaEmbeddingAdapter(settings.ollama_base_url)
+    embedder = make_embedding_provider(settings)
 
     async with db_session() as session:
         tenant_q = await session.execute(

@@ -6,7 +6,7 @@
 >
 > For history of what changed when, see `CHANGELOG.md` (append-only).
 
-**Last updated:** 2026-05-24 by claude-code
+**Last updated:** 2026-05-26 by claude-code
 
 ---
 
@@ -14,15 +14,19 @@
 
 **Current phase:** Phase 3 — Knowledge & RAG (per `docs/10-build-roadmap.md`).
 
-**Phase status:** **Phase 3 Slice 1 (vertical skeleton) shipped** on
-2026-05-24.  Phase 2 closed (ADR 0005); Phase 3 vertical RAG path now
-operational end-to-end (alembic 0004 → KnowledgeChunk + HNSW index →
-Ollama nomic-embed-text adapter → PgvectorKnowledgeStore with tenant
-scoping → `query_runbook` tool registered as 10th read tool).
-`make check` 140 passed (128 prior + 12 new knowledge-layer tests).
-Direct RAG retrieval verified against the seeded acme corpus
-(cosine search returned T1110 + ACME SOC runbook in expected order;
-tenant-scoping enforced at SQL clause).
+**Phase status:** **Phase 3 Slices 1 + 1.5 shipped** (2026-05-24
+and 2026-05-26).  Phase 2 closed (ADR 0005).  Slice 1: vertical RAG
+path operational end-to-end (alembic 0004 → KnowledgeChunk + HNSW
+index → embedding adapter → PgvectorKnowledgeStore with tenant
+scoping → `query_runbook` tool registered as 10th read tool); pure
+RAG and mixed (RAG + live Server API) chat paths both verified via
+`/api/v1/chat`.  Slice 1.5: second embedding adapter
+(sentence-transformers BGE-base) added behind an optional dep
+extra, env-driven factory, side-by-side benchmark CLI, decision
+captured in ADR 0012 (keep both; Ollama default for lean wheels +
+ADR 0007, sentence-transformers opt-in for throughput / precision
+workloads).  `make check` 143 passed (128 prior + 15 knowledge-layer
+tests).
 
 **Phase 2 exit criteria progress** (from `docs/10-build-roadmap.md`):
 - [x] Wazuh OpenSearch client with forced tenant filter (opt-in per tenant)
@@ -61,12 +65,22 @@ Status legend: ✅ working, 🟡 partial, ❌ broken/disabled, ⏳ planned only.
       `get_agent_detail`, `get_rule_definition`, `get_cluster_health`,
       **`query_runbook`** (Phase 3 Slice 1, added 2026-05-24).
 - ✅ Phase 3 knowledge layer (`app/knowledge/`): `EmbeddingProvider`
-      protocol + `OllamaEmbeddingAdapter` (nomic-embed-text, 768-dim);
+      protocol + two adapters — `OllamaEmbeddingAdapter`
+      (nomic-embed-text, 768-dim, default) and
+      `SentenceTransformersEmbeddingAdapter` (BGE-base-en-v1.5,
+      opt-in via the `embeddings-local` extra; recorded in ADR 0012);
+      `make_embedding_provider` factory selects via env
+      (`EMBEDDING_PROVIDER=ollama|sentence-transformers`).
       `KnowledgeStore` protocol + `PgvectorKnowledgeStore` (tenant-
       scoped retrieval enforced at the SQL clause); `KnowledgeChunk`
       SQLAlchemy model with `chunk_metadata` JSONB + `embedding`
       `Vector(768)` + `embedding_model` stamp for re-embedding triggers.
-      HNSW cosine-distance index per ADR 0008 + doc 06.
+      HNSW cosine-distance index per doc 06.
+- ✅ Embedding-stack benchmark CLI (`tools/embedding_benchmark/`):
+      side-by-side cold-start / per-query latency / corpus-throughput /
+      qualitative top-5 retrieval comparison between both adapters
+      against the seeded dev corpus.  Re-runnable for future
+      empirical evaluations.
 - ✅ Agent loop with three strategies (`app/agent/`): frontier / guided /
       pipeline; `LoopEvent` emission for SSE; multi-turn `history` support
 - ✅ Endpoints: `POST /api/v1/auth/{login,logout}`, `GET /me`,
@@ -184,18 +198,14 @@ who want to build their own images.
 ## 4. What's next
 
 **Immediate next steps** (in priority order):
-1. **Phase 3 Slice 1.5 — sentence-transformers as a second embedding
-   adapter + comparison ADR.** Per the operator's request during
-   Slice 1 planning: build a second `EmbeddingProvider` impl backed
-   by sentence-transformers (BGE-base or similar), benchmark it
-   against the current Ollama-hosted nomic-embed-text adapter for
-   query/insert latency and retrieval quality on the seeded corpus,
-   write a decision ADR on whether to keep both or pick one.
-2. **Phase 3 Slice 2 — hybrid retrieval (BM25 + vector fusion) +
+1. **Phase 3 Slice 2 — hybrid retrieval (BM25 + vector fusion) +
    grounding validator.** The validator is the designed mitigation
    for the cross-model grounding-discipline failures (ADRs 0002,
-   0010, 0011 all showed fabrication on the no-tools probe task).
-3. **Phase 3 Slice 3 — real seed corpora.** `tools/seed_knowledge`
+   0010, 0011 all showed fabrication on the no-tools probe task)
+   and is now reinforced by the synthesis-embellishment observation
+   captured during Slice 1's end-to-end verification (model wove a
+   rule parameter into a runbook step that wasn't in the chunk).
+2. **Phase 3 Slice 3 — real seed corpora.** `tools/seed_knowledge`
    scrapers for Wazuh docs + ATT&CK enterprise-attack.json. Replaces
    the 9-chunk dev inline seed.
 4. ~~Investigate Wazuh Server API 401 against `192.168.245.128`.~~
@@ -274,7 +284,8 @@ to `CHANGELOG.md` as ADRs.
 
 ## 7. Test coverage status
 
-- **140 backend tests passing** (128 prior + 12 Phase-3 Slice-1 knowledge tests)
+- **143 backend tests passing** (128 prior + 15 Phase-3 knowledge tests
+  across Slices 1 and 1.5)
 - **0 failures**, **0 skipped**
 - ruff: clean across the workspace
 - mypy strict: 33 source files clean
@@ -299,7 +310,7 @@ to `CHANGELOG.md` as ADRs.
   relaxed session-continuity protocol (reading required only for new env /
   new session / different model; end-of-session update remains mandatory).
   In git as of commit `b093761`.
-- ADRs in `docs/decisions/`: 10 ADRs — 0001 (`llama3.2` baseline), 0002
+- ADRs in `docs/decisions/`: 12 ADRs — 0001 (`llama3.2` baseline), 0002
   (`qwen3:4b`), 0003 (`gemma3:4b`), 0004 (default-model switch
   decision), 0005 (Phase 2 frontier-API exit-criterion verification),
   0006 (commitment to native support for four model families — Qwen 3,
@@ -311,7 +322,10 @@ to `CHANGELOG.md` as ADRs.
   regression vs qwen3:4b on tool calling; supported but no default
   flip), 0010 (qwen3:8b GPU probe — same measured capability as
   qwen3:4b, tight VRAM fit with 85% GPU/15% CPU; KNOWN_MODELS
-  amended).  README index in place.
+  amended), 0011 (opportunistic probe of IBM Granite 3.3 8B —
+  outside the four-family commitment), 0012 (embedding stack —
+  keep both Ollama and sentence-transformers adapters; Ollama
+  default).  README index in place.
 - `docs/15-supported-model-matrix.md`: directive document for the
   four-family commitment (added 2026-05-23 alongside ADR 0006).
 - `docs/16-distribution-and-packaging.md`: living spec for the

@@ -49,6 +49,137 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-05-26 — Phase 3 Slice 1.5: sentence-transformers adapter + ADR 0012
+
+**Session type:** claude-code (continuation)
+**Phase:** Phase 3 — Slice 1.5 of 3
+**Duration:** ~60 min
+**Branch / commit:** `main` — starting commit `8cb3ab9`, final commit
+pending this entry.
+
+### What we did
+
+- **Added an optional Python extra `embeddings-local`** in
+  `services/orchestrator/pyproject.toml` carrying
+  `sentence-transformers>=3.0` + `torch>=2.4`. Default `uv sync`
+  is unchanged — the orchestrator's mandatory wheel set stays
+  torch-free per ADR 0007's native-packaging constraints.
+- **Built `SentenceTransformersEmbeddingAdapter`** in
+  `app/knowledge/embeddings.py`. Lazy-imports `sentence_transformers`
+  inside the constructor so the module still imports cleanly when
+  the optional extra isn't installed (clear `ImportError` with
+  install hint at construction time). Detects CUDA, falls back to
+  CPU. Wraps `encode()` in `asyncio.to_thread` so it doesn't block
+  the event loop. Applies the BGE asymmetric query prefix
+  (`"Represent this sentence for searching relevant passages: "`)
+  automatically when the model name contains "bge".
+- **Added `make_embedding_provider(settings)` factory** that selects
+  the adapter from `EMBEDDING_PROVIDER` (default `ollama`) and
+  `EMBEDDING_MODEL` env vars. Accepts aliases
+  (`sentence-transformers`, `sentence_transformers`, `st`).
+- **Threaded the factory through** `services/orchestrator/app/api/chat.py`
+  and `services/orchestrator/app/management/seed_dev_knowledge.py` so
+  both code paths honour the env-driven selection. No call-site
+  hardcodes the Ollama adapter anymore.
+- **Wrote `tools/embedding_benchmark/`** — side-by-side benchmark CLI.
+  Loads the same 9-chunk dev corpus the seed CLI uses (imports
+  `SHARED_CHUNKS` + `runbook_chunks_for` directly so the comparison
+  is reproducible). Measures cold-start, per-query latency (3
+  trials × 10 queries, median), corpus-embed throughput, and
+  qualitative top-5 retrieval for each adapter against the same
+  query set. Optional `--json` for machine-readable output.
+- **Ran the benchmark** on the RTX 4050 Laptop GPU:
+  - Ollama (nomic-embed-text): cold-start 0.07 s (daemon warm),
+    p50 30.7 ms, corpus 19 ms/chunk
+  - sentence-transformers (BGE-base-en-v1.5): cold-start 10.12 s,
+    p50 5.9 ms, corpus 8 ms/chunk
+  - Retrieval precision was qualitatively better for BGE on
+    entity-specific lookups (e.g. "What is T1078 Valid Accounts?"
+    — BGE ranked T1078 #1; Ollama-nomic ranked T1110.001 #1).
+    On ambiguous procedural queries both ranked comparably.
+    Sample size small; trend suggestive.
+- **Wrote ADR 0012** —
+  `docs/decisions/0012-embedding-stack-ollama-vs-sentence-transformers.md`.
+  Decision: **keep both adapters; default Ollama** (preserves
+  ADR 0007's packaging story, matches LLM Ollama pattern, fast
+  steady-state startup); **sentence-transformers as opt-in extra**
+  for operators with high-throughput ingestion or precision needs.
+  Records the empirical numbers verbatim, lays out the
+  variable-confound trade explicitly (the chosen comparison
+  mixes runtime + model; isolation would have needed same-model
+  on both runtimes — the operator chose the cross-stack comparison
+  for actionability over rigour).
+- **Added 3 new tests** in `tests/test_knowledge_store.py` covering
+  the factory contract (default routes to Ollama; unknown provider
+  rejected; sentence-transformers aliases accepted). 12 prior
+  Slice 1 tests still pass.
+- **`make check` clean: 143 passed** (128 prior + 12 Slice 1 + 3
+  Slice 1.5). Lint + mypy strict still clean. Benchmark CLI gets
+  a file-level `# ruff: noqa: T201, E402` for its intentional CLI
+  prints + path-bootstrap import order.
+- **Updated `docs/decisions/README.md`** index with ADR 0012.
+
+### What we decided
+
+- **Both adapters are kept, behind the same `EmbeddingProvider`
+  Protocol.** Operator switches via `EMBEDDING_PROVIDER` env. The
+  protocol absorbs the choice; no other code needs to change.
+- **Ollama stays the default** for new installs. The ADR 0007
+  packaging argument is load-bearing — torch+transformers add
+  ~2 GB to the orchestrator install, which materially hurts the
+  `.deb` / `.rpm` channel's appeal. The retrieval-precision edge
+  for BGE on micro-benchmark wasn't large enough to overturn this.
+- **sentence-transformers is the recommended choice for bulk
+  re-embedding** (Slice 3's Wazuh-docs / ATT&CK ingest will run
+  thousands of embed calls at once — the 2.4× corpus-throughput
+  win matters there). Operator can `EMBEDDING_PROVIDER=
+  sentence-transformers` for the duration of the migration,
+  then flip back.
+- **The benchmark CLI is permanent**, not throwaway. Future
+  hardware changes / model swaps can re-run it.
+- **No re-embedding helper in this slice.** Flipping
+  `EMBEDDING_PROVIDER` without re-embedding the existing corpus
+  will silently degrade retrieval (query vectors from BGE searched
+  against nomic vectors). A `wolf reembed` CLI is queued as a
+  Slice 2 / Slice 3 follow-up; documented as a known gap in ADR
+  0012.
+
+### What broke / what we discovered
+
+- **nomic-embed-text via Ollama is NOT L2-normalized.** Raw dot
+  products in the benchmark reached +280-290. pgvector's
+  `vector_cosine_ops` normalizes internally so retrieval RANKING
+  is unaffected, but if anyone ever rewrites Wolf's similarity
+  code to use raw dot product, the two adapters would behave very
+  differently. Logged in ADR 0012 §"Vector geometry."
+- **First-run cold-start asymmetry is misleading.** Ollama's
+  reported 0.07 s reflects an already-warm daemon (the model had
+  been loaded by Slice 1's seed run earlier in the session). A
+  truly cold Ollama would also pay a load cost similar to ST's
+  ~10 s. The ADR records this honestly rather than pretending
+  Ollama has a structural cold-start advantage.
+- **BGE asymmetric retrieval matters.** The first benchmark
+  iteration embedded queries WITHOUT the BGE query prefix and
+  retrieval quality was visibly worse. Adding the
+  `embed_query()` method with the proper prefix lifted the top-1
+  precision on entity-specific queries from "comparable to
+  nomic" to "noticeably better than nomic." Implementation
+  detail documented in the adapter docstring; the benchmark uses
+  `embed_query()` when available so future adapters can benefit.
+
+### What's next
+
+- **Phase 3 Slice 2** — hybrid retrieval (BM25 + vector fusion)
+  + grounding validator.
+- **Phase 3 Slice 3** — real Wazuh-docs / ATT&CK scrapers in
+  `tools/seed_knowledge`, plus the `wolf reembed` helper.
+- **Validate retrieval precision delta on real corpus.** The
+  10-query / 9-chunk micro-benchmark is suggestive. Slice 3's
+  thousand-chunk corpus is the right scale to formalize the
+  precision claim.
+
+---
+
 ## 2026-05-26 — Detour: close Slice 1 end-to-end (Wazuh Server API auth)
 
 **Session type:** claude-code (continuation)
