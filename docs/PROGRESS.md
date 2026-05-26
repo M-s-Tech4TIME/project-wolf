@@ -198,14 +198,16 @@ who want to build their own images.
 3. **Phase 3 Slice 3 — real seed corpora.** `tools/seed_knowledge`
    scrapers for Wazuh docs + ATT&CK enterprise-attack.json. Replaces
    the 9-chunk dev inline seed.
-4. **Investigate Wazuh Server API 401 against `192.168.245.128`.**
-   The `wolf` user works for the Indexer (alert queries succeed) but
-   the Server API rejects auth on `get_rule_definition` —
-   operator-side credential issue surfaced during Slice 1 end-to-end.
-   Not blocking Slice 1 (the RAG path doesn't touch Server API), but
-   needed before knowledge-flavored chat questions get tested via
-   `query_runbook` instead of having the model route to Server-API
-   tools.
+4. ~~Investigate Wazuh Server API 401 against `192.168.245.128`.~~
+   **Resolved 2026-05-26.** Root cause: Wazuh Indexer and Server API
+   maintain separate user databases; the operator's initial credential
+   drop only provisioned the `wolf` user in the Indexer. Operator
+   supplied the Server API admin (`wazuh-wui` / generated password).
+   `bootstrap_tenant` re-run with per-endpoint credentials. End-to-end
+   `/api/v1/chat` now verified with both pure-RAG (model picks
+   `query_runbook`, retrieves ACME SOC runbook, cited answer in 60s)
+   and mixed-mode (`get_rule_definition` + `query_runbook` in one
+   loop, both citations attached). No Wolf code changes were needed.
 5. **Pending workstation-class probe ADRs remain blocked on
    workstation GPU hardware (24+ GB VRAM):** GLM 5.1 ~32B (priority
    #1 per doc 15), Gemma 3 12B/27B, Qwen 3 14B/32B. Not blocking

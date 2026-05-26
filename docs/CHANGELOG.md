@@ -49,6 +49,87 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-05-26 — Detour: close Slice 1 end-to-end (Wazuh Server API auth)
+
+**Session type:** claude-code (continuation)
+**Phase:** Phase 3 — closure of Slice 1's deferred end-to-end
+**Duration:** ~20 min
+**Branch / commit:** `main` — starting commit `158b008`, this entry's
+commit pending.
+
+### What we did
+
+- **Diagnosed the Server API 401** flagged at Slice 1 close: Wazuh's
+  Indexer (OpenSearch security plugin) and Server API (its own RBAC
+  database at `/var/ossec/api/configuration/security/rbac.db`)
+  maintain **separate user backends**. The `wolf` user (and later
+  `admin`) existed only in the Indexer. Direct curl against the Server
+  API `/security/user/authenticate` returned `"Invalid credentials"`
+  for both. Pure operator-side configuration gap; no Wolf code path
+  involved.
+- **Operator supplied the Server API admin credentials**
+  (`wazuh-wui` / generated). curl confirmed JWT issuance + `/agents`
+  + `/rules?rule_ids=5712` all return real data.
+- **Re-ran `bootstrap_tenant --tenant-slug acme`** with per-endpoint
+  credentials (`admin` for Indexer, `wazuh-wui` for Server API). Idem-
+  potent — overwrote the secrets in place; tenant + user bindings
+  preserved.
+- **Closed the Slice 1 end-to-end gap** with two verifications via
+  `/api/v1/chat`:
+  - **Pure RAG**: "What is the Acme SOC runbook for SSH brute-force?"
+    → strategy `guided`, 2 steps, 1 tool call (`query_runbook`),
+    citation present, answer faithfully reproduces all 5 runbook steps
+    from the seeded ACME chunk. 60s on the RTX 4050.
+  - **Mixed RAG + Server API**: "Look up the actual definition of
+    Wazuh rule 5712, then tell me what Acme SOC runbook says…"
+    → 2 tool calls (`get_rule_definition` + `query_runbook`), both
+    citations attached, 71s. Confirms the same loop can fuse live
+    state with retrieved knowledge per doc 06 §"How 'complete
+    knowledge' actually gets delivered."
+
+### What we decided
+
+- **No Wolf code changes** — the Slice 1 implementation is unchanged
+  by this detour. The failure was operator-side credentials only.
+- **Keep the per-endpoint credential pattern** in the dev tenant
+  (Indexer admin + Server API admin can be different users). Already
+  supported by `bootstrap_tenant` — `--opensearch-username` and
+  `--server-api-username` are independent flags.
+- **Acknowledge the synthesis-fidelity hiccup** seen in the mixed-mode
+  answer: the model wove a fragment of the rule's `ignore=60s`
+  parameter into the runbook section ("Block the source IP for 60
+  seconds (per `ignore` parameter)") that is NOT in the seeded
+  runbook chunk. Retrieval is correct (both citations present);
+  synthesis embellishes. This is exactly the grounding-discipline
+  failure mode ADRs 0002 / 0010 / 0011 documented for the qwen
+  family, and exactly what Phase 3 Slice 2's grounding validator is
+  designed to catch. The fabrication evidence reinforces the
+  validator's design rationale.
+
+### What broke / what we discovered
+
+- **Wazuh's Indexer/Server-API user-store split** is a real
+  deployment gotcha worth surfacing in ONBOARDING. The
+  `credentials/wazuh-credentials.txt` template originally listed one
+  user as covering both; operators should be told explicitly that
+  these are two separate credentials. Logged as a follow-up doc fix.
+- **qwen3:4b's synthesis embellishment** when mixing two tool results
+  (rule definition + runbook) is observable now that both paths
+  work. Quantifying this on a small benchmark set would be a useful
+  Slice 2 input for the grounding-validator's reject threshold.
+
+### What's next
+
+- **Phase 3 Slice 1.5** — sentence-transformers `EmbeddingProvider`
+  adapter + comparison ADR.
+- **Phase 3 Slice 2** — hybrid retrieval + grounding validator
+  (motivating evidence from this session's synthesis embellishment).
+- **ONBOARDING doc fix** — explicit note that Wazuh Indexer and
+  Server API have separate user databases; the operator may need
+  two different credentials.
+
+---
+
 ## 2026-05-24 — Phase 3 Slice 1: vertical RAG skeleton
 
 **Session type:** claude-code (same session as Granite probe / new-machine handoff)
