@@ -6,7 +6,7 @@
 >
 > For history of what changed when, see `CHANGELOG.md` (append-only).
 
-**Last updated:** 2026-05-26 by claude-code
+**Last updated:** 2026-05-27 by claude-code
 
 ---
 
@@ -14,19 +14,23 @@
 
 **Current phase:** Phase 3 — Knowledge & RAG (per `docs/10-build-roadmap.md`).
 
-**Phase status:** **Phase 3 Slices 1 + 1.5 shipped** (2026-05-24
-and 2026-05-26).  Phase 2 closed (ADR 0005).  Slice 1: vertical RAG
-path operational end-to-end (alembic 0004 → KnowledgeChunk + HNSW
-index → embedding adapter → PgvectorKnowledgeStore with tenant
-scoping → `query_runbook` tool registered as 10th read tool); pure
-RAG and mixed (RAG + live Server API) chat paths both verified via
-`/api/v1/chat`.  Slice 1.5: second embedding adapter
-(sentence-transformers BGE-base) added behind an optional dep
-extra, env-driven factory, side-by-side benchmark CLI, decision
-captured in ADR 0012 (keep both; Ollama default for lean wheels +
-ADR 0007, sentence-transformers opt-in for throughput / precision
-workloads).  `make check` 143 passed (128 prior + 15 knowledge-layer
-tests).
+**Phase status:** **Phase 3 Slices 1, 1.5, and 2 (A+B) shipped**.
+Phase 2 closed (ADR 0005). Slice 1: vertical RAG operational
+end-to-end. Slice 1.5: sentence-transformers second adapter behind
+optional dep + decision ADR 0012. Slice 2A (hybrid retrieval):
+migration 0005 added a `content_tsv` generated column + GIN index,
+`PgvectorKnowledgeStore.search()` now fuses vector (cosine) and FTS
+(`ts_rank_cd`) candidates via Reciprocal Rank Fusion (k=60). Slice 2B
+(grounding validator): `app/grounding/` module with LLM-as-judge
+that flags unsupported factual claims `[unverified]` inline,
+hooked into `AgentLoop.run()` before the answer event, surfaced as
+`grounding_supported / unsupported / unverifiable` on the chat
+response. `make check` 162 passed (128 prior + 19 Slice-1/1.5
+knowledge tests + 16 Slice-2 validator tests). End-to-end on the
+real Wazuh confirms pipeline works; judge-model strength on hard
+cases is a documented limitation (qwen3:4b plays safe with
+"unverifiable" labels rather than catching subtle embellishment —
+follow-up queued).
 
 **Phase 2 exit criteria progress** (from `docs/10-build-roadmap.md`):
 - [x] Wazuh OpenSearch client with forced tenant filter (opt-in per tenant)
@@ -198,16 +202,25 @@ who want to build their own images.
 ## 4. What's next
 
 **Immediate next steps** (in priority order):
-1. **Phase 3 Slice 2 — hybrid retrieval (BM25 + vector fusion) +
-   grounding validator.** The validator is the designed mitigation
-   for the cross-model grounding-discipline failures (ADRs 0002,
-   0010, 0011 all showed fabrication on the no-tools probe task)
-   and is now reinforced by the synthesis-embellishment observation
-   captured during Slice 1's end-to-end verification (model wove a
-   rule parameter into a runbook step that wasn't in the chunk).
-2. **Phase 3 Slice 3 — real seed corpora.** `tools/seed_knowledge`
+1. **Phase 3 Slice 3 — real seed corpora.** `tools/seed_knowledge`
    scrapers for Wazuh docs + ATT&CK enterprise-attack.json. Replaces
-   the 9-chunk dev inline seed.
+   the 9-chunk dev inline seed; gives Slice 1.5's precision benchmark
+   real material to evaluate against and gives Slice 2B's grounding
+   validator more diverse evidence to judge on.
+2. **Phase 3 Slice 2 follow-up — stronger grounding judge.** Slice 2B
+   shipped the architecture; qwen3:4b as the judge under-flags subtle
+   embellishments (defaults to "unverifiable" on hard cases). Options
+   to evaluate: (a) route the validator to Nemotron 120B via the
+   existing OpenRouter path (ADR 0005's hosted-API mechanism) for
+   stronger judging; (b) refine the judge prompt with explicit
+   negative examples; (c) add a heuristic-overlap fallback that flags
+   claims with low token overlap to citations. Worth an ADR-level
+   evaluation once Slice 3's real corpus produces enough verdict
+   samples to measure precision/recall on.
+3. **`wolf reembed` helper** (queued from ADR 0012). Currently
+   flipping `EMBEDDING_PROVIDER` without re-embedding silently
+   degrades retrieval; the helper diffs `KnowledgeChunk.embedding_model`
+   against the active provider and re-embeds the mismatches.
 4. ~~Investigate Wazuh Server API 401 against `192.168.245.128`.~~
    **Resolved 2026-05-26.** Root cause: Wazuh Indexer and Server API
    maintain separate user databases; the operator's initial credential
@@ -284,8 +297,8 @@ to `CHANGELOG.md` as ADRs.
 
 ## 7. Test coverage status
 
-- **143 backend tests passing** (128 prior + 15 Phase-3 knowledge tests
-  across Slices 1 and 1.5)
+- **162 backend tests passing** (128 prior + 19 knowledge-layer tests
+  across Slices 1/1.5/2A + 16 grounding-validator tests in Slice 2B)
 - **0 failures**, **0 skipped**
 - ruff: clean across the workspace
 - mypy strict: 33 source files clean

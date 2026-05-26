@@ -16,6 +16,7 @@ LoopEventType = Literal[
     "model.call.completed",
     "model.call.failed",
     "tool.call.completed",
+    "grounding.completed",
     "answer",
 ]
 

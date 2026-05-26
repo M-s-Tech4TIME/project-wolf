@@ -238,8 +238,13 @@ async def test_rrf_fusion_combines_both_legs_correctly() -> None:
             # The store fetches rows for the top-K IDs after fusion.
             # Return all three rows; the store filters by RRF ordering.
             class _Result:
-                def all(self_inner) -> list[tuple[Any, float]]:
-                    return [(rows[in_both], 0.10), (rows[vector_only], 0.20), (rows[fts_only], 0.50)]
+                @staticmethod
+                def all() -> list[tuple[Any, float]]:
+                    return [
+                        (rows[in_both], 0.10),
+                        (rows[vector_only], 0.20),
+                        (rows[fts_only], 0.50),
+                    ]
 
             return _Result()
 

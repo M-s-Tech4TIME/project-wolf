@@ -29,6 +29,7 @@ from app.agent import AgentLoop, get_model_for_tenant, strategy_for
 from app.agent.events import LoopEvent
 from app.config import get_settings
 from app.database import get_db
+from app.grounding import GroundingValidator
 from app.knowledge.embeddings import make_embedding_provider
 from app.knowledge.store import PgvectorKnowledgeStore
 from app.secrets_factory import get_secrets_backend
@@ -79,6 +80,11 @@ class ChatResponseBody(BaseModel):
     loop_id: str
     strategy: str
     model_id: str
+    # Phase 3 Slice 2B — grounding validator counts. None if the validator
+    # didn't run (no citations or judge call failed).
+    grounding_supported: int | None = None
+    grounding_unsupported: int | None = None
+    grounding_unverifiable: int | None = None
 
 
 def _secrets_dep() -> SecretsBackend:
@@ -112,6 +118,7 @@ async def chat(
     knowledge_store = PgvectorKnowledgeStore(
         db, make_embedding_provider(_settings)
     )
+    grounding_validator = GroundingValidator(provider)
 
     async with (
         WazuhOpenSearchClient(connection) as opensearch,
@@ -126,6 +133,7 @@ async def chat(
             opensearch=opensearch,
             server_api=server_api,
             knowledge_store=knowledge_store,
+            grounding_validator=grounding_validator,
         )
 
     # Persist the audit trail produced by the loop.
@@ -142,6 +150,9 @@ async def chat(
         loop_id=answer.loop_id,
         strategy=strategy.name,
         model_id=capability.model_id,
+        grounding_supported=answer.grounding_supported,
+        grounding_unsupported=answer.grounding_unsupported,
+        grounding_unverifiable=answer.grounding_unverifiable,
     )
 
 
@@ -182,6 +193,7 @@ async def chat_stream(
     knowledge_store = PgvectorKnowledgeStore(
         db, make_embedding_provider(_settings)
     )
+    grounding_validator = GroundingValidator(provider)
 
     queue: asyncio.Queue[LoopEvent | None] = asyncio.Queue()
 
@@ -204,6 +216,7 @@ async def chat_stream(
                     server_api=server_api,
                     event_callback=emit,
                     knowledge_store=knowledge_store,
+                    grounding_validator=grounding_validator,
                 )
             await db.commit()
         finally:

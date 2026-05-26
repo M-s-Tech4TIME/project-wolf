@@ -34,6 +34,7 @@ from wolf_schema.chat import Message, MessageRole
 from app.agent.events import EventCallback, LoopEvent, LoopEventType
 from app.agent.strategies import Strategy
 from app.audit.log import write_event_from_context
+from app.grounding import GroundingValidator
 from app.guardrails.limits import DEFAULT_LIMITS, ResourceLimits
 from app.models.interface import ModelProvider
 from app.models.registry import registry as schema_registry
@@ -57,6 +58,11 @@ class AgentAnswer(BaseModel):
     output_tokens: int
     stop_reason: str  # "answer" | "budget_exhausted" | "loop_error"
     loop_id: str
+    # Phase 3 Slice 2B — grounding validator counts. None if the validator
+    # didn't run (no citations, empty answer, or judge call failed).
+    grounding_supported: int | None = None
+    grounding_unsupported: int | None = None
+    grounding_unverifiable: int | None = None
 
 
 async def _emit(
@@ -112,6 +118,7 @@ class AgentLoop:
         history: list[tuple[str, str]] | None = None,
         event_callback: EventCallback | None = None,
         knowledge_store: Any | None = None,
+        grounding_validator: GroundingValidator | None = None,
     ) -> AgentAnswer:
         capability = self.provider.capability()
         budget = self.strategy.step_budget(capability)
@@ -129,6 +136,12 @@ class AgentLoop:
             messages.append(Message(role=role, content=content))
         messages.append(Message(role=MessageRole.user, content=question))
         citations: list[Citation] = []
+        # Per-call evidence accumulators for the Slice-2B grounding validator.
+        # Knowledge chunks come from query_runbook's `hits`; everything else
+        # is a tool result. Both surface in the validator's evidence prompt
+        # with appropriate provenance tags.
+        all_tool_results: list[dict[str, Any]] = []
+        all_retrieved_chunks: list[dict[str, Any]] = []
         total_input_tokens = 0
         total_output_tokens = 0
         tool_call_count = 0
@@ -231,6 +244,13 @@ class AgentLoop:
                     stop_reason="answer",
                     loop_id=loop_id,
                 )
+                answer = await self._finalize_answer(
+                    answer,
+                    validator=grounding_validator,
+                    tool_results=all_tool_results,
+                    retrieved_chunks=all_retrieved_chunks,
+                    db=db, ctx=ctx, event_callback=event_callback,
+                )
                 await _emit(event_callback, "answer", answer.model_dump(mode="json"))
                 return answer
 
@@ -251,6 +271,18 @@ class AgentLoop:
                     citation = dispatch_result.result.get("citation")
                     if isinstance(citation, dict):
                         citations.append(Citation.model_validate(citation))
+                    # Validator evidence — split query_runbook hits out as
+                    # knowledge chunks; everything else stays as a tool
+                    # result. Better provenance in the judge's prompt.
+                    if call.name == "query_runbook":
+                        for hit in dispatch_result.result.get("hits", []):
+                            if isinstance(hit, dict):
+                                all_retrieved_chunks.append(hit)
+                    else:
+                        all_tool_results.append({
+                            "name": call.name,
+                            "content": dispatch_result.result,
+                        })
                     tool_results.append(ToolResult(
                         tool_call_id=call.id, name=call.name,
                         content=dispatch_result.result,
@@ -284,10 +316,79 @@ class AgentLoop:
             stop_reason="budget_exhausted",
             loop_id=loop_id,
         )
+        answer = await self._finalize_answer(
+            answer,
+            validator=grounding_validator,
+            tool_results=all_tool_results,
+            retrieved_chunks=all_retrieved_chunks,
+            db=db, ctx=ctx, event_callback=event_callback,
+        )
         await _emit(event_callback, "answer", answer.model_dump(mode="json"))
         return answer
 
     # ── Audit helpers ─────────────────────────────────────────────────────
+
+    async def _finalize_answer(
+        self,
+        answer: AgentAnswer,
+        *,
+        validator: GroundingValidator | None,
+        tool_results: list[dict[str, Any]],
+        retrieved_chunks: list[dict[str, Any]],
+        db: AsyncSession,
+        ctx: TenantContext,
+        event_callback: EventCallback | None,
+    ) -> AgentAnswer:
+        """Run the grounding validator (if configured) on the draft answer.
+
+        Always returns an AgentAnswer — if the validator isn't configured,
+        is given an empty answer, or fails internally, the original answer
+        is returned unchanged. Counts are stamped onto the returned answer
+        for the chat API + audit trail.
+        """
+        if validator is None or not answer.content.strip():
+            return answer
+        if not answer.citations:
+            # No tools or chunks → nothing to verify against. Per doc 06,
+            # the validator is for grounding tool-/chunk-backed claims;
+            # an unsupported-claim flag on an answer with NO evidence
+            # would just say "you said something without evidence," which
+            # the empty-citations array already conveys.
+            return answer
+
+        validation = await validator.validate(
+            answer.content,
+            tool_results=tool_results,
+            retrieved_chunks=retrieved_chunks,
+            loop_id=answer.loop_id,
+        )
+
+        await write_event_from_context(
+            db, ctx,
+            event_type="grounding.validation.completed",
+            event_data={
+                "loop_id": answer.loop_id,
+                "ran": validation.ran,
+                "supported": validation.supported_count,
+                "unsupported": validation.unsupported_count,
+                "unverifiable": validation.unverifiable_count,
+                "total_claims": len(validation.claims),
+            },
+        )
+        await _emit(event_callback, "grounding.completed", {
+            "loop_id": answer.loop_id,
+            "ran": validation.ran,
+            "supported": validation.supported_count,
+            "unsupported": validation.unsupported_count,
+            "unverifiable": validation.unverifiable_count,
+        })
+
+        return answer.model_copy(update={
+            "content": validation.annotated_answer,
+            "grounding_supported": validation.supported_count if validation.ran else None,
+            "grounding_unsupported": validation.unsupported_count if validation.ran else None,
+            "grounding_unverifiable": validation.unverifiable_count if validation.ran else None,
+        })
 
     async def _audit_model_success(
         self,

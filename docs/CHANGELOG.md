@@ -49,6 +49,173 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-05-27 — Phase 3 Slice 2A + 2B: hybrid retrieval + grounding validator
+
+**Session type:** claude-code (continuation)
+**Phase:** Phase 3 — Slice 2 of 3 (both parts)
+**Duration:** ~120 min
+**Branch / commit:** `main` — starting commit `0daea82`, two commits
+land in this session (8f0d544 for Part A, pending for Part B).
+
+### What we did
+
+**Part A — Hybrid retrieval (commit 8f0d544):**
+
+- Migration 0005: added a `content_tsv tsvector` STORED generated
+  column on `knowledge_chunks` populated via `to_tsvector('english',
+  content)`. Existing rows auto-backfill on the ALTER. GIN index
+  `ix_knowledge_chunks_content_tsv` enables fast `@@ tsquery` lookups.
+- Declared the column on the SA model as
+  `Computed("to_tsvector('english', content)", persisted=True)`
+  with `TSVECTOR` type so the hybrid search query can reference it
+  via the model. Wolf never writes to this column directly.
+- `RetrievedChunk` gained an optional `rrf_score` field (None on
+  pure-vector paths; populated on hybrid).
+- Replaced `PgvectorKnowledgeStore.search()` with a hybrid
+  implementation:
+  - `_vector_candidates()` — top-25 by cosine distance via pgvector's
+    HNSW index from migration 0004.
+  - `_fts_candidates()` — top-25 by `ts_rank_cd`, gated on the `@@`
+    predicate so chunks with zero token match are excluded.
+  - Reciprocal Rank Fusion (Cormack et al. 2009, k=60): for each
+    chunk present in either leg, `score = sum(1 / (60 + rank_in_leg))`.
+    Chunks ranked highly in both legs win.
+  - Tenant-scoping clause is preserved in both legs (defence in depth).
+  - `source_types` + `metadata_filters` apply to both legs via shared
+    `_apply_metadata_filters` helper.
+- Smoke against the dev corpus showed the expected behaviour:
+  - Query "rule 5712" → Rule 5712 chunk ranks #1 (FTS exact-token boost)
+  - Conceptual queries → vector-driven ranking dominates
+  - Mixed queries → both legs contribute
+- 3 new tests in `tests/test_knowledge_store.py` (constants sane,
+  `RetrievedChunk` carries `rrf_score`, fusion math correct — chunk
+  present in both legs ranks above singletons).
+
+**Part B — Grounding validator (this commit):**
+
+- New `app/grounding/` module:
+  - `GroundingValidator` class. LLM-as-judge: extract claims (sentence
+    splitter that respects numbered-list markers by requiring a letter
+    before the sentence-end punctuation), build evidence (concatenated
+    tool results + retrieved chunks with `[TOOL_RESULT N: name]` and
+    `[KNOWLEDGE N: source]` tags), one model call producing structured
+    JSON verdicts (`supported` / `unsupported` / `unverifiable`),
+    splice `[unverified]` inline on unsupported claims.
+  - `ClaimVerdict` + `ValidationResult` dataclasses for the structured
+    output.
+  - Failure modes are non-blocking: judge raises, judge returns
+    malformed JSON, codefence-wrapped JSON — all degrade gracefully
+    to "validation skipped, original answer returned" per the
+    operator's Slice 2 choice (mark-inline, not fail-closed-drop).
+- `AgentAnswer` gained three optional fields:
+  `grounding_supported / unsupported / unverifiable`. Stay `None`
+  when the validator didn't run.
+- `AgentLoop._finalize_answer()` helper runs the validator on the
+  draft answer before either the `_emit("answer", ...)` event or
+  the return. Skips when validator is `None`, answer is empty, or
+  there are no citations (no evidence to validate against).
+- Hooked at both `AgentAnswer` construction sites in the loop
+  (stop_reason="answer" success path AND budget_exhausted path).
+- Loop accumulates evidence across steps in two separate lists:
+  `all_retrieved_chunks` (from `query_runbook.hits`) and
+  `all_tool_results` (everything else) for better provenance in
+  the judge's evidence prompt.
+- `LoopEventType` gained `grounding.completed`; the SSE stream now
+  surfaces validator verdicts to the frontend.
+- New audit event type `grounding.validation.completed` records the
+  per-loop counts and whether the validator ran.
+- `chat.py` constructs the validator from the same `provider` used
+  for the agent loop and threads it through `loop.run(...)`. The
+  chat response body surfaces the three counts.
+- 16 new tests in `tests/test_grounding_validator.py` covering claim
+  splitting (simple + numbered lists + empty), evidence formatting,
+  happy paths (all supported, mixed with unsupported, marker
+  placement), and degradation (no citations, empty answer, judge
+  raises, malformed JSON, codefence wrapping, claim-count clamping).
+  Annotation logic exercised directly.
+- `make check` clean: **162 passed** (146 prior + 16 new). lint +
+  mypy strict still clean.
+
+### End-to-end verification on the live Wazuh
+
+1. **Pure RAG question** ("What is the Acme SOC runbook for SSH
+   brute-force?"): 1 tool call (`query_runbook`), validator returned
+   `supported=1, unsupported=0, unverifiable=1` — the procedural
+   summary correctly labeled supported, the "Citations:" trailer
+   labeled unverifiable. 93 s.
+2. **Mixed-mode embellishment case** (the canonical test from
+   Slice 1: "Look up rule 5712 definition + Acme runbook"):
+   `get_rule_definition` + `query_runbook` in one loop, validator
+   returned `supported=0, unsupported=0, unverifiable=7`. The
+   pipeline ran correctly (7 claims extracted, judge called once,
+   verdicts surfaced via the API) but qwen3:4b as the judge played
+   safe and labeled every claim "unverifiable" instead of flagging
+   the specific embellishment as "unsupported". 207 s total.
+
+### What we decided
+
+- **Validator architecture lands as planned, judge-model selection
+  is the next dial to turn.** The embellishment-detection gap is
+  not an architecture bug; it's a known limitation of LLM-as-judge
+  with a 4B model judging its own output. Doc 06's grounding-validator
+  design assumes a sufficiently strong judge; we'll evaluate
+  alternatives (Nemotron via OpenRouter, prompt refinement, hybrid
+  heuristic+LLM fallback) in a follow-up.
+- **Mark-inline, not drop**, per the operator's earlier choice. This
+  session honoured that posture across all paths: the analyst sees
+  the suspect claim with a `[unverified]` marker, never silently
+  dropped content. Failure modes (judge errors) also preserve the
+  original answer rather than refusing to respond.
+- **No tenant- or per-request validator override** for Slice 2. A
+  `validator_mode` field on `ChatRequestBody` was offered in the
+  Slice 2 planning question and not chosen; current code-level
+  default-mark is sufficient. Operator can opt out by removing the
+  validator construction in chat.py if needed (one line); a config
+  toggle can be added later if multiple operators ask for it.
+- **No grounding gate on `[unverified]` claim count**. The validator
+  is informative; downstream Phase-4 propose/execute tools may want
+  to refuse to propose actions if the answer that motivated them
+  has unsupported claims, but that decision belongs in Phase 4 not
+  Slice 2.
+
+### What broke / what we discovered
+
+- **Recursive validation is real.** qwen3:4b judging qwen3:4b's
+  output is structurally suspect — a model that struggles with
+  grounding discipline (ADR 0002) is not the best critic of its own
+  grounding. The fact that the validator labeled every claim
+  "unverifiable" on the hard case rather than picking a side is the
+  model's risk-averse posture under uncertainty. Architecture is
+  correct; judge model needs to improve. Logged as Slice 2's main
+  follow-up.
+- **The numbered-list splitter took two iterations.** First version
+  treated `"1."` as a sentence end (matching `[.!?]\s+`), splitting
+  `"1. Run list_agents."` into `["1.", "Run list_agents."]`.
+  Required a letter before the sentence-end (`[a-zA-Z][.!?]`) to
+  avoid digit-as-list-marker false positives. Second iteration
+  forgot uppercase letters could appear before the period
+  (`"IP."`); fixed with `[a-zA-Z]`. Both iterations caught by the
+  unit test.
+- **Markdown codefence wrapping is common.** Small models like
+  `qwen3:4b` and `granite3.3:8b` sometimes wrap their JSON output in
+  triple-backtick fences. The validator strips this before parsing.
+  Tested in `test_validate_strips_json_codefence_wrapping`.
+- **Async-correctness for sync deps.** The grounding validator does
+  one `provider.chat()` call which is already async. No new
+  `asyncio.to_thread` needed (unlike the sentence-transformers
+  adapter in Slice 1.5).
+
+### What's next
+
+- **Slice 3** — real seed corpora (Wazuh docs + ATT&CK scrapers in
+  `tools/seed_knowledge`).
+- **Slice 2 follow-up** — evaluate stronger judges (Nemotron 120B
+  via OpenRouter, or a heuristic-LLM hybrid) once Slice 3 produces
+  enough verdict samples to measure precision/recall meaningfully.
+- **`wolf reembed`** helper queued from ADR 0012 still pending.
+
+---
+
 ## 2026-05-26 — Phase 3 Slice 1.5: sentence-transformers adapter + ADR 0012
 
 **Session type:** claude-code (continuation)
