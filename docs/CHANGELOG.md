@@ -49,6 +49,158 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-05-24 — Phase 3 Slice 1: vertical RAG skeleton
+
+**Session type:** claude-code (same session as Granite probe / new-machine handoff)
+**Phase:** Phase 3 — Knowledge & RAG (Slice 1 of 3)
+**Duration:** ~75 min
+**Branch / commit:** `main` — starting commit `f977a83`, final commit
+pending this entry.
+
+### What we did
+
+- **Designed Phase 3 as three slices** (vertical skeleton → second
+  embedding adapter + comparison → real scrapers + hybrid retrieval +
+  grounding validator) to land the architecture-proving path first
+  before scaling content or adding ranker complexity.
+- **Added `pgvector>=0.3`** to `services/orchestrator/pyproject.toml`
+  for the SQLAlchemy `Vector` column type.
+- **Pulled `nomic-embed-text`** via Ollama (768-dim, 274 MB, ~1 s warm
+  embed on the RTX 4050). Symmetric with the existing Ollama LLM
+  pattern — no torch / sentence-transformers wheels added to the
+  orchestrator's install set (per ADR 0007 packaging constraints).
+- **New `services/orchestrator/app/knowledge/` module:**
+  - `models.py` — `KnowledgeChunk` SA model with `Vector(768)`
+    embedding + `JSONB` chunk_metadata + `embedding_model` stamp for
+    the doc-06 re-embedding trigger. `EMBEDDING_DIMENSION = 768`
+    locked into the schema.
+  - `embeddings.py` — `EmbeddingProvider` Protocol +
+    `OllamaEmbeddingAdapter` (sequential per-text calls to
+    `/api/embeddings`; fine at Slice-1 scale, batching deferred).
+  - `store.py` — `KnowledgeStore` Protocol +
+    `PgvectorKnowledgeStore`. Tenant-scoping enforced at the SQL
+    clause: `WHERE tenant_id IS NULL OR tenant_id = $req_tenant`.
+    `SHARED_SOURCE_TYPES` / `TENANT_SOURCE_TYPES` validation at
+    upsert: shared corpora forbid a tenant_id; private corpora
+    require one.
+- **Alembic migration 0004** — `knowledge_chunks` table + composite
+  `(tenant_id, source_type)` btree index + HNSW
+  `vector_cosine_ops` index on `embedding`. `CREATE EXTENSION IF NOT
+  EXISTS vector` is idempotent for fresh databases. Applied cleanly
+  against the dev DB.
+- **`query_runbook` tool** (`app/tools/knowledge.py`) — read-tier,
+  metadata filters as first-class Pydantic args per doc 06
+  (`source_types`, `rule_id`, `technique`, `limit`). Raises a clear
+  `RuntimeError` if `ToolExecContext.knowledge_store` is unset
+  rather than failing silently. Registered as the 10th read tool.
+- **Plumbed knowledge_store** through `ToolExecContext` (new optional
+  field, typed `Any` to avoid an import cycle) → `dispatch_tool_call`
+  (new kw param) → `AgentLoop.run` (new kw param) → both the JSON and
+  SSE chat endpoints in `app/api/chat.py` (build adapter + store from
+  per-request DB session + Ollama base URL).
+- **`seed_dev_knowledge` management CLI** — loads the Slice-1 inline
+  corpus: 6 shared chunks (Wazuh rules 5710/5712 + active-response;
+  ATT&CK T1110 / T1110.001 / T1078) and 3 tenant-private chunks per
+  tenant (SSH brute-force runbook, T1110 triage runbook, past
+  incident write-up). Fails loud if `DATABASE_URL` is unset (matches
+  the lesson learned from ONBOARDING §3.7 alembic drift earlier this
+  session). JSON output to stdout for scripting; errors to stderr.
+- **Ran the migration + seed against the dev DB.** Confirmed table
+  schema and indexes (HNSW + composite btree); seeded 9 chunks for
+  tenant `acme` (6 shared with `tenant_id=NULL` + 3 private with
+  `tenant_id=acme.id`).
+- **12 new pytest tests** in `tests/test_knowledge_store.py`:
+  validation rules on `ChunkInput` (shared corpora must have null
+  tenant_id; private corpora require one; unknown source_type
+  rejected; empty content rejected), `QueryRunbookInput` constraints
+  (non-empty query; 1..20 limit clamp; minimal-args default), tool
+  surface (raises when store not configured; passes filters through
+  to the store correctly).
+- **Conftest fix** — under SQLite (the local-dev default), skip the
+  `knowledge_chunks` table during `Base.metadata.create_all` because
+  `pgvector.Vector` + `JSONB` don't render on SQLite. Phase-3 paths
+  are Postgres-only by design; tests stub the store.
+- **`make check` clean: 140 passed** (128 prior + 12 new). lint +
+  mypy strict still clean.
+- **Direct RAG verification** — bypassed the chat endpoint and
+  exercised the store directly: query
+  *"how does Acme respond to SSH brute-force?"* returned 5 hits with
+  cosine distances 0.317–0.415, top hit being the shared ATT&CK
+  T1110 chunk, followed by the ACME SOC private runbook chunk. The
+  SQL log shows the expected `WHERE tenant_id IS NULL OR tenant_id =
+  $acme.id ORDER BY distance LIMIT 5` clause — tenant scoping
+  enforced at the query layer.
+
+### What we decided
+
+- **Three-slice Phase 3 plan, not one big landing.** Slice 1 ships
+  the vertical (proven). Slice 1.5 adds sentence-transformers as a
+  second `EmbeddingProvider` adapter and writes a decision ADR on
+  keep-both vs pick-one (per operator's explicit request).
+  Slice 2 brings hybrid retrieval + grounding validator. Slice 3
+  ships the real Wazuh-docs / ATT&CK scrapers in
+  `tools/seed_knowledge`.
+- **Ollama-hosted embedding (nomic-embed-text) as Slice 1's primary**
+  — keeps the orchestrator wheel set lean for ADR 0007 native
+  packaging, symmetric with the LLM Ollama pattern, model lifecycle
+  managed by Ollama. Sentence-transformers adapter to land in Slice
+  1.5 with a head-to-head benchmark.
+- **HNSW for the embedding index** — pgvector's modern default,
+  incremental inserts, log-ish query time. IVFFlat reachable later
+  via a one-statement index swap if MSSP-scale memory pressure
+  appears.
+- **Inline 9-chunk seed for Slice 1, not a real scrape.** Smallest
+  artifact that proves the vertical; real scrapers come in Slice 3.
+- **Tenant scoping enforced inside the store**, not at the tool
+  layer. The dispatcher's `sanitize_tenant_id_from_args` already
+  strips any model-supplied tenant_id; the store's SQL clause is
+  the load-bearing second line of defense per doc 05.
+- **The chat-endpoint end-to-end test was blocked by a separate
+  Wazuh Server API 401** (the `wolf` user works for the Indexer but
+  apparently not the Server API in this deployment) — the model
+  routed the test question to `get_rule_definition` rather than
+  `query_runbook`. Decided NOT to fix that in Slice 1 because it's
+  an operator-side credentials issue, not a Slice-1 scope item.
+  The direct-RAG verification stands in as the Slice-1 closure
+  signal.
+
+### What broke / what we discovered
+
+- **The conftest's SQLite path needed a knowledge_chunks skip.**
+  `Base.metadata.create_all` under SQLite blew up on
+  `pgvector.Vector` + `postgresql.JSONB` — both Postgres-only. Fixed
+  by filtering the create_all tables list. Phase-3 tests that need a
+  real Postgres roundtrip will get a separate fixture in Slice 1.5
+  or 2.
+- **qwen3:4b's tool-routing pick on a knowledge question.** Asked
+  *"What does Wazuh rule 5712 do?"* — the model chose
+  `get_rule_definition` (Wazuh Server API) over `query_runbook`
+  (RAG), which is arguably correct (live rule definition is more
+  authoritative than docs) but blocked the end-to-end test on the
+  Server API 401. Worth noting: the agent loop's strategy doesn't
+  currently bias toward RAG for product-knowledge questions. The
+  Slice-2 grounding validator + prompt-shaping work is where this
+  routing bias can be tuned.
+- **nomic-embed-text returns vectors with a startling distribution**
+  — values like `-3.91` in the first dimension. Not normalized to
+  unit length out-of-box. Cosine distance still works (pgvector
+  normalizes internally for `vector_cosine_ops`), but worth noting
+  if we ever swap to a raw-dot-product comparison.
+
+### What's next
+
+- **Phase 3 Slice 1.5** — sentence-transformers `EmbeddingProvider`
+  adapter + head-to-head benchmark + decision ADR.
+- **Phase 3 Slice 2** — hybrid retrieval (BM25 + vector fusion) +
+  grounding validator.
+- **Investigate the Wazuh Server API 401** (operator-side
+  credentials gap surfaced during Slice 1 end-to-end).
+- **Doc-drift fixes accumulated from this session** still pending:
+  ONBOARDING §3.7 alembic env-load, §11 `GET /me` route nit, test
+  suite + Postgres asyncpg loop-scope issue.
+
+---
+
 ## 2026-05-24 — Opportunistic probe: IBM Granite 3.3 8B (ADR 0011)
 
 **Session type:** claude-code (same session as the new-machine handoff entry below)

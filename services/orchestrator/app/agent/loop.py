@@ -111,6 +111,7 @@ class AgentLoop:
         server_api: WazuhServerApiClient,
         history: list[tuple[str, str]] | None = None,
         event_callback: EventCallback | None = None,
+        knowledge_store: Any | None = None,
     ) -> AgentAnswer:
         capability = self.provider.capability()
         budget = self.strategy.step_budget(capability)
@@ -239,6 +240,7 @@ class AgentLoop:
                 dispatch_result = await dispatch_tool_call(
                     call, ctx=ctx, db=db, opensearch=opensearch,
                     server_api=server_api, limits=self.limits,
+                    knowledge_store=knowledge_store,
                 )
                 await _emit(
                     event_callback,

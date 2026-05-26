@@ -71,6 +71,7 @@ async def dispatch_tool_call(
     server_api: WazuhServerApiClient,
     limits: ResourceLimits,
     rate_limiter: TenantRateLimiter = default_rate_limiter,
+    knowledge_store: Any | None = None,
 ) -> ToolDispatchResult:
     """Validate, guardrail, audit, run, and validate-out a single tool call.
 
@@ -143,6 +144,7 @@ async def dispatch_tool_call(
         limits=limits,
         opensearch=opensearch,
         server_api=server_api,
+        knowledge_store=knowledge_store,
     )
     try:
         result = await runner.run(exec_ctx, args_model)

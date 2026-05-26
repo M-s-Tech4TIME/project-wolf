@@ -60,8 +60,17 @@ async def engine() -> AsyncGenerator[AsyncEngine]:
     eng = create_async_engine(_DB_URL, echo=False)
 
     if "sqlite" in _DB_URL:
+        # Phase 3's knowledge_chunks table uses Postgres-only types
+        # (pgvector.Vector + JSONB) — skip it under SQLite. Knowledge-
+        # path tests stub the store and don't need the table; tests
+        # that need real pgvector run against the dev Postgres DB.
+        sqlite_tables = [
+            t for t in Base.metadata.sorted_tables if t.name != "knowledge_chunks"
+        ]
         async with eng.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
+            await conn.run_sync(
+                lambda c: Base.metadata.create_all(c, tables=sqlite_tables)
+            )
     else:
         # Postgres: run Alembic migrations.
         import asyncio

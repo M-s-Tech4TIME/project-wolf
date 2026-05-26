@@ -12,17 +12,17 @@
 
 ## 1. Where we are right now
 
-**Current phase:** Phase 2 — Read path, end to end (per `docs/10-build-roadmap.md`).
+**Current phase:** Phase 3 — Knowledge & RAG (per `docs/10-build-roadmap.md`).
 
-**Phase status:** **Phase 2 closed** (all exit-criteria bullets ticked
-as of 2026-05-22).  Model abstraction layer complete (Phase 1).  Read
-path foundation, agent loop with three strategies, and Next.js 16
-frontend all built and operational.  9 of 9 read tools verified live
-against the user's real Wazuh.  Dev default is `qwen3:4b` (ADR 0004).
-Both halves of the "tested on a frontier model AND a local Ollama
-model" exit criterion satisfied — qwen3:4b for local-Ollama,
-`nvidia/nemotron-3-super-120b-a12b:free` via OpenRouter for the
-frontier-API half (ADR 0005).
+**Phase status:** **Phase 3 Slice 1 (vertical skeleton) shipped** on
+2026-05-24.  Phase 2 closed (ADR 0005); Phase 3 vertical RAG path now
+operational end-to-end (alembic 0004 → KnowledgeChunk + HNSW index →
+Ollama nomic-embed-text adapter → PgvectorKnowledgeStore with tenant
+scoping → `query_runbook` tool registered as 10th read tool).
+`make check` 140 passed (128 prior + 12 new knowledge-layer tests).
+Direct RAG retrieval verified against the seeded acme corpus
+(cosine search returned T1110 + ACME SOC runbook in expected order;
+tenant-scoping enforced at SQL clause).
 
 **Phase 2 exit criteria progress** (from `docs/10-build-roadmap.md`):
 - [x] Wazuh OpenSearch client with forced tenant filter (opt-in per tenant)
@@ -54,12 +54,19 @@ Status legend: ✅ working, 🟡 partial, ❌ broken/disabled, ⏳ planned only.
 - ✅ `CapabilityDescriptor` + `KNOWN_MODELS` registry
 - ✅ Tool registry + dispatcher (`app/tools/`): tier enforcement,
       Pydantic input/output validation, audit on every branch
-- ✅ 9 read tools registered (`app/tools/registration.py`) — **9/9 now
-      verified against real Wazuh** (2026-05-22) via
-      `smoke_wazuh --all-tools`:
+- ✅ 9 Wazuh read tools + 1 Phase-3 RAG tool registered
+      (`app/tools/registration.py`):
       `search_alerts`, `aggregate_alerts`, `count_alerts_by_severity`,
       `get_event_timeline`, `get_agent_alert_history`, `list_agents`,
-      `get_agent_detail`, `get_rule_definition`, `get_cluster_health`
+      `get_agent_detail`, `get_rule_definition`, `get_cluster_health`,
+      **`query_runbook`** (Phase 3 Slice 1, added 2026-05-24).
+- ✅ Phase 3 knowledge layer (`app/knowledge/`): `EmbeddingProvider`
+      protocol + `OllamaEmbeddingAdapter` (nomic-embed-text, 768-dim);
+      `KnowledgeStore` protocol + `PgvectorKnowledgeStore` (tenant-
+      scoped retrieval enforced at the SQL clause); `KnowledgeChunk`
+      SQLAlchemy model with `chunk_metadata` JSONB + `embedding`
+      `Vector(768)` + `embedding_model` stamp for re-embedding triggers.
+      HNSW cosine-distance index per ADR 0008 + doc 06.
 - ✅ Agent loop with three strategies (`app/agent/`): frontier / guided /
       pipeline; `LoopEvent` emission for SSE; multi-turn `history` support
 - ✅ Endpoints: `POST /api/v1/auth/{login,logout}`, `GET /me`,
@@ -177,23 +184,32 @@ who want to build their own images.
 ## 4. What's next
 
 **Immediate next steps** (in priority order):
-1. **Begin Phase 3 (RAG + grounding validator) per `docs/06` and
-   `docs/10`.**  Phase 2 is closed at the exit-criteria level (ADR
-   0005); the new GPU hardware unblocks the two small-end probes
-   (now done — ADRs 0009 + 0010), so there are no remaining probes
-   blocking on this hardware. Phase 3's grounding validator is the
-   designed solution for the qwen3:4b grounding-discipline failure
-   surfaced by ADR 0002 (and re-confirmed for qwen3:8b in ADR 0010).
-2. **Pending workstation-class probe ADRs remain blocked on
+1. **Phase 3 Slice 1.5 — sentence-transformers as a second embedding
+   adapter + comparison ADR.** Per the operator's request during
+   Slice 1 planning: build a second `EmbeddingProvider` impl backed
+   by sentence-transformers (BGE-base or similar), benchmark it
+   against the current Ollama-hosted nomic-embed-text adapter for
+   query/insert latency and retrieval quality on the seeded corpus,
+   write a decision ADR on whether to keep both or pick one.
+2. **Phase 3 Slice 2 — hybrid retrieval (BM25 + vector fusion) +
+   grounding validator.** The validator is the designed mitigation
+   for the cross-model grounding-discipline failures (ADRs 0002,
+   0010, 0011 all showed fabrication on the no-tools probe task).
+3. **Phase 3 Slice 3 — real seed corpora.** `tools/seed_knowledge`
+   scrapers for Wazuh docs + ATT&CK enterprise-attack.json. Replaces
+   the 9-chunk dev inline seed.
+4. **Investigate Wazuh Server API 401 against `192.168.245.128`.**
+   The `wolf` user works for the Indexer (alert queries succeed) but
+   the Server API rejects auth on `get_rule_definition` —
+   operator-side credential issue surfaced during Slice 1 end-to-end.
+   Not blocking Slice 1 (the RAG path doesn't touch Server API), but
+   needed before knowledge-flavored chat questions get tested via
+   `query_runbook` instead of having the model route to Server-API
+   tools.
+5. **Pending workstation-class probe ADRs remain blocked on
    workstation GPU hardware (24+ GB VRAM):** GLM 5.1 ~32B (priority
-   #1 per doc 15 — zero measured data), Gemma 3 12B/27B, Qwen 3
-   14B/32B. Not blocking Phase 3 work.
-3. **Optional follow-up: qwen3.5:4b re-probe** after the next
-   Ollama qwen3.5 release. ADR 0009's `none`/`unreliable` measurement
-   may be a chat-template/glue issue (failure mode is "model emits
-   invalid JSON" — Ollama accepted the tools param, qwen3.5 just
-   returned bad output); worth verifying before the regression is
-   treated as permanent.
+   #1 per doc 15), Gemma 3 12B/27B, Qwen 3 14B/32B. Not blocking
+   Phase 3 work.
 
 **Phase 3 design touchpoints** (the order doc 06 implies):
 - Vector store interface; pgvector implementation
@@ -256,7 +272,7 @@ to `CHANGELOG.md` as ADRs.
 
 ## 7. Test coverage status
 
-- **128 backend tests passing** (`pytest services/orchestrator/tests packages/`)
+- **140 backend tests passing** (128 prior + 12 Phase-3 Slice-1 knowledge tests)
 - **0 failures**, **0 skipped**
 - ruff: clean across the workspace
 - mypy strict: 33 source files clean

@@ -29,6 +29,8 @@ from app.agent import AgentLoop, get_model_for_tenant, strategy_for
 from app.agent.events import LoopEvent
 from app.config import get_settings
 from app.database import get_db
+from app.knowledge.embeddings import OllamaEmbeddingAdapter
+from app.knowledge.store import PgvectorKnowledgeStore
 from app.secrets_factory import get_secrets_backend
 from app.tenancy.context import TenantContext, require_tenant_context
 from app.tools.base import Citation
@@ -107,6 +109,9 @@ async def chat(
     strategy = strategy_for(capability)
 
     connection = await get_wazuh_connection(ctx, db, secrets)
+    knowledge_store = PgvectorKnowledgeStore(
+        db, OllamaEmbeddingAdapter(_settings.ollama_base_url)
+    )
 
     async with (
         WazuhOpenSearchClient(connection) as opensearch,
@@ -120,6 +125,7 @@ async def chat(
             db=db,
             opensearch=opensearch,
             server_api=server_api,
+            knowledge_store=knowledge_store,
         )
 
     # Persist the audit trail produced by the loop.
@@ -173,6 +179,9 @@ async def chat_stream(
     capability = provider.capability()
     strategy = strategy_for(capability)
     connection = await get_wazuh_connection(ctx, db, secrets)
+    knowledge_store = PgvectorKnowledgeStore(
+        db, OllamaEmbeddingAdapter(_settings.ollama_base_url)
+    )
 
     queue: asyncio.Queue[LoopEvent | None] = asyncio.Queue()
 
@@ -194,6 +203,7 @@ async def chat_stream(
                     opensearch=opensearch,
                     server_api=server_api,
                     event_callback=emit,
+                    knowledge_store=knowledge_store,
                 )
             await db.commit()
         finally:

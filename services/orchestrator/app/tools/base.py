@@ -57,6 +57,10 @@ class ToolExecContext:
     # populates both.
     opensearch: Any
     server_api: Any
+    # Phase 3 RAG store — typed Any to avoid an import cycle. Optional
+    # because Phase 2 read-tool tests and the smoke CLI don't wire it.
+    # query_runbook raises a clear error if invoked when this is None.
+    knowledge_store: Any | None = None
 
 
 class ReadTool(ABC):
