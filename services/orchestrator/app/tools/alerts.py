@@ -58,6 +58,28 @@ def _hit_to_alert(hit: dict[str, Any]) -> AlertHit:
     )
 
 
+async def _resolve_agent_name_to_id(
+    agent_name: str, exec_ctx: ToolExecContext
+) -> str | None:
+    """Look up a Wazuh agent's numeric id by its human-readable name.
+
+    Uses the Server API's `/agents?name=<n>` filter (case-insensitive).
+    Returns the id if found, None otherwise. Raises only on transport
+    errors — a missing-name is NOT an exception (the agent really may
+    not exist; the caller will then run an unfiltered or no-results
+    query and the validator will catch the resulting under-grounding).
+
+    Lookup result is intentionally not cached at the tool level: agent
+    fleets are small, the call is cheap (single Server API GET), and a
+    stale cache would silently route queries at a deleted agent.
+    """
+    body = await exec_ctx.server_api.get("/agents", params={"name": agent_name})
+    items = body.get("data", {}).get("affected_items", []) or []
+    if not items:
+        return None
+    return str(items[0].get("id")) if items[0].get("id") is not None else None
+
+
 # ─── search_alerts ────────────────────────────────────────────────────────────
 
 
@@ -74,7 +96,22 @@ class SearchAlertsInput(BaseModel):
             f"{_TIME_FIELD_HELP}"
         ),
     )
-    agent_id: str | None = Field(default=None, description="Filter to one agent")
+    agent_id: str | None = Field(
+        default=None,
+        description=(
+            "Filter to one agent by its numeric ID (e.g. '001'). "
+            "Get this from list_agents — NOT the human-readable agent name."
+        ),
+    )
+    agent_name: str | None = Field(
+        default=None,
+        description=(
+            "Filter to one agent by its human-readable name (e.g. "
+            "'linux-test-agent'). Wolf resolves the name to a numeric "
+            "agent_id via list_agents before querying. Use this when you "
+            "know the agent by name but not by ID."
+        ),
+    )
     rule_id: int | None = Field(default=None, description="Filter to one rule ID")
     min_level: int | None = Field(default=None, description="Minimum alert level (0-15)")
     attack_technique: str | None = Field(
@@ -126,10 +163,19 @@ class SearchAlertsTool(ReadTool):
             requested_size=args.size,
             limits=exec_ctx.limits,
         )
+        resolved_agent_id = args.agent_id
+        if not resolved_agent_id and args.agent_name:
+            # Resolve human-readable name → numeric ID via Server API.
+            # Small models routinely pass the name where the API needs
+            # the ID; this resolution short-circuits the silent 0-hits
+            # failure that confused the Slice 3 end-to-end retest.
+            resolved_agent_id = await _resolve_agent_name_to_id(
+                args.agent_name, exec_ctx
+            )
         query = exec_ctx.opensearch.query_builder.search_alerts(
             time_from=args.time_from,
             time_to=args.time_to,
-            agent_id=args.agent_id,
+            agent_id=resolved_agent_id,
             rule_id=args.rule_id,
             min_level=args.min_level,
             attack_technique=args.attack_technique,

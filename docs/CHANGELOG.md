@@ -49,6 +49,171 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-05-27 — Phase 3 follow-ups: judge model, agent_name, reembed, frontend
+
+**Session type:** claude-code (continuation)
+**Phase:** Phase 3 close-out — all queued follow-ups
+**Duration:** ~120 min
+**Branch / commit:** `main` — starting commit `05cb750`, this entry's
+commit pending.
+
+### What we did
+
+**Follow-up 1 — stronger grounding judge (ADR 0013):**
+
+- Added three settings to `Settings`:
+  - `GROUNDING_JUDGE_MODEL_ID` (empty = use the chat model; backward-
+    compat)
+  - `GROUNDING_JUDGE_MODEL_PROVIDER` (empty = same as chat)
+  - `GROUNDING_JUDGE_API_KEY_REF` (empty = same as chat)
+- Refactored `app/agent/model_resolver.py` to factor out a `_build_provider()`
+  helper shared by both `get_model_for_tenant()` and the new
+  `get_grounding_judge_model()`.
+- Threaded `judge_provider` through `chat.py` (both endpoints) into the
+  `GroundingValidator`. When the override env vars are empty the helper
+  returns the chat provider unchanged.
+- Probed three candidates honestly:
+  - **qwen3.6:27b** — pulled (17.4 GB) but cannot load on this dev host:
+    Ollama: `model requires more system memory (16.1 GiB) than is
+    available (11.4 GiB)`. Two VMware VMs (the test agent + the Wazuh
+    server) plus Firefox / VS Code consume too much RAM. Deleted the
+    model after the failed probe to free disk.
+  - **qwen3.5:9b** — pulled (5.6 GB), probe score **0.50** — same JSON
+    syntax regression the Qwen 3.5 family showed at 4B in ADR 0009.
+    Confirms the 3.5 line on Ollama has a structured-output glue
+    issue at every size; gated on the next upstream release.
+  - **qwen3:8b** — already pulled, ADR 0010 measured 0.75 (same
+    descriptor as qwen3:4b but more parameters; tight-fit at 85%
+    GPU / 15% CPU). Realistic local upgrade for this hardware.
+- Wrote **ADR 0013** capturing the env-var mechanism, the per-
+  candidate findings, and the operator recommendations (qwen3:8b
+  for this hw, qwen3.6:27b on workstation-class GPUs with 24+ GiB
+  free RAM, hosted Nemotron 120B via OpenRouter for the strongest
+  available judge).
+- End-to-end retest with `GROUNDING_JUDGE_MODEL_ID=qwen3:8b`:
+  - Question: "What SSH brute-force alerts have fired on
+    `agent_name linux-test-agent` in the last 30 minutes? Look up
+    rule 5712 and tell me what to do."
+  - Strategy `guided`, 2 tool calls (`get_rule_definition` +
+    `search_alerts`).
+  - Verdicts: **supported=2, unsupported=2, unverifiable=1**.
+  - **The stronger judge caught a real fabrication**: qwen3:4b
+    emitted "Source IP: 192.168.1.100" and "Block the source IP
+    (192.168.1.100)" — both wrong; the actual attacking IP was
+    192.168.245.1 (the dev host running the brute-force loop).
+    Both fabrications received `[unverified]` markers inline.
+    This is the validator paying off as designed: it caught a
+    confident hallucination the model would otherwise have shipped.
+
+**Follow-up 2 — search_alerts agent_name lookup:**
+
+- Added `agent_name: str | None` field to `SearchAlertsInput`.
+- New helper `_resolve_agent_name_to_id()` queries the Server API's
+  `/agents?name=` filter and returns the numeric id. When `agent_id`
+  is empty and `agent_name` is provided, the tool resolves the name
+  before calling the query builder.
+- Tool descriptions tightened to clarify `agent_id` expects the
+  numeric ID (e.g. `'001'`), not the human-readable name.
+- Edge cases: explicit `agent_id` wins over `agent_name` (no
+  unnecessary API call); unresolvable name runs an unfiltered query
+  (validator catches the resulting under-grounding rather than
+  raising); neither set means no agent filter.
+- 4 new tests in `test_search_alerts_agent_name.py`.
+
+**Follow-up 3 — wolf reembed CLI:**
+
+- New `app/management/reembed.py`. Walks `knowledge_chunks` where
+  `embedding_model != active_provider.model_id`, re-embeds in
+  batches, updates only `embedding` + `embedding_model` (content
+  + metadata untouched).
+- Default mode is REPORT-ONLY; `--apply` required to write. Per-
+  tenant scoping via `--tenant-slug` or `--tenant-slug __shared__`
+  for the shared corpora. `--limit` for incremental migration.
+- Idempotent: re-running after a clean pass finds zero mismatches.
+- Smoke-tested in report mode on the live DB (0 mismatches — the
+  full corpus was already embedded with the active provider).
+
+**Follow-up 4 — frontend grounding integration:**
+
+- `frontend/lib/types.ts`: `ChatResponseBody` and `ChatExchange`
+  gain `grounding_supported / unsupported / unverifiable` fields
+  (nullable; null when validator didn't run).
+- `frontend/lib/types.ts`: `LoopEventType` adds `grounding.completed`
+  (SSE event the backend already emits).
+- `frontend/hooks/use-chat-stream.ts`: stores the three grounding
+  counts on the completed exchange.
+- `frontend/components/markdown.tsx`: new
+  `highlightUnverifiedMarkers()` helper walks the rendered React
+  tree, splits text nodes on the literal `[unverified]` token, and
+  replaces each occurrence with a styled `<span>` (destructive-
+  tinted background, warning icon, hover-tooltip). Applied to `p`,
+  `li`, `td`, `th`, `blockquote` element renderers — every
+  flowing-text location markdown supports.
+- `frontend/components/message-thread.tsx`: new `GroundingBadge`
+  rendered in the per-exchange metadata strip. Shows
+  `grounding N✓ N✗ N?` with a destructive variant when
+  unsupported > 0. Hover-tooltip explains what each count means.
+- `npm run lint` clean.
+
+### What we decided
+
+- **Don't ship a default that doesn't work for the floor hardware.**
+  qwen3.6:27b is the right judge for workstation GPUs but the
+  development environment can't run it. The default stays "use the
+  chat model" for backward compatibility; operators with capable
+  hardware set the override.
+- **Mark, don't fail-closed.** When the operator has wired a
+  stronger judge AND it flags claims as unsupported, the answer
+  reaches the analyst with `[unverified]` markers — never silently
+  dropped. The frontend now makes those markers visible.
+- **search_alerts unresolvable-name returns empty rather than
+  raising.** The validator's "no alerts found" → unsupported claim
+  detection catches the under-grounding without a Pydantic-error
+  shape the model can't recover from.
+- **Reembed defaults to report-only.** Re-embedding 5170 chunks
+  takes ~2 minutes; the safety of "show me what would change
+  first" outweighs the convenience of one-step apply. `--apply` is
+  the explicit opt-in.
+
+### What broke / what we discovered
+
+- **Real RAM ceiling on this dev box.** The two VMware VMs (the
+  Wazuh server at .128 and the test agent at .129) consume ~6 GiB
+  combined, plus Firefox / VS Code overhead — only 8.1 GiB
+  available. qwen3.6:27b at 16.1 GiB doesn't fit. ADR 0013 records
+  this so the next operator on this exact setup knows.
+- **The Qwen 3.5 family has a persistent OllamaAdapter glue
+  problem.** Both qwen3.5:4b (ADR 0009) and qwen3.5:9b score 0.50
+  with the same "Not valid JSON" parse error. Not a Wolf bug; the
+  3.5 line's chat-template or tool-spec serialisation differs from
+  3.x in a way the Ollama JSON path doesn't tolerate. Worth
+  re-probing whenever Ollama releases a new qwen3.5 tag.
+- **The stronger-judge demo is the most satisfying Phase 3 moment
+  so far.** qwen3:4b confidently claimed source IP `192.168.1.100`
+  and a "block this IP" instruction — both fabricated. qwen3:8b as
+  the judge flagged both. The validator went from "graceful
+  degradation when judge fails" to "actively saving the analyst
+  from acting on a hallucinated IP."
+- **VRAM contention during tests.** The factory test that loads
+  BGE-base via sentence-transformers needs ~400 MB VRAM; when
+  Ollama has a model loaded, OOM is possible. Easy mitigation:
+  `ollama ps` + manual stop before running the full test suite.
+  Logged but not codified.
+
+### What's next
+
+- **`wolf` install-script step** that prompts the operator for the
+  judge-model preference at first run (qwen3:4b default,
+  qwen3:8b recommended if RAM allows, qwen3.6:27b for workstation
+  GPUs). Belongs in doc 16 / ADR 0007's install-script spec.
+- **Heuristic+LLM hybrid validator** if rich-corpus operation
+  shows the LLM judge failing too often. Not pressing.
+- **Phase 4** — propose tools + the approval gateway. Phase 3 is
+  now closed end-to-end (RAG, hybrid retrieval, grounding
+  validator, real corpus, live demo, operator-tunable judge model).
+
+---
+
 ## 2026-05-27 — Phase 3 Slice 3: real seed corpora + live end-to-end on new agent
 
 **Session type:** claude-code (continuation)

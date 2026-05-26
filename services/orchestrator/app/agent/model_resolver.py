@@ -30,39 +30,35 @@ class ModelProviderUnconfiguredError(WolfError):
     error_code = "model_provider_unconfigured"
 
 
-async def get_model_for_tenant(
-    _ctx: TenantContext,
+async def _build_provider(
+    *,
+    provider_name: str,
+    model_id: str,
+    api_key_ref: str,
     settings: Settings,
     secrets: SecretsBackend,
 ) -> ModelProvider:
-    """Return the configured ModelProvider for a request.
-
-    The tenant context is accepted (and reserved) so per-tenant model
-    selection can be added without changing the call site.
-    """
-    provider_name = settings.default_model_provider.lower()
-    model_id = settings.default_model_id
-
+    """Construct a ModelProvider from name + id + (optional) secret ref."""
     api_key = ""
-    if settings.default_model_api_key_ref:
-        secret = await secrets.get(settings.default_model_api_key_ref)
+    if api_key_ref:
+        secret = await secrets.get(api_key_ref)
         if secret is None:
             raise ModelProviderUnconfiguredError(
-                f"Secret {settings.default_model_api_key_ref!r} not found"
+                f"Secret {api_key_ref!r} not found"
             )
         api_key = secret
 
-    match provider_name:
+    match provider_name.lower():
         case "anthropic":
             if not api_key:
                 raise ModelProviderUnconfiguredError(
-                    "Anthropic provider requires DEFAULT_MODEL_API_KEY_REF"
+                    "Anthropic provider requires an API key reference"
                 )
             return AnthropicAdapter(api_key=api_key, model_id=model_id)
         case "openai":
             if not api_key:
                 raise ModelProviderUnconfiguredError(
-                    "OpenAI provider requires DEFAULT_MODEL_API_KEY_REF"
+                    "OpenAI provider requires an API key reference"
                 )
             return OpenAIAdapter(
                 api_key=api_key,
@@ -78,3 +74,53 @@ async def get_model_for_tenant(
             raise ModelProviderUnconfiguredError(
                 f"Unknown model provider: {provider_name!r}"
             )
+
+
+async def get_model_for_tenant(
+    _ctx: TenantContext,
+    settings: Settings,
+    secrets: SecretsBackend,
+) -> ModelProvider:
+    """Return the configured chat ModelProvider for a request.
+
+    The tenant context is accepted (and reserved) so per-tenant model
+    selection can be added without changing the call site.
+    """
+    return await _build_provider(
+        provider_name=settings.default_model_provider,
+        model_id=settings.default_model_id,
+        api_key_ref=settings.default_model_api_key_ref,
+        settings=settings,
+        secrets=secrets,
+    )
+
+
+async def get_grounding_judge_model(
+    _ctx: TenantContext,
+    settings: Settings,
+    secrets: SecretsBackend,
+    *,
+    fallback_chat_provider: ModelProvider,
+) -> ModelProvider:
+    """Return a ModelProvider for the grounding validator.
+
+    Defaults to the same provider as the chat model — single-model
+    deployments stay simple. When `GROUNDING_JUDGE_MODEL_ID` is set, builds
+    a separate provider so chat and judge can be different models (typical
+    production posture: small fast chat model + larger judge).
+    """
+    if not settings.grounding_judge_model_id:
+        return fallback_chat_provider
+    judge_provider_name = (
+        settings.grounding_judge_model_provider or settings.default_model_provider
+    )
+    judge_api_key_ref = (
+        settings.grounding_judge_api_key_ref or settings.default_model_api_key_ref
+    )
+    return await _build_provider(
+        provider_name=judge_provider_name,
+        model_id=settings.grounding_judge_model_id,
+        api_key_ref=judge_api_key_ref,
+        settings=settings,
+        secrets=secrets,
+    )

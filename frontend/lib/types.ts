@@ -68,6 +68,11 @@ export type ChatResponseBody = {
   loop_id: string;
   strategy: "frontier" | "guided" | "pipeline";
   model_id: string;
+  // Phase 3 Slice 2B — grounding validator verdict counts.
+  // null when the validator skipped (no citations or judge failed).
+  grounding_supported: number | null;
+  grounding_unsupported: number | null;
+  grounding_unverifiable: number | null;
 };
 
 export type LoopEventType =
@@ -76,6 +81,7 @@ export type LoopEventType =
   | "model.call.completed"
   | "model.call.failed"
   | "tool.call.completed"
+  | "grounding.completed"
   | "answer";
 
 export type LoopEvent = {
@@ -100,6 +106,11 @@ export type ChatExchange = {
   output_tokens: number;
   started_at: string;
   completed_at: string;
+  // Phase 3 Slice 2B — grounding verdict counts. null when the
+  // validator didn't run (no citations, empty answer, judge failed).
+  grounding_supported: number | null;
+  grounding_unsupported: number | null;
+  grounding_unverifiable: number | null;
 };
 
 export type ToolEvent = {

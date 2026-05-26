@@ -8,6 +8,7 @@ strategy chosen by the model's capability descriptor.
 from app.agent.loop import AgentAnswer, AgentLoop
 from app.agent.model_resolver import (
     ModelProviderUnconfiguredError,
+    get_grounding_judge_model,
     get_model_for_tenant,
 )
 from app.agent.strategies import (
@@ -26,6 +27,7 @@ __all__ = [
     "ModelProviderUnconfiguredError",
     "PipelineStrategy",
     "Strategy",
+    "get_grounding_judge_model",
     "get_model_for_tenant",
     "strategy_for",
 ]

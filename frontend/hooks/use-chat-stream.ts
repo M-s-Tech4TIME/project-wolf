@@ -182,6 +182,8 @@ export function useChatStream(): UseChatStream {
               backendCitations.length > 0
                 ? backendCitations
                 : citationsRef.current;
+            const asNullableNumber = (v: unknown): number | null =>
+              typeof v === "number" ? v : null;
             const completed: ChatExchange = {
               id: asString(data.loop_id) || randomId(),
               question: questionRef.current,
@@ -199,6 +201,9 @@ export function useChatStream(): UseChatStream {
               output_tokens: asNumber(data.output_tokens),
               started_at: startedAtRef.current,
               completed_at: completedAt,
+              grounding_supported: asNullableNumber(data.grounding_supported),
+              grounding_unsupported: asNullableNumber(data.grounding_unsupported),
+              grounding_unverifiable: asNullableNumber(data.grounding_unverifiable),
             };
             setExchange(completed);
             citationsRef.current = finalCitations;

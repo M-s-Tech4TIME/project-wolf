@@ -1,6 +1,6 @@
 "use client";
 
-import { Bot, Loader2, User } from "lucide-react";
+import { Bot, Loader2, ShieldAlert, ShieldCheck, User } from "lucide-react";
 import { useEffect, useRef } from "react";
 
 import { Markdown } from "@/components/markdown";
@@ -89,12 +89,54 @@ function CompletedExchange({
           <span>{exchange.tool_call_count} tool calls</span>
           <span>·</span>
           <span>{exchange.input_tokens + exchange.output_tokens} tokens</span>
+          <GroundingBadge exchange={exchange} />
           {exchange.stop_reason !== "answer" ? (
             <Badge variant="destructive">{exchange.stop_reason}</Badge>
           ) : null}
         </div>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * Per doc 06 §Hallucinated grounding: surface the validator's per-answer
+ * verdict to the analyst. Renders nothing when the validator didn't run
+ * (no citations / judge failed) — counts are all `null` in that case.
+ */
+function GroundingBadge({ exchange }: { exchange: ChatExchange }) {
+  const { grounding_supported, grounding_unsupported, grounding_unverifiable } =
+    exchange;
+  if (
+    grounding_supported === null &&
+    grounding_unsupported === null &&
+    grounding_unverifiable === null
+  ) {
+    return null;
+  }
+  const supported = grounding_supported ?? 0;
+  const unsupported = grounding_unsupported ?? 0;
+  const unverifiable = grounding_unverifiable ?? 0;
+  const hasUnsupported = unsupported > 0;
+  const Icon = hasUnsupported ? ShieldAlert : ShieldCheck;
+  return (
+    <>
+      <span>·</span>
+      <Badge
+        variant={hasUnsupported ? "destructive" : "secondary"}
+        className="gap-1"
+        title={
+          `Grounding validator: ${supported} supported claim${supported === 1 ? "" : "s"}, ` +
+          `${unsupported} unsupported, ${unverifiable} unverifiable. ` +
+          (hasUnsupported
+            ? "Look for [unverified] markers inline in the answer."
+            : "All factual claims trace back to a tool result or retrieved chunk.")
+        }
+      >
+        <Icon className="h-3 w-3" />
+        grounding {supported}✓ {unsupported}✗ {unverifiable}?
+      </Badge>
+    </>
   );
 }
 

@@ -1,10 +1,53 @@
 "use client";
 
-import type { ComponentProps } from "react";
+import { AlertTriangle } from "lucide-react";
+import type { ComponentProps, ReactNode } from "react";
+import { Children, Fragment, isValidElement } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { cn } from "@/lib/utils";
+
+const UNVERIFIED_MARKER = "[unverified]";
+
+/**
+ * Walk a React children tree, splitting any string node on the literal
+ * `[unverified]` marker emitted by the Phase-3 grounding validator and
+ * replacing each occurrence with a styled `<span>` carrying a hover
+ * tooltip. Non-string nodes (other elements, expressions, fragments)
+ * are passed through unchanged.
+ *
+ * This is the cleanest way to highlight inline markers without taking a
+ * `rehype-raw` dependency to enable raw HTML in markdown — we work at
+ * the rendered-tree level instead.
+ */
+function highlightUnverifiedMarkers(children: ReactNode): ReactNode {
+  return Children.map(children, (child, index) => {
+    if (typeof child === "string") {
+      if (!child.includes(UNVERIFIED_MARKER)) return child;
+      const segments = child.split(UNVERIFIED_MARKER);
+      const out: ReactNode[] = [];
+      segments.forEach((segment, i) => {
+        if (segment) out.push(segment);
+        if (i < segments.length - 1) {
+          out.push(
+            <span
+              key={`unverified-${index}-${i}`}
+              className="ml-0.5 mr-0.5 inline-flex items-center gap-0.5 rounded bg-destructive/15 px-1.5 py-0.5 align-baseline font-mono text-[0.75em] font-semibold text-destructive"
+              title="This claim was flagged by the grounding validator as not supported by any tool result or retrieved knowledge chunk."
+            >
+              <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+              unverified
+            </span>,
+          );
+        }
+      });
+      return <Fragment key={`fragment-${index}`}>{out}</Fragment>;
+    }
+    if (isValidElement(child)) return child;
+    return child;
+  });
+}
 
 /**
  * Render assistant answers as GitHub-flavoured markdown with Tailwind
@@ -46,6 +89,16 @@ export function Markdown({
         components={{
           code: CodeBlock,
           pre: ({ children }) => <>{children}</>,
+          // Highlight [unverified] markers from the grounding validator
+          // wherever they appear in flowing text (paragraphs, list items,
+          // table cells, blockquotes).
+          p: ({ children }) => <p>{highlightUnverifiedMarkers(children)}</p>,
+          li: ({ children }) => <li>{highlightUnverifiedMarkers(children)}</li>,
+          td: ({ children }) => <td>{highlightUnverifiedMarkers(children)}</td>,
+          th: ({ children }) => <th>{highlightUnverifiedMarkers(children)}</th>,
+          blockquote: ({ children }) => (
+            <blockquote>{highlightUnverifiedMarkers(children)}</blockquote>
+          ),
         }}
       >
         {children}

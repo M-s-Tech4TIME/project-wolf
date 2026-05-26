@@ -84,5 +84,6 @@ implies. Any rollback path.
 | 0010 | `model-probe-qwen3-8b.md` — qwen3:8b GPU probe (tight fit 85% GPU/15% CPU); same measured capability as qwen3:4b; KNOWN_MODELS amended | accepted |
 | 0011 | `model-probe-granite3.3-8b.md` — opportunistic probe of IBM Granite 3.3 8B (Apache 2.0); 0.25 score; native tool calling works but structured-output fails Wolf's schema; outside ADR 0006 matrix | accepted |
 | 0012 | `embedding-stack-ollama-vs-sentence-transformers.md` — keep both adapters; default Ollama (lean wheels, ADR 0007); sentence-transformers as opt-in extra `embeddings-local` for throughput / precision workloads | accepted |
+| 0013 | `grounding-judge-separate-model.md` — env-driven `GROUNDING_JUDGE_MODEL_ID` lets the operator route the validator to a stronger judge (qwen3:8b locally, hosted Nemotron via OpenRouter). qwen3.6:27b doesn't fit this dev box's RAM; qwen3.5:9b regresses; qwen3:8b is the realistic local upgrade. | accepted |
 
 _Update this table whenever you add a new ADR._

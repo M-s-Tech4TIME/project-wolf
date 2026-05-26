@@ -25,7 +25,12 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from wolf_secrets import SecretsBackend
 
-from app.agent import AgentLoop, get_model_for_tenant, strategy_for
+from app.agent import (
+    AgentLoop,
+    get_grounding_judge_model,
+    get_model_for_tenant,
+    strategy_for,
+)
 from app.agent.events import LoopEvent
 from app.config import get_settings
 from app.database import get_db
@@ -118,7 +123,10 @@ async def chat(
     knowledge_store = PgvectorKnowledgeStore(
         db, make_embedding_provider(_settings)
     )
-    grounding_validator = GroundingValidator(provider)
+    judge_provider = await get_grounding_judge_model(
+        ctx, _settings, secrets, fallback_chat_provider=provider
+    )
+    grounding_validator = GroundingValidator(judge_provider)
 
     async with (
         WazuhOpenSearchClient(connection) as opensearch,
@@ -193,7 +201,10 @@ async def chat_stream(
     knowledge_store = PgvectorKnowledgeStore(
         db, make_embedding_provider(_settings)
     )
-    grounding_validator = GroundingValidator(provider)
+    judge_provider = await get_grounding_judge_model(
+        ctx, _settings, secrets, fallback_chat_provider=provider
+    )
+    grounding_validator = GroundingValidator(judge_provider)
 
     queue: asyncio.Queue[LoopEvent | None] = asyncio.Queue()
 

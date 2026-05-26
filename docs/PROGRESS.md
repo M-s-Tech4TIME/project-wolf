@@ -6,7 +6,7 @@
 >
 > For history of what changed when, see `CHANGELOG.md` (append-only).
 
-**Last updated:** 2026-05-27 by claude-code (Slice 3 ship + end-to-end)
+**Last updated:** 2026-05-27 by claude-code (Phase 3 follow-ups landed)
 
 ---
 
@@ -203,6 +203,11 @@ who want to build their own images.
 ## 4. What's next
 
 **Immediate next steps** (in priority order):
+0. ~~Phase 3 follow-ups (judge model, agent_name lookup, reembed CLI,
+   frontend integration).~~ **All four shipped 2026-05-27** in
+   commit set following 05cb750. End-to-end verified with
+   `GROUNDING_JUDGE_MODEL_ID=qwen3:8b` — judge caught a fabricated
+   source-IP claim that qwen3:4b emitted confidently.
 1. ~~Phase 3 Slice 3 — real seed corpora.~~ **Shipped 2026-05-27.**
    `tools/seed_knowledge` brings in 697 ATT&CK techniques + 4473
    Wazuh rules. End-to-end retest on the new dedicated agent at
@@ -308,9 +313,9 @@ to `CHANGELOG.md` as ADRs.
 
 ## 7. Test coverage status
 
-- **174 backend tests passing** (128 prior + 19 knowledge-layer tests
-  across Slices 1/1.5/2A + 16 grounding-validator tests in Slice 2B
-  + 11 ingester-parser tests in Slice 3)
+- **178 backend tests passing** (128 baseline + 19 knowledge + 16
+  validator + 11 ingester + 4 agent-name lookup tests across the
+  Phase 3 work)
 - **0 failures**, **0 skipped**
 - ruff: clean across the workspace
 - mypy strict: 33 source files clean

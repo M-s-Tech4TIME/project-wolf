@@ -67,6 +67,22 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
     openai_base_url: str = "https://api.openai.com/v1"
 
+    # ── Grounding validator (Phase 3 Slice 2B follow-up) ──────────────────
+    # The validator can use a model DIFFERENT from the chat model. Default
+    # is `default_model_id` so the validator runs the same model as chat,
+    # which is correct for small dev deployments (one model loaded, low
+    # latency). In production an operator may want the judge to use a
+    # stronger model (e.g. `qwen3.6:27b` via Ollama, or a hosted frontier
+    # via OpenRouter). Leave empty to inherit; set the model id to override.
+    grounding_judge_model_id: str = ""
+    # Provider for the judge model. Falls back to default_model_provider
+    # when grounding_judge_model_id is empty. Useful for "chat on Ollama,
+    # judge on OpenAI-compatible hosted API."
+    grounding_judge_model_provider: str = ""
+    # When the judge provider is openai (i.e. OpenRouter / hosted), this
+    # names the secret key holding the API token. Leave empty for ollama.
+    grounding_judge_api_key_ref: str = ""
+
     # ── Embedding stack (Phase 3 — knowledge layer) ────────────────────────
     # `ollama` (default) reuses the Ollama daemon already running for the LLM
     # — no torch in the orchestrator's wheel set; recommended per ADR 0007.
