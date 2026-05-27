@@ -35,7 +35,10 @@ from app.agent.events import LoopEvent
 from app.config import get_settings
 from app.database import get_db
 from app.grounding import GroundingValidator
-from app.knowledge.embeddings import make_embedding_provider
+from app.knowledge.embeddings import (
+    make_embedding_provider,
+    make_embedding_provider_aux,
+)
 from app.knowledge.store import PgvectorKnowledgeStore
 from app.secrets_factory import get_secrets_backend
 from app.tenancy.context import TenantContext, require_tenant_context
@@ -121,7 +124,9 @@ async def chat(
 
     connection = await get_wazuh_connection(ctx, db, secrets)
     knowledge_store = PgvectorKnowledgeStore(
-        db, make_embedding_provider(_settings)
+        db,
+        make_embedding_provider(_settings),
+        embedder_aux=make_embedding_provider_aux(_settings),
     )
     judge_provider = await get_grounding_judge_model(
         ctx, _settings, secrets, fallback_chat_provider=provider
@@ -199,7 +204,9 @@ async def chat_stream(
     strategy = strategy_for(capability)
     connection = await get_wazuh_connection(ctx, db, secrets)
     knowledge_store = PgvectorKnowledgeStore(
-        db, make_embedding_provider(_settings)
+        db,
+        make_embedding_provider(_settings),
+        embedder_aux=make_embedding_provider_aux(_settings),
     )
     judge_provider = await get_grounding_judge_model(
         ctx, _settings, secrets, fallback_chat_provider=provider

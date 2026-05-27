@@ -194,6 +194,149 @@ def test_retrieved_chunk_carries_rrf_score() -> None:
 
 
 @pytest.mark.asyncio
+async def test_rrf_fusion_three_legs_chunk_in_all_wins() -> None:
+    """ADR 0014 — when aux embedder is wired, the third leg participates.
+
+    A chunk that ranks well in all three legs (BM25 + primary + aux)
+    should beat a chunk that only appears in one or two."""
+    from unittest.mock import AsyncMock, patch
+
+    from app.knowledge.store import PgvectorKnowledgeStore
+
+    in_all_three = uuid.uuid4()
+    primary_only = uuid.uuid4()
+    fts_only = uuid.uuid4()
+    aux_only = uuid.uuid4()
+
+    class _Row:
+        def __init__(self, chunk_id: uuid.UUID, source_type: str) -> None:
+            self.id = chunk_id
+            self.content = "test"
+            self.source_type = source_type
+            self.tenant_id = None
+            self.chunk_metadata = {}
+
+    rows = {
+        in_all_three: _Row(in_all_three, "attack"),
+        primary_only: _Row(primary_only, "wazuh_doc"),
+        fts_only: _Row(fts_only, "wazuh_doc"),
+        aux_only: _Row(aux_only, "runbook"),
+    }
+
+    class _StubEmbedder:
+        model_id = "primary"
+        dimension = 768
+
+        async def embed(self, texts: list[str]) -> list[list[float]]:
+            return [[0.0] * 768 for _ in texts]
+
+    class _StubEmbedderAux:
+        model_id = "aux"
+        dimension = 768
+
+        async def embed(self, texts: list[str]) -> list[list[float]]:
+            return [[0.1] * 768 for _ in texts]
+
+    class _StubSession:
+        async def execute(self, stmt: Any) -> Any:
+            class _Result:
+                @staticmethod
+                def all() -> list[tuple[Any, float]]:
+                    return [
+                        (rows[in_all_three], 0.10),
+                        (rows[primary_only], 0.20),
+                        (rows[fts_only], 0.50),
+                        (rows[aux_only], 0.30),
+                    ]
+            return _Result()
+
+    store = PgvectorKnowledgeStore(
+        _StubSession(),
+        _StubEmbedder(),
+        embedder_aux=_StubEmbedderAux(),
+    )
+
+    with (
+        patch.object(
+            store,
+            "_vector_candidates",
+            AsyncMock(return_value={in_all_three: 1, primary_only: 2}),
+        ),
+        patch.object(
+            store,
+            "_fts_candidates",
+            AsyncMock(return_value={in_all_three: 1, fts_only: 2}),
+        ),
+        patch.object(
+            store,
+            "_vector_aux_candidates",
+            AsyncMock(return_value={in_all_three: 1, aux_only: 2}),
+        ) as aux_mock,
+    ):
+        results = await store.search(
+            tenant_id=uuid.uuid4(),
+            query_text="anything",
+            limit=10,
+        )
+
+    # The chunk present in all three legs ranks above the singletons.
+    assert results[0].id == in_all_three
+    rest_ids = {r.id for r in results[1:]}
+    assert rest_ids == {primary_only, fts_only, aux_only}
+    # Score math (RRF_K=60): three-leg chunk = 3/61 ≈ 0.049; singletons = 1/62.
+    assert results[0].rrf_score is not None
+    assert results[0].rrf_score > results[1].rrf_score * 2  # clearly dominant
+    # Aux-leg helper was actually called (not no-op'd).
+    aux_mock.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_rrf_fusion_skips_aux_leg_when_no_aux_embedder() -> None:
+    """Default behaviour (Slice-2A) is preserved when embedder_aux=None."""
+    from unittest.mock import AsyncMock, patch
+
+    from app.knowledge.store import PgvectorKnowledgeStore
+
+    chunk_id = uuid.uuid4()
+
+    class _Row:
+        def __init__(self) -> None:
+            self.id = chunk_id
+            self.content = "x"
+            self.source_type = "wazuh_doc"
+            self.tenant_id = None
+            self.chunk_metadata = {}
+
+    class _StubEmbedder:
+        model_id = "primary"
+        dimension = 768
+
+        async def embed(self, texts: list[str]) -> list[list[float]]:
+            return [[0.0] * 768 for _ in texts]
+
+    class _StubSession:
+        async def execute(self, stmt: Any) -> Any:
+            class _Result:
+                @staticmethod
+                def all() -> list[tuple[Any, float]]:
+                    return [(_Row(), 0.10)]
+            return _Result()
+
+    store = PgvectorKnowledgeStore(_StubSession(), _StubEmbedder())  # no aux
+    with (
+        patch.object(store, "_vector_candidates", AsyncMock(return_value={chunk_id: 1})),
+        patch.object(store, "_fts_candidates", AsyncMock(return_value={})),
+        patch.object(store, "_vector_aux_candidates", AsyncMock()) as aux_mock,
+    ):
+        results = await store.search(
+            tenant_id=uuid.uuid4(), query_text="x", limit=5
+        )
+    assert len(results) == 1
+    # Aux leg helper was NOT invoked.
+    aux_mock.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_rrf_fusion_combines_both_legs_correctly() -> None:
     """Chunks present in both legs get boosted vs chunks present in only one.
 

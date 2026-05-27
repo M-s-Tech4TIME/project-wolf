@@ -6,7 +6,7 @@
 >
 > For history of what changed when, see `CHANGELOG.md` (append-only).
 
-**Last updated:** 2026-05-27 by claude-code (Phase 3 follow-ups landed)
+**Last updated:** 2026-05-27 by claude-code (multi-embedding RRF — ADR 0014)
 
 ---
 
@@ -203,6 +203,14 @@ who want to build their own images.
 ## 4. What's next
 
 **Immediate next steps** (in priority order):
+-1. ~~Multi-embedding RRF chaining (v1.5 + v2-moe via ADR 0014).~~
+    **Shipped 2026-05-27.** Migration 0006 + secondary embedding
+    column + 3-way RRF in `search()` + `--aux` mode on `wolf reembed`.
+    Live-corpus benchmark: precision@5 35% → 60% on 20-query battery.
+    Chained mode is `EMBEDDING_MODEL_AUX`-gated (empty default
+    preserves Slice-2A behaviour). 99.5% of corpus (5145/5173)
+    successfully embedded with v2-moe; remaining 28 chunks marked
+    unembeddable but still retrievable via v1.5 + BM25 legs.
 0. ~~Phase 3 follow-ups (judge model, agent_name lookup, reembed CLI,
    frontend integration).~~ **All four shipped 2026-05-27** in
    commit set following 05cb750. End-to-end verified with
@@ -313,9 +321,9 @@ to `CHANGELOG.md` as ADRs.
 
 ## 7. Test coverage status
 
-- **178 backend tests passing** (128 baseline + 19 knowledge + 16
+- **180 backend tests passing** (128 baseline + 21 knowledge + 16
   validator + 11 ingester + 4 agent-name lookup tests across the
-  Phase 3 work)
+  Phase 3 work — including the two new 3-way RRF tests for ADR 0014)
 - **0 failures**, **0 skipped**
 - ruff: clean across the workspace
 - mypy strict: 33 source files clean

@@ -191,27 +191,58 @@ class SentenceTransformersEmbeddingAdapter:
         return vectors
 
 
+def _build_provider(
+    provider_name: str,
+    model_id: str,
+    settings: "Settings",
+) -> EmbeddingProvider:
+    """Shared factory body — builds an EmbeddingProvider from a name + model.
+
+    Pulled out so the primary and auxiliary factories share the same
+    branch logic (and the same future runtimes).
+    """
+    name = provider_name.lower()
+    if name == "ollama":
+        return OllamaEmbeddingAdapter(
+            settings.ollama_base_url,
+            model=model_id,
+            dimension=settings.embedding_dimension,
+        )
+    if name in {"sentence-transformers", "st", "sentence_transformers"}:
+        return SentenceTransformersEmbeddingAdapter(
+            model_id,
+            dimension=settings.embedding_dimension,
+        )
+    raise ValueError(
+        f"Unknown embedding_provider {provider_name!r}; expected 'ollama' or "
+        f"'sentence-transformers'."
+    )
+
+
 def make_embedding_provider(settings: "Settings") -> EmbeddingProvider:
-    """Construct the configured EmbeddingProvider.
+    """Construct the primary EmbeddingProvider.
 
     Provider selection is env-driven via `EMBEDDING_PROVIDER` to keep the
     swap reversible without code changes. The sentence-transformers path
     requires `uv sync --extra embeddings-local` (torch is not a default
     runtime dep per ADR 0007).
     """
-    provider = settings.embedding_provider.lower()
-    if provider == "ollama":
-        return OllamaEmbeddingAdapter(
-            settings.ollama_base_url,
-            model=settings.embedding_model,
-            dimension=settings.embedding_dimension,
-        )
-    if provider in {"sentence-transformers", "st", "sentence_transformers"}:
-        return SentenceTransformersEmbeddingAdapter(
-            settings.embedding_model,
-            dimension=settings.embedding_dimension,
-        )
-    raise ValueError(
-        f"Unknown embedding_provider {provider!r}; expected 'ollama' or "
-        f"'sentence-transformers'."
+    return _build_provider(
+        settings.embedding_provider, settings.embedding_model, settings
     )
+
+
+def make_embedding_provider_aux(
+    settings: "Settings",
+) -> EmbeddingProvider | None:
+    """Construct the optional secondary EmbeddingProvider (ADR 0014).
+
+    Returns `None` when `EMBEDDING_MODEL_AUX` is empty — i.e. when the
+    operator hasn't configured multi-embedding retrieval. The store then
+    behaves exactly as before (BM25 + single vector leg). When set, the
+    second embedder feeds the third RRF leg.
+    """
+    if not settings.embedding_model_aux:
+        return None
+    provider_name = settings.embedding_provider_aux or settings.embedding_provider
+    return _build_provider(provider_name, settings.embedding_model_aux, settings)

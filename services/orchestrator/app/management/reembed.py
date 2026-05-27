@@ -39,7 +39,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.database import db_session
-from app.knowledge.embeddings import make_embedding_provider
+from app.knowledge.embeddings import (
+    make_embedding_provider,
+    make_embedding_provider_aux,
+)
 from app.knowledge.models import KnowledgeChunk
 from app.tenancy.models import Tenant
 
@@ -51,12 +54,30 @@ async def _fetch_mismatched(
     active_model_id: str,
     tenant_id_filter: str | None,
     *,
+    is_aux: bool,
     limit: int | None = None,
 ) -> list[KnowledgeChunk]:
-    """Rows whose embedding_model != the active provider's model_id."""
-    stmt = select(KnowledgeChunk).where(
-        KnowledgeChunk.embedding_model != active_model_id
-    )
+    """Rows whose embedding model on the targeted column doesn't match.
+
+    Primary mode (`is_aux=False`): selects rows where `embedding_model`
+    differs from the active provider's `model_id`. Same as the
+    pre-ADR-0014 behaviour.
+
+    Aux mode (`is_aux=True`): selects rows where `embedding_v2_model`
+    differs OR is NULL — i.e. rows that have never been embedded with
+    the aux model OR were embedded with a different aux model. This
+    is the path for "populate v2 vectors for the existing corpus."
+    """
+    if is_aux:
+        # NULL or != active aux model. SQLAlchemy: IS DISTINCT FROM
+        # treats NULL as a value, so it's the right operator here.
+        stmt = select(KnowledgeChunk).where(
+            KnowledgeChunk.embedding_v2_model.is_distinct_from(active_model_id)
+        )
+    else:
+        stmt = select(KnowledgeChunk).where(
+            KnowledgeChunk.embedding_model != active_model_id
+        )
     if tenant_id_filter == "__shared__":
         stmt = stmt.where(KnowledgeChunk.tenant_id.is_(None))
     elif tenant_id_filter is not None:
@@ -67,27 +88,84 @@ async def _fetch_mismatched(
     return list(result.scalars().all())
 
 
+# Sentinel written to embedding_v2_model when the aux embedder rejected
+# a chunk (e.g. v2-moe's 512-token limit). Letting the CLI keep retrying
+# would be an infinite loop — instead we mark "tried and failed" so the
+# WHERE-clause filter in _fetch_mismatched stops picking the row up.
+# search() treats embedding_v2 IS NULL as "skip this leg," so the chunk
+# is still retrievable via the primary vector + FTS legs (the whole
+# point of the multi-embedding chained design).
+AUX_UNEMBEDDABLE_SENTINEL = "__unembeddable__"
+
+# Conservative truncation cap for aux embedders with smaller context.
+# v2-moe's nominal limit is 512 tokens ≈ 2048 chars BPE; 1800 gives
+# safety margin without losing too much detail.
+AUX_CHAR_LIMIT = 1800
+
+
 async def _reembed_batch(
     session: AsyncSession,
     rows: list[KnowledgeChunk],
     embedder,
+    *,
+    is_aux: bool,
 ) -> int:
     """Re-embed `rows` and write the new vectors back. Returns row count.
 
-    Uses UPDATE ... WHERE id IN (...) so the chunk's content and metadata
-    are untouched; only `embedding` + `embedding_model` change.
+    Primary mode: updates `embedding` + `embedding_model`. No truncation
+    (primary model is expected to handle every chunk's content).
+
+    Aux mode: updates `embedding_v2` + `embedding_v2_model`. Truncates
+    inputs at AUX_CHAR_LIMIT to avoid the 'unexpected EOF' Ollama
+    returns for inputs that exceed v2-moe's 512-token window. If the
+    aux model still rejects a chunk after truncation, that chunk is
+    stamped with AUX_UNEMBEDDABLE_SENTINEL so future runs skip it.
+
+    Either way, the chunk's content + metadata + primary vector are
+    untouched. Each batch is its own commit so partial failure leaves
+    a consistent state.
     """
     if not rows:
         return 0
-    vectors = await embedder.embed([row.content for row in rows])
-    for row, vector in zip(rows, vectors, strict=True):
-        await session.execute(
-            update(KnowledgeChunk)
-            .where(KnowledgeChunk.id == row.id)
-            .values(embedding=vector, embedding_model=embedder.model_id)
-        )
+    succeeded = 0
+    for row in rows:
+        embed_input = row.content
+        if is_aux and len(embed_input) > AUX_CHAR_LIMIT:
+            embed_input = embed_input[:AUX_CHAR_LIMIT]
+        try:
+            vector = (await embedder.embed([embed_input]))[0]
+        except Exception as exc:
+            sys.stderr.write(
+                f"  [warn] {'aux' if is_aux else 'primary'} embed failed for "
+                f"chunk {row.id} ({type(exc).__name__}); "
+                f"{'marking unembeddable' if is_aux else 'skipping'}\n"
+            )
+            if is_aux:
+                # Sentinel ensures future runs DON'T retry this forever.
+                await session.execute(
+                    update(KnowledgeChunk)
+                    .where(KnowledgeChunk.id == row.id)
+                    .values(
+                        embedding_v2=None,
+                        embedding_v2_model=AUX_UNEMBEDDABLE_SENTINEL,
+                    )
+                )
+            continue
+        if is_aux:
+            await session.execute(
+                update(KnowledgeChunk)
+                .where(KnowledgeChunk.id == row.id)
+                .values(embedding_v2=vector, embedding_v2_model=embedder.model_id)
+            )
+        else:
+            await session.execute(
+                update(KnowledgeChunk)
+                .where(KnowledgeChunk.id == row.id)
+                .values(embedding=vector, embedding_model=embedder.model_id)
+            )
+        succeeded += 1
     await session.commit()
-    return len(rows)
+    return succeeded
 
 
 async def main() -> int:
@@ -98,6 +176,17 @@ async def main() -> int:
         "--apply",
         action="store_true",
         help="Actually re-embed. Default is REPORT-ONLY.",
+    )
+    parser.add_argument(
+        "--aux",
+        action="store_true",
+        help=(
+            "Operate on the SECONDARY (embedding_v2) column instead of "
+            "the primary. Used to populate v2 vectors for the corpus "
+            "after enabling ADR 0014's multi-embedding retrieval — "
+            "the operator first sets EMBEDDING_MODEL_AUX in .env, then "
+            "runs `reembed --aux --apply` to fill the new column."
+        ),
     )
     parser.add_argument(
         "--tenant-slug",
@@ -131,7 +220,17 @@ async def main() -> int:
         return 2
 
     settings = get_settings()
-    embedder = make_embedding_provider(settings)
+    if args.aux:
+        embedder = make_embedding_provider_aux(settings)
+        if embedder is None:
+            sys.stderr.write(
+                "ERROR: --aux requested but EMBEDDING_MODEL_AUX is not set. "
+                "Add it to .env (e.g. EMBEDDING_MODEL_AUX=nomic-embed-text-v2-moe) "
+                "and try again.\n"
+            )
+            return 4
+    else:
+        embedder = make_embedding_provider(settings)
     active_model_id = embedder.model_id
 
     tenant_filter: str | None = None
@@ -165,11 +264,15 @@ async def main() -> int:
     sys.stdout.write(f"Scope: {scope_text}\n")
     sys.stdout.write(f"Mode:  {mode_text}\n\n")
 
+    column_label = "embedding_v2" if args.aux else "embedding"
+    sys.stdout.write(f"Column: {column_label}\n\n")
+
     total_processed = 0
     while True:
         async with db_session() as session:
             batch = await _fetch_mismatched(
                 session, active_model_id, tenant_filter,
+                is_aux=args.aux,
                 limit=args.batch_size,
             )
             if not batch:
@@ -183,7 +286,10 @@ async def main() -> int:
                             "mismatched_in_first_batch": [
                                 {
                                     "id": str(row.id),
-                                    "current_model": row.embedding_model,
+                                    "current_model": (
+                                        row.embedding_v2_model if args.aux
+                                        else row.embedding_model
+                                    ),
                                     "would_become": active_model_id,
                                     "source_type": row.source_type,
                                     "preview": row.content[:80],
@@ -199,7 +305,7 @@ async def main() -> int:
                 )
                 return 0
 
-            count = await _reembed_batch(session, batch, embedder)
+            count = await _reembed_batch(session, batch, embedder, is_aux=args.aux)
             total_processed += count
             sys.stdout.write(
                 f"  re-embedded batch of {count} (total so far: {total_processed})\n"

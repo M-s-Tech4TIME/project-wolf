@@ -49,6 +49,154 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-05-27 — Multi-embedding RRF chaining (ADR 0014)
+
+**Session type:** claude-code (continuation)
+**Phase:** Phase 3 close-out — chained-retrieval extension
+**Duration:** ~90 min
+**Branch / commit:** `main` — starting commit `54e01ae`, this entry's
+commit pending.
+
+### What we did
+
+- **Empirical motivation**: ran a full-corpus benchmark
+  (`tools/embedding_benchmark/full_corpus_v2_eval.py`) re-embedding the
+  live 5173-chunk corpus with `nomic-embed-text-v2-moe` in memory and
+  comparing against the existing v1.5 embeddings on a 20-query battery
+  of rule-ID + ATT&CK technique lookups with known-correct answers.
+  Result: v2-moe vectors-only precision@1 = 35% vs v1.5's 15%
+  (2.3× lift) and precision@5 = 50% vs 15% (3.3× lift). But v2-moe
+  has a 512-token context limit — 3.5% of the corpus (mostly long
+  ATT&CK techniques) gets truncated or fails entirely.
+- **Operator framed the goal clearly**: chain v1.5 + v2-moe so they
+  complement each other and fill the gap where each individually
+  lacks. RRF over diverse rankers is exactly the right primitive.
+- **Migration 0006** — `embedding_v2 vector(768)` (nullable) +
+  `embedding_v2_model varchar(100)` + HNSW cosine-ops index on the
+  new column. Backward-compatible: existing chunks keep working with
+  NULL aux columns.
+- **Settings** — `EMBEDDING_MODEL_AUX` / `EMBEDDING_PROVIDER_AUX`.
+  Empty default preserves Slice-2A behaviour (single-leg vector +
+  BM25). When set, the orchestrator builds a second embedder.
+- **`make_embedding_provider_aux(settings)`** factory — returns None
+  for empty config; constructs the secondary adapter otherwise.
+  Shares `_build_provider()` helper with the primary factory.
+- **`PgvectorKnowledgeStore`** — accepts `embedder_aux=None` kwarg.
+  `upsert()` writes both vectors when configured (with per-chunk
+  error tolerance for aux — a v2-moe rejection leaves
+  `embedding_v2 IS NULL` for that chunk; primary leg still indexes
+  it). `search()` adds a `_vector_aux_candidates()` helper that
+  filters on `embedding_v2 IS NOT NULL` so unembedded chunks don't
+  pollute or block the aux leg.
+- **`search()`** now does 3-way RRF when an aux embedder is wired
+  (BM25 + primary vector + secondary vector). Slice-2A behaviour is
+  preserved when not — same 2-leg flow as before.
+- **`wolf reembed --aux`** — extended to walk rows where
+  `embedding_v2_model IS DISTINCT FROM <active aux model>` and
+  populate them in batches. Uses an `__unembeddable__` sentinel value
+  for chunks the aux model rejects after truncation (1800-char
+  default cap), so subsequent runs don't loop on them. Per-chunk
+  error tolerance preserved.
+- **chat.py** — constructs both embedders via the factories and
+  hands the secondary to `PgvectorKnowledgeStore(..., embedder_aux=aux)`.
+  Both endpoints (`/chat` and `/chat/stream`) updated symmetrically.
+- **Populated `embedding_v2` for the entire corpus**: 5145 / 5173
+  chunks (99.5%) successfully embedded with v2-moe; 28 chunks
+  (0.5%) marked `__unembeddable__` after truncation (long ATT&CK
+  descriptions that even at 1800 chars produce malformed input
+  v2-moe rejects). Those 28 stay retrievable via v1.5 + BM25 legs —
+  the chained design's complement-each-other promise.
+- **Tests** — 2 new in `test_knowledge_store.py`:
+  - `test_rrf_fusion_three_legs_chunk_in_all_wins` — a chunk
+    ranking in all three legs decisively beats singletons present
+    in only one.
+  - `test_rrf_fusion_skips_aux_leg_when_no_aux_embedder` — default
+    behaviour is preserved when `embedder_aux=None` (the aux helper
+    is not even invoked).
+  `make check`: **180 passed** (178 prior + 2 new). Lint + mypy
+  strict clean.
+- **`tools/embedding_benchmark/full_corpus_chained_eval.py`** — runs
+  the same 20-query battery against the LIVE store in two modes:
+  single-leg (BM25 + v1.5) and chained (BM25 + v1.5 + v2-moe).
+- **ADR 0014** captures the design + alternatives + measured impact
+  + operator workflow + rollback path.
+
+### Measured impact
+
+20 queries with known-correct answers (rule IDs + ATT&CK technique
+IDs) against the live 5173-chunk corpus.
+
+| Mode | precision@1 | precision@5 | p50 latency |
+|---|---|---|---|
+| Vectors-only v1.5 | 15% (3/20) | 15% (3/20) | (in-memory test) |
+| Vectors-only v2-moe | 35% (7/20) | 50% (10/20) | (in-memory test) |
+| **BM25 + v1.5** (Slice 2A baseline) | 15% (3/20) | 35% (7/20) | 48 ms |
+| **BM25 + v1.5 + v2-moe (ADR 0014)** | **30% (6/20)** | **60% (12/20)** | 159 ms |
+
+Chained mode recovers 5 queries single-leg missed entirely in the
+top-5 (Process Injection T1055, Local System T1005, DNS Tunneling
+T1071.004, Pass the Hash T1550.002, Boot/Logon Autostart T1547).
+Latency goes 48 → 159 ms per search — imperceptible inside the
+multi-second LLM generation phase.
+
+### What we decided
+
+- **RRF over a third leg, not score normalization.** Per-leg
+  rankings, no cross-leg score comparison — same primitive Slice 2A
+  uses for BM25 + vector fusion. Adding a fourth leg later is
+  mechanical.
+- **Nullable aux column, per-chunk error tolerance.** Chunks the
+  aux model can't handle stay retrievable via v1.5 + BM25. The
+  design intent is explicitly "v1.5 covers what v2-moe can't" — not
+  "everything embeds twice or nothing."
+- **Sentinel `__unembeddable__` for chunks even truncation can't
+  fix.** Prevents the reembed CLI looping forever on a small set of
+  problematic chunks.
+- **Empty default for `EMBEDDING_MODEL_AUX`.** Single-leg deployments
+  cost nothing; the chained path is opt-in via env. Wolf's "no paid
+  dependency" principle isn't touched — both v1.5 and v2-moe are
+  Apache 2.0, both run via Ollama.
+- **The realistic operational metric is precision@5, not @1.** The
+  agent loop retrieves top-K chunks and feeds them to the LLM. RRF
+  is structurally better at building a high-recall top-K than at
+  picking a single best — exactly what the agent needs.
+
+### What broke / what we discovered
+
+- **First reembed run stalled at 97% coverage** because the CLI's
+  initial error path set `embedding_v2_model = NULL` for chunks the
+  aux rejected, but the `IS DISTINCT FROM` filter kept picking those
+  same NULL rows back up on the next iteration — infinite loop.
+  Fix: sentinel value `__unembeddable__` distinct from both NULL and
+  the active aux model id. Plus 1800-char truncation cap so most
+  long chunks succeed.
+- **v2-moe still rejects 28 chunks even at 1800-char input.** Long
+  ATT&CK techniques with dense paragraph structure produce
+  "unexpected EOF" no matter how we slice the text. Those chunks
+  retain `embedding_v2 IS NULL` and `embedding_v2_model =
+  '__unembeddable__'`. The chained design absorbs this: v1.5 covers
+  the long-context retrieval for them.
+- **precision@1 dropped slightly vs vectors-only v2-moe** (35% →
+  30%) — RRF dilutes a single-leg dominant ranking when the other
+  legs don't agree. This is a known RRF property and the right
+  trade because Wolf retrieves top-5, not top-1. precision@5 went
+  up by half (35% → 60%) as expected.
+
+### What's next
+
+- **Phase 4 — propose tools + approval gateway.** All Phase 3 work
+  now sits at a stable end-state with measured retrieval quality
+  improvements documented.
+- **Operator install-script update.** Doc 16's install-script spec
+  needs the optional aux-embedder step (`ollama pull
+  nomic-embed-text-v2-moe`) plus the post-install reembed
+  documented. Belongs in the Phase 4 packaging work.
+- **Future: 4th RRF leg** (a Wolf-specific fine-tune of one
+  embedding model on real analyst queries). Not pressing; the
+  3-leg flow at 60% precision@5 is enough to ship Phase 4 against.
+
+---
+
 ## 2026-05-27 — Phase 3 follow-ups: judge model, agent_name, reembed, frontend
 
 **Session type:** claude-code (continuation)

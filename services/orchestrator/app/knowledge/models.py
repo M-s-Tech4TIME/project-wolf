@@ -68,6 +68,18 @@ class KnowledgeChunk(Base):
     # Re-embedding trigger: a swap of embedding_model forces a planned
     # re-embed of every chunk produced by the prior model.
     embedding_model: Mapped[str] = mapped_column(String(100), nullable=False)
+    # Optional secondary embedding for ADR 0014's multi-embedding RRF.
+    # When `EMBEDDING_MODEL_AUX` is configured, chunks gain a second
+    # vector here (typically a different model — e.g. v1.5 primary +
+    # v2-moe aux for complementary retrieval). NULL when the operator
+    # hasn't configured a secondary embedder; the store's search() then
+    # silently drops to the existing 2-leg flow.
+    embedding_v2: Mapped[list[float] | None] = mapped_column(
+        Vector(EMBEDDING_DIMENSION), nullable=True
+    )
+    embedding_v2_model: Mapped[str | None] = mapped_column(
+        String(100), nullable=True
+    )
     # Generated lexical-search column — Postgres populates it from `content`
     # on insert/update. Wolf never writes here directly. Migration 0005
     # defines the GENERATED ALWAYS AS clause; this declaration just tells

@@ -97,22 +97,63 @@ class KnowledgeStore(Protocol):
 
 
 class PgvectorKnowledgeStore:
-    """Postgres + pgvector implementation of KnowledgeStore."""
+    """Postgres + pgvector implementation of KnowledgeStore.
 
-    def __init__(self, session: AsyncSession, embedder: Any) -> None:
-        # `embedder` is typed Any to avoid a circular import; in practice it
-        # implements the EmbeddingProvider protocol.
+    Single-leg mode (default): `embedder_aux=None`. search() runs the
+    Slice-2A hybrid (BM25 + primary-vector RRF).
+
+    Chained mode (ADR 0014): `embedder_aux=<provider>`. upsert() writes
+    both `embedding` and `embedding_v2`; search() runs 3-way RRF
+    (BM25 + primary-vector + secondary-vector). Gracefully tolerates
+    chunks with NULL `embedding_v2` (just don't contribute to leg 3).
+    """
+
+    def __init__(
+        self,
+        session: AsyncSession,
+        embedder: Any,
+        *,
+        embedder_aux: Any | None = None,
+    ) -> None:
+        # `embedder` is typed Any to avoid a circular import; in practice
+        # it implements the EmbeddingProvider protocol.
         self._session = session
         self._embedder = embedder
+        self._embedder_aux = embedder_aux
 
     async def upsert(self, chunks: Sequence[ChunkInput]) -> list[uuid.UUID]:
         if not chunks:
             return []
         for chunk in chunks:
             self._validate_chunk(chunk)
-        vectors = await self._embedder.embed([c.content for c in chunks])
+        texts = [c.content for c in chunks]
+        vectors = await self._embedder.embed(texts)
+        # Aux embed: best-effort, per-chunk. If a chunk's content doesn't
+        # fit the aux model's context (e.g. v2-moe's 512-token limit on
+        # a long ATT&CK technique), we record None for that chunk's aux
+        # vector and the search() third-leg silently skips it. The
+        # primary leg still has the full-fidelity embedding so coverage
+        # is preserved per ADR 0014 §Tradeoffs.
+        aux_vectors: list[list[float] | None]
+        aux_model_id: str | None = None
+        if self._embedder_aux is not None:
+            aux_model_id = self._embedder_aux.model_id
+            aux_vectors = []
+            for text in texts:
+                try:
+                    aux_vec = (await self._embedder_aux.embed([text]))[0]
+                    aux_vectors.append(aux_vec)
+                except Exception:
+                    # Likely a too-long input the aux model can't handle.
+                    # Recorded as None; primary leg still indexes the chunk.
+                    aux_vectors.append(None)
+        else:
+            aux_vectors = [None] * len(texts)
+
         ids: list[uuid.UUID] = []
-        for chunk, vector in zip(chunks, vectors, strict=True):
+        for chunk, vector, aux_vector in zip(
+            chunks, vectors, aux_vectors, strict=True
+        ):
             row = KnowledgeChunk(
                 tenant_id=chunk.tenant_id,
                 source_type=chunk.source_type,
@@ -120,6 +161,8 @@ class PgvectorKnowledgeStore:
                 embedding=vector,
                 chunk_metadata=chunk.chunk_metadata,
                 embedding_model=self._embedder.model_id,
+                embedding_v2=aux_vector,
+                embedding_v2_model=aux_model_id if aux_vector is not None else None,
             )
             self._session.add(row)
             await self._session.flush()
@@ -145,10 +188,13 @@ class PgvectorKnowledgeStore:
         without losing semantic recall on conceptual ones.
 
         Algorithm (Reciprocal Rank Fusion, Cormack et al. 2009):
-          1. Top-N vector candidates by cosine distance.
+          1. Top-N primary-vector candidates by cosine distance.
           2. Top-N FTS candidates by `ts_rank_cd`.
-          3. For each chunk appearing in either, sum 1/(k + rank_in_leg).
-          4. Return top-`limit` by fused score.
+          3. (ADR 0014, optional) Top-N secondary-vector candidates by
+             cosine distance, using the embedding_v2 column populated by
+             the aux embedder.
+          4. For each chunk appearing in any leg, sum 1/(k + rank_in_leg).
+          5. Return top-`limit` by fused score.
         """
         if source_types:
             for st in source_types:
@@ -156,6 +202,9 @@ class PgvectorKnowledgeStore:
                     raise ValueError(f"Unknown source_type: {st!r}")
 
         [query_vector] = await self._embedder.embed([query_text])
+        query_vector_aux: list[float] | None = None
+        if self._embedder_aux is not None:
+            [query_vector_aux] = await self._embedder_aux.embed([query_text])
 
         vector_ranks = await self._vector_candidates(
             tenant_id, query_vector, source_types, metadata_filters
@@ -163,14 +212,24 @@ class PgvectorKnowledgeStore:
         fts_ranks = await self._fts_candidates(
             tenant_id, query_text, source_types, metadata_filters
         )
+        # Third RRF leg activates only when both an aux embedder is wired
+        # AND the embedding_v2 column has been populated. Chunks with NULL
+        # embedding_v2 are excluded by the predicate inside the helper.
+        vector_aux_ranks: dict[uuid.UUID, int] = {}
+        if query_vector_aux is not None:
+            vector_aux_ranks = await self._vector_aux_candidates(
+                tenant_id, query_vector_aux, source_types, metadata_filters
+            )
 
         # RRF fusion. A chunk missing from one leg contributes 0 from that
-        # leg (no penalty, just no boost). Chunks present in both legs get
-        # rewarded proportionally to how high they rank in either.
+        # leg (no penalty, just no boost). Chunks present in multiple legs
+        # get rewarded proportionally to how high they rank in each.
         rrf: dict[uuid.UUID, float] = {}
         for chunk_id, rank in vector_ranks.items():
             rrf[chunk_id] = rrf.get(chunk_id, 0.0) + 1.0 / (RRF_K + rank)
         for chunk_id, rank in fts_ranks.items():
+            rrf[chunk_id] = rrf.get(chunk_id, 0.0) + 1.0 / (RRF_K + rank)
+        for chunk_id, rank in vector_aux_ranks.items():
             rrf[chunk_id] = rrf.get(chunk_id, 0.0) + 1.0 / (RRF_K + rank)
 
         if not rrf:
@@ -215,6 +274,35 @@ class PgvectorKnowledgeStore:
                 | (KnowledgeChunk.tenant_id == tenant_id)
             )
             .order_by(KnowledgeChunk.embedding.cosine_distance(query_vector))
+            .limit(RANKER_CANDIDATE_LIMIT)
+        )
+        stmt = self._apply_metadata_filters(stmt, source_types, metadata_filters)
+        result = await self._session.execute(stmt)
+        return {chunk_id: rank for rank, (chunk_id,) in enumerate(result.all(), start=1)}
+
+    async def _vector_aux_candidates(
+        self,
+        tenant_id: uuid.UUID,
+        query_vector: list[float],
+        source_types: Sequence[str] | None,
+        metadata_filters: dict[str, Any] | None,
+    ) -> dict[uuid.UUID, int]:
+        """Top-N secondary-vector candidates (ADR 0014).
+
+        Skips chunks where embedding_v2 IS NULL — these never made it
+        through the aux embedder (e.g. content too long for v2-moe's
+        512-token window) and would corrupt cosine ranking with a
+        zero-vector. Tenant scoping clause is identical to the primary
+        vector leg.
+        """
+        stmt = (
+            select(KnowledgeChunk.id)
+            .where(KnowledgeChunk.embedding_v2.isnot(None))
+            .where(
+                (KnowledgeChunk.tenant_id.is_(None))
+                | (KnowledgeChunk.tenant_id == tenant_id)
+            )
+            .order_by(KnowledgeChunk.embedding_v2.cosine_distance(query_vector))
             .limit(RANKER_CANDIDATE_LIMIT)
         )
         stmt = self._apply_metadata_filters(stmt, source_types, metadata_filters)

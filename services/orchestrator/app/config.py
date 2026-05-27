@@ -97,6 +97,16 @@ class Settings(BaseSettings):
     embedding_model: str = "nomic-embed-text"
     # Hard contract — must match knowledge_chunks.embedding column width.
     embedding_dimension: int = 768
+    # ADR 0014 — optional secondary embedding model for multi-embedding
+    # retrieval. When set, the agent loop's RAG path fuses three rankers
+    # via RRF (BM25 + primary vector + secondary vector). Empty default
+    # = single-leg behaviour (backward compat). Typical value:
+    # `nomic-embed-text-v2-moe`. Must produce vectors of the same
+    # dimension as embedding_dimension (the secondary column shares the
+    # primary column's pgvector width).
+    embedding_model_aux: str = ""
+    # Provider for the aux embedder. Empty = same as embedding_provider.
+    embedding_provider_aux: str = ""
 
     @property
     def is_development(self) -> bool:
