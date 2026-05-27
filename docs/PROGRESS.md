@@ -6,13 +6,19 @@
 >
 > For history of what changed when, see `CHANGELOG.md` (append-only).
 
-**Last updated:** 2026-05-27 by claude-code (multi-embedding RRF — ADR 0014)
+**Last updated:** 2026-05-27 by claude-code (Phase 4.1 — two-tenant + RAG isolation)
 
 ---
 
 ## 1. Where we are right now
 
 **Current phase:** Phase 3 — Knowledge & RAG (per `docs/10-build-roadmap.md`).
+
+**Current phase:** Phase 4 — multi-tenancy hardening (per `docs/10-build-roadmap.md`).
+The roadmap's actual ordering is: Phase 4 multi-tenancy → Phase 5 cases/reporting
+→ Phase 6 propose tools + approval gateway. Earlier sessions occasionally
+mis-framed Phase 4 as the propose-tools work; that was claude-code's drift,
+corrected this session.
 
 **Phase status:** **Phase 3 shipped end-to-end** (Slices 1, 1.5, 2A, 2B,
 and 3). Phase 2 closed (ADR 0005). Phase 3 vertical:
@@ -96,7 +102,7 @@ Status legend: ✅ working, 🟡 partial, ❌ broken/disabled, ⏳ planned only.
 
 ### Gateway (`services/gateway/`)
 - ⏳ Not started. Stub package only. Per the architecture, execute tools
-      live here exclusively (Phase 4+ work).
+      live here exclusively (Phase 6+ work — propose tools + approval gateway).
 
 ### Frontend (`frontend/`)
 - ✅ Next.js 16 (Turbopack) + React 19 + Tailwind 4
@@ -278,8 +284,8 @@ who want to build their own images.
 - Phase 3 (RAG + grounding validator) — pending Phase 2 close-out.
   qwen3:4b's grounding-fabrication probe result makes Phase 3 *more*
   important if/when qwen becomes the default, not less.
-- Phase 4 (gateway service + propose/execute tools) — structural, separate
-  service; not until Phase 2 ships.
+- Phase 6 (gateway service + propose/execute tools) — structural, separate
+  service; not until Phases 4 (multi-tenancy hardening) and 5 (cases) ship.
 - Docker Compose stack as the primary dev path — current `nohup` flow is
   fine; revisit when adding more services.
 - Refactor of the two-`app/`-packages collision (services/gateway/app/ and

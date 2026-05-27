@@ -49,6 +49,145 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-05-27 — Phase 4.1: two-tenant live DB + RAG cross-tenant tests
+
+**Session type:** claude-code (continuation; first Phase 4 slice)
+**Phase:** Phase 4 — multi-tenancy hardening (per `docs/10-build-roadmap.md`)
+**Duration:** ~45 min
+**Branch / commit:** `main` — starting commit `2197d97`, this entry's
+commit pending.
+
+**Phase-numbering correction (do not skip this):** earlier Phase 3
+sessions referred to "Phase 4" as the propose-tools + approval-gateway
+work. That was wrong per the actual roadmap, which orders:
+
+| Phase | What | Status |
+|---|---|---|
+| Phase 3 | Knowledge & RAG | ✅ shipped |
+| **Phase 4** | **Multi-tenancy hardening** | ← actually next |
+| Phase 5 | Cases and reporting | |
+| **Phase 6** | **Propose tools + Approval Gateway** | ← what was mis-framed as "Phase 4" |
+
+Older CHANGELOG entries are append-only per `docs/11-claude-code-instructions.md`
+and stay as-shipped; PROGRESS.md updated this session to match the
+roadmap's actual ordering. Reading the older "Phase 4" references in
+prior CHANGELOG entries: they meant the propose-tools work, which is
+Phase 6.
+
+### What we did
+
+- **Bootstrapped a second tenant `beta`** alongside `acme` so Phase 4's
+  isolation work has actual two-tenant live state to exercise against.
+  Both tenants point at the same dev Wazuh deployment (`192.168.245.128`)
+  for simplicity; their separation is enforced by tenant_id stamping
+  at the application layer, not by per-tenant Wazuh instances (the
+  "bridge model" from doc 05).
+- **Seeded beta with its own private chunks** via the existing dev-seed
+  CLI. The seed CLI templates the tenant slug into the runbook/incident
+  content (`{TENANT}_SOC SSH brute-force runbook`), so beta's chunks
+  are textually similar to acme's but tagged with beta's tenant_id and
+  reference "BETA SOC" / "BETA SSH sweep" — distinguishable evidence
+  of isolation.
+- **Live DB state after seeding:**
+
+  | tenant | source_type | chunks |
+  |---|---|---|
+  | acme | past_incident | 1 |
+  | acme | runbook | 2 |
+  | beta | past_incident | 1 |
+  | beta | runbook | 2 |
+  | (shared) | attack | 700 |
+  | (shared) | wazuh_doc | 4476 |
+
+  Note the shared corpora grew slightly from Slice 3's baseline because
+  the dev-seed CLI re-inserts its 6 inline shared chunks on each run.
+  Not a problem; the tests don't depend on shared-chunk uniqueness.
+- **Extended `tests/test_cross_tenant_isolation.py`** with 3 new tests
+  covering the Phase-3 RAG path the original Phase-2-era suite predated:
+  - `test_pgvector_store_search_constrains_results_to_requesting_tenant`
+    — source-level invariant. Asserts that every candidate-fetcher
+    method (`_vector_candidates`, `_fts_candidates`,
+    `_vector_aux_candidates`) contains the tenant-scoping WHERE clause
+    in its source. A future contributor would have to delete the clause
+    to break isolation; the source-grep check catches it without needing
+    a live DB.
+  - `test_pgvector_chunk_input_validation_blocks_cross_tenant_writes` —
+    validates that ChunkInput's tenant_id-vs-source_type rule (shared
+    corpus must have NULL tenant_id; tenant-private corpus requires a
+    tenant_id) raises at the data layer. Prevents the inverse mistake
+    of cross-tenant writes.
+  - `test_pgvector_search_call_path_includes_requesting_tenant_id` —
+    sanity-checks the search() call shape: each leg-helper receives
+    the REQUESTING tenant's id and ONLY that id.
+- **Live cross-tenant verification** (one-shot script, not test
+  fixture): with the live dev DB in chained-retrieval mode
+  (BM25 + v1.5 + v2-moe per ADR 0014), ran the same query as both
+  tenants:
+  - "SSH brute-force runbook steps" as acme → returned only ACME-tagged
+    chunks (ACME SOC SSH brute-force response, ACME SOC Brute-force
+    triage, INC-2026-0042 ACME SSH sweep).
+  - Same query as beta → returned only BETA-tagged chunks (BETA SOC SSH
+    brute-force response, BETA SOC Brute-force triage, INC-2026-0042
+    BETA SSH sweep).
+  - Zero cross-tenant leakage observed.
+- **Tests**: 7 tests now in test_cross_tenant_isolation.py (4 prior + 3
+  new). `make check` 183 passed (180 prior + 3 new). Lint + mypy strict
+  still clean.
+- **Updated PROGRESS.md** to clarify the actual roadmap-ordered Phase
+  4-5-6 sequence, replacing earlier "Phase 4 = propose tools" drift.
+
+### What we decided
+
+- **Beta tenant points at the same Wazuh deployment as acme.** In
+  production an MSSP would have per-tenant Wazuh deployments; for the
+  dev DB the application-layer isolation is the load-bearing
+  enforcement, and reusing the existing Wazuh keeps the dev setup
+  simple. Application-layer tenant_id scoping is what we're
+  hardening in Phase 4 anyway.
+- **Source-level invariant tests for the RAG isolation clauses.** A
+  test that runs SQL against a live Postgres would also catch
+  regression, but it requires a Postgres-only fixture path the
+  conftest doesn't currently provide. The source-grep approach
+  catches the regression risk without needing the fixture; Slice 4.4
+  will add the canonical `tools/tenant_isolation_test/` runnable that
+  exercises the live DB as the operational guard.
+- **Append-only CHANGELOG discipline preserved.** Prior entries that
+  refer to "Phase 4" meaning the propose-tools work are NOT rewritten;
+  this entry explains the drift and PROGRESS.md (live state, not
+  history) carries the corrected ordering forward.
+
+### What broke / what we discovered
+
+- **The dev-seed CLI is not idempotent on the shared corpus.** Running
+  `seed_dev_knowledge` twice (once for acme, once for beta) added 12
+  shared chunks instead of 6. Existing chunk-hash idempotency lives
+  in `tools/seed_knowledge` (the real corpus ingester), not in
+  `seed_dev_knowledge` (which is a Slice-1 inline-content CLI). Not
+  blocking — neither retrieval nor isolation is affected — but
+  worth a follow-up. Filed as a future ergonomic improvement.
+- **Phase-numbering drift was a real cost.** Three prior CHANGELOG
+  entries written this session used "Phase 4" to mean what's actually
+  Phase 6. A future contributor reading those entries chronologically
+  would have inferred a different roadmap shape. Lesson: when
+  finishing a phase, re-read `docs/10-build-roadmap.md` for the next
+  phase's actual scope before writing the close-out summary, not just
+  the current entry's section heading.
+
+### What's next
+
+- **Phase 4 Slice 4.2** — `bootstrap_tenant` validates connection
+  before persisting; `--update` flag for re-bootstrap (treat
+  `TenantWazuhConfig` as immutable post-validation per doc 05
+  §Tenant misconfiguration).
+- **Phase 4 Slice 4.3** — `TenantScopedCache` abstraction (minimal,
+  in-memory) + one consumer (agent_name resolution caching) +
+  audit-write isolation test.
+- **Phase 4 Slice 4.4** — flesh out `tools/tenant_isolation_test` as
+  the canonical runnable isolation suite; wire into CI;
+  document the two-tenant pattern in ONBOARDING; Phase 4 close-out.
+
+---
+
 ## 2026-05-27 — Multi-embedding RRF chaining (ADR 0014)
 
 **Session type:** claude-code (continuation)

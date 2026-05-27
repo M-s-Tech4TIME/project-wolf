@@ -157,3 +157,116 @@ async def test_audit_reads_are_tenant_scoped(db: Any) -> None:
     ).scalars().all()
     assert all(r.event_data["who"] == "b" for r in b_rows)
     assert all(r.tenant_id == tenant_b for r in b_rows)
+
+
+# ─── Test: PgvectorKnowledgeStore.search() builds tenant-scoped SQL ──────────
+#
+# Phase 3 added the RAG path; doc 05 demands the same isolation discipline
+# for retrieval. The store's SQL clause is the load-bearing enforcement
+# point — the unit tests below verify it's wired correctly without
+# requiring a live Postgres. End-to-end isolation against the dev
+# corpus is covered by tools/tenant_isolation_test (Phase 4 Slice 4).
+
+
+def test_pgvector_store_search_constrains_results_to_requesting_tenant() -> None:
+    """The store's leg-helpers must include WHERE tenant_id IS NULL OR
+    tenant_id = $req in every candidate query. No 'select all chunks
+    and filter in Python' path can exist."""
+    import inspect
+
+    from app.knowledge.store import PgvectorKnowledgeStore
+
+    # Source-level invariant: every candidate-fetcher method must
+    # construct a where clause that scopes by tenant_id. We assert the
+    # presence of the tenant-scoping predicate text rather than running
+    # SQL — a future contributor would have to delete the predicate to
+    # break isolation, which the source-level check catches.
+    for helper_name in (
+        "_vector_candidates",
+        "_fts_candidates",
+        "_vector_aux_candidates",
+    ):
+        source = inspect.getsource(getattr(PgvectorKnowledgeStore, helper_name))
+        assert "tenant_id.is_(None)" in source, (
+            f"{helper_name} missing shared-corpora clause (tenant_id IS NULL)"
+        )
+        assert "tenant_id == tenant_id" in source, (
+            f"{helper_name} missing requesting-tenant clause "
+            f"(tenant_id == :req_tenant)"
+        )
+
+
+def test_pgvector_chunk_input_validation_blocks_cross_tenant_writes() -> None:
+    """A shared-corpus chunk MUST have tenant_id=None; a tenant-private
+    chunk MUST have a tenant_id. The store's validate-on-upsert prevents
+    accidental cross-tenant writes at the data layer."""
+    from app.knowledge.store import ChunkInput, PgvectorKnowledgeStore
+
+    # Shared corpus with a tenant_id is a configuration mistake that
+    # would let that tenant's content leak to every other tenant.
+    bad_shared = ChunkInput(
+        content="leaking content",
+        source_type="wazuh_doc",
+        tenant_id=uuid.uuid4(),
+        chunk_metadata={},
+    )
+    with pytest.raises(ValueError, match="tenant_id must be None"):
+        PgvectorKnowledgeStore._validate_chunk(bad_shared)
+
+    # Tenant-private corpus without a tenant_id would also be a leak —
+    # the chunk would appear in every tenant's retrieval (since the
+    # search WHERE clause matches tenant_id IS NULL too).
+    bad_private = ChunkInput(
+        content="leaking runbook",
+        source_type="runbook",
+        tenant_id=None,
+        chunk_metadata={},
+    )
+    with pytest.raises(ValueError, match="tenant_id is required"):
+        PgvectorKnowledgeStore._validate_chunk(bad_private)
+
+
+@pytest.mark.asyncio
+async def test_pgvector_search_call_path_includes_requesting_tenant_id() -> None:
+    """Sanity-check the call shape: search() forwards the requesting
+    tenant_id to every leg's helper. A regression would silently break
+    isolation; the unit test catches it without needing a live DB."""
+    from unittest.mock import AsyncMock, patch
+
+    from app.knowledge.store import PgvectorKnowledgeStore
+
+    class _StubEmbedder:
+        model_id = "stub"
+        dimension = 768
+
+        async def embed(self, texts: list[str]) -> list[list[float]]:
+            return [[0.0] * 768 for _ in texts]
+
+    class _StubSession:
+        async def execute(self, _stmt: Any) -> Any:
+            class _Result:
+                @staticmethod
+                def all() -> list[tuple[Any, float]]:
+                    return []
+            return _Result()
+
+    store = PgvectorKnowledgeStore(_StubSession(), _StubEmbedder())
+    req_tenant = uuid.uuid4()
+    other_tenant = uuid.uuid4()
+    assert req_tenant != other_tenant
+
+    with (
+        patch.object(store, "_vector_candidates", AsyncMock(return_value={})) as vec_mock,
+        patch.object(store, "_fts_candidates", AsyncMock(return_value={})) as fts_mock,
+    ):
+        await store.search(tenant_id=req_tenant, query_text="x", limit=5)
+
+    # Both legs receive the REQUESTING tenant_id, never something else.
+    vec_kwargs_or_args = vec_mock.call_args
+    fts_kwargs_or_args = fts_mock.call_args
+    # Both helpers are called positionally with (tenant_id, ...) as the first arg.
+    assert vec_kwargs_or_args.args[0] == req_tenant
+    assert fts_kwargs_or_args.args[0] == req_tenant
+    # And NOT with the other tenant's id.
+    assert other_tenant not in vec_kwargs_or_args.args
+    assert other_tenant not in fts_kwargs_or_args.args
