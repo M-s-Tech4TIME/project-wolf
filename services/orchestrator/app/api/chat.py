@@ -32,6 +32,7 @@ from app.agent import (
     strategy_for,
 )
 from app.agent.events import LoopEvent
+from app.caching import InMemoryTenantCache, TenantScopedCache
 from app.config import get_settings
 from app.database import get_db
 from app.grounding import GroundingValidator
@@ -50,6 +51,13 @@ from app.wazuh.server_api import WazuhServerApiClient
 logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
 _settings = get_settings()
+# Phase 4 Slice 3 — process-wide tenant-scoped cache.
+# Module-level singleton, shared across all requests in this orchestrator
+# process. Tenant-scoped at the key level so two tenants on the same
+# orchestrator cannot collide. Future multi-process Wolf would swap
+# InMemoryTenantCache for a Redis-backed implementation of the same
+# protocol; no other code needs to change.
+_TENANT_CACHE: TenantScopedCache = InMemoryTenantCache()
 
 
 class ConversationTurn(BaseModel):
@@ -132,6 +140,10 @@ async def chat(
         ctx, _settings, secrets, fallback_chat_provider=provider
     )
     grounding_validator = GroundingValidator(judge_provider)
+    # Reuse the process-wide cache; lookups inside this request will
+    # hit it (e.g. agent_name → agent_id resolution from Phase 3 Slice 3,
+    # now cached per-tenant per Phase 4 Slice 3).
+    cache = _TENANT_CACHE
 
     async with (
         WazuhOpenSearchClient(connection) as opensearch,
@@ -147,6 +159,7 @@ async def chat(
             server_api=server_api,
             knowledge_store=knowledge_store,
             grounding_validator=grounding_validator,
+            cache=cache,
         )
 
     # Persist the audit trail produced by the loop.
@@ -212,6 +225,10 @@ async def chat_stream(
         ctx, _settings, secrets, fallback_chat_provider=provider
     )
     grounding_validator = GroundingValidator(judge_provider)
+    # Reuse the process-wide cache; lookups inside this request will
+    # hit it (e.g. agent_name → agent_id resolution from Phase 3 Slice 3,
+    # now cached per-tenant per Phase 4 Slice 3).
+    cache = _TENANT_CACHE
 
     queue: asyncio.Queue[LoopEvent | None] = asyncio.Queue()
 
@@ -235,6 +252,7 @@ async def chat_stream(
                     event_callback=emit,
                     knowledge_store=knowledge_store,
                     grounding_validator=grounding_validator,
+                    cache=cache,
                 )
             await db.commit()
         finally:

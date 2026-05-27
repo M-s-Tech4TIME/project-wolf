@@ -119,6 +119,7 @@ class AgentLoop:
         event_callback: EventCallback | None = None,
         knowledge_store: Any | None = None,
         grounding_validator: GroundingValidator | None = None,
+        cache: Any | None = None,
     ) -> AgentAnswer:
         capability = self.provider.capability()
         budget = self.strategy.step_budget(capability)
@@ -261,6 +262,7 @@ class AgentLoop:
                     call, ctx=ctx, db=db, opensearch=opensearch,
                     server_api=server_api, limits=self.limits,
                     knowledge_store=knowledge_store,
+                    cache=cache,
                 )
                 await _emit(
                     event_callback,

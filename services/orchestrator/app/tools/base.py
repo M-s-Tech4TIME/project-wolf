@@ -61,6 +61,12 @@ class ToolExecContext:
     # because Phase 2 read-tool tests and the smoke CLI don't wire it.
     # query_runbook raises a clear error if invoked when this is None.
     knowledge_store: Any | None = None
+    # Phase 4 Slice 3 — tenant-scoped cache. Typed Any to avoid an
+    # import cycle. Optional because tests can stub it; chat.py wires
+    # the process-wide singleton from app.caching. Tools that want to
+    # cache (e.g. agent_name → agent_id resolution) check for None
+    # before using.
+    cache: Any | None = None
 
 
 class ReadTool(ABC):

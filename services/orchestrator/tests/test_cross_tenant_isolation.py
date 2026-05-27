@@ -226,6 +226,60 @@ def test_pgvector_chunk_input_validation_blocks_cross_tenant_writes() -> None:
         PgvectorKnowledgeStore._validate_chunk(bad_private)
 
 
+# ─── Test: audit WRITES never bleed into another tenant's tenant_id ─────────
+#
+# Doc 05 §The audit stream: "Every audit record is tenant-tagged at write
+# time, and audit reads are themselves tenant-scoped." The existing test
+# above covers READ isolation; this one covers WRITE isolation — the
+# audit-stream is not exempt from isolation just because it's
+# infrastructure.
+
+
+@pytest.mark.asyncio
+async def test_audit_writes_stamp_tenant_id_at_write_time(db: Any) -> None:
+    """A write for tenant A must persist with tenant_a in the row, not
+    bleed under tenant_b's id even if the audit_data payload happens to
+    reference tenant_b. The write path takes tenant_id as a positional
+    argument and the row stores it directly."""
+    from app.audit.log import write_event
+    from app.audit.models import AuditEvent
+    from sqlalchemy import select
+
+    tenant_a = uuid.uuid4()
+    tenant_b = uuid.uuid4()
+
+    # Adversarial payload: tenant_a writes an event whose data field
+    # mentions tenant_b. The stored row's tenant_id must be tenant_a
+    # regardless of payload content.
+    await write_event(
+        db,
+        event_type="test.adversarial_payload",
+        event_data={
+            "narrative": "this row is for tenant_a",
+            "mentions_other_tenant": str(tenant_b),
+            "fake_tenant_id": str(tenant_b),  # tries to confuse the row
+        },
+        tenant_id=tenant_a,
+    )
+    await db.commit()
+
+    rows = (
+        await db.execute(
+            select(AuditEvent).where(
+                AuditEvent.event_type == "test.adversarial_payload"
+            )
+        )
+    ).scalars().all()
+    assert len(rows) == 1
+    # The COLUMN stamps tenant_a — the payload doesn't influence the
+    # column. Tenant B reading their audit stream would not see this row.
+    assert rows[0].tenant_id == tenant_a
+    assert rows[0].tenant_id != tenant_b
+    # The payload preserves the (deliberately misleading) text; the
+    # row's column is what matters for isolation.
+    assert rows[0].event_data["fake_tenant_id"] == str(tenant_b)
+
+
 @pytest.mark.asyncio
 async def test_pgvector_search_call_path_includes_requesting_tenant_id() -> None:
     """Sanity-check the call shape: search() forwards the requesting

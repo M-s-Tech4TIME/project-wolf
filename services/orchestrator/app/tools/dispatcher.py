@@ -72,6 +72,7 @@ async def dispatch_tool_call(
     limits: ResourceLimits,
     rate_limiter: TenantRateLimiter = default_rate_limiter,
     knowledge_store: Any | None = None,
+    cache: Any | None = None,
 ) -> ToolDispatchResult:
     """Validate, guardrail, audit, run, and validate-out a single tool call.
 
@@ -145,6 +146,7 @@ async def dispatch_tool_call(
         opensearch=opensearch,
         server_api=server_api,
         knowledge_store=knowledge_store,
+        cache=cache,
     )
     try:
         result = await runner.run(exec_ctx, args_model)

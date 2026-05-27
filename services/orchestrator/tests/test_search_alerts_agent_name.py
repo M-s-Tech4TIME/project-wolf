@@ -17,10 +17,15 @@ from app.tools.alerts import SearchAlertsInput, SearchAlertsTool
 from app.tools.base import ToolExecContext
 
 
-def _ctx(opensearch: Any, server_api: Any) -> ToolExecContext:
+def _ctx(
+    opensearch: Any,
+    server_api: Any,
+    cache: Any = None,
+    tenant_id: uuid.UUID | None = None,
+) -> ToolExecContext:
     return ToolExecContext(
         tenant=TenantContext(
-            tenant_id=uuid.uuid4(),
+            tenant_id=tenant_id or uuid.uuid4(),
             tenant_slug="acme",
             user_id=uuid.uuid4(),
             user_email="t@example.com",
@@ -31,6 +36,7 @@ def _ctx(opensearch: Any, server_api: Any) -> ToolExecContext:
         opensearch=opensearch,
         server_api=server_api,
         knowledge_store=None,
+        cache=cache,
     )
 
 
@@ -124,3 +130,89 @@ async def test_neither_id_nor_name_means_no_agent_filter() -> None:
     server.get.assert_not_called()
     kwargs = os_client.query_builder.search_alerts.call_args.kwargs
     assert kwargs["agent_id"] is None
+
+
+# ─── Cache behavior (Phase 4 Slice 3) ───────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_agent_name_cache_hit_skips_server_api_call() -> None:
+    """Second resolution of the same agent_name re-uses the cached id
+    instead of re-hitting the Server API. The cache is per-tenant by
+    construction (doc 05 §Caching across tenants)."""
+    from app.caching import InMemoryTenantCache
+
+    cache = InMemoryTenantCache()
+    tenant_id = uuid.uuid4()
+
+    os_client = _opensearch_returning()
+    server = _server_api_finding(agent_id="001")
+    ctx = _ctx(os_client, server, cache=cache, tenant_id=tenant_id)
+    tool = SearchAlertsTool()
+
+    # First call populates the cache.
+    args1 = SearchAlertsInput(time_from="now-1h", agent_name="linux-test-agent")
+    await tool.run(ctx, args1)
+    assert server.get.await_count == 1
+
+    # Second call with same tenant + same name → cache hit, no extra API call.
+    args2 = SearchAlertsInput(time_from="now-30m", agent_name="linux-test-agent")
+    await tool.run(ctx, args2)
+    assert server.get.await_count == 1  # unchanged from the first call
+
+
+@pytest.mark.asyncio
+async def test_agent_name_cache_is_tenant_scoped() -> None:
+    """Tenant A's cached resolution must NOT satisfy tenant B's lookup.
+    Each tenant's cache entry is keyed by its own tenant_id; the same
+    `agent_name` string can map to different agent_ids in different
+    Wazuh deployments."""
+    from app.caching import InMemoryTenantCache
+
+    cache = InMemoryTenantCache()
+    tenant_a = uuid.uuid4()
+    tenant_b = uuid.uuid4()
+
+    # Two separate server-api stubs because each tenant probes its
+    # own Wazuh; we use the same agent_name but different resolved IDs.
+    server_a = _server_api_finding(agent_id="001")
+    server_b = _server_api_finding(agent_id="999")
+    tool = SearchAlertsTool()
+
+    # Tenant A resolves the name → caches "001"
+    await tool.run(
+        _ctx(_opensearch_returning(), server_a, cache=cache, tenant_id=tenant_a),
+        SearchAlertsInput(time_from="now-1h", agent_name="my-host"),
+    )
+    assert server_a.get.await_count == 1
+
+    # Tenant B resolves the SAME name → must NOT hit A's cache entry;
+    # B's own server-api stub is consulted.
+    await tool.run(
+        _ctx(_opensearch_returning(), server_b, cache=cache, tenant_id=tenant_b),
+        SearchAlertsInput(time_from="now-1h", agent_name="my-host"),
+    )
+    assert server_b.get.await_count == 1, (
+        "Cross-tenant cache leak: tenant B's agent_name resolution "
+        "satisfied by tenant A's cached entry."
+    )
+
+
+@pytest.mark.asyncio
+async def test_agent_name_not_found_is_cached_as_sentinel() -> None:
+    """Negative results are cached too — re-asking for a non-existent
+    name should not re-probe the API."""
+    from app.caching import InMemoryTenantCache
+
+    cache = InMemoryTenantCache()
+    tenant_id = uuid.uuid4()
+
+    server = _server_api_finding(agent_id=None)
+    ctx = _ctx(_opensearch_returning(), server, cache=cache, tenant_id=tenant_id)
+    tool = SearchAlertsTool()
+
+    args = SearchAlertsInput(time_from="now-1h", agent_name="nonexistent")
+    await tool.run(ctx, args)
+    await tool.run(ctx, args)
+    # Two calls, one API probe — negative result is cached.
+    assert server.get.await_count == 1

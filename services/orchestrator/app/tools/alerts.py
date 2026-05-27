@@ -58,6 +58,11 @@ def _hit_to_alert(hit: dict[str, Any]) -> AlertHit:
     )
 
 
+_AGENT_NAME_CACHE_NS = "agent_name_lookup"
+_AGENT_NAME_CACHE_TTL = 60.0  # seconds; short enough that agent fleet
+                              # changes converge within ~1 minute.
+
+
 async def _resolve_agent_name_to_id(
     agent_name: str, exec_ctx: ToolExecContext
 ) -> str | None:
@@ -69,15 +74,44 @@ async def _resolve_agent_name_to_id(
     not exist; the caller will then run an unfiltered or no-results
     query and the validator will catch the resulting under-grounding).
 
-    Lookup result is intentionally not cached at the tool level: agent
-    fleets are small, the call is cheap (single Server API GET), and a
-    stale cache would silently route queries at a deleted agent.
+    Phase 4 Slice 3: result is now CACHED per-tenant via the tenant-
+    scoped cache (60-second TTL). Within a single chat loop the same
+    agent_name is often resolved multiple times — caching turns N
+    Server-API GETs into 1. The cache key includes the tenant_id by
+    construction (doc 05 §Caching across tenants), so tenant A's cache
+    of "linux-test-agent → 001" cannot satisfy tenant B's lookup of
+    the same name — each tenant probes its own Wazuh deployment.
+
+    A short TTL bounds the staleness risk: if an agent is deleted +
+    re-registered with a different ID, the cache converges within
+    60 seconds. Operationally acceptable.
     """
+    if exec_ctx.cache is not None:
+        cached = await exec_ctx.cache.get(
+            exec_ctx.tenant.tenant_id, _AGENT_NAME_CACHE_NS, agent_name
+        )
+        if cached is not None:
+            # Cache stores either the resolved id (str) OR the marker
+            # `__NOT_FOUND__` for "we asked, no such agent." Distinguishing
+            # them from cache miss (None) avoids re-probing the API on
+            # repeated lookups of a name that doesn't exist.
+            return None if cached == "__NOT_FOUND__" else str(cached)
+
     body = await exec_ctx.server_api.get("/agents", params={"name": agent_name})
     items = body.get("data", {}).get("affected_items", []) or []
-    if not items:
-        return None
-    return str(items[0].get("id")) if items[0].get("id") is not None else None
+    resolved: str | None = (
+        str(items[0].get("id")) if items and items[0].get("id") is not None else None
+    )
+
+    if exec_ctx.cache is not None:
+        await exec_ctx.cache.set(
+            exec_ctx.tenant.tenant_id,
+            _AGENT_NAME_CACHE_NS,
+            agent_name,
+            resolved if resolved is not None else "__NOT_FOUND__",
+            ttl_seconds=_AGENT_NAME_CACHE_TTL,
+        )
+    return resolved
 
 
 # ─── search_alerts ────────────────────────────────────────────────────────────
