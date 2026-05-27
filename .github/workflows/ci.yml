@@ -86,6 +86,17 @@ jobs:
             --cov-report=term-missing \
             --cov-fail-under=80 \
             -v --tb=short
+      # Cross-tenant isolation is a load-bearing security property (doc 05).
+      # The suite above already runs these via directory discovery, but we
+      # name them explicitly here so the guard is visible in the workflow
+      # and a regression (or accidental test-file removal) is obvious in
+      # the CI log rather than silent. Phase 4 Slice 4.4b.
+      - name: Cross-tenant isolation suite (explicit gate)
+        run: |
+          uv run pytest \
+            services/orchestrator/tests/test_cross_tenant_isolation.py \
+            services/orchestrator/tests/test_tenant_scoped_cache.py \
+            -v --tb=short
 
   # Verify no execute tools can be imported from the orchestrator
   safety-check:

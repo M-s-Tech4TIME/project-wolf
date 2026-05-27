@@ -209,3 +209,37 @@ customer's security infrastructure. They live in a **real secrets manager**
 access policies, fetched at request time and never held in plaintext config or
 logs. If the platform is itself compromised, the blast radius for one tenant's
 session must not extend to another tenant's secrets.
+
+## Implementation status — Phase 4 (multi-tenancy hardening)
+
+This section maps the design above to the concrete artifacts that
+implement it, as of Phase 4 close-out (2026-05-27). Update it when the
+implementation surface changes so future contributors find the
+mechanism instead of rebuilding it.
+
+| Design requirement | Implementation |
+|---|---|
+| Tenant context set once, enforced everywhere | `services/orchestrator/app/tenancy/context.py` — frozen `TenantContext`; `AuthMiddleware` stamps it per request |
+| Query-layer forced tenant filter | `app/wazuh/query_builder.py` `TenantScopedQueryBuilder`; no `raw_query()` escape hatch |
+| Independent data-layer re-check (fail closed) | `WazuhOpenSearchClient.execute()` raises `TenantMismatchError` if a returned doc's `tenant_id` ≠ request context |
+| RAG store partitioned per tenant | `app/knowledge/store.py` `PgvectorKnowledgeStore` — every candidate leg (`_vector_candidates`, `_fts_candidates`, `_vector_aux_candidates`) carries `WHERE tenant_id IS NULL OR tenant_id = :req`; chunk writes validated by `_validate_chunk` (shared corpora forbid a tenant_id, private corpora require one) |
+| Caching with mandatory tenant prefix | `app/caching/cache.py` `TenantScopedCache` protocol + `InMemoryTenantCache`. The `_compose_storage_key` helper raises `UnprefixedKeyError` if `tenant_id` is None — an unprefixed key is structurally unconstructable. First consumer: `_resolve_agent_name_to_id` in `app/tools/alerts.py` (60s TTL, per-tenant). Phase 4 Slice 3. |
+| Audit stream tenant-tagged at write, scoped on read | `app/audit/log.py` `write_event(..., tenant_id=...)`; `AuditEvent.tenant_id` column. Read + write isolation tested in `tests/test_cross_tenant_isolation.py`. |
+| Tenant onboarding validated + immutable post-validation | `app/management/bootstrap_tenant.py` — `_validate_wazuh_connection` probes both endpoints before persisting; `validated_at` stamped on success; re-run for a validated slug refuses without `--update` (`TenantAlreadyExistsError`). `--skip-validation` is the "no Wazuh yet" escape. Phase 4 Slice 2. |
+| Connection pooling — pool-per-tenant OR stateless re-establish | **Stateless re-establish.** `app/api/chat.py` opens a fresh `WazuhOpenSearchClient` + `WazuhServerApiClient` per request via async context managers; nothing is pooled across requests, so connection-pool bleed (the doc 05 edge case above) cannot occur. A per-tenant pool is deferred until throughput demands it. |
+| Per-tenant model isolation | `app/agent/model_resolver.py` constructs the provider per request from settings; no cross-tenant adapter state. Per-tenant `TenantModelConfig` table (so tenant A runs Claude while tenant B runs Ollama) is a Phase 5+ enhancement — the `get_model_for_tenant(ctx, ...)` signature already takes the tenant context so the seam exists. |
+| Continuous isolation testing (CI + synthetic probe) | **CI:** `tests/test_cross_tenant_isolation.py` + `tests/test_tenant_scoped_cache.py` run on every PR (named explicitly in `.github/workflows/ci.yml`). **Synthetic probe:** `tools/tenant_isolation_test/` is a runnable CLI (6 live checks: RAG both directions, audit both directions, cache prefix-rejection, cache cross-tenant) that operators run against a live DB. `make test-isolation` (unit) and `make test-isolation-live` (smoke). Phase 4 Slice 4. |
+
+**Dev two-tenant pattern.** Meaningful isolation testing needs two
+tenants with distinct private content. The dev setup bootstraps `acme`
+and `beta` (see ONBOARDING Gotcha #8), each seeded via
+`app.management.seed_dev_knowledge --tenant-slug <slug>` so each has
+private runbook + past-incident chunks that visibly reference its own
+name. `tools/tenant_isolation_test` then proves neither can retrieve
+the other's chunks.
+
+**Still owed (post-Phase-4):** the per-tenant secrets backend today is
+the Fernet-encrypted file backend, not a real secrets manager (Vault /
+OpenBao). The `SecretsBackend` protocol abstracts this — swapping in a
+Vault backend is a backend implementation, not an application change —
+but the production-grade manager itself is Phase 6+ deployment work.

@@ -49,6 +49,62 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-05-27 — Phase 4 follow-up: close the 4.4b + 4.4c gaps
+
+**Session type:** claude-code (continuation)
+**Phase:** Phase 4 — multi-tenancy hardening (gap-fix after close-out)
+**Duration:** ~15 min
+**Branch / commit:** `main` — starting commit `ce12c2a`, this entry's
+commit pending.
+
+### What we did
+
+The Phase 4 close-out (`ce12c2a`) left two sub-slices partial; the
+operator asked why, and whether the gaps would bite later. They would
+(chronic doc-drift + implicit-guard-rot), so we fixed both now.
+
+- **4.4b — CI wire (was: implicit only).** The cross-tenant isolation
+  tests already ran in CI by directory discovery, but `.github/
+  workflows/ci.yml` contained zero textual reference to "isolation" —
+  a future contributor reading the workflow couldn't see the guard,
+  and an accidental test-file move would silently drop the coverage.
+  Added an explicit "Cross-tenant isolation suite (explicit gate)"
+  step to the `test` job naming `test_cross_tenant_isolation.py` +
+  `test_tenant_scoped_cache.py`. Same tests; now visible + regression-
+  obvious in the CI log.
+
+- **4.4c — doc 05 (was: ONBOARDING only).** Added an "Implementation
+  status — Phase 4" section to `docs/05-multi-tenancy.md` mapping each
+  design requirement to its concrete artifact (TenantContext,
+  TenantScopedQueryBuilder, PgvectorKnowledgeStore leg clauses,
+  TenantScopedCache, bootstrap_tenant validation, audit log,
+  stateless-reestablish connection model, per-tenant model seam, the
+  CI + synthetic-probe testing split, the dev two-tenant pattern).
+  Plus a "still owed" note: the secrets backend is the Fernet file
+  backend today, not a real Vault/OpenBao manager (Phase 6+ deploy
+  work; the `SecretsBackend` protocol already abstracts the swap).
+
+### Why the gaps happened (recorded honestly)
+
+Both came from scope-discipline reasoning that was thinly-justified
+momentum-preservation. 4.4b: rationalised "CI already runs them" and
+skipped making the guard explicit without flagging it as a judgment
+call. 4.4c: updated the easier surface (ONBOARDING) and let it feel
+like "docs updated." The correct move would have been to do both or
+ask explicitly. Logged here so the pattern is visible.
+
+### What broke / what we discovered
+
+- Nothing broke. CI YAML validates; `make check` 203 passed
+  (unchanged — the fix is workflow + docs, no new test surface).
+
+### What's next
+
+- Phase 5 — Cases and reporting. Phase 4 is now fully closed with no
+  outstanding gaps.
+
+---
+
 ## 2026-05-27 — Phase 4 close-out: Slices 4.2 + 4.3 + 4.4 + isolation-suite live smoke
 
 **Session type:** claude-code (continuation, Phase 4 close-out)
