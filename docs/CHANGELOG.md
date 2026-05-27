@@ -49,6 +49,145 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-05-27 — Phase 4 close-out: Slices 4.2 + 4.3 + 4.4 + isolation-suite live smoke
+
+**Session type:** claude-code (continuation, Phase 4 close-out)
+**Phase:** Phase 4 — multi-tenancy hardening — **CLOSED**
+**Duration:** ~150 min across multiple sub-sessions
+**Branch / commit:** `main` — starting commit `338413f` (Slice 4.1),
+final commit pending.
+
+### What we did
+
+**Slice 4.2 — `bootstrap_tenant` validates + `--update` flag (commit `1da9e1c`)**
+
+- New `ConnectionValidationError`: raised when the Indexer (HTTP GET /)
+  or Server API (POST /security/user/authenticate) rejects auth, returns
+  an unexpected status, or is unreachable. Error messages name the
+  failing endpoint and (for Server-API 401) explicitly call out the
+  Indexer-vs-Server-API user-database split.
+- New `TenantAlreadyExistsError`: raised on re-run for a slug that
+  already has a `validated_at`-stamped Wazuh config. Doc 05 §Tenant
+  misconfiguration's "immutable by default after validation" pinned at
+  the CLI boundary.
+- `bootstrap_tenant()` gains `update: bool = False` and
+  `skip_validation: bool = False`. The CLI exposes `--update` and
+  `--skip-validation` flags. Exit codes: 0 success, 4 already-exists,
+  5 validation-failure.
+- `TenantWazuhConfig.validated_at` is now actually written (the column
+  existed since Phase 0 but was never stamped). Set to `now()` on
+  successful validation, NULL on `--skip-validation`.
+- 6 new tests covering 200/200 success, Indexer 403 tolerance, Indexer
+  401, Server API 401, unreachable network, and the regression guard
+  on the Server-API-401 error-message content.
+
+**Slice 4.3 — `TenantScopedCache` + agent_name caching + audit-write isolation (commit `3ff751c`)**
+
+- New `app/caching/` module: `TenantScopedCache` Protocol +
+  `InMemoryTenantCache` implementation. Storage keys are composed
+  as `t:<tenant_id>:<ns>:<key>` inside the wrapper — callers pass
+  `tenant_id` as a positional argument, making it structurally
+  impossible to construct an unprefixed key. The internal
+  `_compose_storage_key` raises `UnprefixedKeyError` if `tenant_id`
+  is None (defence-in-depth for misuse via internals).
+- Module-level singleton `_TENANT_CACHE` in `app/api/chat.py` — shared
+  across both `/chat` and `/chat/stream` paths. Future multi-process
+  Wolf swaps in a Redis-backed implementation of the same protocol;
+  no other code changes.
+- `ToolExecContext` gains optional `cache` field; threaded through
+  `dispatch_tool_call` + `AgentLoop.run` + both chat endpoints.
+- `_resolve_agent_name_to_id` (Phase 3 Slice 3's agent-name lookup) is
+  now the first cache consumer. Hits the Server API once per
+  (tenant, agent_name) per 60s TTL window; subsequent resolutions
+  within a chat loop are free. Negative results cached as
+  `__NOT_FOUND__` sentinel so a repeatedly-asked non-existent name
+  doesn't re-probe. The earlier "intentionally not cached" comment is
+  updated to reflect the new behaviour + staleness bound.
+- Audit-write isolation test added to `test_cross_tenant_isolation`:
+  adversarial payload from tenant A names tenant B in `event_data`
+  fields; stored row's `tenant_id` column stamps tenant A regardless
+  of payload content. Column wins, payload is data.
+- 13 new tests total (10 cache + 3 agent-name cache-behavior).
+
+**Slice 4.4 — Phase 4 close-out (this commit)**
+
+- `tools/tenant_isolation_test/__main__.py` — the "synthetic probe"
+  CLI per doc 05's "run constantly in CI **and** as a synthetic probe
+  in production." Six live checks against the actual DB:
+    1. RAG: tenant A cannot see tenant B's chunks
+    2. RAG: tenant B cannot see tenant A's chunks
+    3. Audit write isolation: A→B
+    4. Audit write isolation: B→A
+    5. Cache wrapper rejects unprefixed keys
+    6. Cache cross-tenant isolation
+  Exit 0 on full pass, non-zero on any failure — binary signal for
+  CI / production-probe consumers.
+- `Makefile` gains `test-isolation-live` target (separate from the
+  CI-friendly `test-isolation` which runs the pytest suite).
+- Live run against the dev DB: **6/6 checks pass.**
+- ONBOARDING gains Gotcha #7 (Wazuh's Indexer-vs-Server-API user-
+  database split — the operational issue that bit Slice 1's
+  end-to-end retest) and Gotcha #8 (the two-tenant dev pattern for
+  meaningful isolation testing).
+
+### What we decided
+
+- **No dedicated CI job for the live smoke.** The existing CI test
+  job already runs `test_cross_tenant_isolation.py` +
+  `test_tenant_scoped_cache.py` (they're under
+  `services/orchestrator/tests/`). The unit-level suite IS the CI
+  guard. The live smoke `tools/tenant_isolation_test` is for
+  production / staging operators to run periodically against their
+  actual DB. Adding a separate CI job that bootstraps two tenants
+  + seeds them on every PR would be triple the work for marginal
+  additional coverage.
+- **`--update` flag, not separate `update-tenant-*` CLIs.** Per
+  the user's explicit choice on the Slice 4.2 design question.
+  Captures doc 05's "immutable by default" with minimal new code;
+  dedicated update CLIs can come in Phase 5+ if operator ergonomics
+  warrant it.
+- **Minimal cache abstraction, in-memory only.** Per the user's
+  explicit choice on the Slice 4.3 design question. No Redis support
+  built preemptively; the protocol stays clean and a Redis impl can
+  be added when multi-orchestrator deployment actually exists.
+- **Skip per-tenant connection pooling.** Doc 05 allows either
+  "per-tenant pool" OR "stateless re-establish per request." Wolf
+  already does the latter (async context-manager per chat request).
+  Documenting this in PROGRESS rather than building a per-tenant
+  pool that's lower-throughput at our current scale.
+
+### What broke / what we discovered
+
+- **Slice 4.1's first re-bootstrap of acme silently succeeded** when
+  the operator wasn't expecting it, because `validated_at` was NULL
+  pre-Slice 4.2. The fix shipped in 4.2 — the immutability rule only
+  activates once a tenant HAS been validated by the new CLI. Existing
+  tenants pre-dating Slice 4.2 get one free re-bootstrap to opt in.
+  Documented in Slice 4.2's commit message + tested by the live
+  smoke session.
+- **The `__update` / `__NOT_FOUND__` sentinel patterns** worked
+  cleanly for the cache + reembed CLI. Pattern worth re-using when
+  future modules need "yes / no / haven't asked yet" tri-state
+  semantics in NULL-able columns.
+- **Wazuh's Indexer-vs-Server-API user-database split** caught us
+  during Slice 1's end-to-end retest weeks ago and again during
+  Slice 4.2's first probe of qwen3:8b's auth flow. Now codified in
+  ONBOARDING Gotcha #7, plus the bootstrap_tenant validator's
+  Server-API-401 error message names it explicitly. Should not
+  re-bite future contributors.
+
+### What's next
+
+- **Phase 5 — Cases and reporting** per `docs/10-build-roadmap.md`.
+  The investigation lifecycle: case timeline, findings, exports.
+  Less safety-critical than Phase 6 but more user-visible than
+  Phase 4. Likely 2-3 weeks of work.
+- Phase 6 (propose tools + approval gateway) remains the apex of
+  Wolf's safety-critical surface and depends on both Phase 4 (now
+  closed) and Phase 5 being solid before it can build safely.
+
+---
+
 ## 2026-05-27 — Phase 4.1: two-tenant live DB + RAG cross-tenant tests
 
 **Session type:** claude-code (continuation; first Phase 4 slice)

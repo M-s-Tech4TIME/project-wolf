@@ -45,8 +45,11 @@ revision: ## Create a new Alembic migration (MSG="description")
 test: ## Run the full test suite
 	uv run pytest services/orchestrator/tests packages/ -v --tb=short
 
-test-isolation: ## Run cross-tenant isolation test suite
-	uv run pytest services/orchestrator/tests/test_cross_tenant_isolation.py tools/tenant_isolation_test/ -v --tb=short
+test-isolation: ## Run cross-tenant isolation test suite (unit-level — runs in CI)
+	uv run pytest services/orchestrator/tests/test_cross_tenant_isolation.py services/orchestrator/tests/test_tenant_scoped_cache.py -v --tb=short
+
+test-isolation-live: ## Live two-tenant smoke (Phase 4 Slice 4). Requires DATABASE_URL + bootstrapped 'acme' + 'beta'.
+	@bash -c 'set -a && source .env && set +a && uv run python -m tools.tenant_isolation_test'
 
 test-cov: ## Run tests with coverage (targets: tenancy, audit, auth, models, schema)
 	uv run pytest services/orchestrator/tests packages/ \

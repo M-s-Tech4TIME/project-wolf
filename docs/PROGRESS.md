@@ -6,7 +6,7 @@
 >
 > For history of what changed when, see `CHANGELOG.md` (append-only).
 
-**Last updated:** 2026-05-27 by claude-code (Phase 4.1 — two-tenant + RAG isolation)
+**Last updated:** 2026-05-27 by claude-code (Phase 4 CLOSED)
 
 ---
 
@@ -14,11 +14,15 @@
 
 **Current phase:** Phase 3 — Knowledge & RAG (per `docs/10-build-roadmap.md`).
 
-**Current phase:** Phase 4 — multi-tenancy hardening (per `docs/10-build-roadmap.md`).
-The roadmap's actual ordering is: Phase 4 multi-tenancy → Phase 5 cases/reporting
-→ Phase 6 propose tools + approval gateway. Earlier sessions occasionally
-mis-framed Phase 4 as the propose-tools work; that was claude-code's drift,
-corrected this session.
+**Current phase:** Phase 5 — Cases and reporting (next per `docs/10-build-roadmap.md`).
+
+**Phase 4 — multi-tenancy hardening — CLOSED 2026-05-27.** Four slices
+shipped: two-tenant live DB + RAG isolation tests (4.1, `338413f`),
+`bootstrap_tenant` validates + `--update` flag (4.2, `1da9e1c`),
+`TenantScopedCache` + agent_name caching + audit-write isolation
+(4.3, `3ff751c`), and the runnable `tools/tenant_isolation_test` live
+smoke + ONBOARDING gotchas + close-out (4.4, this commit). Live
+isolation suite: 6/6 checks pass against the dev two-tenant state.
 
 **Phase status:** **Phase 3 shipped end-to-end** (Slices 1, 1.5, 2A, 2B,
 and 3). Phase 2 closed (ADR 0005). Phase 3 vertical:

@@ -576,6 +576,53 @@ Some models pass `time_from="now-24h"` instead of an ISO timestamp.
 has a Pydantic `field_validator` to parse this. If you add a tool that
 accepts time inputs, copy the validator pattern.
 
+### Gotcha #7 — Wazuh Indexer and Server API have separate user backends
+
+The Wazuh Indexer (OpenSearch security plugin) and the Wazuh Server API
+(its own RBAC database at `/var/ossec/api/configuration/security/rbac.db`)
+maintain **two separate user databases**. A user that authenticates to
+the Indexer may not exist on the Server API — and vice versa.
+
+Typical example from the Wazuh OVA install: `admin` works for the
+Indexer; `wazuh-wui` (or a generated password) is the Server API admin.
+
+Phase 4 Slice 2's `bootstrap_tenant` now probes BOTH endpoints with the
+supplied credentials before persisting the tenant. The error message on
+a Server-API 401 explicitly names this gotcha — but knowing it ahead of
+time saves a debugging session. When in doubt, run `sudo
+/var/ossec/bin/wazuh-passwords-tool.sh -a -A` on the Wazuh host to dump
+the actual Server-API credentials.
+
+### Gotcha #8 — Phase 4 multi-tenancy: two tenants are required for full coverage
+
+The cross-tenant isolation suite (`tools/tenant_isolation_test`) needs
+TWO tenants bootstrapped to be meaningful — a single-tenant deployment
+has nothing to leak against. The dev pattern:
+
+```bash
+# 1. Bootstrap acme (the primary dev tenant)
+uv run python -m app.management.bootstrap_tenant --tenant-slug acme \
+    --tenant-name "Acme SecOps" ... --no-verify-tls
+
+# 2. Bootstrap beta against the SAME Wazuh (bridge model — application-
+#    layer isolation is what we test, not Wazuh-instance separation)
+uv run python -m app.management.bootstrap_tenant --tenant-slug beta \
+    --tenant-name "Beta InfoSec" ... --no-verify-tls
+
+# 3. Seed each tenant's private corpus
+uv run python -m app.management.seed_dev_knowledge --tenant-slug acme
+uv run python -m app.management.seed_dev_knowledge --tenant-slug beta
+
+# 4. Run the live isolation suite
+make test-isolation-live
+```
+
+Per ADR-pending `docs/05-multi-tenancy.md` §Test isolation as a
+first-class continuous practice, run this suite **constantly** — in CI
+on every PR (covered by `make test-isolation`) AND as a periodic probe
+against the dev / staging / production DB (the `test-isolation-live`
+target).
+
 ---
 
 ## 7. The session-continuity protocol
