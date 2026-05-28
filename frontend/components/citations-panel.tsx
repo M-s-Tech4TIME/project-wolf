@@ -91,7 +91,7 @@ export function CitationsPanel({ citations, toolEvents }: Props) {
                           </Badge>
                         ) : null}
                       </div>
-                      <pre className="mt-1.5 overflow-x-auto rounded bg-muted/50 p-1.5 font-mono text-[10px] text-muted-foreground">
+                      <pre className="mt-1.5 whitespace-pre-wrap break-words rounded bg-muted/50 p-1.5 font-mono text-[10px] leading-relaxed text-muted-foreground">
                         {JSON.stringify(c.query, null, 2)}
                       </pre>
                     </li>

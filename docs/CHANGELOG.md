@@ -49,6 +49,48 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-05-28 — Slice 5.0c-b: layout overhaul (avatar dropdown, collapsible sidebar, resizable Evidence panel)
+
+**Session type:** claude-code
+**Phase:** Phase 5 prep — second sub-slice of the 5.0c UI work
+**Duration:** ~1 h
+**Branch / commit:** `main` — starting commit `a1c054d`, this entry's commit pending.
+
+### What we did
+- **`chat-header.tsx`**: replaced the session-id chip with a circular
+  user-avatar dropdown (initials from `display_name`, falling back to
+  the email local-part). The dropdown shows display name, role, email,
+  current tenant, the first 8 chars of `user_id` for support, and the
+  sign-out action — covering the user's original request for a single
+  "who am I + where am I + leave" surface.
+- **`chat-sidebar.tsx`**: the Conversations sidebar is now collapsible
+  via a chevron toggle at the top. Collapsed width 48 px (just a "new
+  conversation" rail); expanded 288 px. State lifted to parent so the
+  main column reflows. Animated `transition-[width]`.
+- **`chat-shell.tsx`**:
+    - Added an SSR-safe `usePersistedState` hook (read on mount, write
+      on every change, swallows quota/corrupt errors).
+    - Sidebar collapse state and Evidence panel width are persisted to
+      localStorage (`wolf.sidebar.collapsed`, `wolf.evidence.width`).
+    - **Persistent Evidence**: while a new run is in flight, the panel
+      keeps showing the previous exchange's citations until new ones
+      arrive — no flash of empty state on every prompt.
+    - **Resizable Evidence**: a 6 px hit area on the panel's left edge
+      uses pointer capture to drag-resize between 280 px and 720 px,
+      with a thin visible guide that brightens on hover/drag.
+- **`citations-panel.tsx`**: the citation-query `<pre>` now
+  `whitespace-pre-wrap break-words` instead of `overflow-x-auto`, so
+  long JSON values (long ISO timestamps, long free-text queries) wrap
+  inside the panel instead of forcing a horizontal scroll.
+- Layout structure: the composer is now explicitly `shrink-0` so it
+  stays anchored at the bottom of the main column while the message
+  thread (which already used `ScrollArea` with auto-scroll-to-bottom)
+  scrolls inside the remaining space — the "fixed input + chat scroll"
+  feedback item from the original test report.
+
+### What's next
+- Slice 5.0c-c: theme / colour palette matching `wolf-color-palette-outlook.png`.
+
 ## 2026-05-28 — Slice 5.0c-a: four grounding chips + verdict rename
 
 **Session type:** claude-code
