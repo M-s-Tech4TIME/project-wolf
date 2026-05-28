@@ -34,7 +34,15 @@ which now becomes its own dedicated phase *after* stabilization, not before.
    manage their own org; regular users only chat. Scope reserved for a
    superuser cross-org chat access path (designed-in but off by default).
    The DB already has `users.is_superuser` as scaffolding.
-2. **Grounding-enrichment via more tools** (proposed 2026-05-28). Two
+2. **Phase 5.5 — Knowledge management UI** (proposed 2026-05-28):
+   admin-facing web page where org admins author / edit / delete their
+   tenant's runbooks and past-incident write-ups via an MDXEditor-based
+   markdown editor; superusers can also edit the shared global corpora
+   (`wazuh_doc`, `attack`). Auto-chunks + re-embeds on save against the
+   existing `knowledge_chunks` table. Structured tags (`rule_id`,
+   `technique`, `action_type`) surface in `chunk_metadata` for the next
+   two phases. See [[runbook-authoring-and-actionable-runbooks]].
+3. **Grounding-enrichment via more tools** (proposed 2026-05-28). Two
    tracks, both real:
    - **Continuously**: every new tool added in any future phase is
      evaluated for *evidence value to the judge* alongside its main
@@ -44,12 +52,21 @@ which now becomes its own dedicated phase *after* stabilization, not before.
    - **Dedicated phase**: a focused chunk of time prioritising tools
      specifically by how much evidence value they add. Candidate list:
      `get_agent_details`, `lookup_ip_reputation`, `get_attack_technique`
-     (MITRE), `get_cve_details`, `quote_runbook` (exact-passage retrieval
-     with line numbers), expanded `get_rule_definition` coverage. Each
-     tenant-scoped via the existing patterns; external feeds need an
-     API-key plumbing pattern that respects the secrets backend.
-3. Then the originally-planned cases / reporting / propose-tools + approval
-   work.
+     (MITRE), `get_cve_details`, `quote_runbook` (exact-passage
+     retrieval with line numbers — pairs with Phase 5.5's structured
+     tags), expanded `get_rule_definition` coverage. Each tenant-scoped
+     via the existing patterns; external feeds need an API-key plumbing
+     pattern that respects the secrets backend.
+4. **Phase 6 — Propose tools + approval gateway** (originally planned;
+   now tightly coupled to Phase 5.5): runbook steps tagged with
+   `action_type` become first-class **proposed** actions with provenance
+   back to the runbook line that prescribed them. The analyst sees
+   *"This action comes from page X of your `[ACME SOC] SSH brute-force
+   runbook`, line 4"* before approving. Hard safety rule: Wolf never
+   auto-executes; runbook → propose → human approve → orchestrator
+   executes. CI already enforces no `execute_*` tools in the
+   orchestrator today, and this phase preserves that.
+5. Then the originally-planned cases / reporting work.
 
 ---
 
