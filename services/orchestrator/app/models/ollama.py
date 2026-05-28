@@ -100,9 +100,16 @@ class OllamaAdapter:
         *,
         base_url: str = _DEFAULT_BASE,
         client: httpx.AsyncClient | None = None,
+        num_ctx: int | None = None,
     ) -> None:
+        # num_ctx (Ollama option) overrides the model's default context
+        # window for this adapter. Useful for the grounding judge, whose
+        # prompt + 5 KB evidence + claims can exceed qwen3:8b's default
+        # 4096-token Ollama context and cause empty completions. None
+        # leaves Ollama's default in place. Slice 5.0b.4.
         self._model_id = model_id
         self._base_url = base_url.rstrip("/")
+        self._num_ctx = num_ctx
         self._client = client or httpx.AsyncClient(
             base_url=self._base_url,
             # 600s: generous for cold-loads on memory-pressured GPUs where
@@ -119,11 +126,14 @@ class OllamaAdapter:
 
     async def _raw_chat(self, request: ChatRequest) -> ChatResponse:
         messages = [_message_to_ollama(m) for m in request.messages]
+        options: dict[str, Any] = {"temperature": request.temperature}
+        if self._num_ctx is not None:
+            options["num_ctx"] = self._num_ctx
         payload: dict[str, Any] = {
             "model": self._model_id,
             "messages": messages,
             "stream": False,
-            "options": {"temperature": request.temperature},
+            "options": options,
         }
         if request.tools:
             payload["tools"] = [_canonical_to_ollama_tool(t) for t in request.tools]

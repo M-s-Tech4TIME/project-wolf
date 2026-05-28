@@ -49,6 +49,80 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-05-28 — Slice 5.0b.4: judge context headroom + per-tool grounding-friendly summaries
+
+**Session type:** claude-code
+**Phase:** Phase 5 prep — patch on top of 5.0b.3
+**Duration:** ~2 h (incl. ground-truth indexer probe + 14-min live judge run)
+**Branch / commit:** `main` — starting commit `a62af5a`, this entry's commit pending.
+
+### What we did
+- Live test of 5.0b.3 against the Hydra attack revealed a NEW failure
+  mode: the judge call returned and the retry executed — but both
+  attempts came back with effectively empty content (`JSONDecodeError:
+  Expecting value: line 1 column 1 (char 0)`). Grounding skipped silently.
+  Diagnosis: complex structured answers (markdown with tables, multiple
+  sections, bullet lists) blow out qwen3:8b's **default 4096-token
+  Ollama context** with prompt + 5 KB evidence + 20-claim batch.
+- Slice 5.0b.4 fixes — judge robustness:
+    - `OllamaAdapter` now accepts a `num_ctx` parameter (per-adapter).
+      The judge path passes `ollama_num_ctx=8192`, doubling the available
+      Ollama context window. Default chat unaffected.
+    - `_judge` explicitly raises on empty `response.content` (and on
+      JSON-array regex match returning empty) so the failure path logs a
+      clear diagnostic instead of `json.loads("")`.
+    - `_judge` also strips qwen3-style `<think>…</think>` reasoning
+      blocks before extracting JSON.
+    - `GroundingValidator.max_claims` default 20 → 12 so the judge's
+      input fits comfortably in the new 8 K window even with full 5 KB
+      evidence. Claims beyond the cap default to `uncertain` via the
+      5.0b.2 fallback.
+- Slice 5.0b.4 fixes — **tool precision audit (every list-returning
+  tool)**:
+    - `search_alerts` gains a `summary: SearchAlertsSummary` with
+      `per_rule`, `per_agent`, `earliest_timestamp`, `latest_timestamp`
+      computed from the hits. The model now reads structured aggregations
+      instead of inventing per-rule breakdowns.
+    - `get_event_timeline` and `get_agent_alert_history` use the same
+      `SearchAlertsSummary` shape (they also return `AlertHit` lists).
+    - `aggregate_alerts` gains a `total` field (sum of bucket counts).
+    - `list_agents` gains an `AgentFleetSummary` (`by_status`, `by_os`).
+    - `query_runbook` gains a `KnowledgeRetrievalSummary` (`by_source_
+      type`, `best_distance`).
+    - The lone `exclude_none=True` in `query_runbook`'s citation call
+      was removed — all 10 tools now consistently show every parameter
+      (set or null) in the citation panel, per user request for full
+      visibility.
+- +14 tests covering the summary helpers, the new validator behaviour,
+  and the empty-judge-content path.
+
+### What we discovered (the headline)
+Self-validation against the same Hydra-attack prompt on 5.0b.4:
+`grounding: sup=3 unsup=3 uncertain=0 unverifiable=0` — **all six
+claims judged, zero silent fallbacks**, total wall-clock 13 m 58 s. And
+critically, the per-rule numbers in Wolf's answer are now ACCURATE:
+"31 rule 5760", "7 rule 5503", "1 rule 5763" — exact match to ground
+truth from the live indexer probe. The previous 5.0b.3 run produced
+"5503: 44 + 5760: 40" out of a 44-hit search (an arithmetic impossibility);
+the new `per_rule` summary in `search_alerts` shut that fabrication path.
+
+### What's still imperfect
+- **Latency: ~14 min on the first call** (cold qwen3:4b + qwen3:8b swap
+  at the new num_ctx=8192). This is the trade-off accepted in ADR 0015
+  on this 6 GB hardware. Subsequent same-session prompts are faster
+  (chat model stays warm); each grounding still costs.
+- **Judge over-strict on inferences from observed facts.** Two of the
+  three red `[unsupported]` markers landed on inferences ("compromised
+  internal system attempting unauthorized access", "rules out external
+  attackers"). These should arguably be 🟡 *uncertain* (yellow), not
+  🔴 *unsupported* (red). Future judge-prompt iteration territory —
+  not blocking 5.0c.
+
+### What's next
+- Hand 5.0b.4 to user for re-test.
+- Then Slice 5.0c: UI overhaul + four-chip verdict rename +
+  progressive answer rendering + live activity feed.
+
 ## 2026-05-28 — Slice 5.0b.3: retry-on-timeout + bigger judge client ceiling
 
 **Session type:** claude-code

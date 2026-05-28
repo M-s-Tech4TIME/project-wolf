@@ -62,8 +62,36 @@ class ListAgentsInput(BaseModel):
     offset: int = Field(default=0, ge=0)
 
 
+class AgentFleetSummary(BaseModel):
+    """Per-status / per-OS roll-up over the returned agents.
+
+    Computed client-side from the page's `agents` list so the model can
+    ground "N active, M disconnected" or "X agents on Ubuntu" claims
+    directly instead of inventing the breakdown. For multi-page result
+    sets, this reflects only the current page.
+    """
+
+    by_status: dict[str, int] = Field(default_factory=dict)
+    by_os: dict[str, int] = Field(default_factory=dict)
+
+
+def _compute_agent_fleet_summary(agents: list[AgentSummary]) -> AgentFleetSummary:
+    by_status: dict[str, int] = {}
+    by_os: dict[str, int] = {}
+    for a in agents:
+        by_status[a.status] = by_status.get(a.status, 0) + 1
+        os_key = a.os_platform or "unknown"
+        by_os[os_key] = by_os.get(os_key, 0) + 1
+    return AgentFleetSummary(by_status=by_status, by_os=by_os)
+
+
 class ListAgentsOutput(BaseModel):
     agents: list[AgentSummary]
+    summary: AgentFleetSummary = Field(
+        default_factory=AgentFleetSummary,
+        description="Per-status / per-OS counts over this page. Ground "
+        "fleet-shape claims against this instead of recomputing.",
+    )
     total: int
     citation: Citation
 
@@ -90,6 +118,7 @@ class ListAgentsTool(ReadTool):
 
         return ListAgentsOutput(
             agents=agents,
+            summary=_compute_agent_fleet_summary(agents),
             total=total,
             citation=self.make_citation(
                 args.model_dump(mode="json"), result_count=len(agents)

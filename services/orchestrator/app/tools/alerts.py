@@ -183,8 +183,101 @@ class SearchAlertsInput(BaseModel):
         return v
 
 
+class AlertRuleSummary(BaseModel):
+    rule_id: str
+    description: str | None = None
+    count: int
+
+
+class AlertAgentSummary(BaseModel):
+    agent_id: str
+    agent_name: str | None = None
+    count: int
+
+
+class SearchAlertsSummary(BaseModel):
+    """Aggregations over the hits in THIS page.
+
+    Computed client-side so the model can ground per-rule and per-agent
+    claims directly — without making a separate aggregate_alerts call and
+    without inventing breakdowns the raw hit list doesn't already imply.
+    For multi-page results, this reflects only the current page; for the
+    full picture call count_alerts_by_severity or aggregate_alerts.
+    """
+
+    per_rule: list[AlertRuleSummary] = Field(
+        default_factory=list,
+        description="Per-rule counts in this page, descending by count. "
+        "Use these to ground 'rule X: N alerts' claims; do not invent your own breakdown.",
+    )
+    per_agent: list[AlertAgentSummary] = Field(
+        default_factory=list,
+        description="Per-agent counts in this page, descending by count.",
+    )
+    earliest_timestamp: str | None = Field(
+        default=None,
+        description="Earliest timestamp seen in this page; null when empty.",
+    )
+    latest_timestamp: str | None = Field(
+        default=None,
+        description="Latest timestamp seen in this page; null when empty.",
+    )
+
+
+def _compute_alert_summary(hits: list[AlertHit]) -> SearchAlertsSummary:
+    """Aggregate per-rule / per-agent counts and time bounds from a hit list."""
+    if not hits:
+        return SearchAlertsSummary()
+    rule_counts: dict[str, int] = {}
+    rule_desc: dict[str, str | None] = {}
+    agent_counts: dict[str, int] = {}
+    agent_names: dict[str, str | None] = {}
+    timestamps: list[str] = []
+    for h in hits:
+        if h.rule_id is not None:
+            rule_counts[h.rule_id] = rule_counts.get(h.rule_id, 0) + 1
+            if h.rule_id not in rule_desc:
+                rule_desc[h.rule_id] = h.rule_description
+        if h.agent_id is not None:
+            agent_counts[h.agent_id] = agent_counts.get(h.agent_id, 0) + 1
+            if h.agent_id not in agent_names:
+                agent_names[h.agent_id] = h.agent_name
+        if h.timestamp:
+            timestamps.append(h.timestamp)
+    per_rule = sorted(
+        (
+            AlertRuleSummary(rule_id=rid, description=rule_desc[rid], count=c)
+            for rid, c in rule_counts.items()
+        ),
+        key=lambda r: r.count,
+        reverse=True,
+    )
+    per_agent = sorted(
+        (
+            AlertAgentSummary(agent_id=aid, agent_name=agent_names[aid], count=c)
+            for aid, c in agent_counts.items()
+        ),
+        key=lambda a: a.count,
+        reverse=True,
+    )
+    return SearchAlertsSummary(
+        per_rule=per_rule,
+        per_agent=per_agent,
+        earliest_timestamp=min(timestamps) if timestamps else None,
+        latest_timestamp=max(timestamps) if timestamps else None,
+    )
+
+
 class SearchAlertsOutput(BaseModel):
     hits: list[AlertHit]
+    summary: SearchAlertsSummary = Field(
+        default_factory=SearchAlertsSummary,
+        description=(
+            "Aggregations over this page's hits (per-rule, per-agent, time "
+            "range). Use these to ground breakdown claims directly instead "
+            "of computing them yourself from the raw hits."
+        ),
+    )
     total: int = Field(
         description=(
             "Total alerts matching the query across ALL pages (not just this "
@@ -259,6 +352,7 @@ class SearchAlertsTool(ReadTool):
             has_more = False
         return SearchAlertsOutput(
             hits=alerts,
+            summary=_compute_alert_summary(alerts),
             total=int(total_value),
             has_more=has_more,
             next_cursor=next_cursor,
@@ -299,6 +393,11 @@ class AggregateBucket(BaseModel):
 
 class AggregateAlertsOutput(BaseModel):
     buckets: list[AggregateBucket]
+    total: int = Field(
+        default=0,
+        description="Sum of doc_count across all returned buckets. Use this "
+        "to ground 'total' / 'across' claims instead of summing manually.",
+    )
     citation: Citation
 
 
@@ -337,6 +436,7 @@ class AggregateAlertsTool(ReadTool):
         ]
         return AggregateAlertsOutput(
             buckets=buckets,
+            total=sum(b.count for b in buckets),
             citation=self.make_citation(
                 args.model_dump(mode="json"),
                 result_count=len(buckets),
@@ -366,6 +466,11 @@ class GetEventTimelineInput(BaseModel):
 
 class GetEventTimelineOutput(BaseModel):
     events: list[AlertHit]
+    summary: SearchAlertsSummary = Field(
+        default_factory=SearchAlertsSummary,
+        description="Per-rule / per-agent / time-range aggregations over "
+        "the events; use to ground breakdown claims directly.",
+    )
     citation: Citation
 
 
@@ -397,6 +502,7 @@ class GetEventTimelineTool(ReadTool):
         events = [_hit_to_alert(h) for h in hits_raw]
         return GetEventTimelineOutput(
             events=events,
+            summary=_compute_alert_summary(events),
             citation=self.make_citation(
                 args.model_dump(mode="json"),
                 result_count=len(events),
@@ -426,6 +532,11 @@ class GetAgentAlertHistoryInput(BaseModel):
 
 class GetAgentAlertHistoryOutput(BaseModel):
     alerts: list[AlertHit]
+    summary: SearchAlertsSummary = Field(
+        default_factory=SearchAlertsSummary,
+        description="Per-rule / per-agent / time-range aggregations over "
+        "the returned alerts; use to ground breakdown claims directly.",
+    )
     citation: Citation
 
 
@@ -557,6 +668,7 @@ class GetAgentAlertHistoryTool(ReadTool):
         alerts = [_hit_to_alert(h) for h in hits_raw]
         return GetAgentAlertHistoryOutput(
             alerts=alerts,
+            summary=_compute_alert_summary(alerts),
             citation=self.make_citation(
                 args.model_dump(mode="json"),
                 result_count=len(alerts),

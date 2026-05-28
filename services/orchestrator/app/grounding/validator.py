@@ -163,10 +163,13 @@ VALIDATOR_SYSTEM_PROMPT = (
 class GroundingValidator:
     """LLM-as-judge validator. Pluggable model provider so tests can stub it."""
 
-    def __init__(self, provider: ModelProvider, *, max_claims: int = 20) -> None:
+    def __init__(self, provider: ModelProvider, *, max_claims: int = 12) -> None:
         self._provider = provider
         # Safety cap — extremely long answers might be the model in a
-        # runaway state. Cap claim count to keep the judge call bounded.
+        # runaway state. Also keeps the judge's input small enough that
+        # qwen3:8b's Ollama context doesn't overflow (Slice 5.0b.4 lowered
+        # this from 20 to 12 after empty-output failures on long
+        # structured answers with many bullets/table rows).
         self._max_claims = max_claims
 
     @staticmethod
@@ -365,12 +368,22 @@ class GroundingValidator:
         )
         response = await self._provider.chat(request)
         text = (response.content or "").strip()
+        if not text:
+            # Explicit signal — distinguishes "model returned nothing" (the
+            # common context-overflow failure on a constrained judge) from
+            # a malformed-JSON parse error downstream. Slice 5.0b.4.
+            raise ValueError("judge model returned empty content")
         # Tolerate the common "```json …```" wrapping some models emit.
         text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.MULTILINE)
+        # Strip qwen3 / R1-style <think>…</think> reasoning blocks before
+        # looking for the JSON array.
+        text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
         # Extract the first JSON array; some small models append explanation.
         match = re.search(r"\[\s*\{.*?\}\s*\]", text, flags=re.DOTALL)
         if match:
             text = match.group(0)
+        if not text.strip():
+            raise ValueError("judge response contained no JSON array")
         parsed = json.loads(text)
         if not isinstance(parsed, list):
             raise ValueError(f"Expected JSON array, got {type(parsed).__name__}")

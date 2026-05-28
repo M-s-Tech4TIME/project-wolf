@@ -373,6 +373,35 @@ async def test_full_judge_response_does_not_retry() -> None:
     assert result.supported_count == 2
 
 
+@pytest.mark.asyncio
+async def test_empty_judge_content_raises_clear_error_then_falls_back() -> None:
+    """qwen3:8b sometimes returns empty content under context pressure.
+
+    The judge call now raises a clear 'empty content' ValueError rather
+    than the misleading 'Expecting value: line 1 column 1 (char 0)' from
+    `json.loads('')`. The validator retries once; if still empty, all
+    claims fall back to `uncertain` (yellow) via the 5.0b.2 fallback —
+    never silently to `unverifiable` (Slice 5.0b.4).
+    """
+    provider = _StubProvider("")  # empty both calls
+    v = GroundingValidator(provider)
+    result = await v.validate(
+        "Rule 5712 fires on 8 SSH failures.",
+        tool_results=[{"name": "x", "content": "y"}],
+        retrieved_chunks=[],
+    )
+    assert result.ran is False
+    # Falls through to the un-annotated answer; no fake verdicts emitted.
+    assert result.annotated_answer == "Rule 5712 fires on 8 SSH failures."
+
+
+def test_validator_default_max_claims_is_12() -> None:
+    """Slice 5.0b.4 lowered the cap from 20 so the judge's input fits
+    qwen3:8b's Ollama context window with comfortable headroom."""
+    v = GroundingValidator(_StubProvider("[]"))
+    assert v._max_claims == 12
+
+
 def test_validator_prompt_covers_meta_commentary_and_paraphrase() -> None:
     """Sanity-check that the Slice 5.0b.1 prompt sharpenings are in place.
 

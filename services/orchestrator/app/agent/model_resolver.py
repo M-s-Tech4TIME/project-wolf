@@ -37,6 +37,7 @@ async def _build_provider(
     api_key_ref: str,
     settings: Settings,
     secrets: SecretsBackend,
+    ollama_num_ctx: int | None = None,
 ) -> ModelProvider:
     """Construct a ModelProvider from name + id + (optional) secret ref."""
     api_key = ""
@@ -69,6 +70,7 @@ async def _build_provider(
             return OllamaAdapter(
                 model_id=model_id,
                 base_url=settings.ollama_base_url,
+                num_ctx=ollama_num_ctx,
             )
         case _:
             raise ModelProviderUnconfiguredError(
@@ -123,4 +125,11 @@ async def get_grounding_judge_model(
         api_key_ref=judge_api_key_ref,
         settings=settings,
         secrets=secrets,
+        # The judge's prompt + 5 KB evidence + claims can exceed qwen3:8b's
+        # default 4 K context on Ollama, which manifests as empty model
+        # output and a "JSONDecodeError on empty string" downstream. 8 K
+        # comfortably fits typical grounding inputs without exceeding
+        # qwen3:8b's actual 32 K capability. Ignored for non-Ollama
+        # providers. Slice 5.0b.4.
+        ollama_num_ctx=8192,
     )

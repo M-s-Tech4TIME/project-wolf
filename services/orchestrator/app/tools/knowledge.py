@@ -69,8 +69,39 @@ class KnowledgeHit(BaseModel):
     distance: float
 
 
+class KnowledgeRetrievalSummary(BaseModel):
+    """Per-source-type roll-up over the retrieved chunks.
+
+    Computed client-side so the model can ground "X chunks from runbooks,
+    Y from past incidents" claims directly. Also surfaces the best
+    distance seen (lower = more similar) for a quick relevance read.
+    """
+
+    by_source_type: dict[str, int] = Field(default_factory=dict)
+    best_distance: float | None = Field(
+        default=None,
+        description="Smallest cosine distance in the hits (closer is better).",
+    )
+
+
+def _compute_runbook_summary(hits: list["KnowledgeHit"]) -> KnowledgeRetrievalSummary:
+    if not hits:
+        return KnowledgeRetrievalSummary()
+    by_source_type: dict[str, int] = {}
+    for h in hits:
+        by_source_type[h.source_type] = by_source_type.get(h.source_type, 0) + 1
+    return KnowledgeRetrievalSummary(
+        by_source_type=by_source_type,
+        best_distance=min(h.distance for h in hits),
+    )
+
+
 class QueryRunbookOutput(BaseModel):
     hits: list[KnowledgeHit]
+    summary: KnowledgeRetrievalSummary = Field(
+        default_factory=KnowledgeRetrievalSummary,
+        description="Per-source-type counts + best distance over the hits.",
+    )
     citation: Citation
 
 
@@ -135,8 +166,13 @@ class QueryRunbookTool(ReadTool):
         ]
         return QueryRunbookOutput(
             hits=hits,
+            summary=_compute_runbook_summary(hits),
             citation=self.make_citation(
-                args.model_dump(mode="json", exclude_none=True),
+                # Keep null fields so the citation shows every parameter
+                # the tool *could* have filtered by, not just what the
+                # model populated — same convention as the alert tools.
+                # User asked (2026-05-28) for full parameter visibility.
+                args.model_dump(mode="json"),
                 result_count=len(hits),
             ),
         )
