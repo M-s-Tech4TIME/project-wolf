@@ -135,6 +135,89 @@ def test_default_mode_aggregate_omits_tenant_filter(
     assert _tenant_filter_value(q) is None
 
 
+# ─── free_text matches Wazuh's keyword/text field mapping (Slice 5.0a) ───────
+
+
+def _free_text_should(query: dict[str, Any]) -> list[dict[str, Any]]:
+    """Extract the should-clauses of the free_text sub-query, or []."""
+    for clause in query.get("query", {}).get("bool", {}).get("must", []):
+        should = clause.get("bool", {}).get("should")
+        if should is not None:
+            return should  # type: ignore[no-any-return]
+    return []
+
+
+def test_free_text_searches_full_log_and_rule_description(
+    builder: TenantScopedQueryBuilder, time_window: tuple[datetime, datetime]
+) -> None:
+    """rule.description is keyword-mapped: it needs a wildcard, not match.
+
+    Regression for the Slice 5.0a bug where a multi_match returned 0 hits
+    for "SSH brute-force" because the most useful field could not be
+    partial-matched.
+    """
+    q = builder.search_alerts(
+        time_from=time_window[0],
+        time_to=time_window[1],
+        free_text="SSH brute-force",
+    )
+    should = _free_text_should(q)
+    # An analyzed match on the text-mapped full_log.
+    assert any("match" in c and "full_log" in c["match"] for c in should)
+    # Case-insensitive wildcards on the keyword-mapped rule.description,
+    # one per token, with the hyphen normalized to a word break.
+    wildcards = [c["wildcard"]["rule.description"] for c in should if "wildcard" in c]
+    patterns = {w["value"] for w in wildcards}
+    assert patterns == {"*ssh*", "*brute*", "*force*"}
+    assert all(w["case_insensitive"] for w in wildcards)
+
+
+def test_free_text_requires_at_least_one_should_match(
+    builder: TenantScopedQueryBuilder, time_window: tuple[datetime, datetime]
+) -> None:
+    q = builder.search_alerts(
+        time_from=time_window[0], time_to=time_window[1], free_text="sshd"
+    )
+    must = q["query"]["bool"]["must"]
+    assert must[0]["bool"]["minimum_should_match"] == 1
+
+
+def test_no_free_text_means_empty_must(
+    builder: TenantScopedQueryBuilder, time_window: tuple[datetime, datetime]
+) -> None:
+    q = builder.search_alerts(time_from=time_window[0], time_to=time_window[1])
+    assert q["query"]["bool"]["must"] == []
+
+
+# ─── Cursor pagination via search_after (Slice 5.0a) ─────────────────────────
+
+
+def test_search_alerts_sort_has_unique_tiebreaker(
+    builder: TenantScopedQueryBuilder, time_window: tuple[datetime, datetime]
+) -> None:
+    """search_after needs a total order: timestamp alone is not unique."""
+    q = builder.search_alerts(time_from=time_window[0], time_to=time_window[1])
+    sort_fields = [next(iter(s.keys())) for s in q["sort"]]
+    assert sort_fields == ["timestamp", "_id"]
+
+
+def test_search_alerts_omits_search_after_by_default(
+    builder: TenantScopedQueryBuilder, time_window: tuple[datetime, datetime]
+) -> None:
+    q = builder.search_alerts(time_from=time_window[0], time_to=time_window[1])
+    assert "search_after" not in q
+
+
+def test_search_alerts_passes_cursor_through_as_search_after(
+    builder: TenantScopedQueryBuilder, time_window: tuple[datetime, datetime]
+) -> None:
+    cursor = [1779887919336, "dQeWaZ4B8cw0pYlWbI9w"]
+    q = builder.search_alerts(
+        time_from=time_window[0], time_to=time_window[1], search_after=cursor
+    )
+    assert q["search_after"] == cursor
+
+
 # ─── Optional filters are additive, not replacing the tenant filter ──────────
 
 

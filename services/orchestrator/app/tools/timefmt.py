@@ -14,23 +14,55 @@ import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-# now, now-15m, now-2h, now-1d, now-7d, now-30s
-_RELATIVE_PATTERN = re.compile(r"^now(?:-(\d+)(s|m|h|d|w))?$", re.IGNORECASE)
+# now  |  now-<n><unit>  — whitespace and unit case are tolerated; the unit
+# is resolved by _resolve_unit so we can distinguish minutes from months.
+_RELATIVE_BARE = re.compile(r"^now$", re.IGNORECASE)
+_RELATIVE_DELTA = re.compile(r"^now\s*-\s*(\d+)\s*([a-zA-Z]+)$", re.IGNORECASE)
 
-_UNIT_TO_DELTA: dict[str, timedelta] = {
-    "s": timedelta(seconds=1),
-    "m": timedelta(minutes=1),
-    "h": timedelta(hours=1),
-    "d": timedelta(days=1),
-    "w": timedelta(weeks=1),
+# Approximations for calendar units — exact enough for an alert query window
+# and dependency-free. A "month" is 30 days; a "year" is 365 days.
+_MONTH = timedelta(days=30)
+_YEAR = timedelta(days=365)
+
+# Multi-letter unit aliases (matched case-insensitively). The single letters
+# 'm' and 'M' are handled separately in _resolve_unit because their case is
+# load-bearing: 'm' is minutes, 'M' is months (Wazuh/OpenSearch convention).
+_UNIT_ALIASES: dict[str, timedelta] = {
+    "s": timedelta(seconds=1), "sec": timedelta(seconds=1),
+    "secs": timedelta(seconds=1), "second": timedelta(seconds=1),
+    "seconds": timedelta(seconds=1),
+    "min": timedelta(minutes=1), "mins": timedelta(minutes=1),
+    "minute": timedelta(minutes=1), "minutes": timedelta(minutes=1),
+    "h": timedelta(hours=1), "hr": timedelta(hours=1), "hrs": timedelta(hours=1),
+    "hour": timedelta(hours=1), "hours": timedelta(hours=1),
+    "d": timedelta(days=1), "day": timedelta(days=1), "days": timedelta(days=1),
+    "w": timedelta(weeks=1), "wk": timedelta(weeks=1), "wks": timedelta(weeks=1),
+    "week": timedelta(weeks=1), "weeks": timedelta(weeks=1),
+    "mo": _MONTH, "mon": _MONTH, "mos": _MONTH, "month": _MONTH, "months": _MONTH,
+    "y": _YEAR, "yr": _YEAR, "yrs": _YEAR, "year": _YEAR, "years": _YEAR,
 }
 
 
-def parse_time_field(value: Any) -> datetime | Any:
-    """Accept ISO datetime, datetime, or 'now[-N{s,m,h,d,w}]' relative form.
+def _resolve_unit(unit: str) -> timedelta | None:
+    """Map a relative-time unit token to a timedelta, or None if unknown.
 
-    Anything else is returned untouched so Pydantic can produce the
-    canonical "this isn't a date" error.
+    Single-letter 'm'/'M' is case-sensitive: lowercase is minutes, uppercase
+    is months. Everything else is matched case-insensitively.
+    """
+    if unit == "m":
+        return timedelta(minutes=1)
+    if unit == "M":
+        return _MONTH
+    return _UNIT_ALIASES.get(unit.lower())
+
+
+def parse_time_field(value: Any) -> datetime | Any:
+    """Accept ISO datetime, datetime, or a 'now[-N<unit>]' relative form.
+
+    Units accepted: seconds, minutes, hours, days, weeks, months, years —
+    in short or long spelling (e.g. ``now-15m``, ``now-24h``, ``now-7d``,
+    ``now-6mo``, ``now-1y``, ``now-2months``). Anything else is returned
+    untouched so Pydantic produces the canonical "this isn't a date" error.
     """
     if isinstance(value, datetime):
         return value if value.tzinfo else value.replace(tzinfo=UTC)
@@ -41,14 +73,16 @@ def parse_time_field(value: Any) -> datetime | Any:
         return value
 
     # Relative form first — the common case for small models.
-    rel = _RELATIVE_PATTERN.match(stripped)
+    if _RELATIVE_BARE.match(stripped):
+        return datetime.now(UTC)
+    rel = _RELATIVE_DELTA.match(stripped)
     if rel:
-        now = datetime.now(UTC)
         amount_str, unit = rel.groups()
-        if amount_str is None:
-            return now
-        unit_delta = _UNIT_TO_DELTA[unit.lower()]
-        return now - int(amount_str) * unit_delta
+        unit_delta = _resolve_unit(unit)
+        if unit_delta is not None:
+            return datetime.now(UTC) - int(amount_str) * unit_delta
+        # Unknown unit: fall through so the value reaches Pydantic, which
+        # raises a clear validation error instead of guessing wrong.
 
     # Otherwise fall through to ISO 8601.  Allow trailing 'Z'.
     iso = stripped.replace("Z", "+00:00")

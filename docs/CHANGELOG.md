@@ -49,6 +49,59 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-05-28 — Slice 5.0a: pre-Phase-5 stabilization (alert search + time handling)
+
+**Session type:** claude-code
+**Phase:** Phase 5 prep — stabilization slices (5.0a) before the cases/RBAC work
+**Duration:** ~2 h (incl. live-DB investigation + two web-test rounds)
+**Branch / commit:** `main` — starting commit `34dea23`, this entry's commit pending.
+
+### What we did
+- Investigated a reported cross-tenant "leak" (beta returned "ACME runbook"
+  content): probed the live DB as beta — it retrieved ONLY its own chunks.
+  **Not a data-layer leak**; the chat model parroted the prompt's "ACME"
+  label onto beta's own content. A grounding/honesty issue → Slice 5.0b.
+- Fixed `search_alerts` free_text: `rule.description` is mapped `keyword`
+  (not analyzed) and `full_log` uses the standard analyzer, so the old
+  `multi_match` returned 0 hits for "SSH brute-force". Replaced with
+  `bool.should` = analyzed match on `full_log` + case-insensitive `wildcard`
+  per token on `rule.description`. Live: 0 → 80 hits.
+- Reworked the time-window guardrail (`limits.py`): 30d → **365d** default,
+  +1s grace for now-vs-now clock drift, and `enforce_time_window=False` so
+  aggregation/count tools (bucket-bounded) can analyze any range.
+- Added `search_after` cursor pagination to `search_alerts` (two-key sort
+  `timestamp`+`_id`); tool now returns `total` / `has_more` / `next_cursor`
+  so the model can walk an entire window gap-free.
+- **Hotfix mid-testing:** extended `parse_time_field` to understand months
+  and years (`now-6mo`, `now-1y`, `now-2months`) and fixed a latent bug where
+  `now-12M` silently meant 12 *minutes* (case-insensitive regex). Now
+  `m`=minutes, `M`/`mo`=months, `y`=years.
+- Tests: +13 (query builder, guardrails, pagination output) and a new
+  `test_timefmt.py` (+8). All green; ruff + mypy-strict clean.
+
+### What we decided
+- Organizations + RBAC (superuser → orgs → users → roles) is a feature, not
+  a stabilization fix → its own dedicated phase AFTER slices 5.0a–d, before
+  cases/reporting. `users.is_superuser` already exists as scaffolding.
+- Time-window guard is a backstop; real volume guards are `size` (≤1000) +
+  context truncation. Hence the generous 365d cap + aggregation exemption.
+
+### What broke / what we discovered
+- **Self-inflicted regression caught by web-test:** raising the window to a
+  year without teaching the parser months/years made the model emit
+  `now-6mo`/`now-1y`, which failed validation → tool errored → **the model
+  fabricated** "12 critical / 45 high / …". Unit tests passed; only manual
+  testing caught it. Fixed by the parser hotfix.
+- Re-test confirmed real, grounded analytics (706 alerts, top rules 19007/
+  19008/19009 = SSH config checks) — cross-checked against Wazuh Discover.
+- Residual model-honesty gaps remain: fabrication on tool error, occasional
+  tool-call-as-text, and over-eager red `unverified` badges on correct
+  claims. All targeted by Slice 5.0b.
+
+### What's next
+- Slice 5.0b: grounding — yellow `unverifiable` vs red `unsupported`; harden
+  validator against fabrication-on-tool-failure and cross-label mislabeling.
+
 ## 2026-05-27 — Phase 4 follow-up: close the 4.4b + 4.4c gaps
 
 **Session type:** claude-code (continuation)

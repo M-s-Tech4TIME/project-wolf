@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from app.guardrails.limits import DEFAULT_LIMITS
 from app.tenancy.context import TenantContext
-from app.tools.alerts import SearchAlertsInput, SearchAlertsTool
+from app.tools.alerts import SearchAlertsInput, SearchAlertsOutput, SearchAlertsTool
 from app.tools.base import ToolExecContext
 
 
@@ -130,6 +130,61 @@ async def test_neither_id_nor_name_means_no_agent_filter() -> None:
     server.get.assert_not_called()
     kwargs = os_client.query_builder.search_alerts.call_args.kwargs
     assert kwargs["agent_id"] is None
+
+
+# ─── Cursor pagination output (Slice 5.0a) ──────────────────────────────────
+
+
+def _opensearch_page(hits: list[Any], total: int) -> Any:
+    os_client = MagicMock()
+    os_client.query_builder = MagicMock()
+    os_client.query_builder.search_alerts = MagicMock(return_value={"query": "stub"})
+    os_client.execute = AsyncMock(
+        return_value={"hits": {"hits": hits, "total": {"value": total}}}
+    )
+    return os_client
+
+
+def _hit(doc_id: str, sort: list[Any]) -> dict[str, Any]:
+    return {"_id": doc_id, "_source": {"timestamp": "2026-05-27T00:00:00Z"}, "sort": sort}
+
+
+@pytest.mark.asyncio
+async def test_full_page_reports_has_more_and_next_cursor() -> None:
+    """A page filled to `size` signals more rows and exposes the cursor."""
+    sort_vals = [1779887919336, "abc"]
+    hits = [_hit(str(i), [1779887919336 - i, f"id{i}"]) for i in range(3)]
+    hits[-1]["sort"] = sort_vals
+    os_client = _opensearch_page(hits, total=50)
+    args = SearchAlertsInput(time_from="now-1h", size=3)
+    out = await SearchAlertsTool().run(_ctx(os_client, _server_api_finding(None)), args)
+    assert isinstance(out, SearchAlertsOutput)
+    assert out.has_more is True
+    assert out.next_cursor == sort_vals
+    assert out.total == 50
+
+
+@pytest.mark.asyncio
+async def test_short_page_reports_done_and_null_cursor() -> None:
+    """A page shorter than `size` means the walk is complete."""
+    hits = [_hit("0", [1, "a"]), _hit("1", [2, "b"])]
+    os_client = _opensearch_page(hits, total=2)
+    args = SearchAlertsInput(time_from="now-1h", size=100)
+    out = await SearchAlertsTool().run(_ctx(os_client, _server_api_finding(None)), args)
+    assert isinstance(out, SearchAlertsOutput)
+    assert out.has_more is False
+    assert out.next_cursor is None
+
+
+@pytest.mark.asyncio
+async def test_cursor_is_forwarded_to_query_builder() -> None:
+    """The input cursor reaches the builder as search_after."""
+    cursor = [1779887919336, "abc"]
+    os_client = _opensearch_page([], total=0)
+    args = SearchAlertsInput(time_from="now-1h", cursor=cursor)
+    await SearchAlertsTool().run(_ctx(os_client, _server_api_finding(None)), args)
+    kwargs = os_client.query_builder.search_alerts.call_args.kwargs
+    assert kwargs["search_after"] == cursor
 
 
 # ─── Cache behavior (Phase 4 Slice 3) ───────────────────────────────────────

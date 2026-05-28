@@ -53,8 +53,17 @@ class TenantScopedQueryBuilder:
         free_text: str | None = None,
         size: int = 100,
         sort_desc: bool = True,
+        search_after: list[Any] | None = None,
     ) -> dict[str, Any]:
-        """Build a query for the `search_alerts` tool."""
+        """Build a query for the `search_alerts` tool.
+
+        ``search_after`` enables gap-free cursor pagination across an entire
+        time window regardless of volume (no 10k ``from``/``size`` ceiling,
+        and no skip/duplicate when new docs arrive mid-walk). It is the
+        ``sort`` array of the last hit from the previous page; the sort key
+        below pairs ``timestamp`` with the unique ``_id`` so the ordering is
+        a total order — a requirement for ``search_after`` to be correct.
+        """
         filters: list[dict[str, Any]] = [
             *self._mandatory_filters(),
             self._timestamp_range(time_from, time_to),
@@ -70,20 +79,54 @@ class TenantScopedQueryBuilder:
 
         must: list[dict[str, Any]] = []
         if free_text:
-            must.append(
+            must.append(self._free_text_clause(free_text))
+
+        order = "desc" if sort_desc else "asc"
+        query: dict[str, Any] = {
+            "size": size,
+            "sort": [{"timestamp": {"order": order}}, {"_id": {"order": order}}],
+            "query": {"bool": {"filter": filters, "must": must}},
+        }
+        if search_after is not None:
+            query["search_after"] = search_after
+        return query
+
+    @staticmethod
+    def _free_text_clause(free_text: str) -> dict[str, Any]:
+        """Build a free-text match clause that works against Wazuh's mapping.
+
+        Two Wazuh-specific traps a naive ``multi_match`` falls into:
+
+          1. ``rule.description`` is mapped as ``keyword`` (NOT ``text``), so
+             an analyzed match never partial-matches it — the most human-
+             readable field is silently unsearchable. We hit it with a
+             case-insensitive ``wildcard`` per token instead.
+          2. ``full_log`` is ``text`` under the standard analyzer, which does
+             not stem or sub-tokenize — "ssh" does not match the token
+             "sshd". We still run an analyzed ``match`` on it (operator OR)
+             to catch log-body terms the description omits.
+
+        The clauses are OR-ed (``minimum_should_match: 1``): a hit in either
+        field qualifies. Hyphens are normalized to spaces so "brute-force"
+        tokenizes the same way a user types it.
+        """
+        normalized = free_text.lower().replace("-", " ")
+        tokens = [t for t in normalized.split() if t]
+        should: list[dict[str, Any]] = [
+            {"match": {"full_log": {"query": free_text, "operator": "or"}}}
+        ]
+        for token in tokens:
+            should.append(
                 {
-                    "multi_match": {
-                        "query": free_text,
-                        "fields": ["full_log", "rule.description"],
+                    "wildcard": {
+                        "rule.description": {
+                            "value": f"*{token}*",
+                            "case_insensitive": True,
+                        }
                     }
                 }
             )
-
-        return {
-            "size": size,
-            "sort": [{"timestamp": {"order": "desc" if sort_desc else "asc"}}],
-            "query": {"bool": {"filter": filters, "must": must}},
-        }
+        return {"bool": {"should": should, "minimum_should_match": 1}}
 
     def aggregate_alerts(
         self,

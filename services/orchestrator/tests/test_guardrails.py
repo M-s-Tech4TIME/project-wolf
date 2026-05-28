@@ -24,7 +24,54 @@ def test_enforce_limits_passes_with_valid_window() -> None:
 def test_enforce_limits_rejects_time_window_exceeding_max() -> None:
     end = datetime.now(UTC)
     with pytest.raises(GuardrailViolation, match="maximum"):
-        enforce_limits(time_from=end - timedelta(days=90), time_to=end)
+        enforce_limits(time_from=end - timedelta(days=400), time_to=end)
+
+
+def test_enforce_limits_allows_full_year_raw_search() -> None:
+    """The default ceiling is a generous 365 days (Slice 5.0a)."""
+    end = datetime.now(UTC)
+    enforce_limits(time_from=end - timedelta(days=365), time_to=end)  # no raise
+
+
+def test_enforce_limits_skips_window_cap_for_aggregations() -> None:
+    """enforce_time_window=False lets bucket-bounded tools span any range."""
+    end = datetime.now(UTC)
+    enforce_limits(
+        time_from=end - timedelta(days=900),
+        time_to=end,
+        enforce_time_window=False,
+    )  # must NOT raise
+
+
+def test_enforce_limits_still_checks_inverted_window_when_cap_skipped() -> None:
+    """Exempting the width cap must NOT exempt the correctness check."""
+    end = datetime.now(UTC)
+    with pytest.raises(GuardrailViolation, match="before"):
+        enforce_limits(
+            time_from=end,
+            time_to=end - timedelta(hours=1),
+            enforce_time_window=False,
+        )
+
+
+def test_enforce_limits_allows_max_plus_clock_drift() -> None:
+    """A 'now-365d' .. 'now' query parses the two nows microseconds apart.
+
+    Regression for the Slice 5.0a guardrail bug: the span lands at
+    max + a few µs and a strict `>` rejected an obviously-in-range query.
+    The 1-second grace must absorb sub-second drift.
+    """
+    end = datetime.now(UTC)
+    drift = end - timedelta(days=365) - timedelta(microseconds=6)
+    enforce_limits(time_from=drift, time_to=end)  # must NOT raise
+
+
+def test_enforce_limits_still_rejects_beyond_grace() -> None:
+    """The grace is sub-second slack, not a meaningful widening."""
+    end = datetime.now(UTC)
+    over = end - timedelta(days=365) - timedelta(seconds=5)
+    with pytest.raises(GuardrailViolation, match="maximum"):
+        enforce_limits(time_from=over, time_to=end)
 
 
 def test_enforce_limits_rejects_inverted_time_window() -> None:

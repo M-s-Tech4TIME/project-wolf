@@ -17,7 +17,8 @@ from app.tools.timefmt import default_time_to, parse_time_field
 _TIME_FIELD_HELP = (
     "Accepts ISO 8601 datetime (e.g. '2026-05-21T10:00:00Z') OR a "
     "relative expression like 'now', 'now-15m', 'now-1h', 'now-24h', "
-    "'now-7d'."
+    "'now-7d', 'now-6mo', 'now-1y'. Units: m=minutes, h=hours, d=days, "
+    "w=weeks, mo=months, y=years."
 )
 
 # ─── Shared output building blocks ────────────────────────────────────────────
@@ -152,7 +153,15 @@ class SearchAlertsInput(BaseModel):
         default=None, description="MITRE ATT&CK technique ID, e.g. T1110"
     )
     free_text: str | None = Field(default=None, description="Match in log/description text")
-    size: int = Field(default=100, ge=1, le=1000, description="Max results to return")
+    size: int = Field(default=100, ge=1, le=1000, description="Max results per page")
+    cursor: list[Any] | None = Field(
+        default=None,
+        description=(
+            "Leave null for the first page. To get more results, pass back "
+            "the `next_cursor` from the previous result unchanged. For pure "
+            "counts over a wide window, use count_alerts_by_severity instead."
+        ),
+    )
 
     @field_validator("time_from", "time_to", mode="before")
     @classmethod
@@ -176,7 +185,23 @@ class SearchAlertsInput(BaseModel):
 
 class SearchAlertsOutput(BaseModel):
     hits: list[AlertHit]
-    total: int
+    total: int = Field(
+        description=(
+            "Total alerts matching the query across ALL pages (not just this "
+            "page). Use this to gauge scale and decide whether to paginate."
+        )
+    )
+    has_more: bool = Field(
+        description=(
+            "True if more pages remain. When true, call search_alerts again "
+            "with `cursor=next_cursor` to continue; when false you have seen "
+            "every matching alert in the window."
+        )
+    )
+    next_cursor: list[Any] | None = Field(
+        default=None,
+        description="Opaque cursor for the next page; null when has_more is false.",
+    )
     citation: Citation
 
 
@@ -215,15 +240,28 @@ class SearchAlertsTool(ReadTool):
             attack_technique=args.attack_technique,
             free_text=args.free_text,
             size=args.size,
+            search_after=args.cursor,
         )
         body = await exec_ctx.opensearch.execute(query)
         hits_raw = body.get("hits", {}).get("hits", [])
         total = body.get("hits", {}).get("total", {})
         total_value = total.get("value", len(hits_raw)) if isinstance(total, dict) else int(total)
         alerts = [_hit_to_alert(h) for h in hits_raw]
+        # A full page means more rows may follow; the cursor is the sort
+        # array of the last hit, fed straight back as search_after. A short
+        # page (or empty) means the walk is complete.
+        has_more = len(hits_raw) == args.size
+        next_cursor = (
+            hits_raw[-1].get("sort") if has_more and hits_raw else None
+        )
+        # Never advertise more without a usable cursor to continue with.
+        if next_cursor is None:
+            has_more = False
         return SearchAlertsOutput(
             hits=alerts,
             total=int(total_value),
+            has_more=has_more,
+            next_cursor=next_cursor,
             citation=self.make_citation(
                 args.model_dump(mode="json"),
                 result_count=len(alerts),
@@ -280,6 +318,7 @@ class AggregateAlertsTool(ReadTool):
             time_to=args.time_to,
             requested_size=args.size,
             limits=exec_ctx.limits,
+            enforce_time_window=False,  # bucket-bounded; any range is safe
         )
         query = exec_ctx.opensearch.query_builder.aggregate_alerts(
             time_from=args.time_from,
@@ -446,6 +485,7 @@ class CountAlertsBySeverityTool(ReadTool):
             time_from=args.time_from,
             time_to=args.time_to,
             limits=exec_ctx.limits,
+            enforce_time_window=False,  # bucket-bounded; any range is safe
         )
         # Aggregate by rule.level — Wazuh levels are 0-15, so 20 buckets
         # is plenty of headroom for any extension or unexpected value.
