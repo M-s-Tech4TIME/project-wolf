@@ -72,6 +72,7 @@ export type ChatResponseBody = {
   // null when the validator skipped (no citations or judge failed).
   grounding_supported: number | null;
   grounding_unsupported: number | null;
+  grounding_uncertain: number | null;
   grounding_unverifiable: number | null;
 };
 
@@ -110,6 +111,7 @@ export type ChatExchange = {
   // validator didn't run (no citations, empty answer, judge failed).
   grounding_supported: number | null;
   grounding_unsupported: number | null;
+  grounding_uncertain: number | null;
   grounding_unverifiable: number | null;
 };
 

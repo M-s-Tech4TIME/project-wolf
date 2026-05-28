@@ -51,17 +51,39 @@ logger = structlog.get_logger(__name__)
 # Imperfect but works on technical English declarative answers.
 _SENTENCE_SPLIT = re.compile(r"(?<=[a-zA-Z][.!?])\s+(?=[A-Z\d])")
 
+# Two inline markers with distinct severities (Slice 5.0b). The frontend
+# renders the first as a yellow "caution" chip and the second as a red chip.
+#   [unverified]  — yellow: a factual claim the evidence neither confirms nor
+#                   contradicts (general knowledge, inference, "couldn't verify").
+#   [unsupported] — red: a specific factual claim that contradicts the evidence
+#                   or fabricates specifics (counts, IDs, names) absent from it.
+MARKER_UNVERIFIED = "[unverified]"
+MARKER_UNSUPPORTED = "[unsupported]"
+
+_VALID_VERDICTS = {"supported", "unsupported", "uncertain", "unverifiable"}
+# Which verdicts get which inline marker. supported/unverifiable get none.
+_VERDICT_MARKER = {
+    "uncertain": MARKER_UNVERIFIED,
+    "unsupported": MARKER_UNSUPPORTED,
+}
+
 
 @dataclass(frozen=True)
 class ClaimVerdict:
-    """One claim and its verdict."""
+    """One claim and its verdict.
+
+    Verdicts (Slice 5.0b — four levels so the UI can show caution vs error):
+      supported    — a specific evidence segment backs the claim. No marker.
+      unsupported  — a specific fact (count/ID/name/timestamp/status) that
+                     contradicts the evidence or should have come from it but
+                     is absent. Fabrications land here. → red marker.
+      uncertain    — a plausible general statement / best-practice / inference
+                     the evidence neither confirms nor contradicts. → yellow.
+      unverifiable — no factual content (transition / preamble / opinion /
+                     instruction, e.g. "Here is what I found:"). No marker.
+    """
 
     claim: str
-    # 'supported' | 'unsupported' | 'unverifiable'
-    # supported: claim maps to at least one evidence segment.
-    # unsupported: judge found no support in the evidence.
-    # unverifiable: judge couldn't decide (used for trivial / opinion /
-    #               instruction-following sentences like "Here is what I found:").
     verdict: str
     reason: str = ""
 
@@ -83,6 +105,7 @@ class ValidationResult:
     # Counts for the audit trail and the LoopEvent.
     supported_count: int = 0
     unsupported_count: int = 0
+    uncertain_count: int = 0
     unverifiable_count: int = 0
 
 
@@ -90,18 +113,28 @@ VALIDATOR_SYSTEM_PROMPT = (
     "You are a strict fact-checker. You will be given EVIDENCE (the only "
     "facts you may rely on) and a list of CLAIMS extracted from an "
     "assistant's draft answer.\n\n"
-    "For each claim, judge it as one of:\n"
-    "  - SUPPORTED:    a clear, specific evidence segment supports the claim.\n"
-    "  - UNSUPPORTED:  the claim makes a specific factual assertion not "
-    "found in the evidence.\n"
-    "  - UNVERIFIABLE: the claim is a transition / opinion / preamble / "
-    "instruction (e.g. 'Here is what I found:') — no factual content to "
-    "verify.\n\n"
-    "Be strict: combining two real facts into a third inferred fact is "
-    "UNSUPPORTED unless the inference itself is in the evidence.\n\n"
+    "Judge each claim as exactly one of:\n"
+    "  - SUPPORTED:    a specific evidence segment clearly backs the claim.\n"
+    "  - UNSUPPORTED:  the claim states a specific fact (a number, count, ID, "
+    "name, timestamp, or status) that CONTRADICTS the evidence, or that should "
+    "have come from the evidence but is absent. Fabricated specifics go here.\n"
+    "  - UNCERTAIN:    a plausible general statement, best-practice, or "
+    "reasonable inference the evidence neither confirms nor contradicts — you "
+    "cannot verify it, but it is not obviously wrong.\n"
+    "  - UNVERIFIABLE: the claim has no factual content to check — a "
+    "transition / preamble / opinion / instruction (e.g. 'Here is what I "
+    "found:').\n\n"
+    "Rules:\n"
+    "  - Any specific number / count / ID / name / timestamp NOT present in "
+    "the evidence is UNSUPPORTED, never UNCERTAIN.\n"
+    "  - Combining two real facts into a third inferred fact is UNSUPPORTED "
+    "unless the inference itself appears in the evidence.\n"
+    "  - If the EVIDENCE shows a tool FAILED and returned no data, any "
+    "specific factual claim that needed that tool is UNSUPPORTED.\n\n"
     "Output ONLY a JSON array of objects with keys: 'index' (int), "
-    "'verdict' (one of 'supported' / 'unsupported' / 'unverifiable'), "
-    "'reason' (one short sentence). No prose outside the JSON array."
+    "'verdict' (one of 'supported' / 'unsupported' / 'uncertain' / "
+    "'unverifiable'), 'reason' (one short sentence). No prose outside the "
+    "JSON array."
 )
 
 
@@ -134,6 +167,7 @@ class GroundingValidator:
     def build_evidence(
         tool_results: list[dict[str, Any]],
         retrieved_chunks: list[dict[str, Any]],
+        tool_failures: list[dict[str, Any]] | None = None,
     ) -> str:
         """Concatenate every evidence source the agent saw, with cheap
         provenance tags so the judge can cite which source supported what.
@@ -142,6 +176,11 @@ class GroundingValidator:
         `retrieved_chunks` is whatever query_runbook returned. Both are
         passed as dicts (not Pydantic models) to keep this module free
         of agent-loop imports.
+
+        `tool_failures` (Slice 5.0b) are tool calls that errored and produced
+        NO data. They are surfaced as explicit negative evidence so the judge
+        flags specific claims that should have come from a failed tool — this
+        is what catches "the tool errored, so the model fabricated numbers."
         """
         sections: list[str] = []
         for i, tr in enumerate(tool_results, start=1):
@@ -159,6 +198,14 @@ class GroundingValidator:
             sections.append(
                 f"[KNOWLEDGE {i}: {source_type} — {title}]\n{content[:2000]}"
             )
+        for i, tf in enumerate(tool_failures or [], start=1):
+            name = tf.get("name", "<unknown>")
+            error = str(tf.get("error", "tool call failed"))[:300]
+            sections.append(
+                f"[TOOL_FAILED {i}: {name}]\nThis tool returned NO data "
+                f"(error: {error}). Any specific fact that would have come "
+                f"from it is UNSUPPORTED."
+            )
         return "\n\n".join(sections)
 
     async def validate(
@@ -167,6 +214,7 @@ class GroundingValidator:
         *,
         tool_results: list[dict[str, Any]],
         retrieved_chunks: list[dict[str, Any]],
+        tool_failures: list[dict[str, Any]] | None = None,
         loop_id: str = "",
     ) -> ValidationResult:
         """Run the validator on a draft answer. Always returns a result;
@@ -186,7 +234,7 @@ class GroundingValidator:
             )
             claims = claims[: self._max_claims]
 
-        evidence = self.build_evidence(tool_results, retrieved_chunks)
+        evidence = self.build_evidence(tool_results, retrieved_chunks, tool_failures)
         if not evidence.strip():
             # Nothing to verify against; skip rather than over-flag.
             logger.info("grounding_skipped", reason="no_evidence", loop_id=loop_id)
@@ -211,7 +259,7 @@ class GroundingValidator:
             if not isinstance(idx, int) or idx < 0 or idx >= len(claims):
                 continue
             verdict = str(v.get("verdict", "unverifiable")).lower()
-            if verdict not in {"supported", "unsupported", "unverifiable"}:
+            if verdict not in _VALID_VERDICTS:
                 verdict = "unverifiable"
             per_claim[idx] = ClaimVerdict(
                 claim=claims[idx],
@@ -228,6 +276,8 @@ class GroundingValidator:
                 result.supported_count += 1
             elif verdict.verdict == "unsupported":
                 result.unsupported_count += 1
+            elif verdict.verdict == "uncertain":
+                result.uncertain_count += 1
             else:
                 result.unverifiable_count += 1
 
@@ -239,6 +289,7 @@ class GroundingValidator:
             claims=len(result.claims),
             supported=result.supported_count,
             unsupported=result.unsupported_count,
+            uncertain=result.uncertain_count,
             unverifiable=result.unverifiable_count,
         )
         return result
@@ -273,7 +324,11 @@ class GroundingValidator:
 
     @staticmethod
     def _annotate(answer: str, verdicts: list[ClaimVerdict]) -> str:
-        """Insert `[unverified]` markers after each unsupported claim.
+        """Insert severity markers after flagged claims.
+
+        `uncertain` claims get the yellow `[unverified]` marker; `unsupported`
+        claims get the red `[unsupported]` marker. `supported` and
+        `unverifiable` claims get nothing.
 
         Conservative implementation: find the claim's text in the original
         answer and splice the marker. If a claim's text doesn't appear
@@ -283,7 +338,8 @@ class GroundingValidator:
         """
         annotated = answer
         for v in verdicts:
-            if v.verdict != "unsupported":
+            marker = _VERDICT_MARKER.get(v.verdict)
+            if marker is None:
                 continue
             # Locate the original claim text; tolerate one trailing
             # punctuation char that the splitter consumed.
@@ -293,7 +349,7 @@ class GroundingValidator:
                     insertion_point = idx + len(candidate)
                     annotated = (
                         annotated[:insertion_point]
-                        + " [unverified]"
+                        + f" {marker}"
                         + annotated[insertion_point:]
                     )
                     break

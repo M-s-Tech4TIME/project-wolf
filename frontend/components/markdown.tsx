@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Info } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 import { Children, Fragment, isValidElement } from "react";
 import ReactMarkdown from "react-markdown";
@@ -8,39 +8,68 @@ import remarkGfm from "remark-gfm";
 
 import { cn } from "@/lib/utils";
 
-const UNVERIFIED_MARKER = "[unverified]";
+/**
+ * Two grounding markers with distinct severities (Slice 5.0b):
+ *   [unverified]  — yellow "caution": a factual claim the evidence neither
+ *                   confirms nor contradicts (general knowledge / inference).
+ *   [unsupported] — red: a specific claim that contradicts the evidence or
+ *                   fabricates specifics absent from it.
+ * Order matters only for the split regex; both are matched in one pass.
+ */
+const GROUNDING_MARKERS = {
+  "[unsupported]": {
+    label: "unsupported",
+    className:
+      "bg-destructive/15 text-destructive",
+    title:
+      "Flagged by the grounding validator as UNSUPPORTED — this specific claim contradicts, or is absent from, every tool result and retrieved knowledge chunk. Treat with caution.",
+    icon: AlertTriangle,
+  },
+  "[unverified]": {
+    label: "unverified",
+    className:
+      "bg-amber-400/20 text-amber-700 dark:text-amber-400",
+    title:
+      "Flagged by the grounding validator as UNVERIFIED — the evidence neither confirms nor contradicts this. It may be correct general knowledge or inference, but Wolf could not verify it from the tools/knowledge used.",
+    icon: Info,
+  },
+} as const;
+
+// Splits on either marker while keeping the delimiter (capturing group).
+const MARKER_SPLIT = /(\[unsupported\]|\[unverified\])/;
 
 /**
- * Walk a React children tree, splitting any string node on the literal
- * `[unverified]` marker emitted by the Phase-3 grounding validator and
- * replacing each occurrence with a styled `<span>` carrying a hover
- * tooltip. Non-string nodes (other elements, expressions, fragments)
- * are passed through unchanged.
- *
- * This is the cleanest way to highlight inline markers without taking a
- * `rehype-raw` dependency to enable raw HTML in markdown — we work at
- * the rendered-tree level instead.
+ * Walk a React children tree, splitting any string node on the grounding
+ * markers and replacing each with a styled chip (yellow caution / red).
+ * Non-string nodes pass through unchanged. Working at the rendered-tree
+ * level avoids a `rehype-raw` dependency for inline HTML.
  */
-function highlightUnverifiedMarkers(children: ReactNode): ReactNode {
+function highlightGroundingMarkers(children: ReactNode): ReactNode {
   return Children.map(children, (child, index) => {
     if (typeof child === "string") {
-      if (!child.includes(UNVERIFIED_MARKER)) return child;
-      const segments = child.split(UNVERIFIED_MARKER);
-      const out: ReactNode[] = [];
-      segments.forEach((segment, i) => {
-        if (segment) out.push(segment);
-        if (i < segments.length - 1) {
-          out.push(
+      if (!child.includes("[unverified]") && !child.includes("[unsupported]")) {
+        return child;
+      }
+      const parts = child.split(MARKER_SPLIT);
+      const out: ReactNode[] = parts.map((part, i) => {
+        const marker = GROUNDING_MARKERS[part as keyof typeof GROUNDING_MARKERS];
+        if (marker) {
+          const Icon = marker.icon;
+          return (
             <span
-              key={`unverified-${index}-${i}`}
-              className="ml-0.5 mr-0.5 inline-flex items-center gap-0.5 rounded bg-destructive/15 px-1.5 py-0.5 align-baseline font-mono text-[0.75em] font-semibold text-destructive"
-              title="This claim was flagged by the grounding validator as not supported by any tool result or retrieved knowledge chunk."
+              key={`marker-${index}-${i}`}
+              className={cn(
+                "ml-0.5 mr-0.5 inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 align-baseline font-mono text-[0.75em] font-semibold",
+                marker.className,
+              )}
+              title={marker.title}
             >
-              <AlertTriangle className="h-3 w-3" aria-hidden="true" />
-              unverified
-            </span>,
+              <Icon className="h-3 w-3" aria-hidden="true" />
+              {marker.label}
+            </span>
           );
         }
+        return part ? <Fragment key={`txt-${index}-${i}`}>{part}</Fragment> : null;
       });
       return <Fragment key={`fragment-${index}`}>{out}</Fragment>;
     }
@@ -89,15 +118,15 @@ export function Markdown({
         components={{
           code: CodeBlock,
           pre: ({ children }) => <>{children}</>,
-          // Highlight [unverified] markers from the grounding validator
-          // wherever they appear in flowing text (paragraphs, list items,
-          // table cells, blockquotes).
-          p: ({ children }) => <p>{highlightUnverifiedMarkers(children)}</p>,
-          li: ({ children }) => <li>{highlightUnverifiedMarkers(children)}</li>,
-          td: ({ children }) => <td>{highlightUnverifiedMarkers(children)}</td>,
-          th: ({ children }) => <th>{highlightUnverifiedMarkers(children)}</th>,
+          // Highlight grounding markers (yellow [unverified] / red
+          // [unsupported]) wherever they appear in flowing text (paragraphs,
+          // list items, table cells, blockquotes).
+          p: ({ children }) => <p>{highlightGroundingMarkers(children)}</p>,
+          li: ({ children }) => <li>{highlightGroundingMarkers(children)}</li>,
+          td: ({ children }) => <td>{highlightGroundingMarkers(children)}</td>,
+          th: ({ children }) => <th>{highlightGroundingMarkers(children)}</th>,
           blockquote: ({ children }) => (
-            <blockquote>{highlightUnverifiedMarkers(children)}</blockquote>
+            <blockquote>{highlightGroundingMarkers(children)}</blockquote>
           ),
         }}
       >

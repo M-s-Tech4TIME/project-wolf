@@ -46,6 +46,22 @@ from app.wazuh.server_api import WazuhServerApiClient
 
 logger = structlog.get_logger(__name__)
 
+# Small local models (e.g. qwen3:4b) occasionally return an EMPTY final
+# message right after consuming tool results — the work succeeded but no
+# prose was emitted, surfacing to the user as a blank "(empty)" answer. When
+# that happens we re-prompt once, WITHOUT tools, to force a written answer
+# from the evidence already in the transcript. If even that comes back empty,
+# we show an honest fallback instead of a blank bubble.
+_SYNTHESIS_NUDGE = (
+    "You already have all the information needed from the tool results above. "
+    "Now write the final answer for the user in clear prose, based only on "
+    "those results. Do not call any tools."
+)
+_EMPTY_ANSWER_FALLBACK = (
+    "I gathered the data but wasn't able to compose a summary on this attempt. "
+    "Please ask again or rephrase your question."
+)
+
 
 class AgentAnswer(BaseModel):
     """The final output of an agent loop run."""
@@ -62,6 +78,7 @@ class AgentAnswer(BaseModel):
     # didn't run (no citations, empty answer, or judge call failed).
     grounding_supported: int | None = None
     grounding_unsupported: int | None = None
+    grounding_uncertain: int | None = None
     grounding_unverifiable: int | None = None
 
 
@@ -143,6 +160,10 @@ class AgentLoop:
         # with appropriate provenance tags.
         all_tool_results: list[dict[str, Any]] = []
         all_retrieved_chunks: list[dict[str, Any]] = []
+        # Failed tool calls (Slice 5.0b): surfaced to the grounding validator
+        # as negative evidence so fabricated specifics that should have come
+        # from a failed tool are flagged unsupported.
+        all_tool_failures: list[dict[str, Any]] = []
         total_input_tokens = 0
         total_output_tokens = 0
         tool_call_count = 0
@@ -228,15 +249,28 @@ class AgentLoop:
             )
 
             if not response.tool_calls:
+                final_content = response.content
+                if not final_content.strip():
+                    # Empty completion after a real run — re-prompt once
+                    # (no tools) to coax the written answer out of the model.
+                    retry = await self._synthesize_final(messages, loop_id=loop_id)
+                    if retry is not None:
+                        total_input_tokens += retry.input_tokens
+                        total_output_tokens += retry.output_tokens
+                        if retry.content.strip():
+                            final_content = retry.content
+                    if not final_content.strip():
+                        final_content = _EMPTY_ANSWER_FALLBACK
                 logger.info(
                     "agent_loop_completed",
                     loop_id=loop_id,
                     stop_reason="answer",
                     steps=step + 1,
                     tool_calls=tool_call_count,
+                    empty_recovered=not response.content.strip(),
                 )
                 answer = AgentAnswer(
-                    content=response.content,
+                    content=final_content,
                     citations=citations,
                     step_count=step + 1,
                     tool_call_count=tool_call_count,
@@ -250,6 +284,7 @@ class AgentLoop:
                     validator=grounding_validator,
                     tool_results=all_tool_results,
                     retrieved_chunks=all_retrieved_chunks,
+                    tool_failures=all_tool_failures,
                     db=db, ctx=ctx, event_callback=event_callback,
                 )
                 await _emit(event_callback, "answer", answer.model_dump(mode="json"))
@@ -290,9 +325,11 @@ class AgentLoop:
                         content=dispatch_result.result,
                     ))
                 else:
+                    error_msg = dispatch_result.error or "tool call failed"
+                    all_tool_failures.append({"name": call.name, "error": error_msg})
                     tool_results.append(ToolResult(
                         tool_call_id=call.id, name=call.name, content="",
-                        error=dispatch_result.error or "tool call failed",
+                        error=error_msg,
                     ))
 
             messages.append(Message(role=MessageRole.tool, tool_results=tool_results))
@@ -323,12 +360,34 @@ class AgentLoop:
             validator=grounding_validator,
             tool_results=all_tool_results,
             retrieved_chunks=all_retrieved_chunks,
+            tool_failures=all_tool_failures,
             db=db, ctx=ctx, event_callback=event_callback,
         )
         await _emit(event_callback, "answer", answer.model_dump(mode="json"))
         return answer
 
-    # ── Audit helpers ─────────────────────────────────────────────────────
+    # ── Recovery + audit helpers ──────────────────────────────────────────
+
+    async def _synthesize_final(
+        self, messages: list[Message], *, loop_id: str
+    ) -> ChatResponse | None:
+        """Re-prompt once (no tools) to recover from an empty final answer.
+
+        Returns the retry response, or None if the call itself failed. The
+        caller decides whether the recovered content is usable. Never raises —
+        recovery is best-effort; a failure just leaves the fallback message.
+        """
+        try:
+            nudge = [*messages, Message(role=MessageRole.user, content=_SYNTHESIS_NUDGE)]
+            # tools omitted → the model must write prose, not call a tool.
+            return await self.provider.chat(ChatRequest(messages=nudge))
+        except Exception as exc:
+            logger.warning(
+                "agent_loop_synthesis_retry_failed",
+                loop_id=loop_id,
+                exc_type=type(exc).__name__,
+            )
+            return None
 
     async def _finalize_answer(
         self,
@@ -337,6 +396,7 @@ class AgentLoop:
         validator: GroundingValidator | None,
         tool_results: list[dict[str, Any]],
         retrieved_chunks: list[dict[str, Any]],
+        tool_failures: list[dict[str, Any]] | None = None,
         db: AsyncSession,
         ctx: TenantContext,
         event_callback: EventCallback | None,
@@ -348,20 +408,23 @@ class AgentLoop:
         is returned unchanged. Counts are stamped onto the returned answer
         for the chat API + audit trail.
         """
+        tool_failures = tool_failures or []
         if validator is None or not answer.content.strip():
             return answer
-        if not answer.citations:
-            # No tools or chunks → nothing to verify against. Per doc 06,
-            # the validator is for grounding tool-/chunk-backed claims;
-            # an unsupported-claim flag on an answer with NO evidence
-            # would just say "you said something without evidence," which
-            # the empty-citations array already conveys.
+        if not answer.citations and not tool_failures:
+            # No successful tools/chunks AND nothing failed → nothing to
+            # verify against. Per doc 06, the validator grounds tool-/chunk-
+            # backed claims; with zero evidence the empty-citations array
+            # already conveys "no evidence." But if a tool FAILED (Slice
+            # 5.0b), we DO validate — that is exactly the case where the
+            # model tends to fabricate specifics to fill the gap.
             return answer
 
         validation = await validator.validate(
             answer.content,
             tool_results=tool_results,
             retrieved_chunks=retrieved_chunks,
+            tool_failures=tool_failures,
             loop_id=answer.loop_id,
         )
 
@@ -373,6 +436,7 @@ class AgentLoop:
                 "ran": validation.ran,
                 "supported": validation.supported_count,
                 "unsupported": validation.unsupported_count,
+                "uncertain": validation.uncertain_count,
                 "unverifiable": validation.unverifiable_count,
                 "total_claims": len(validation.claims),
             },
@@ -382,6 +446,7 @@ class AgentLoop:
             "ran": validation.ran,
             "supported": validation.supported_count,
             "unsupported": validation.unsupported_count,
+            "uncertain": validation.uncertain_count,
             "unverifiable": validation.unverifiable_count,
         })
 
@@ -389,6 +454,7 @@ class AgentLoop:
             "content": validation.annotated_answer,
             "grounding_supported": validation.supported_count if validation.ran else None,
             "grounding_unsupported": validation.unsupported_count if validation.ran else None,
+            "grounding_uncertain": validation.uncertain_count if validation.ran else None,
             "grounding_unverifiable": validation.unverifiable_count if validation.ran else None,
         })
 

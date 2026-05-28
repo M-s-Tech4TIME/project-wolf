@@ -145,13 +145,70 @@ async def test_validate_marks_unsupported_claim_inline() -> None:
     assert result.ran is True
     assert result.supported_count == 1
     assert result.unsupported_count == 1
-    # The marker lands AFTER the unsupported sentence, BEFORE the supported one.
-    assert "[unverified]" in result.annotated_answer
+    # unsupported → RED [unsupported] marker (Slice 5.0b).
+    assert "[unsupported]" in result.annotated_answer
+    assert "[unverified]" not in result.annotated_answer
     # And only the suspect sentence gets it.
     supported_idx = result.annotated_answer.find("Rule 5712 fires on 8 SSH failures")
     suspect_idx = result.annotated_answer.find("Block the source IP")
-    marker_idx = result.annotated_answer.find("[unverified]")
+    marker_idx = result.annotated_answer.find("[unsupported]")
     assert marker_idx > suspect_idx > supported_idx
+
+
+@pytest.mark.asyncio
+async def test_validate_marks_uncertain_claim_yellow() -> None:
+    """uncertain → yellow [unverified] marker, NOT red (Slice 5.0b)."""
+    provider = _StubProvider(json.dumps([
+        {"index": 0, "verdict": "supported", "reason": "in evidence"},
+        {"index": 1, "verdict": "uncertain", "reason": "general knowledge"},
+    ]))
+    v = GroundingValidator(provider)
+    answer = (
+        "Rule 5712 fires on 8 SSH failures. "
+        "Brute-force attacks are a common attack vector."
+    )
+    result = await v.validate(
+        answer,
+        tool_results=[{"name": "get_rule_definition", "content": {"id": 5712}}],
+        retrieved_chunks=[],
+    )
+    assert result.ran is True
+    assert result.uncertain_count == 1
+    assert result.unsupported_count == 0
+    assert "[unverified]" in result.annotated_answer
+    assert "[unsupported]" not in result.annotated_answer
+
+
+@pytest.mark.asyncio
+async def test_failed_tool_makes_evidence_and_flags_fabrication() -> None:
+    """A failed tool is negative evidence; the validator still runs and a
+    fabricated specific is judged unsupported (Slice 5.0b hardening)."""
+    provider = _StubProvider(json.dumps([
+        {"index": 0, "verdict": "unsupported", "reason": "tool failed, no data"},
+    ]))
+    v = GroundingValidator(provider)
+    result = await v.validate(
+        "There were 1,478 alerts in the last six months.",
+        tool_results=[],
+        retrieved_chunks=[],
+        tool_failures=[{"name": "count_alerts_by_severity", "error": "input too short"}],
+    )
+    # Evidence was non-empty (the failure note), so the judge ran.
+    assert provider.last_request is not None
+    assert result.ran is True
+    assert result.unsupported_count == 1
+    assert "[unsupported]" in result.annotated_answer
+
+
+def test_build_evidence_includes_failure_notes() -> None:
+    ev = GroundingValidator.build_evidence(
+        tool_results=[],
+        retrieved_chunks=[],
+        tool_failures=[{"name": "count_alerts_by_severity", "error": "boom"}],
+    )
+    assert "TOOL_FAILED" in ev
+    assert "count_alerts_by_severity" in ev
+    assert "boom" in ev
 
 
 @pytest.mark.asyncio
@@ -261,19 +318,22 @@ async def test_validate_clamps_claim_count() -> None:
 # ─── annotate() — unit-level ────────────────────────────────────────────────
 
 
-def test_annotate_inserts_marker_only_on_unsupported() -> None:
+def test_annotate_inserts_severity_markers_per_verdict() -> None:
     from app.grounding.validator import ClaimVerdict
 
-    answer = "Claim one. Claim two. Claim three."
+    answer = "Claim one. Claim two. Claim three. Claim four."
     verdicts = [
         ClaimVerdict(claim="Claim one.", verdict="supported"),
         ClaimVerdict(claim="Claim two.", verdict="unsupported"),
-        ClaimVerdict(claim="Claim three.", verdict="unverifiable"),
+        ClaimVerdict(claim="Claim three.", verdict="uncertain"),
+        ClaimVerdict(claim="Claim four.", verdict="unverifiable"),
     ]
     out = GroundingValidator._annotate(answer, verdicts)
-    assert "Claim one. [unverified]" not in out
-    assert "Claim two. [unverified]" in out
-    assert "Claim three. [unverified]" not in out
+    assert "Claim one. [" not in out  # supported → no marker
+    assert "Claim two. [unsupported]" in out  # red
+    assert "Claim three. [unverified]" in out  # yellow caution
+    # unverifiable (preamble) gets nothing
+    assert "Claim four. [" not in out
 
 
 def test_annotate_no_unsupported_returns_original() -> None:
@@ -296,4 +356,5 @@ def test_validation_result_default_state() -> None:
     assert r.ran is False
     assert r.supported_count == 0
     assert r.unsupported_count == 0
+    assert r.uncertain_count == 0
     assert r.unverifiable_count == 0

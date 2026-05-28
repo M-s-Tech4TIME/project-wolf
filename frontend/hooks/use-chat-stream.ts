@@ -203,6 +203,7 @@ export function useChatStream(): UseChatStream {
               completed_at: completedAt,
               grounding_supported: asNullableNumber(data.grounding_supported),
               grounding_unsupported: asNullableNumber(data.grounding_unsupported),
+              grounding_uncertain: asNullableNumber(data.grounding_uncertain),
               grounding_unverifiable: asNullableNumber(data.grounding_unverifiable),
             };
             setExchange(completed);

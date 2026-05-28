@@ -105,36 +105,52 @@ function CompletedExchange({
  * (no citations / judge failed) — counts are all `null` in that case.
  */
 function GroundingBadge({ exchange }: { exchange: ChatExchange }) {
-  const { grounding_supported, grounding_unsupported, grounding_unverifiable } =
-    exchange;
+  const {
+    grounding_supported,
+    grounding_unsupported,
+    grounding_uncertain,
+    grounding_unverifiable,
+  } = exchange;
   if (
     grounding_supported === null &&
     grounding_unsupported === null &&
+    grounding_uncertain === null &&
     grounding_unverifiable === null
   ) {
     return null;
   }
   const supported = grounding_supported ?? 0;
   const unsupported = grounding_unsupported ?? 0;
+  const uncertain = grounding_uncertain ?? 0;
   const unverifiable = grounding_unverifiable ?? 0;
   const hasUnsupported = unsupported > 0;
-  const Icon = hasUnsupported ? ShieldAlert : ShieldCheck;
+  const hasUncertain = uncertain > 0;
+  // Severity ladder: red (unsupported) > amber (uncertain) > green (clean).
+  const Icon = hasUnsupported || hasUncertain ? ShieldAlert : ShieldCheck;
+  const variant = hasUnsupported ? "destructive" : "outline";
+  const amber =
+    !hasUnsupported && hasUncertain
+      ? "border-amber-400/50 bg-amber-400/15 text-amber-700 dark:text-amber-400"
+      : "";
   return (
     <>
       <span>·</span>
       <Badge
-        variant={hasUnsupported ? "destructive" : "secondary"}
-        className="gap-1"
+        variant={variant}
+        className={`gap-1 ${amber}`}
         title={
-          `Grounding validator: ${supported} supported claim${supported === 1 ? "" : "s"}, ` +
-          `${unsupported} unsupported, ${unverifiable} unverifiable. ` +
+          `Grounding validator: ${supported} supported, ` +
+          `${uncertain} unverified (caution), ${unsupported} unsupported, ` +
+          `${unverifiable} non-factual. ` +
           (hasUnsupported
-            ? "Look for [unverified] markers inline in the answer."
-            : "All factual claims trace back to a tool result or retrieved chunk.")
+            ? "Red [unsupported] markers flag claims that contradict or are absent from the evidence."
+            : hasUncertain
+              ? "Yellow [unverified] markers flag claims Wolf could not verify from the evidence used."
+              : "All factual claims trace back to a tool result or retrieved chunk.")
         }
       >
         <Icon className="h-3 w-3" />
-        grounding {supported}✓ {unsupported}✗ {unverifiable}?
+        grounding {supported}✓ {uncertain}⚠ {unsupported}✗
       </Badge>
     </>
   );

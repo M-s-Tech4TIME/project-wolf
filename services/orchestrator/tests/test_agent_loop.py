@@ -190,6 +190,52 @@ async def test_loop_returns_immediate_answer_when_no_tool_calls(
     assert len(rows) == 1
 
 
+# ─── Test: empty-answer recovery (Slice 5.0b reliability) ────────────────────
+
+
+@pytest.mark.asyncio
+async def test_loop_recovers_empty_answer_via_synthesis_retry(
+    db: AsyncSession, tenant_ctx: TenantContext
+) -> None:
+    """An empty final answer triggers one no-tools re-prompt that recovers."""
+    provider = MockProvider([_response(""), _response("Recovered summary.")])
+    loop = AgentLoop(provider=provider, strategy=FrontierStrategy())
+    os_client, server_api = _fake_clients()
+
+    answer = await loop.run(
+        question="hello", ctx=tenant_ctx, db=db,
+        opensearch=os_client, server_api=server_api,
+    )
+    assert answer.content == "Recovered summary."
+    assert provider.call_count == 2  # original + one synthesis retry
+    # The retry must omit tools so the model writes prose, not a tool call.
+    assert provider.last_request is not None
+    assert not provider.last_request.tools
+    # Retry tokens are accounted on top of the first call.
+    assert answer.input_tokens == 20
+    assert answer.output_tokens == 40
+
+
+@pytest.mark.asyncio
+async def test_loop_empty_answer_falls_back_when_retry_also_empty(
+    db: AsyncSession, tenant_ctx: TenantContext
+) -> None:
+    """If the recovery re-prompt is also empty, show an honest message, never blank."""
+    from app.agent.loop import _EMPTY_ANSWER_FALLBACK
+
+    provider = MockProvider([_response(""), _response("")])
+    loop = AgentLoop(provider=provider, strategy=FrontierStrategy())
+    os_client, server_api = _fake_clients()
+
+    answer = await loop.run(
+        question="hello", ctx=tenant_ctx, db=db,
+        opensearch=os_client, server_api=server_api,
+    )
+    assert answer.content == _EMPTY_ANSWER_FALLBACK
+    assert answer.content.strip()  # never blank
+    assert provider.call_count == 2
+
+
 # ─── Test: tool call → tool result → final answer ────────────────────────────
 
 

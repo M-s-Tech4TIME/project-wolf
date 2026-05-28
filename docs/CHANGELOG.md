@@ -49,6 +49,66 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-05-28 — Slice 5.0b: grounding yellow vs red + reliability hardening
+
+**Session type:** claude-code
+**Phase:** Phase 5 prep — stabilization slices (5.0b)
+**Duration:** ~2 h (incl. live diagnosis of GPU thrash + Claude-side self-validation)
+**Branch / commit:** `main` — starting commit `755e786`, this entry's commit pending.
+
+### What we did
+- **Grounding taxonomy 3 → 4 verdicts** (`validator.py`):
+  `supported` (no marker), `unverifiable` (no marker — preamble/transitions),
+  `uncertain` → yellow `[unverified]` marker, `unsupported` → red
+  `[unsupported]` marker. Judge prompt now emphasises that any fabricated
+  *specific* (count/ID/name/timestamp) is **unsupported, never uncertain**.
+- **Fabrication hardening:** failed tool calls are now surfaced to the judge
+  as explicit `[TOOL_FAILED i: name]` negative evidence, and the validator
+  runs even when the only "evidence" is a tool failure — so claims that
+  should have come from a failed tool get judged unsupported instead of
+  slipping through unflagged. Threaded `all_tool_failures` accumulator
+  through `agent/loop.py` → `_finalize_answer` → `validator.validate`.
+- **`grounding_uncertain` count** threaded loop → API response → frontend
+  types/stream hook → badge + tooltip.
+- **Frontend rendering**: yellow `[unverified]` chip (amber, `Info` icon) for
+  caution; red `[unsupported]` chip (destructive, triangle) for contradicted.
+  `GroundingBadge` now shows `{sup}✓ {uncertain}⚠ {unsup}✗` with severity
+  ladder: red > amber > green.
+- **Reliability fix (Fix A) — empty-answer recovery:** `qwen3:4b`
+  occasionally returns empty content right after tool results. The loop now
+  re-prompts ONCE without tools (`_synthesize_final`) to coax a written
+  answer from the evidence already in the transcript; if even that comes
+  back empty, an honest fallback message is shown instead of a blank "(empty)"
+  bubble. +2 loop tests cover both branches.
+
+### What we decided
+- **Keep `qwen3:8b` as the grounding judge** (Fix B). On this 6 GB GPU it
+  can't coexist with `qwen3:4b` (chat) so Ollama swaps them on every
+  grounding call — each first answer is slow (~2-3 min cold), and the
+  previous "(empty)" + `ReadTimeout` came from that thrash. User chose
+  judge quality over latency and asked for a fresh GPU/RAM reset before
+  every test cycle. Full rationale: [ADR 0015](decisions/0015-grounding-yellow-vs-red-and-judge-on-constrained-gpu.md).
+- **New per-slice workflow:** before any test, RESET (stop orchestrator +
+  `ollama stop <model>` to free GPU); Claude self-validates via direct API
+  calls; RESET again; only then hand over for manual web-test.
+
+### What broke / what we discovered
+- Live diagnosis: ReadTimeout was the *chat* call, not the judge call —
+  the chat model had been evicted from the GPU by a previous turn's 8b
+  judge load, and the cold reload exceeded the (already generous) 300s
+  client timeout. Root cause is GPU memory pressure, not timeout value.
+- The single self-validation answer ("Nine SSH brute-force attempts… from
+  IP 192.168.245.1 … `attacker_user_1` through `attacker_user_12`") got a
+  red `[unsupported]` despite the specifics being in the tool result —
+  likely evidence truncation at 2 KB + judge over-strictness on the
+  citation line. Documented as a known judge-quality nit; not a stability
+  bug. To iterate on the judge prompt or evidence size if it persists.
+
+### What's next
+- Slice 5.0c: UI overhaul — persistent + resizable + text-wrapping Evidence
+  panel; collapsible Conversations sidebar; fixed message input; chat
+  vertical scroll; session-id chip → user-avatar dropdown.
+
 ## 2026-05-28 — Slice 5.0a: pre-Phase-5 stabilization (alert search + time handling)
 
 **Session type:** claude-code

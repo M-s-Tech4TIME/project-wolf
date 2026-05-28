@@ -100,6 +100,7 @@ class ChatResponseBody(BaseModel):
     # didn't run (no citations or judge call failed).
     grounding_supported: int | None = None
     grounding_unsupported: int | None = None
+    grounding_uncertain: int | None = None
     grounding_unverifiable: int | None = None
 
 
@@ -178,6 +179,7 @@ async def chat(
         model_id=capability.model_id,
         grounding_supported=answer.grounding_supported,
         grounding_unsupported=answer.grounding_unsupported,
+        grounding_uncertain=answer.grounding_uncertain,
         grounding_unverifiable=answer.grounding_unverifiable,
     )
 
