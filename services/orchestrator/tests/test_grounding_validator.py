@@ -228,6 +228,104 @@ def test_build_evidence_per_source_limit_fits_multi_hit_results() -> None:
     assert x_run > 3500
 
 
+class _ScriptedProvider:
+    """Stub that returns a different canned response on each successive call."""
+
+    def __init__(self, scripted_contents: list[str]) -> None:
+        self._scripted = list(scripted_contents)
+        self.call_count = 0
+        self.last_request: ChatRequest | None = None
+
+    def capability(self) -> Any:
+        class _C:
+            model_id = "stub"
+            provider = "stub"
+
+        return _C()
+
+    async def chat(self, request: ChatRequest) -> ChatResponse:
+        self.last_request = request
+        idx = min(self.call_count, len(self._scripted) - 1)
+        content = self._scripted[idx]
+        self.call_count += 1
+        return ChatResponse(
+            content=content, tool_calls=[],
+            input_tokens=0, output_tokens=0,
+            stop_reason="stop", model_id="stub",
+        )
+
+
+@pytest.mark.asyncio
+async def test_partial_judge_response_retries_and_recovers() -> None:
+    """qwen3:8b sometimes returns N-1 verdicts for N claims.
+
+    The validator retries the judge once; the second call covers the
+    missing claim. No claim should default to uncertain when the retry
+    succeeds. (Slice 5.0b.2)
+    """
+    first_partial = json.dumps([
+        {"index": 1, "verdict": "supported", "reason": "in evidence"},
+    ])
+    second_covers_missing = json.dumps([
+        {"index": 0, "verdict": "supported", "reason": "in evidence too"},
+    ])
+    provider = _ScriptedProvider([first_partial, second_covers_missing])
+    v = GroundingValidator(provider)
+    result = await v.validate(
+        "Claim alpha. Claim beta.",
+        tool_results=[{"name": "x", "content": "y"}],
+        retrieved_chunks=[],
+    )
+    assert provider.call_count == 2  # original + retry
+    assert result.ran is True
+    assert result.supported_count == 2
+    assert result.uncertain_count == 0  # nothing fell through to the fallback
+
+
+@pytest.mark.asyncio
+async def test_partial_judge_response_falls_back_to_uncertain() -> None:
+    """If retry is ALSO partial, missing claims default to uncertain
+    (yellow caution) — never silently to no-chip unverifiable."""
+    first_partial = json.dumps([
+        {"index": 1, "verdict": "supported", "reason": "ok"},
+    ])
+    second_also_partial = json.dumps([])  # nothing new
+    provider = _ScriptedProvider([first_partial, second_also_partial])
+    v = GroundingValidator(provider)
+    result = await v.validate(
+        "Claim alpha. Claim beta.",
+        tool_results=[{"name": "x", "content": "y"}],
+        retrieved_chunks=[],
+    )
+    assert provider.call_count == 2
+    assert result.ran is True
+    assert result.supported_count == 1
+    # The unjudged claim becomes uncertain (yellow), NOT silent unverifiable.
+    assert result.uncertain_count == 1
+    assert result.unverifiable_count == 0
+    # Reason carries the diagnostic for the audit trail.
+    unjudged = next(c for c in result.claims if c.verdict == "uncertain")
+    assert "judge returned no verdict" in unjudged.reason
+
+
+@pytest.mark.asyncio
+async def test_full_judge_response_does_not_retry() -> None:
+    """Happy path: every claim was judged → no second call to the judge."""
+    full = json.dumps([
+        {"index": 0, "verdict": "supported", "reason": "a"},
+        {"index": 1, "verdict": "supported", "reason": "b"},
+    ])
+    provider = _ScriptedProvider([full])
+    v = GroundingValidator(provider)
+    result = await v.validate(
+        "Claim alpha. Claim beta.",
+        tool_results=[{"name": "x", "content": "y"}],
+        retrieved_chunks=[],
+    )
+    assert provider.call_count == 1  # no retry
+    assert result.supported_count == 2
+
+
 def test_validator_prompt_covers_meta_commentary_and_paraphrase() -> None:
     """Sanity-check that the Slice 5.0b.1 prompt sharpenings are in place.
 

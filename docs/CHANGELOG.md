@@ -49,6 +49,48 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-05-28 — Slice 5.0b.2: judge retry-on-partial + uncertain fallback
+
+**Session type:** claude-code
+**Phase:** Phase 5 prep — patch on top of 5.0b.1
+**Duration:** ~30 min
+**Branch / commit:** `main` — starting commit `849a0f8`, this entry's commit pending.
+
+### What we did
+- User web-tested 5.0b.1. The count queries were clean green; the SSH
+  brute-force answer showed only one red `[unsupported]` on the citation
+  line. Investigation revealed the OTHER claim (the brute-force summary)
+  had silently defaulted to `unverifiable` with no chip because qwen3:8b
+  returned a **partial** JSON verdict array — only one verdict for two
+  claims. The validator code defaulted missing claims to `unverifiable`,
+  which renders as no chip, hiding the issue from the user.
+- Implemented Option B (user-chosen) in
+  [validator.py](../services/orchestrator/app/grounding/validator.py):
+    - Extracted the per-claim verdict merge into a `_merge_verdicts`
+      helper so successive calls can fill in missing indices without
+      overwriting existing verdicts.
+    - When the judge returns fewer verdicts than claims, retry the call
+      ONCE. Logs `grounding_judge_partial_response` so operators can see
+      the rate of partial responses.
+    - **Fallback (Option A semantics):** any claim still missing after
+      the retry now defaults to `uncertain` (yellow caution chip), not
+      `unverifiable` (no chip). The user always sees a signal that the
+      validator wasn't sure about that claim.
+- +3 tests: retry recovers missing, retry-also-partial falls back to
+  uncertain, full first response triggers no retry.
+
+### What we discovered
+- Ground-truth probe of the live indexer for the brute-force usernames:
+  actual users in 9 hits are `attacker_user_1, 2, 3, 4, 5, 6, 8, 10, 12`
+  — Wolf's "1 through 10" framing is misleading (missing 7/9, includes
+  12). With the retry+fallback, this claim should no longer go silently
+  unclassified — it'll either get a real red verdict on the retry or
+  a yellow uncertain fallback.
+
+### What's next
+- Hand 5.0b.2 to user for re-test.
+- Then Slice 5.0c: UI overhaul + four-chip verdict rename.
+
 ## 2026-05-28 — Slice 5.0b.1: judge-prompt iteration after live 5.0b test
 
 **Session type:** claude-code

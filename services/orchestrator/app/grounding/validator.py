@@ -273,26 +273,45 @@ class GroundingValidator:
             )
             return result
 
-        # Map verdicts back to claims by index; default to unverifiable
-        # for claims the judge skipped.
+        # Map verdicts back to claims by index.
         per_claim: dict[int, ClaimVerdict] = {}
-        for v in verdicts:
-            idx = v.get("index")
-            if not isinstance(idx, int) or idx < 0 or idx >= len(claims):
-                continue
-            verdict = str(v.get("verdict", "unverifiable")).lower()
-            if verdict not in _VALID_VERDICTS:
-                verdict = "unverifiable"
-            per_claim[idx] = ClaimVerdict(
-                claim=claims[idx],
-                verdict=verdict,
-                reason=str(v.get("reason", ""))[:200],
-            )
+        self._merge_verdicts(verdicts, claims, per_claim)
 
-        for i, claim in enumerate(claims):
-            verdict = per_claim.get(
-                i, ClaimVerdict(claim=claim, verdict="unverifiable", reason="")
+        # qwen3:8b occasionally returns a partial JSON array (fewer verdicts
+        # than claims). When that happens, retry the judge call once — its
+        # output is non-deterministic enough at temp=0 that a second call
+        # often covers the missing claims (Slice 5.0b.2). After the retry,
+        # any STILL-missing claim is filled with `uncertain` (yellow) rather
+        # than `unverifiable` (silent / no chip) — the user should always
+        # see a signal when the validator couldn't classify something.
+        missing = [i for i in range(len(claims)) if i not in per_claim]
+        if missing:
+            logger.info(
+                "grounding_judge_partial_response",
+                loop_id=loop_id,
+                missing=len(missing),
+                total=len(claims),
             )
+            try:
+                retry_verdicts = await self._judge(evidence, claims)
+            except Exception as exc:
+                logger.warning(
+                    "grounding_judge_retry_failed",
+                    loop_id=loop_id,
+                    error_type=type(exc).__name__,
+                )
+            else:
+                self._merge_verdicts(retry_verdicts, claims, per_claim)
+        for i in range(len(claims)):
+            if i not in per_claim:
+                per_claim[i] = ClaimVerdict(
+                    claim=claims[i],
+                    verdict="uncertain",
+                    reason="judge returned no verdict for this claim",
+                )
+
+        for i in range(len(claims)):
+            verdict = per_claim[i]
             result.claims.append(verdict)
             if verdict.verdict == "supported":
                 result.supported_count += 1
@@ -343,6 +362,34 @@ class GroundingValidator:
         if not isinstance(parsed, list):
             raise ValueError(f"Expected JSON array, got {type(parsed).__name__}")
         return parsed
+
+    @staticmethod
+    def _merge_verdicts(
+        raw: list[dict[str, Any]],
+        claims: list[str],
+        into: dict[int, ClaimVerdict],
+    ) -> None:
+        """Map raw judge-response verdicts onto claim indices, additively.
+
+        Skips out-of-range indices and unknown verdict strings (falls back
+        to `unverifiable`). The first valid verdict for each index wins —
+        a later retry merge cannot overwrite the original judgement, only
+        fill in indices the first call missed.
+        """
+        for v in raw:
+            idx = v.get("index")
+            if not isinstance(idx, int) or idx < 0 or idx >= len(claims):
+                continue
+            if idx in into:
+                continue  # don't overwrite a verdict from an earlier call
+            verdict = str(v.get("verdict", "unverifiable")).lower()
+            if verdict not in _VALID_VERDICTS:
+                verdict = "unverifiable"
+            into[idx] = ClaimVerdict(
+                claim=claims[idx],
+                verdict=verdict,
+                reason=str(v.get("reason", ""))[:200],
+            )
 
     @staticmethod
     def _annotate(answer: str, verdicts: list[ClaimVerdict]) -> str:
