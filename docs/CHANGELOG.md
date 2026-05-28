@@ -49,6 +49,52 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-05-28 — Slice 5.0b.3: retry-on-timeout + bigger judge client ceiling
+
+**Session type:** claude-code
+**Phase:** Phase 5 prep — patch on top of 5.0b.2
+**Duration:** ~30 min
+**Branch / commit:** `main` — starting commit `02382f9`, this entry's commit pending.
+
+### What we did
+- User generated a real Hydra SSH brute-force against `linux-test-agent`
+  (agent 001) — 59 alerts in 24 h across rule ids 5503, 5710, 5712, 5758,
+  5760, 5763, 2501, 2502. Excellent test set for grounding against fresh,
+  rich evidence.
+- Ran Wolf against it. Wolf produced a substantive 4 KB answer correctly
+  identifying IP 192.168.245.1 → user `wolf`, 44 attempts, rule families
+  — **but the grounding judge `ReadTimeout`-ed** at 300 s. Validator
+  returned `ran=False` and no chips/badge appeared at all. The cumulative
+  cold-load of qwen3:4b (chat) + the cold-swap to qwen3:8b (judge) on a
+  6 GB GPU pushed the judge HTTP call past the existing ceiling.
+- 5.0b.2's partial-response retry didn't help here: the FIRST call never
+  came back, so there was nothing to merge.
+- Slice 5.0b.3 patch:
+    - Bump `OllamaAdapter` httpx timeout `300 s → 600 s` so cold loads
+      have realistic headroom on this hardware.
+    - In `validator.validate()`, retry the **first** judge call once on
+      any exception (ReadTimeout, transient Ollama errors). Logs
+      `grounding_judge_first_attempt_failed` on attempt 0 and
+      `grounding_judge_failed` if attempt 1 also fails. Combined with
+      the existing partial-response retry below, the validator now
+      persists through both failure modes.
+- +1 test (`_FlakeyProvider` scripts a Timeout-then-success sequence;
+  asserts the validator recovers on the second call).
+
+### What we discovered (the headline finding)
+Self-validation against the same Hydra-attack prompt on 5.0b.3:
+`grounding: sup=4 unsup=2 unc=0 unverif=0` — **all six claims judged,
+zero silent uncertain fallbacks**, total wall-clock 2 m 53 s. The
+retry didn't even need to trigger; the bigger timeout alone was enough
+to let the judge complete. The 5.0b.2 partial-response retry remains
+in place for cases where it does. Together: 5.0b → 5.0b.1 → 5.0b.2 →
+5.0b.3 has gone from "everything red, sometimes silent, sometimes
+times out" to "all six claims classified on real attack data."
+
+### What's next
+- Hand 5.0b.3 to user for re-test against the Hydra alerts.
+- Then Slice 5.0c.
+
 ## 2026-05-28 — Slice 5.0b.2: judge retry-on-partial + uncertain fallback
 
 **Session type:** claude-code

@@ -105,7 +105,12 @@ class OllamaAdapter:
         self._base_url = base_url.rstrip("/")
         self._client = client or httpx.AsyncClient(
             base_url=self._base_url,
-            timeout=300.0,  # local inference can be slow
+            # 600s: generous for cold-loads on memory-pressured GPUs where
+            # Ollama must evict another model first (e.g. qwen3:8b judge
+            # swapping with qwen3:4b chat on a 6 GB card — see ADR 0015).
+            # Warm inference takes seconds; this ceiling only kicks in when
+            # the model is genuinely being read off disk. Slice 5.0b.3.
+            timeout=600.0,
         )
         self._descriptor = default_descriptor_for(model_id, "ollama")
 

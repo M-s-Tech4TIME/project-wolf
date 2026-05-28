@@ -308,6 +308,53 @@ async def test_partial_judge_response_falls_back_to_uncertain() -> None:
     assert "judge returned no verdict" in unjudged.reason
 
 
+class _FlakeyProvider:
+    """Stub that returns a scripted mix of content strings AND exceptions
+    so we can simulate a transient first-call failure (Slice 5.0b.3)."""
+
+    def __init__(self, script: list[str | Exception]) -> None:
+        self._script = list(script)
+        self.call_count = 0
+
+    def capability(self) -> Any:
+        class _C:
+            model_id = "stub"
+            provider = "stub"
+
+        return _C()
+
+    async def chat(self, request: ChatRequest) -> ChatResponse:
+        idx = min(self.call_count, len(self._script) - 1)
+        item = self._script[idx]
+        self.call_count += 1
+        if isinstance(item, Exception):
+            raise item
+        return ChatResponse(
+            content=item, tool_calls=[],
+            input_tokens=0, output_tokens=0,
+            stop_reason="stop", model_id="stub",
+        )
+
+
+@pytest.mark.asyncio
+async def test_judge_recovers_when_first_call_raises() -> None:
+    """A transient first-call failure (e.g. ReadTimeout on cold model) is
+    retried once; the warm second call succeeds. Slice 5.0b.3 persistence."""
+    second_ok = json.dumps([
+        {"index": 0, "verdict": "supported", "reason": "ok"},
+    ])
+    provider = _FlakeyProvider([RuntimeError("simulated timeout"), second_ok])
+    v = GroundingValidator(provider)
+    result = await v.validate(
+        "Rule 5712 fires on 8 SSH failures.",
+        tool_results=[{"name": "x", "content": "y"}],
+        retrieved_chunks=[],
+    )
+    assert provider.call_count == 2
+    assert result.ran is True
+    assert result.supported_count == 1
+
+
 @pytest.mark.asyncio
 async def test_full_judge_response_does_not_retry() -> None:
     """Happy path: every claim was judged → no second call to the judge."""

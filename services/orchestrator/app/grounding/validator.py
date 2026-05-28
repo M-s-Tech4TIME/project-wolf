@@ -262,15 +262,28 @@ class GroundingValidator:
             logger.info("grounding_skipped", reason="no_evidence", loop_id=loop_id)
             return result
 
-        try:
-            verdicts = await self._judge(evidence, claims)
-        except Exception as exc:
-            logger.warning(
-                "grounding_judge_failed",
-                error_type=type(exc).__name__,
-                error_msg=str(exc) or "(no message)",
-                loop_id=loop_id,
-            )
+        # Try the judge up to twice. The first call can fail (ReadTimeout
+        # on a cold-loading judge model, transient Ollama errors); the
+        # retry usually lands on a now-warm model. Same persistence
+        # philosophy as the partial-response retry below. Slice 5.0b.3.
+        verdicts: list[dict[str, Any]] | None = None
+        for attempt in (0, 1):
+            try:
+                verdicts = await self._judge(evidence, claims)
+                break
+            except Exception as exc:
+                level_logger = logger.info if attempt == 0 else logger.warning
+                level_logger(
+                    "grounding_judge_failed" if attempt == 1
+                    else "grounding_judge_first_attempt_failed",
+                    error_type=type(exc).__name__,
+                    error_msg=str(exc) or "(no message)",
+                    attempt=attempt + 1,
+                    loop_id=loop_id,
+                )
+        if verdicts is None:
+            # Both attempts failed — return the un-annotated answer rather
+            # than fake verdicts. The caller surfaces this as ran=False.
             return result
 
         # Map verdicts back to claims by index.
