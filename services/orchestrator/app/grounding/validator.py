@@ -51,20 +51,28 @@ logger = structlog.get_logger(__name__)
 # Imperfect but works on technical English declarative answers.
 _SENTENCE_SPLIT = re.compile(r"(?<=[a-zA-Z][.!?])\s+(?=[A-Z\d])")
 
-# Two inline markers with distinct severities (Slice 5.0b). The frontend
-# renders the first as a yellow "caution" chip and the second as a red chip.
-#   [unverified]  — yellow: a factual claim the evidence neither confirms nor
-#                   contradicts (general knowledge, inference, "couldn't verify").
-#   [unsupported] — red: a specific factual claim that contradicts the evidence
-#                   or fabricates specifics (counts, IDs, names) absent from it.
+# Four inline markers, one per verdict (Slice 5.0c-a). The frontend
+# renders each as a distinct chip so the analyst sees a signal for every
+# claim, not only the worrying ones.
+#   [verified]    — green: directly backed by tool result / knowledge chunk.
+#   [unverified]  — yellow ("Uncertain"): factual but evidence neither confirms
+#                   nor contradicts (general knowledge, inference).
+#   [unsupported] — red ("Not Verified"): contradicts evidence or fabricates
+#                   specifics (counts, IDs, names) absent from it.
+#   [non-factual] — muted yellow: no factual content to check (preamble,
+#                   transition, opinion, instruction).
+MARKER_VERIFIED = "[verified]"
 MARKER_UNVERIFIED = "[unverified]"
 MARKER_UNSUPPORTED = "[unsupported]"
+MARKER_NON_FACTUAL = "[non-factual]"
 
 _VALID_VERDICTS = {"supported", "unsupported", "uncertain", "unverifiable"}
-# Which verdicts get which inline marker. supported/unverifiable get none.
+# Every verdict now gets a marker — full visibility per user request.
 _VERDICT_MARKER = {
+    "supported": MARKER_VERIFIED,
     "uncertain": MARKER_UNVERIFIED,
     "unsupported": MARKER_UNSUPPORTED,
+    "unverifiable": MARKER_NON_FACTUAL,
 }
 
 # Cap on characters per evidence source fed to the judge (Slice 5.0b.1).

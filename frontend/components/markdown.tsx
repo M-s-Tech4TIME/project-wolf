@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Info } from "lucide-react";
+import { AlertTriangle, Check, Info, MessageCircle } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 import { Children, Fragment, isValidElement } from "react";
 import ReactMarkdown from "react-markdown";
@@ -9,34 +9,56 @@ import remarkGfm from "remark-gfm";
 import { cn } from "@/lib/utils";
 
 /**
- * Two grounding markers with distinct severities (Slice 5.0b):
- *   [unverified]  — yellow "caution": a factual claim the evidence neither
- *                   confirms nor contradicts (general knowledge / inference).
- *   [unsupported] — red: a specific claim that contradicts the evidence or
- *                   fabricates specifics absent from it.
- * Order matters only for the split regex; both are matched in one pass.
+ * Four grounding markers, one per verdict (Slice 5.0c-a):
+ *   [verified]    — green: directly backed by tool result / knowledge chunk.
+ *   [unverified]  — amber "Uncertain": factual but evidence neither confirms
+ *                   nor contradicts (general knowledge / inference).
+ *   [unsupported] — red "Not Verified": contradicts evidence or fabricates
+ *                   specifics absent from it.
+ *   [non-factual] — muted yellow: no factual content to check (preamble,
+ *                   transition, opinion, instruction).
+ * Distinguished from each other by a unique icon AND a unique colour
+ * shade — the two yellows (Uncertain amber vs Non-factual muted) carry
+ * different icons (Info vs MessageCircle) so they're not confusable at
+ * a glance.
  */
 const GROUNDING_MARKERS = {
-  "[unsupported]": {
-    label: "unsupported",
-    className:
-      "bg-destructive/15 text-destructive",
+  "[verified]": {
+    label: "Verified",
+    className: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
     title:
-      "Flagged by the grounding validator as UNSUPPORTED — this specific claim contradicts, or is absent from, every tool result and retrieved knowledge chunk. Treat with caution.",
-    icon: AlertTriangle,
+      "Verified by the grounding judge — this claim is directly backed by a tool result or retrieved knowledge chunk.",
+    icon: Check,
   },
   "[unverified]": {
-    label: "unverified",
-    className:
-      "bg-amber-400/20 text-amber-700 dark:text-amber-400",
+    label: "Uncertain",
+    className: "bg-amber-400/20 text-amber-700 dark:text-amber-400",
     title:
-      "Flagged by the grounding validator as UNVERIFIED — the evidence neither confirms nor contradicts this. It may be correct general knowledge or inference, but Wolf could not verify it from the tools/knowledge used.",
+      "Marked Uncertain by the grounding judge — the evidence neither confirms nor contradicts this. It may be correct general knowledge or a reasonable inference, but Wolf could not verify it from the tools/knowledge used.",
     icon: Info,
+  },
+  "[unsupported]": {
+    label: "Not Verified",
+    className: "bg-destructive/15 text-destructive",
+    title:
+      "Flagged Not Verified by the grounding judge — this specific claim contradicts, or is absent from, every tool result and retrieved knowledge chunk. Treat with caution.",
+    icon: AlertTriangle,
+  },
+  "[non-factual]": {
+    label: "Non-factual",
+    className:
+      "border border-yellow-300/50 bg-yellow-200/30 text-yellow-800 dark:text-yellow-300",
+    title:
+      "Non-factual — preamble, transition, instruction, or opinion. No factual content to check against the evidence.",
+    icon: MessageCircle,
   },
 } as const;
 
-// Splits on either marker while keeping the delimiter (capturing group).
-const MARKER_SPLIT = /(\[unsupported\]|\[unverified\])/;
+// Splits on any of the four markers while keeping the delimiter
+// (capturing group). Order matters: longer literals first so [non-factual]
+// isn't half-matched by something else.
+const MARKER_SPLIT =
+  /(\[non-factual\]|\[unsupported\]|\[unverified\]|\[verified\])/;
 
 /**
  * Walk a React children tree, splitting any string node on the grounding
@@ -47,7 +69,12 @@ const MARKER_SPLIT = /(\[unsupported\]|\[unverified\])/;
 function highlightGroundingMarkers(children: ReactNode): ReactNode {
   return Children.map(children, (child, index) => {
     if (typeof child === "string") {
-      if (!child.includes("[unverified]") && !child.includes("[unsupported]")) {
+      if (
+        !child.includes("[verified]") &&
+        !child.includes("[unverified]") &&
+        !child.includes("[unsupported]") &&
+        !child.includes("[non-factual]")
+      ) {
         return child;
       }
       const parts = child.split(MARKER_SPLIT);

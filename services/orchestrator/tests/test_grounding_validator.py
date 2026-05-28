@@ -116,8 +116,11 @@ async def test_validate_all_supported_leaves_answer_unchanged() -> None:
     assert result.ran is True
     assert result.supported_count == 2
     assert result.unsupported_count == 0
-    # No marker inserted on supported claims.
+    # No yellow / red markers, but supported claims now get [verified]
+    # chips inline (Slice 5.0c-a — every verdict gets a marker).
     assert "[unverified]" not in result.annotated_answer
+    assert "[unsupported]" not in result.annotated_answer
+    assert "[verified]" in result.annotated_answer
 
 
 @pytest.mark.asyncio
@@ -527,7 +530,11 @@ async def test_validate_clamps_claim_count() -> None:
 # ─── annotate() — unit-level ────────────────────────────────────────────────
 
 
-def test_annotate_inserts_severity_markers_per_verdict() -> None:
+def test_annotate_inserts_one_marker_per_verdict() -> None:
+    """Slice 5.0c-a: every verdict now gets an inline marker so the
+    analyst sees a signal for every claim — green Verified, yellow
+    Uncertain, red Not Verified, muted Non-factual.
+    """
     from app.grounding.validator import ClaimVerdict
 
     answer = "Claim one. Claim two. Claim three. Claim four."
@@ -538,21 +545,24 @@ def test_annotate_inserts_severity_markers_per_verdict() -> None:
         ClaimVerdict(claim="Claim four.", verdict="unverifiable"),
     ]
     out = GroundingValidator._annotate(answer, verdicts)
-    assert "Claim one. [" not in out  # supported → no marker
-    assert "Claim two. [unsupported]" in out  # red
-    assert "Claim three. [unverified]" in out  # yellow caution
-    # unverifiable (preamble) gets nothing
-    assert "Claim four. [" not in out
+    assert "Claim one. [verified]" in out          # green
+    assert "Claim two. [unsupported]" in out       # red
+    assert "Claim three. [unverified]" in out      # yellow caution
+    assert "Claim four. [non-factual]" in out      # muted (preamble)
 
 
-def test_annotate_no_unsupported_returns_original() -> None:
+def test_annotate_marks_supported_with_green_verified() -> None:
+    """Slice 5.0c-a: supported claims now also get a chip ([verified] →
+    green) so the analyst sees positive grounding signals too, not just
+    warnings.
+    """
     from app.grounding.validator import ClaimVerdict
 
     answer = "Everything is fine."
     out = GroundingValidator._annotate(answer, [
         ClaimVerdict(claim="Everything is fine.", verdict="supported"),
     ])
-    assert out == answer
+    assert out == "Everything is fine. [verified]"
 
 
 # ─── ValidationResult shape ─────────────────────────────────────────────────

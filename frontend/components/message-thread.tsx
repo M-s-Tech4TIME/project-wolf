@@ -139,13 +139,13 @@ function GroundingBadge({ exchange }: { exchange: ChatExchange }) {
         variant={variant}
         className={`gap-1 ${amber}`}
         title={
-          `Grounding validator: ${supported} supported, ` +
-          `${uncertain} unverified (caution), ${unsupported} unsupported, ` +
-          `${unverifiable} non-factual. ` +
+          `Grounding validator: ${supported} Verified · ` +
+          `${uncertain} Uncertain · ${unsupported} Not Verified · ` +
+          `${unverifiable} Non-factual. ` +
           (hasUnsupported
-            ? "Red [unsupported] markers flag claims that contradict or are absent from the evidence."
+            ? "Red Not Verified chips flag claims that contradict or are absent from the evidence."
             : hasUncertain
-              ? "Yellow [unverified] markers flag claims Wolf could not verify from the evidence used."
+              ? "Yellow Uncertain chips flag claims Wolf could not verify from the evidence used."
               : "All factual claims trace back to a tool result or retrieved chunk.")
         }
       >

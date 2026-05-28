@@ -49,6 +49,56 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-05-28 — Slice 5.0c-a: four grounding chips + verdict rename
+
+**Session type:** claude-code
+**Phase:** Phase 5 prep — first sub-slice of the 5.0c UI work
+**Duration:** ~45 min
+**Branch / commit:** `main` — starting commit `0c26660`, this entry's commit pending.
+
+### What we did
+- Backend (`validator.py`): added `MARKER_VERIFIED` and `MARKER_NON_FACTUAL`
+  constants and extended `_VERDICT_MARKER` so all four verdicts get an
+  inline chip token — not just the worrying ones. Supported claims get
+  `[verified]`; preamble / instruction / opinion (unverifiable) gets
+  `[non-factual]`. The user explicitly asked for full per-verdict
+  visibility, not just warnings.
+- Frontend (`markdown.tsx`): four chip styles, each with a distinct
+  colour AND icon so the two yellows are not confusable:
+    - 🟢 `[verified]` → emerald · `Check`
+    - 🟡 `[unverified]` → amber · `Info`   (label renamed *Uncertain*)
+    - 🔴 `[unsupported]` → destructive · `AlertTriangle`   (label renamed *Not Verified*)
+    - 🟡 `[non-factual]` → muted yellow with border · `MessageCircle`
+  Regex `MARKER_SPLIT` extended to match any of the four tokens.
+- Frontend (`message-thread.tsx`): `GroundingBadge` tooltip now uses
+  the new labels (`Verified · Uncertain · Not Verified · Non-factual`).
+  Badge chip counts already supported uncertain from 5.0b.
+
+### What we verified
+- Backend tests: 27 grounding + 14 tool-summary + the rest of the suite
+  pass. ruff + mypy-strict clean.
+- Frontend: tsc + eslint clean.
+- Claude-side self-validation against *"How many alerts of each severity
+  last year?"*:
+  ```
+  grounding: sup=1 unsup=0 unc=0 unverif=0
+  inline [verified] count: 1
+  ```
+  The backend now emits the green-chip token on the supported claim.
+  Frontend renders as a green *Verified* chip.
+
+### Notes
+- Stored answers from earlier slices already have `[unverified]` and
+  `[unsupported]` markers. They keep rendering — the chips are now
+  labelled *Uncertain* and *Not Verified* respectively. No DB migration.
+- Old verdict names (`supported`/`unverifiable`/`uncertain`/`unsupported`)
+  unchanged in the backend; only the user-facing chip labels changed.
+
+### What's next
+- Slice 5.0c-b: persistent + resizable Evidence panel, collapsible
+  Conversations sidebar, fixed message input, chat vertical scroll,
+  user-avatar dropdown replacing the session-id chip.
+
 ## 2026-05-28 — Slice 5.0b.4: judge context headroom + per-tool grounding-friendly summaries
 
 **Session type:** claude-code
