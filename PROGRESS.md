@@ -29,13 +29,20 @@ which now becomes its own dedicated phase *after* stabilization, not before.
 
 ### After 5.0a–d
 
-**Phase 5 — Organizations + RBAC** (new dedicated phase, decided 2026-05-28):
-superuser (default at install) creates orgs + assigns users/roles; org admins
-manage their own org; regular users only chat. Scope reserved for a
-superuser cross-org chat access path (designed-in but off by default). The
-DB already has `users.is_superuser` as scaffolding.
-
-Then the originally-planned cases / reporting / propose-tools+approval work.
+1. **Phase 5 — Organizations + RBAC** (decided 2026-05-28): superuser
+   (default at install) creates orgs + assigns users/roles; org admins
+   manage their own org; regular users only chat. Scope reserved for a
+   superuser cross-org chat access path (designed-in but off by default).
+   The DB already has `users.is_superuser` as scaffolding.
+2. **Grounding-enrichment tools** (proposed 2026-05-28): a dedicated phase
+   to add tools whose purpose is to supply more ground-truth evidence so
+   the grounding judge can mark more claims as **Verified** instead of
+   **Uncertain**. Candidates: `get_agent_details`, `lookup_ip_reputation`,
+   `get_attack_technique` (MITRE), `get_cve_details`, `quote_runbook`
+   (exact-passage with line numbers). Each tenant-scoped via the existing
+   patterns.
+3. Then the originally-planned cases / reporting / propose-tools + approval
+   work.
 
 ---
 
