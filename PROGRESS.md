@@ -24,7 +24,7 @@ which now becomes its own dedicated phase *after* stabilization, not before.
 |---|---|---|---|
 | **5.0a** | search_alerts free_text fix · 30d→365d time guardrail with grace · aggregation exemption · search_after cursor pagination · time parser supports months/years | ✅ shipped + web-verified | `755e786` |
 | **5.0b** | Grounding 4-verdict taxonomy (yellow `[unverified]` caution vs red `[unsupported]`) · fabrication hardening via failed-tool negative evidence · empty-answer synthesis fallback · per-slice fresh-reset + self-validation workflow | ✅ implemented + Claude-side validated; **awaiting user web-test** | pending |
-| **5.0c** | UI overhaul: persistent + resizable + text-wrapping Evidence panel · collapsible Conversations sidebar · fixed message input · chat vertical scroll · user-avatar dropdown replacing the session-id chip | ⏳ not started | — |
+| **5.0c** | UI overhaul: persistent + resizable + text-wrapping Evidence panel · collapsible Conversations sidebar · fixed message input · chat vertical scroll · user-avatar dropdown replacing the session-id chip. **Plus verdict rename + 4 chips** — `supported`→🟢 *Verified*, `unverifiable`→🟡 *Non-factual* (muted), `uncertain`→🟡 *Uncertain* (amber), `unsupported`→🔴 *Not Verified*. Requires backend marker emission for the two new verdicts (`[verified]`, `[non-factual]`) + frontend chip styles. | ⏳ not started | — |
 | **5.0d** | Color/theme to match `wolf-color-palette-outlook.png` (Wazuh dark-navy + blue) | ⏳ not started | — |
 
 ### After 5.0a–d
@@ -34,13 +34,20 @@ which now becomes its own dedicated phase *after* stabilization, not before.
    manage their own org; regular users only chat. Scope reserved for a
    superuser cross-org chat access path (designed-in but off by default).
    The DB already has `users.is_superuser` as scaffolding.
-2. **Grounding-enrichment tools** (proposed 2026-05-28): a dedicated phase
-   to add tools whose purpose is to supply more ground-truth evidence so
-   the grounding judge can mark more claims as **Verified** instead of
-   **Uncertain**. Candidates: `get_agent_details`, `lookup_ip_reputation`,
-   `get_attack_technique` (MITRE), `get_cve_details`, `quote_runbook`
-   (exact-passage with line numbers). Each tenant-scoped via the existing
-   patterns.
+2. **Grounding-enrichment via more tools** (proposed 2026-05-28). Two
+   tracks, both real:
+   - **Continuously**: every new tool added in any future phase is
+     evaluated for *evidence value to the judge* alongside its main
+     purpose. The grounding judge looks at the evidence dictionary
+     regardless of which tool produced it — so any well-cited new tool
+     raises the Verified ratio automatically.
+   - **Dedicated phase**: a focused chunk of time prioritising tools
+     specifically by how much evidence value they add. Candidate list:
+     `get_agent_details`, `lookup_ip_reputation`, `get_attack_technique`
+     (MITRE), `get_cve_details`, `quote_runbook` (exact-passage retrieval
+     with line numbers), expanded `get_rule_definition` coverage. Each
+     tenant-scoped via the existing patterns; external feeds need an
+     API-key plumbing pattern that respects the secrets backend.
 3. Then the originally-planned cases / reporting / propose-tools + approval
    work.
 
