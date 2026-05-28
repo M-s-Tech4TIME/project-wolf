@@ -125,19 +125,33 @@ function GroundingBadge({ exchange }: { exchange: ChatExchange }) {
   const unverifiable = grounding_unverifiable ?? 0;
   const hasUnsupported = unsupported > 0;
   const hasUncertain = uncertain > 0;
-  // Severity ladder: red (unsupported) > amber (uncertain) > green (clean).
+  const hasSupported = supported > 0;
+  // Severity-dominant colour ladder so the worst signal wins attention,
+  // with positive feedback (green) when every factual claim is Verified
+  // — not just a neutral outline. Mixed counts are still communicated
+  // by the {sup}✓ {unc}⚠ {unsup}✗ numbers below.
+  //   🔴 red   — any Not Verified claim
+  //   🟡 amber — has Uncertain claims but nothing contradicted
+  //   🟢 green — every checkable claim is Verified
+  //   ⚪ outline — no factual claims to ground (only preamble)
   const Icon = hasUnsupported || hasUncertain ? ShieldAlert : ShieldCheck;
-  const variant = hasUnsupported ? "destructive" : "outline";
-  const amber =
-    !hasUnsupported && hasUncertain
-      ? "border-amber-400/50 bg-amber-400/15 text-amber-700 dark:text-amber-400"
-      : "";
+  let variant: "destructive" | "outline" = "outline";
+  let tintClass = "";
+  if (hasUnsupported) {
+    variant = "destructive";
+  } else if (hasUncertain) {
+    tintClass =
+      "border-amber-400/50 bg-amber-400/15 text-amber-700 dark:text-amber-400";
+  } else if (hasSupported) {
+    tintClass =
+      "border-emerald-500/50 bg-emerald-500/15 text-emerald-700 dark:text-emerald-400";
+  }
   return (
     <>
       <span>·</span>
       <Badge
         variant={variant}
-        className={`gap-1 ${amber}`}
+        className={`gap-1 ${tintClass}`}
         title={
           `Grounding validator: ${supported} Verified · ` +
           `${uncertain} Uncertain · ${unsupported} Not Verified · ` +
@@ -146,7 +160,9 @@ function GroundingBadge({ exchange }: { exchange: ChatExchange }) {
             ? "Red Not Verified chips flag claims that contradict or are absent from the evidence."
             : hasUncertain
               ? "Yellow Uncertain chips flag claims Wolf could not verify from the evidence used."
-              : "All factual claims trace back to a tool result or retrieved chunk.")
+              : hasSupported
+                ? "All factual claims trace back to a tool result or retrieved chunk."
+                : "No factual claims to verify in this answer.")
         }
       >
         <Icon className="h-3 w-3" />
