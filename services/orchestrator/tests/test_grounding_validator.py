@@ -211,6 +211,41 @@ def test_build_evidence_includes_failure_notes() -> None:
     assert "boom" in ev
 
 
+def test_build_evidence_per_source_limit_fits_multi_hit_results() -> None:
+    """Slice 5.0b.1: cap sized to fit a realistic multi-hit search_alerts
+    JSON (≈12 hits × ~350 chars) without truncating later hits out of
+    the judge's view. Previous 2 KB was the truncation cause behind
+    over-strict 'unsupported' verdicts on real answers."""
+    big_blob = "X" * 8000
+    ev = GroundingValidator.build_evidence(
+        tool_results=[{"name": "search_alerts", "content": big_blob}],
+        retrieved_chunks=[],
+    )
+    # ~5000 X's survive (json.dumps adds a leading quote so the run lands
+    # at cap - 1); the previous 2 KB and 3 KB caps are no longer in force.
+    x_run = ev.count("X")
+    assert 4950 <= x_run <= 5000, x_run
+    assert x_run > 3500
+
+
+def test_validator_prompt_covers_meta_commentary_and_paraphrase() -> None:
+    """Sanity-check that the Slice 5.0b.1 prompt sharpenings are in place.
+
+    The judge's calibration over real answers is verified empirically (live
+    self-validation); this test just guards against accidentally reverting
+    the prompt to a definition that misses these cases.
+    """
+    from app.grounding.validator import VALIDATOR_SYSTEM_PROMPT
+
+    # Broader unverifiable: meta commentary about Wolf's own analysis flow.
+    assert "No further tool calls are needed" in VALIDATOR_SYSTEM_PROMPT
+    assert "meta commentary" in VALIDATOR_SYSTEM_PROMPT
+    # Paraphrase-is-supported softening.
+    assert "paraphrase" in VALIDATOR_SYSTEM_PROMPT.lower()
+    # Safety rule preserved: fabricated specifics still UNSUPPORTED.
+    assert "UNSUPPORTED, never UNCERTAIN" in VALIDATOR_SYSTEM_PROMPT
+
+
 @pytest.mark.asyncio
 async def test_validate_skips_when_no_citations_implicit_no_evidence() -> None:
     """build_evidence returns '' when both inputs empty; validator skips."""

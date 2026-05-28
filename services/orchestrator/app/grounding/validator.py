@@ -67,6 +67,16 @@ _VERDICT_MARKER = {
     "unsupported": MARKER_UNSUPPORTED,
 }
 
+# Cap on characters per evidence source fed to the judge (Slice 5.0b.1).
+# 2 KB was tight enough that rule descriptions on a multi-hit search_alerts
+# JSON could be truncated out of view, leading to the judge marking
+# paraphrases of those descriptions as "unsupported" because it literally
+# couldn't see them. A 5-hit search_alerts result is roughly 1.5 KB of
+# JSON; we size to comfortably fit ~12 hits (the practical worst case for
+# a single tool call) plus the wrapper. qwen3:8b's default context window
+# (32K tokens) has ample headroom even with several sources at this cap.
+_EVIDENCE_PER_SOURCE_LIMIT = 5000
+
 
 @dataclass(frozen=True)
 class ClaimVerdict:
@@ -114,23 +124,35 @@ VALIDATOR_SYSTEM_PROMPT = (
     "facts you may rely on) and a list of CLAIMS extracted from an "
     "assistant's draft answer.\n\n"
     "Judge each claim as exactly one of:\n"
-    "  - SUPPORTED:    a specific evidence segment clearly backs the claim.\n"
+    "  - SUPPORTED:    a specific evidence segment clearly backs the claim, "
+    "OR the claim paraphrases / generalises content that is clearly in the "
+    "evidence (e.g. claim 'this is a brute-force pattern' is SUPPORTED when "
+    "a rule description literally says 'brute force trying to get access').\n"
     "  - UNSUPPORTED:  the claim states a specific fact (a number, count, ID, "
-    "name, timestamp, or status) that CONTRADICTS the evidence, or that should "
-    "have come from the evidence but is absent. Fabricated specifics go here.\n"
+    "name, timestamp, or status) that CONTRADICTS the evidence, or that "
+    "should have come from the evidence but is absent. Fabricated specifics "
+    "go here.\n"
     "  - UNCERTAIN:    a plausible general statement, best-practice, or "
-    "reasonable inference the evidence neither confirms nor contradicts — you "
-    "cannot verify it, but it is not obviously wrong.\n"
-    "  - UNVERIFIABLE: the claim has no factual content to check — a "
-    "transition / preamble / opinion / instruction (e.g. 'Here is what I "
-    "found:').\n\n"
+    "reasonable inference the evidence neither confirms nor contradicts — "
+    "you cannot verify it, but it is not obviously wrong.\n"
+    "  - UNVERIFIABLE: the claim has no factual content to check. Examples:\n"
+    "      * transitions / preambles ('Here is what I found:', 'Let me "
+    "summarise:')\n"
+    "      * meta commentary about your own analysis flow ('No further tool "
+    "calls are needed', 'I have what I need to answer', 'The data is "
+    "sufficient', 'No additional function calls are required')\n"
+    "      * pure opinions / instructions ('You should investigate this', "
+    "'Block the IP immediately')\n\n"
     "Rules:\n"
     "  - Any specific number / count / ID / name / timestamp NOT present in "
     "the evidence is UNSUPPORTED, never UNCERTAIN.\n"
     "  - Combining two real facts into a third inferred fact is UNSUPPORTED "
     "unless the inference itself appears in the evidence.\n"
     "  - If the EVIDENCE shows a tool FAILED and returned no data, any "
-    "specific factual claim that needed that tool is UNSUPPORTED.\n\n"
+    "specific factual claim that needed that tool is UNSUPPORTED.\n"
+    "  - A paraphrase of evidence is SUPPORTED, not UNSUPPORTED. Only mark "
+    "it UNSUPPORTED if the paraphrase contradicts the evidence or adds "
+    "specifics that aren't in it.\n\n"
     "Output ONLY a JSON array of objects with keys: 'index' (int), "
     "'verdict' (one of 'supported' / 'unsupported' / 'uncertain' / "
     "'unverifiable'), 'reason' (one short sentence). No prose outside the "
@@ -188,15 +210,15 @@ class GroundingValidator:
             content = tr.get("content")
             if not content:
                 continue
-            sections.append(
-                f"[TOOL_RESULT {i}: {name}]\n{json.dumps(content, default=str)[:2000]}"
-            )
+            body = json.dumps(content, default=str)[:_EVIDENCE_PER_SOURCE_LIMIT]
+            sections.append(f"[TOOL_RESULT {i}: {name}]\n{body}")
         for i, chunk in enumerate(retrieved_chunks, start=1):
             title = chunk.get("chunk_metadata", {}).get("title", "<no title>")
             source_type = chunk.get("source_type", "<unknown>")
             content = chunk.get("content", "")
             sections.append(
-                f"[KNOWLEDGE {i}: {source_type} — {title}]\n{content[:2000]}"
+                f"[KNOWLEDGE {i}: {source_type} — {title}]\n"
+                f"{content[:_EVIDENCE_PER_SOURCE_LIMIT]}"
             )
         for i, tf in enumerate(tool_failures or [], start=1):
             name = tf.get("name", "<unknown>")

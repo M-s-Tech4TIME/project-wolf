@@ -49,6 +49,52 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-05-28 — Slice 5.0b.1: judge-prompt iteration after live 5.0b test
+
+**Session type:** claude-code
+**Phase:** Phase 5 prep — patch on top of 5.0b
+**Duration:** ~45 min
+**Branch / commit:** `main` — starting commit `e84e95f`, this entry's commit pending.
+
+### What we did
+- User web-tested 5.0b and flagged two over-strict red `[unsupported]`
+  markers on what looked like a correct SSH-brute-force answer. The
+  earlier self-validation note had predicted exactly this kind of
+  judge over-strictness; user asked to iterate.
+- **Raised the evidence-per-source cap** from 2 KB → 5 KB
+  ([validator.py](../services/orchestrator/app/grounding/validator.py)
+  via the new `_EVIDENCE_PER_SOURCE_LIMIT` module constant). At 2 KB,
+  a 9-hit search_alerts JSON dump truncated the last hits out of view,
+  so the judge could only see 7-8 hits and concluded "the claim of 9
+  attempts isn't supported" — correct reasoning on incomplete evidence.
+  5 KB comfortably fits ~12 hits with wrapper overhead.
+- **Sharpened the judge system prompt**:
+    - `SUPPORTED` now explicitly includes paraphrases / generalisations
+      of content clearly in the evidence (e.g. "brute-force pattern"
+      when the rule description says "brute force").
+    - `UNVERIFIABLE` examples expanded with **meta commentary about
+      Wolf's own analysis flow** ("No further tool calls are needed",
+      "I have what I need to answer", "The data is sufficient").
+    - New rule: a paraphrase of evidence is SUPPORTED, not UNSUPPORTED.
+- +2 tests: evidence-cap behaviour + structural prompt sanity-check.
+
+### What we discovered (the headline finding)
+A direct probe of the judge against the same evidence and answer
+revealed the red `[unsupported]` on Wolf's answer was actually
+**catching a real fabrication**: the answer said "attacker_user_1
+through attacker_user_10" but the data only contains 9 users
+(attacker_user_1 through attacker_user_9). The judge correctly
+identified this off-by-one. What looked like over-strictness was
+the system doing its job. The 5.0b.1 evidence-cap raise plus prompt
+sharpening also got the citation-line case correctly classified as
+`unverifiable` (no chip) in probe — and would have for the live case
+too if qwen3:8b weren't slightly non-deterministic even at temp=0.
+
+### What's next
+- Hand 5.0b.1 back to user for a fresh live re-test.
+- Then Slice 5.0c: UI overhaul + four-chip verdict rename
+  (`Verified` / `Uncertain` / `Not Verified` / `Non-factual`).
+
 ## 2026-05-28 — Slice 5.0b: grounding yellow vs red + reliability hardening
 
 **Session type:** claude-code
