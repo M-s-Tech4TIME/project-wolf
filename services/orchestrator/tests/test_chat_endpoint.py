@@ -208,7 +208,11 @@ async def test_chat_returns_grounded_answer_with_citations(
     resp = await client.post("/api/v1/chat", json={"question": "anything today?"})
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["answer"] == "No alerts found in the window."
+    # Slice 5.0c-a started annotating every verdict inline; a supported
+    # claim now gets a trailing "[verified]" chip token. The grounding
+    # judge in this test (the stubbed Claude) returns "supported" for the
+    # single sentence, so the chip is expected.
+    assert body["answer"] == "No alerts found in the window. [verified]"
     assert body["stop_reason"] == "answer"
     assert body["step_count"] == 2
     assert body["tool_call_count"] == 1
