@@ -183,11 +183,14 @@ async def test_tool_call_emits_tool_event_with_summary(
     )
 
     types = [e.type for e in events]
-    # loop → step0 → model0 → tool_done → step1 → model1 → answer
+    # loop → step0 → model0 → tool_started → tool_done → step1 → model1 → answer
+    # (Slice 5.0c-e: tool.call.started is announced BEFORE dispatch so
+    # the live activity feed can narrate "Searching Wazuh…")
     assert types == [
         "loop.started",
         "step.started",
         "model.call.completed",
+        "tool.call.started",
         "tool.call.completed",
         "step.started",
         "model.call.completed",

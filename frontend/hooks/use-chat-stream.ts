@@ -2,6 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 
+import { phraseFor } from "@/lib/activity-phrases";
 import { ApiError, chatStream } from "@/lib/api";
 import type {
   ChatExchange,
@@ -140,7 +141,10 @@ export function useChatStream(): UseChatStream {
               ...s,
               step: asNumber(event.data.step),
               last_event_type: event.type,
-              message: `Step ${asNumber(event.data.step) + 1}${s.step_budget ? `/${s.step_budget}` : ""}`,
+              message: phraseFor("step.started", {
+                step: asNumber(event.data.step),
+                budget: s.step_budget,
+              }),
             }));
             break;
           }
@@ -159,8 +163,8 @@ export function useChatStream(): UseChatStream {
               last_event_type: event.type,
               message:
                 toolCount > 0
-                  ? `Model returned ${toolCount} tool call${toolCount === 1 ? "" : "s"}`
-                  : "Model drafting answer…",
+                  ? phraseFor("model.call.completed.tools", { n: toolCount })
+                  : phraseFor("model.call.completed.answer", {}),
             }));
             break;
           }
@@ -168,7 +172,19 @@ export function useChatStream(): UseChatStream {
             setStatus((s) => ({
               ...s,
               last_event_type: event.type,
-              message: `Model call failed: ${asString(event.data.detail, "unknown error")}`,
+              message: phraseFor("model.call.failed", {
+                detail: asString(event.data.detail, "unknown error"),
+              }),
+            }));
+            break;
+          }
+          case "tool.call.started": {
+            setStatus((s) => ({
+              ...s,
+              last_event_type: event.type,
+              message: phraseFor("tool.call.started", {
+                tool: asString(event.data.tool_name),
+              }),
             }));
             break;
           }
@@ -198,9 +214,41 @@ export function useChatStream(): UseChatStream {
               ...s,
               last_event_type: event.type,
               message: tool.success
-                ? `Got ${tool.tool_name} result (${tool.elapsed_ms}ms)`
-                : `${tool.tool_name} failed: ${tool.error ?? "unknown"}`,
+                ? phraseFor("tool.call.completed.ok", {
+                    tool: tool.tool_name,
+                    elapsed: tool.elapsed_ms,
+                  })
+                : phraseFor("tool.call.completed.fail", {
+                    tool: tool.tool_name,
+                    error: tool.error ?? "unknown",
+                  }),
             }));
+            break;
+          }
+          case "grounding.started": {
+            setStatus((s) => ({
+              ...s,
+              last_event_type: event.type,
+              message: phraseFor("grounding.started", {}),
+            }));
+            break;
+          }
+          case "grounding.completed": {
+            const sup = asNumber(event.data.supported);
+            const uncertain = asNumber(event.data.uncertain);
+            const unsup = asNumber(event.data.unsupported);
+            const ran = Boolean(event.data.ran);
+            if (ran) {
+              setStatus((s) => ({
+                ...s,
+                last_event_type: event.type,
+                message: phraseFor("grounding.completed", {
+                  sup,
+                  uncertain,
+                  unsup,
+                }),
+              }));
+            }
             break;
           }
           case "answer": {

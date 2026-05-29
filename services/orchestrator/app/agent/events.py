@@ -16,7 +16,9 @@ LoopEventType = Literal[
     "model.delta",
     "model.call.completed",
     "model.call.failed",
+    "tool.call.started",
     "tool.call.completed",
+    "grounding.started",
     "grounding.completed",
     "answer",
 ]

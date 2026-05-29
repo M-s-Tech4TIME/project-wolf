@@ -299,6 +299,15 @@ class AgentLoop:
             tool_results: list[ToolResult] = []
             for call in response.tool_calls:
                 tool_call_count += 1
+                # Live activity feed (Slice 5.0c-e): announce the tool
+                # BEFORE dispatch so the UI can narrate "Searching Wazuh
+                # for …" instead of staying on the previous status line
+                # for the whole tool call.
+                await _emit(event_callback, "tool.call.started", {
+                    "tool_name": call.name,
+                    "tool_call_id": call.id,
+                    "arguments": call.arguments,
+                })
                 dispatch_result = await dispatch_tool_call(
                     call, ctx=ctx, db=db, opensearch=opensearch,
                     server_api=server_api, limits=self.limits,
@@ -468,6 +477,14 @@ class AgentLoop:
             # model tends to fabricate specifics to fill the gap.
             return answer
 
+        # Live activity feed (Slice 5.0c-e): announce that grounding is
+        # starting BEFORE the (potentially multi-minute) judge call so
+        # the UI can narrate "Asking the grounding judge…" instead of
+        # appearing stuck.
+        await _emit(event_callback, "grounding.started", {
+            "loop_id": answer.loop_id,
+            "claim_count_estimate": len(answer.content.split(".")),
+        })
         validation = await validator.validate(
             answer.content,
             tool_results=tool_results,
