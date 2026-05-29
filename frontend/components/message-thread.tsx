@@ -63,13 +63,14 @@ export function MessageThread({ exchanges, stream }: Props) {
           {empty ? <EmptyState /> : null}
 
           {exchanges.map((ex) => (
-            // 5.0c-b: meta row (grounding badge + step/token counts) now
-            // renders on EVERY exchange, not only the latest. Earlier
-            // turns deserve the same provenance display as the newest.
+            // 5.0c-b: meta row renders on EVERY archived exchange,
+            // ALWAYS — including while a new turn is streaming below.
+            // Archived turns are immutable; nothing about a new prompt
+            // should retroactively hide their provenance.
             <CompletedExchange
               key={ex.id}
               exchange={ex}
-              showMeta={!showStreamView}
+              showMeta={true}
             />
           ))}
 
