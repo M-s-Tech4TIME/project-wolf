@@ -13,6 +13,7 @@ from pydantic import BaseModel
 LoopEventType = Literal[
     "loop.started",
     "step.started",
+    "model.delta",
     "model.call.completed",
     "model.call.failed",
     "tool.call.completed",

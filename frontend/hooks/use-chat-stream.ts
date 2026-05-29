@@ -39,6 +39,12 @@ export type UseChatStream = {
   error: string | null;
   /** The user's question for the in-flight request (or empty when idle). */
   currentQuestion: string;
+  /**
+   * Token-by-token accumulator for the in-flight model response (Slice
+   * 5.0c-d). Reset on every `step.started`, appended to on every
+   * `model.delta`, finalised by the `answer` event.
+   */
+  streamingAnswer: string;
   /** Submit a question with optional prior turns; rejects only on programmer errors. */
   submit: (question: string, history?: ConversationTurn[]) => Promise<void>;
   reset: () => void;
@@ -59,6 +65,7 @@ export function useChatStream(): UseChatStream {
   const [citations, setCitations] = useState<Citation[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [currentQuestion, setCurrentQuestion] = useState<string>("");
+  const [streamingAnswer, setStreamingAnswer] = useState<string>("");
   const startedAtRef = useRef<string>("");
   const questionRef = useRef<string>("");
   // Refs mirror the React state so the "answer" event handler can read
@@ -67,6 +74,12 @@ export function useChatStream(): UseChatStream {
   // empty on fast streams.
   const toolEventsRef = useRef<ToolEvent[]>([]);
   const citationsRef = useRef<Citation[]>([]);
+  // Buffer the streaming answer in a ref too — model.delta fires every
+  // few ms during a stream and batching the state updates via the ref
+  // avoids re-rendering on each token (we still flush the React state
+  // immediately for the visible text; the ref is the source of truth
+  // for accumulation across batched setState calls).
+  const streamingAnswerRef = useRef<string>("");
 
   const reset = useCallback(() => {
     setStatus({ phase: "idle" });
@@ -75,8 +88,10 @@ export function useChatStream(): UseChatStream {
     setCitations([]);
     setError(null);
     setCurrentQuestion("");
+    setStreamingAnswer("");
     toolEventsRef.current = [];
     citationsRef.current = [];
+    streamingAnswerRef.current = "";
   }, []);
 
   const submit = useCallback(async (question: string, history: ConversationTurn[] = []) => {
@@ -89,8 +104,10 @@ export function useChatStream(): UseChatStream {
     setCitations([]);
     setError(null);
     setCurrentQuestion(trimmed);
+    setStreamingAnswer("");
     toolEventsRef.current = [];
     citationsRef.current = [];
+    streamingAnswerRef.current = "";
     startedAtRef.current = new Date().toISOString();
     questionRef.current = trimmed;
 
@@ -111,12 +128,28 @@ export function useChatStream(): UseChatStream {
             break;
           }
           case "step.started": {
+            // Each step starts a fresh model call; clear the streaming
+            // buffer so the previous step's text doesn't bleed into this
+            // one. If this step ends up calling tools, the buffer (which
+            // may have collected a "thinking..." prefix) is discarded on
+            // the next step.started; if this is the final answer step,
+            // the buffer becomes the visible streamed answer.
+            streamingAnswerRef.current = "";
+            setStreamingAnswer("");
             setStatus((s) => ({
               ...s,
               step: asNumber(event.data.step),
               last_event_type: event.type,
               message: `Step ${asNumber(event.data.step) + 1}${s.step_budget ? `/${s.step_budget}` : ""}`,
             }));
+            break;
+          }
+          case "model.delta": {
+            const delta = asString(event.data.content_delta);
+            if (delta) {
+              streamingAnswerRef.current = streamingAnswerRef.current + delta;
+              setStreamingAnswer(streamingAnswerRef.current);
+            }
             break;
           }
           case "model.call.completed": {
@@ -209,6 +242,12 @@ export function useChatStream(): UseChatStream {
             setExchange(completed);
             citationsRef.current = finalCitations;
             setCitations(finalCitations);
+            // The streaming buffer has served its purpose — the answer
+            // bubble takes over rendering. Clearing here avoids a brief
+            // flash of duplicate text if the in-flight view is still on
+            // screen during the transition.
+            streamingAnswerRef.current = "";
+            setStreamingAnswer("");
             setStatus((s) => ({
               ...s,
               phase: "done",
@@ -241,6 +280,7 @@ export function useChatStream(): UseChatStream {
     citations,
     error,
     currentQuestion,
+    streamingAnswer,
     submit,
     reset,
   };

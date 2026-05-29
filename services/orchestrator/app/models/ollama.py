@@ -8,6 +8,7 @@ a dict (not a JSON string), and token counts use different field names.
 Models without native tool-calling use the structured-output fallback.
 """
 
+import json
 import uuid
 from collections.abc import AsyncIterator
 from typing import Any
@@ -23,7 +24,12 @@ from wolf_schema import (
 from wolf_schema.chat import Message, MessageRole
 
 from app.models.fallback import chat_with_fallback
-from app.models.interface import default_descriptor_for
+from app.models.interface import (
+    ChatStreamDelta,
+    ChatStreamDone,
+    ChatStreamEvent,
+    default_descriptor_for,
+)
 
 _DEFAULT_BASE = "http://localhost:11434"
 
@@ -150,8 +156,98 @@ class OllamaAdapter:
         return await self._raw_chat(request)
 
     def stream(self, request: ChatRequest) -> AsyncIterator[str]:
+        # Kept for backward compatibility with the ModelProvider protocol;
+        # the real progressive path is `chat_stream` below. Slice 5.0c-d.
         async def _gen() -> AsyncIterator[str]:
             response = await self.chat(request)
             yield response.content
 
         return _gen()
+
+    async def chat_stream(
+        self, request: ChatRequest
+    ) -> AsyncIterator[ChatStreamEvent]:
+        """Stream a chat completion as token deltas + a final done event.
+
+        Uses Ollama's native ``stream: true`` mode. Each newline-delimited
+        JSON chunk from the server contains a partial ``message.content``;
+        we yield each delta verbatim so the agent loop can forward them as
+        SSE events to the frontend (Slice 5.0c-d). Once the server sends
+        ``done: true``, we assemble the full :class:`ChatResponse` from the
+        accumulated content + the final-chunk metadata and yield it as a
+        single :class:`ChatStreamDone` so the loop's downstream logic
+        (tool-call dispatch, token accounting) stays identical to the
+        non-streaming path.
+        """
+        messages = [_message_to_ollama(m) for m in request.messages]
+        options: dict[str, Any] = {"temperature": request.temperature}
+        if self._num_ctx is not None:
+            options["num_ctx"] = self._num_ctx
+        payload: dict[str, Any] = {
+            "model": self._model_id,
+            "messages": messages,
+            "stream": True,
+            "options": options,
+        }
+        if request.tools:
+            payload["tools"] = [_canonical_to_ollama_tool(t) for t in request.tools]
+
+        accumulated_content = ""
+        accumulated_tool_calls: list[dict[str, Any]] = []
+        prompt_eval_count = 0
+        eval_count = 0
+        saw_done = False
+
+        async with self._client.stream(
+            "POST", "/api/chat", json=payload
+        ) as response:
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                if not line.strip():
+                    continue
+                try:
+                    chunk = json.loads(line)
+                except json.JSONDecodeError:
+                    # Defensive: skip malformed lines rather than break
+                    # the whole stream. Real Ollama always emits valid
+                    # JSON, but a misbehaving proxy could chunk weirdly.
+                    continue
+                message = chunk.get("message", {})
+                content_delta = str(message.get("content") or "")
+                if content_delta:
+                    accumulated_content += content_delta
+                    yield ChatStreamDelta(content_delta=content_delta)
+                tool_calls_chunk = message.get("tool_calls") or []
+                if tool_calls_chunk:
+                    accumulated_tool_calls.extend(tool_calls_chunk)
+                if chunk.get("done"):
+                    prompt_eval_count = int(chunk.get("prompt_eval_count", 0))
+                    eval_count = int(chunk.get("eval_count", 0))
+                    saw_done = True
+                    break
+
+        # Assemble the final response — same shape as _parse_ollama_response.
+        tool_calls: list[ToolCall] = []
+        for tc in accumulated_tool_calls:
+            fn = tc.get("function", {}) if isinstance(tc, dict) else {}
+            arguments = fn.get("arguments", {})
+            if not isinstance(arguments, dict):
+                arguments = {}
+            tool_calls.append(
+                ToolCall(
+                    id=str(uuid.uuid4()),
+                    name=str(fn.get("name", "")),
+                    arguments=arguments,
+                )
+            )
+
+        yield ChatStreamDone(
+            response=ChatResponse(
+                content=accumulated_content,
+                tool_calls=tool_calls,
+                input_tokens=prompt_eval_count,
+                output_tokens=eval_count,
+                stop_reason="stop" if saw_done else "length",
+                model_id=self._model_id,
+            )
+        )

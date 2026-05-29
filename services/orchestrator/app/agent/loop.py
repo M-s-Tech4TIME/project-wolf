@@ -36,7 +36,11 @@ from app.agent.strategies import Strategy
 from app.audit.log import write_event_from_context
 from app.grounding import GroundingValidator
 from app.guardrails.limits import DEFAULT_LIMITS, ResourceLimits
-from app.models.interface import ModelProvider
+from app.models.interface import (
+    ChatStreamDelta,
+    ChatStreamDone,
+    ModelProvider,
+)
 from app.models.registry import registry as schema_registry
 from app.tenancy.context import TenantContext
 from app.tools.base import Citation
@@ -190,7 +194,9 @@ class AgentLoop:
             request = ChatRequest(messages=messages, tools=tools or None)
 
             try:
-                response = await self.provider.chat(request)
+                response = await self._chat_or_stream(
+                    request, step=step, event_callback=event_callback,
+                )
             except WolfError:
                 raise
             except Exception as exc:
@@ -367,6 +373,48 @@ class AgentLoop:
         return answer
 
     # ── Recovery + audit helpers ──────────────────────────────────────────
+
+    async def _chat_or_stream(
+        self,
+        request: ChatRequest,
+        *,
+        step: int,
+        event_callback: EventCallback | None,
+    ) -> ChatResponse:
+        """Streaming model call when the provider supports it; blocking
+        fallback otherwise (Slice 5.0c-d).
+
+        For each token delta from the provider, emits a ``model.delta``
+        SSE event so the frontend can render the answer progressively
+        instead of waiting for the whole response. The fully-assembled
+        :class:`ChatResponse` is returned unchanged — every downstream
+        consumer (tool-call dispatch, token accounting, _finalize_answer)
+        sees the exact same shape it did before.
+
+        Providers that haven't implemented ``chat_stream`` yet (currently
+        OpenAI and Anthropic) fall through to the blocking ``chat()``
+        call. They don't break — they just don't get progressive UI.
+        """
+        chat_stream = getattr(self.provider, "chat_stream", None)
+        if chat_stream is None:
+            return await self.provider.chat(request)
+
+        response: ChatResponse | None = None
+        async for event in chat_stream(request):
+            if isinstance(event, ChatStreamDelta):
+                if event.content_delta:
+                    await _emit(event_callback, "model.delta", {
+                        "step": step,
+                        "content_delta": event.content_delta,
+                    })
+            elif isinstance(event, ChatStreamDone):
+                response = event.response
+        if response is None:
+            raise RuntimeError(
+                "chat_stream completed without emitting a ChatStreamDone "
+                "event — provider contract violation"
+            )
+        return response
 
     async def _synthesize_final(
         self, messages: list[Message], *, loop_id: str

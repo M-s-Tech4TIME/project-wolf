@@ -1,6 +1,7 @@
 """ModelProvider protocol, known-model defaults, and provider factory."""
 
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
 from wolf_schema import CapabilityDescriptor, ChatRequest, ChatResponse
@@ -11,6 +12,33 @@ from wolf_schema.capability import (
     ReasoningTier,
     StructuredOutput,
 )
+
+
+@dataclass(frozen=True)
+class ChatStreamDelta:
+    """Incremental content from a streaming chat call (Slice 5.0c-d).
+
+    Adapters yield one of these per token (or coalesced micro-chunk)
+    while the model is generating, then a single :class:`ChatStreamDone`
+    once generation is complete.
+    """
+
+    content_delta: str
+
+
+@dataclass(frozen=True)
+class ChatStreamDone:
+    """Terminal event of a streaming chat call (Slice 5.0c-d).
+
+    Carries the fully-assembled :class:`ChatResponse` so the agent loop
+    has everything it needs (tool_calls, token counts, stop_reason)
+    without having to re-parse the deltas.
+    """
+
+    response: ChatResponse
+
+
+ChatStreamEvent = ChatStreamDelta | ChatStreamDone
 
 
 @runtime_checkable

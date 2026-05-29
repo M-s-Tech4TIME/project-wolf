@@ -220,6 +220,7 @@ function GroundingBadge({ exchange }: { exchange: ChatExchange }) {
 }
 
 function StreamingView({ stream }: { stream: UseChatStream }) {
+  const hasStreamingText = stream.streamingAnswer.trim().length > 0;
   return (
     <div className="flex gap-3 px-2">
       <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
@@ -259,6 +260,21 @@ function StreamingView({ stream }: { stream: UseChatStream }) {
               </li>
             ))}
           </ul>
+        ) : null}
+        {hasStreamingText ? (
+          /* Progressive answer rendering (Slice 5.0c-d). Shapes match the
+             archived AssistantBubble so the transition to the final
+             answer event doesn't shift the layout. A soft pulsing caret
+             at the end hints "still generating" without being noisy. */
+          <div className="rounded-lg border border-border bg-card px-4 py-3">
+            <Markdown>{stream.streamingAnswer}</Markdown>
+            {stream.status.phase === "running" ? (
+              <span
+                aria-hidden="true"
+                className="ml-0.5 inline-block h-3.5 w-px animate-pulse bg-primary align-baseline"
+              />
+            ) : null}
+          </div>
         ) : null}
         {stream.status.phase === "error" && stream.error ? (
           <div className="rounded border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive">

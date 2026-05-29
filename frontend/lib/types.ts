@@ -79,6 +79,7 @@ export type ChatResponseBody = {
 export type LoopEventType =
   | "loop.started"
   | "step.started"
+  | "model.delta"
   | "model.call.completed"
   | "model.call.failed"
   | "tool.call.completed"
