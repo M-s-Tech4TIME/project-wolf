@@ -6,7 +6,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Markdown } from "@/components/markdown";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import type { UseChatStream } from "@/hooks/use-chat-stream";
 import type { ChatExchange } from "@/lib/types";
 
@@ -24,11 +23,14 @@ export function MessageThread({ exchanges, stream }: Props) {
   const showStreamView = isRunning || stream.status.phase === "error";
   const empty = exchanges.length === 0 && !showStreamView;
 
-  // Auto-scroll to the bottom on new content. The Radix Viewport is the
-  // actual scrollable element; we grab it once via data-attribute so we
-  // can also observe scroll position for the "scroll to bottom" button.
+  // The chat uses a NATIVE scroll container instead of Radix's
+  // ScrollArea. Radix's primitive introduces a nested viewport that
+  // didn't reliably constrain inside our flex chain, so long
+  // conversations were overflowing past the composer instead of
+  // scrolling. Native overflow-y-auto inside a `min-h-0 flex-1`
+  // parent is rock-solid.
+  const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
@@ -39,34 +41,35 @@ export function MessageThread({ exchanges, stream }: Props) {
     scrollToBottom("smooth");
   }, [exchanges.length, isRunning, scrollToBottom]);
 
-  // Watch scroll position on the Radix Viewport so the scroll-to-bottom
-  // arrow only appears when the user is significantly above the bottom.
   useEffect(() => {
-    const viewport = containerRef.current?.querySelector<HTMLElement>(
-      "[data-slot='scroll-area-viewport']",
-    );
-    if (!viewport) return;
+    const el = scrollRef.current;
+    if (!el) return;
     const onScroll = () => {
-      const distance =
-        viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
+      const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
       setShowScrollToBottom(distance > 200);
     };
     onScroll();
-    viewport.addEventListener("scroll", onScroll, { passive: true });
-    return () => viewport.removeEventListener("scroll", onScroll);
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
   }, [exchanges.length, isRunning]);
 
   return (
-    <div ref={containerRef} className="relative flex min-h-0 flex-1 flex-col">
-      <ScrollArea className="flex-1">
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      <div
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto overflow-x-hidden [scrollbar-gutter:stable] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-foreground/30 hover:[&::-webkit-scrollbar-thumb]:bg-foreground/50"
+      >
         <div className="mx-auto max-w-3xl space-y-6 px-4 py-6">
           {empty ? <EmptyState /> : null}
 
-          {exchanges.map((ex, idx) => (
+          {exchanges.map((ex) => (
+            // 5.0c-b: meta row (grounding badge + step/token counts) now
+            // renders on EVERY exchange, not only the latest. Earlier
+            // turns deserve the same provenance display as the newest.
             <CompletedExchange
               key={ex.id}
               exchange={ex}
-              showMeta={idx === exchanges.length - 1 && !showStreamView}
+              showMeta={!showStreamView}
             />
           ))}
 
@@ -81,7 +84,7 @@ export function MessageThread({ exchanges, stream }: Props) {
 
           <div ref={bottomRef} />
         </div>
-      </ScrollArea>
+      </div>
       {showScrollToBottom ? (
         <Button
           type="button"

@@ -188,15 +188,34 @@ async def logout(
 
 
 @router.get("/me", response_model=MeResponse)
-async def me(request: Request) -> MeResponse:
-    """Return current session's user and tenant info."""
+async def me(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> MeResponse:
+    """Return current session's user and tenant info.
+
+    The JWT only carries user_id/tenant_id/role; email and display_name
+    come from the User row. Surfacing them in the sidebar profile chip
+    (Slice 5.0c-b) was the original prompt for wiring this up.
+    """
     session: dict[str, Any] = getattr(request.state, "session", {})
     if not session.get("user_id"):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated"
+        )
+    user_id = uuid.UUID(str(session["user_id"]))
+    user = (
+        await db.execute(select(User).where(User.id == user_id))
+    ).scalar_one_or_none()
+    if user is None:
+        # Session points to a user that no longer exists — treat as logged out.
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Stale session"
+        )
     return MeResponse(
-        user_id=uuid.UUID(str(session["user_id"])),
-        email="",  # email not in JWT — load from DB if needed
-        display_name="",
+        user_id=user_id,
+        email=user.email or "",
+        display_name=user.display_name or "",
         tenant_id=uuid.UUID(str(session["tenant_id"])),
         role=str(session.get("role", "")),
     )

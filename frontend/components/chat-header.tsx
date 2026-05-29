@@ -43,11 +43,11 @@ export function ChatHeader() {
             <Button
               variant="ghost"
               size="sm"
-              className="h-9 w-9 p-0"
+              className="h-10 w-10 rounded-full p-0"
               aria-label="Settings"
               title="Settings"
             >
-              <Cog className="h-4 w-4" />
+              <Cog className="!h-6 !w-6" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">
