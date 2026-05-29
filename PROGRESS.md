@@ -104,7 +104,10 @@ which now becomes its own dedicated phase *after* stabilization, not before.
   and `beta` (`beta-admin@example.com` / `beta_admin_dev_password`).
 - Wazuh deployment: `192.168.245.128` (Indexer 9200 / Server API 55000).
   Credentials in `credentials/` (gitignored).
-- Frontend dev URL: `http://192.168.68.108:3000`. Orchestrator: `:8000`.
+- Frontend dev URL: `http://<LAN-IP>:3000` (discover with `hostname -I`);
+  three files pin the IP — see [`docs/restart.md`](docs/restart.md) under
+  "Test credentials" for which to update when the IP changes.
+  Orchestrator: `:8000`.
 
 ### Restart runbook
 

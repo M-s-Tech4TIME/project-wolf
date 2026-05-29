@@ -124,8 +124,27 @@ provenance):
 | Acme SecOps | `admin@example.com` | `wolf_admin_dev_password` |
 | Beta InfoSec | `beta-admin@example.com` | `beta_admin_dev_password` |
 
-Frontend URL: `http://192.168.68.108:3000` (LAN-accessible) or
-`http://localhost:3000` (this machine only).
+Frontend URL: `http://<this-machine's-LAN-IP>:3000` (LAN-accessible)
+or `http://localhost:3000` (this machine only). Discover the current
+LAN IP with:
+
+```bash
+ip -4 -o addr show | awk '$2 != "lo" {print $2": "$4}'
+# or:
+hostname -I
+```
+
+If the LAN IP just changed, three files pin it and must be updated:
+
+| File | What to update |
+|---|---|
+| `.env` | `CORS_ALLOW_ORIGINS=` — append `http://<new-ip>:3000` |
+| `frontend/.env.local` | `NEXT_PUBLIC_ORCHESTRATOR_URL=http://<new-ip>:8000` |
+| `frontend/next.config.ts` | `allowedDevOrigins: […]` — append `"<new-ip>"` |
+
+After editing, restart **both** orchestrator and `next dev` (next-dev
+captures `NEXT_PUBLIC_*` at build time and `allowedDevOrigins` at
+startup).
 
 ---
 
