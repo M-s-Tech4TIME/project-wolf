@@ -106,6 +106,12 @@ which now becomes its own dedicated phase *after* stabilization, not before.
   Credentials in `credentials/` (gitignored).
 - Frontend dev URL: `http://192.168.68.108:3000`. Orchestrator: `:8000`.
 
+### Restart runbook
+
+See [`docs/restart.md`](docs/restart.md) — the exact procedure to bring
+Wolf back to a known-clean state. Use it whenever a backend change
+needs to land, before a manual web-test, or anytime things feel odd.
+
 ### Per-slice workflow (current standing rule)
 
 1. Implement (unit tests + lint + mypy + frontend tsc/eslint clean).
