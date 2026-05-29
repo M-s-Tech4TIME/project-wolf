@@ -232,16 +232,20 @@ export function ChatShell() {
           collapsed={sidebarCollapsed}
           onToggleCollapsed={() => setSidebarCollapsed(!sidebarCollapsed)}
         />
-        <main className="flex flex-1 flex-col overflow-hidden">
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <MessageThread
             exchanges={visibleExchanges}
             stream={stream}
           />
-          <div className="shrink-0 border-t border-border bg-card/50 p-4">
+          <div className="shrink-0 border-t border-border bg-card/50 px-4 pt-3 pb-2">
             <ChatComposer
               onSubmit={handleSubmit}
               disabled={isRunning}
             />
+            <p className="mt-2 text-center text-[10px] text-muted-foreground">
+              Wolf is an AI agent and can make mistakes. Verify critical
+              findings against your Wazuh dashboard.
+            </p>
           </div>
         </main>
         <aside

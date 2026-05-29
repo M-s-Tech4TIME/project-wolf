@@ -1,10 +1,11 @@
 "use client";
 
-import { Bot, Loader2, ShieldAlert, ShieldCheck, User } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { ArrowDown, Bot, Loader2, ShieldAlert, ShieldCheck, User } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Markdown } from "@/components/markdown";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { UseChatStream } from "@/hooks/use-chat-stream";
 import type { ChatExchange } from "@/lib/types";
@@ -23,36 +24,78 @@ export function MessageThread({ exchanges, stream }: Props) {
   const showStreamView = isRunning || stream.status.phase === "error";
   const empty = exchanges.length === 0 && !showStreamView;
 
+  // Auto-scroll to the bottom on new content. The Radix Viewport is the
+  // actual scrollable element; we grab it once via data-attribute so we
+  // can also observe scroll position for the "scroll to bottom" button.
   const bottomRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
+    bottomRef.current?.scrollIntoView({ behavior, block: "end" });
+  }, []);
+
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    scrollToBottom("smooth");
+  }, [exchanges.length, isRunning, scrollToBottom]);
+
+  // Watch scroll position on the Radix Viewport so the scroll-to-bottom
+  // arrow only appears when the user is significantly above the bottom.
+  useEffect(() => {
+    const viewport = containerRef.current?.querySelector<HTMLElement>(
+      "[data-slot='scroll-area-viewport']",
+    );
+    if (!viewport) return;
+    const onScroll = () => {
+      const distance =
+        viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
+      setShowScrollToBottom(distance > 200);
+    };
+    onScroll();
+    viewport.addEventListener("scroll", onScroll, { passive: true });
+    return () => viewport.removeEventListener("scroll", onScroll);
   }, [exchanges.length, isRunning]);
 
   return (
-    <ScrollArea className="flex-1">
-      <div className="mx-auto max-w-3xl space-y-6 px-4 py-6">
-        {empty ? <EmptyState /> : null}
+    <div ref={containerRef} className="relative flex min-h-0 flex-1 flex-col">
+      <ScrollArea className="flex-1">
+        <div className="mx-auto max-w-3xl space-y-6 px-4 py-6">
+          {empty ? <EmptyState /> : null}
 
-        {exchanges.map((ex, idx) => (
-          <CompletedExchange
-            key={ex.id}
-            exchange={ex}
-            showMeta={idx === exchanges.length - 1 && !showStreamView}
-          />
-        ))}
+          {exchanges.map((ex, idx) => (
+            <CompletedExchange
+              key={ex.id}
+              exchange={ex}
+              showMeta={idx === exchanges.length - 1 && !showStreamView}
+            />
+          ))}
 
-        {showStreamView ? (
-          <>
-            {stream.currentQuestion ? (
-              <UserBubble text={stream.currentQuestion} />
-            ) : null}
-            <StreamingView stream={stream} />
-          </>
-        ) : null}
+          {showStreamView ? (
+            <>
+              {stream.currentQuestion ? (
+                <UserBubble text={stream.currentQuestion} />
+              ) : null}
+              <StreamingView stream={stream} />
+            </>
+          ) : null}
 
-        <div ref={bottomRef} />
-      </div>
-    </ScrollArea>
+          <div ref={bottomRef} />
+        </div>
+      </ScrollArea>
+      {showScrollToBottom ? (
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          onClick={() => scrollToBottom("smooth")}
+          aria-label="Scroll to bottom of conversation"
+          title="Scroll to bottom"
+          className="absolute bottom-4 left-1/2 z-10 h-9 w-9 -translate-x-1/2 rounded-full p-0 shadow-md ring-1 ring-border"
+        >
+          <ArrowDown className="h-4 w-4" />
+        </Button>
+      ) : null}
+    </div>
   );
 }
 

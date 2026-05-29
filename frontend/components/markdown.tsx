@@ -1,8 +1,8 @@
 "use client";
 
-import { AlertTriangle, Check, Info, MessageCircle } from "lucide-react";
+import { AlertTriangle, Check, Copy, Info, MessageCircle } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
-import { Children, Fragment, isValidElement } from "react";
+import { Children, Fragment, isValidElement, useCallback, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -182,15 +182,82 @@ function CodeBlock(props: ComponentProps<"code">) {
 
   const language = className?.replace("language-", "") || "";
   return (
-    <pre className="my-2 overflow-x-auto rounded-md border border-border bg-muted/50 p-3 text-xs">
-      {language ? (
-        <div className="-mt-1 mb-2 text-[10px] uppercase tracking-wider text-muted-foreground">
-          {language}
-        </div>
-      ) : null}
-      <code className="font-mono leading-relaxed" {...rest}>
-        {children}
-      </code>
-    </pre>
+    <FencedCodeBlock language={language} codeProps={rest}>
+      {children}
+    </FencedCodeBlock>
   );
+}
+
+/**
+ * Fenced code block with a header (language label) and a copy-to-clipboard
+ * button that's always present and switches to a check-mark for 1.5 s on
+ * successful copy. The pre/code chrome is kept small (text-xs, p-3) so it
+ * doesn't dominate analyst-style answers.
+ */
+function FencedCodeBlock({
+  language,
+  codeProps,
+  children,
+}: {
+  language: string;
+  codeProps: Omit<ComponentProps<"code">, "className" | "children">;
+  children: ReactNode;
+}) {
+  const [copied, setCopied] = useState(false);
+  const onCopy = useCallback(async () => {
+    // children may include strings and elements; collect the visible text.
+    const text = nodeToString(children);
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard denied — best-effort */
+    }
+  }, [children]);
+
+  return (
+    <div className="group relative my-2 overflow-hidden rounded-md border border-border bg-muted/50">
+      <div className="flex items-center justify-between border-b border-border/60 bg-muted/40 px-3 py-1">
+        <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+          {language || "code"}
+        </span>
+        <button
+          type="button"
+          onClick={onCopy}
+          aria-label={copied ? "Copied" : "Copy code"}
+          title={copied ? "Copied" : "Copy code"}
+          className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+        >
+          {copied ? (
+            <>
+              <Check className="h-3 w-3" />
+              Copied
+            </>
+          ) : (
+            <>
+              <Copy className="h-3 w-3" />
+              Copy
+            </>
+          )}
+        </button>
+      </div>
+      <pre className="overflow-x-auto p-3 text-xs">
+        <code className="font-mono leading-relaxed" {...codeProps}>
+          {children}
+        </code>
+      </pre>
+    </div>
+  );
+}
+
+/** Recursively flatten React children to a plain string for clipboard. */
+function nodeToString(node: ReactNode): string {
+  if (node == null || typeof node === "boolean") return "";
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(nodeToString).join("");
+  if (isValidElement<{ children?: ReactNode }>(node)) {
+    return nodeToString(node.props.children ?? "");
+  }
+  return "";
 }
