@@ -22,9 +22,10 @@ lives in [`frontend/app/globals.css`](frontend/app/globals.css) and is
 documented in the cross-session memory entry `wolf-color-palette.md`.
 The polish backlog (sidebar search, message fading + "Show more",
 hover-on-message actions, new-chat greeting screen, full icon-rail
-mode) is deferred to **5.0c-b.2** — placement decided after 5.0c-e
-lands so polish sits on top of streaming + activity feed rather than
-under them.
+mode) lands as **Slice 5.0c-f**, sequenced **after 5.0c-e and before
+Phase 5.4** (decided 2026-05-29). Polish sits on top of streaming +
+activity feed so hover-on-message understands a streaming vs settled
+message; one focused web-test pass instead of three.
 
 Standing operating rules: per-slice web-test workflow (memory:
 `per-slice-web-test-checkpoints.md`); never push to `origin/main`
@@ -49,9 +50,10 @@ which now becomes its own dedicated phase *after* stabilization, not before.
 | **5.0b** | Grounding 4-verdict taxonomy (yellow `[unverified]` caution vs red `[unsupported]`) · fabrication hardening via failed-tool negative evidence · empty-answer synthesis fallback · per-slice fresh-reset + self-validation workflow | ✅ implemented + Claude-side validated; **awaiting user web-test** | pending |
 | **5.0c-a** | Verdict rename + 4 chips — `supported`→🟢 *Verified*, `uncertain`→🟡 *Uncertain* (amber), `unsupported`→🔴 *Not Verified*, `unverifiable`→🟡 *Non-factual* (muted). Backend now emits all four marker tokens; frontend renders four distinct chip styles. | ✅ shipped + self-validated | pending commit |
 | **5.0c-b** | UI layout: persistent + resizable + text-wrapping Evidence panel · collapsible Conversations sidebar · avatar moved to sidebar footer · Settings gear in header (placeholder for User Settings + Wolf Configuration) · native overflow-y-auto chat scroll · /auth/me now returns real email + display_name · per-exchange meta row · code-block Copy with HTTPS+HTTP fallback · disclaimer + scroll-to-bottom button | ✅ shipped + user-verified | `28dc96d` |
-| **5.0c-c** | Theme/colour palette — **user-supplied cool-blue palette (2026-05-29, supersedes earlier `wolf-color-palette-outlook.png`)**: Platinum `#e7ecef`, Dusk Blue `#274c77`, Steel Blue `#6096ba`, Icy Blue `#a3cef1`. Apply across globals.css CSS vars, markdown text + inline code, buttons, animations, surfaces. Grounding chips keep their distinct semantic colours but tuned to harmonise. | 🚧 in progress | — |
+| **5.0c-c** | Theme/colour palette — Platinum `#e7ecef`, Dusk Blue `#274c77`, Steel Blue `#6096ba`, Icy Blue `#a3cef1` (user-chosen 2026-05-29, supersedes earlier `wolf-color-palette-outlook.png`). Applied across light + dark CSS variables, markdown, buttons, animations, surfaces; grounding chips keep their semantic colours. See [[wolf-color-palette]]. | ✅ shipped | `3c070c3` |
 | **5.0c-d** | Progressive answer rendering — Claude-style token-by-token reveal via `/api/v1/chat/stream`. See [[progressive-response-and-live-activity]]. | ⏳ not started | — |
 | **5.0c-e** | Live activity feed during steps — narrate what Wolf is actually doing right now (searching Wazuh, asking the model, judging, drafting). See [[progressive-response-and-live-activity]]. | ⏳ not started | — |
+| **5.0c-f** | Polish backlog (decided 2026-05-29 to sit after 5.0c-e): sidebar search · message fading + "Show more" on long user messages · hover-on-message actions (date / retry / edit / copy) · new-chat greeting screen with quick-action cards · full icon-rail mode when the sidebar is collapsed. Lands after streaming + activity so polish sits on top of them, not under. | ⏳ not started | — |
 | **5.0d** | Color/theme to match `wolf-color-palette-outlook.png` (Wazuh dark-navy + blue) | ⏳ not started | — |
 
 ### After 5.0a–d
