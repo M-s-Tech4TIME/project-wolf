@@ -33,7 +33,18 @@ which now becomes its own dedicated phase *after* stabilization, not before.
 
 ### After 5.0a–d
 
-1. **Phase 5 — Organizations + RBAC** (decided 2026-05-28): superuser
+1. **Phase 5.4 — Native HTTPS + `wolf-cert` CLI** (decided 2026-05-29):
+   slot immediately after the 5.0c UI work, before Phase 5 RBAC.
+   Generates a Wolf Root CA + leaf certs for the orchestrator and the
+   frontend dev server with **100-year validity** (RFC 5280 forbids
+   truly unlimited; 100 years is the established practical-infinity
+   pattern). A dedicated `wolf-cert` CLI owns init / add-host / renew /
+   status / export-ca / revoke. Built with the `cryptography` library
+   already in the dependency footprint. Unlocks every secure-context
+   API (clipboard, web crypto, service workers, push) — removes the
+   reason the 5.0c-b code-block Copy needed an execCommand fallback.
+   See [[native-https-and-wolf-cert]] for design intent.
+2. **Phase 5 — Organizations + RBAC** (decided 2026-05-28): superuser
    (default at install) creates orgs + assigns users/roles; org admins
    manage their own org; regular users only chat. Scope reserved for a
    superuser cross-org chat access path (designed-in but off by default).
