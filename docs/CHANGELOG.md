@@ -49,6 +49,108 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-05-29 — Slice 5.0c-c: theme — Platinum / Dusk Blue / Steel Blue / Icy Blue palette
+
+**Session type:** claude-code
+**Phase:** Phase 5 prep — third sub-slice of the 5.0c UI work
+**Duration:** ~1 h
+**Branch / commit:** `main` — landed `3c070c3`.
+
+### What we did
+- User chose a four-colour cool-blue palette (Platinum `#e7ecef`,
+  Dusk Blue `#274c77`, Steel Blue `#6096ba`, Icy Blue `#a3cef1`) and
+  asked us to handle the slice like an absolute professional designer.
+  This **supersedes** the earlier `wolf-color-palette-outlook.png`
+  reference.
+- Wrote `app/globals.css` from the palette down: four named source CSS
+  variables → every shadcn token derives from them in both light and
+  dark themes. Light: Platinum surface, deep-dusk body copy, Dusk Blue
+  primary, Icy Blue secondary, Steel Blue ring, white card for
+  elevation, sidebar one step toward Icy. Dark: deep navy background,
+  Platinum foreground, Icy Blue primary (so CTAs pop), Dusk Blue
+  secondary, Steel Blue accent.
+- Subtle radial-gradient on the light-mode body fading toward Icy Blue
+  at the bottom-right; disabled in dark mode where the deep navy
+  already does the depth work.
+- Consistent 150 ms ease-out colour / shadow / transform transitions on
+  every `button`, `<a>`, and `[role="button"]` via a base-layer rule
+  (no per-component motion noise).
+- Grounding chips kept their semantic colours (green Verified, amber
+  Uncertain, red Not Verified, muted yellow Non-factual) — signal-
+  bearing, not decorative; they sit on the cool palette without
+  clashing.
+- Full design intent recorded in `wolf-color-palette.md` cross-session
+  memory so this palette is the source of truth going forward.
+
+### What's next
+- Slice 5.0c-d: progressive answer rendering via `/api/v1/chat/stream`.
+
+## 2026-05-28 → 29 — Operational docs cluster (Phase 5.4 record, restart runbook, LAN IP rotation)
+
+**Session type:** claude-code
+**Phase:** Phase 5 prep — documentation while iterating on 5.0c-b
+**Duration:** trickled across the session
+**Branch / commits:** `main` — `4166616` `1f9a10d` `82a93cd`.
+
+### What we did
+- `4166616` — recorded **Phase 5.4 — Native HTTPS + `wolf-cert` CLI**
+  in PROGRESS.md (decision: post-5.0c, pre-RBAC). 100-year cert
+  validity as the practical-infinity pattern (RFC 5280 forbids truly
+  unlimited). Full design intent in `native-https-and-wolf-cert.md`
+  cross-session memory.
+- `1f9a10d` — created `docs/restart.md`, the dedicated reset + relaunch
+  runbook. Quick-version copy-pasteable sequence, what each step does,
+  what the restart does NOT touch, test credentials, hardware fact
+  (6 GB GPU, qwen3:4b + qwen3:8b don't fit together), per-slice
+  workflow recap, troubleshooting table. The per-slice memory entry
+  now references it as source-of-truth instead of inlining the steps.
+- `82a93cd` — host's LAN IP rotated `.108` → `.114`; appended the new
+  IP to `CORS_ALLOW_ORIGINS`, `NEXT_PUBLIC_ORCHESTRATOR_URL`, and
+  `allowedDevOrigins`. Added an "If the LAN IP just changed" three-file
+  checklist + `hostname -I` discovery to `docs/restart.md` so the next
+  rotation is a 30-second fix.
+
+## 2026-05-29 — Slice 5.0c-b iteration (passes 2 / 3 / 4): user-flagged bug fixes
+
+**Session type:** claude-code
+**Phase:** Phase 5 prep — same slice, four web-test rounds
+**Duration:** ~2.5 h across passes
+**Branch / commits:** `main` — `4f86af5`, `2bf1967`, `28dc96d`.
+
+### What we did
+- Pass 2 (`4f86af5`) — first user web-test of 5.0c-b surfaced layout
+  bugs. Avatar moved out of the header into a Claude-style sidebar
+  footer; header gained a Settings gear (placeholder for User Settings
+  + Wolf Configuration); tenant selector stayed top-right. Code-block
+  Copy button added. Scroll-to-bottom floating arrow. Disclaimer line
+  under the composer. Scrollbar thumb upped from `bg-border` to
+  `foreground/30` so it's visible at rest.
+- Pass 3 (`2bf1967`) — second web-test flagged that the composer was
+  still being overlapped by the chat, the avatar email row was empty,
+  older exchanges lost their meta row, and the gear was too small.
+  MessageThread switched from Radix `ScrollArea` to native
+  `overflow-y-auto` (rock-solid in flex chains); `/auth/me` was
+  finishing a 6-month-old "load from DB if needed" TODO and silently
+  returning `email=""` — now loads the User row; meta row gating
+  loosened to show on every archived exchange; gear icon enlarged.
+- Pass 4 (`28dc96d`) — third web-test flagged that the meta row still
+  disappeared when a new turn started streaming, and the Copy button
+  silently did nothing. `showMeta` gating fixed (archived turns are
+  immutable). The `navigator.clipboard.writeText` only works in secure
+  contexts; Wolf dev is plain HTTP on a LAN IP, so the catch was
+  swallowing the failure. Added a `copyText()` helper that falls back
+  to `document.execCommand('copy')` via a hidden textarea — the button
+  now flips to "Copied" with a check for ~1.5 s on real success.
+
+### What's next
+- Slice 5.0c-c (theme) → 5.0c-d (streaming) → 5.0c-e (live activity) →
+  Phase 5.4 (Native HTTPS) → Phase 5 (RBAC).
+- Deferred to 5.0c-b.2 (placement TBD): search-conversations in
+  sidebar, fading + "Show more" on long user messages, hover-on-
+  message actions (date / retry / edit / copy), new-chat greeting
+  screen with quick-action cards, full icon-rail mode for the
+  collapsed sidebar.
+
 ## 2026-05-28 — Slice 5.0c-b: layout overhaul (avatar dropdown, collapsible sidebar, resizable Evidence panel)
 
 **Session type:** claude-code

@@ -10,6 +10,29 @@
 
 ---
 
+## Session anchor (read this first)
+
+If you are a new Claude session picking this up: the single sentence
+that orients you is **"Slice 5.0c-c (theme palette) shipped at `3c070c3`;
+next is Slice 5.0c-d — progressive answer rendering via
+`/api/v1/chat/stream`."**
+
+The four-colour palette (Platinum / Dusk Blue / Steel Blue / Icy Blue)
+lives in [`frontend/app/globals.css`](frontend/app/globals.css) and is
+documented in the cross-session memory entry `wolf-color-palette.md`.
+The polish backlog (sidebar search, message fading + "Show more",
+hover-on-message actions, new-chat greeting screen, full icon-rail
+mode) is deferred to **5.0c-b.2** — placement decided after 5.0c-e
+lands so polish sits on top of streaming + activity feed rather than
+under them.
+
+Standing operating rules: per-slice web-test workflow (memory:
+`per-slice-web-test-checkpoints.md`); never push to `origin/main`
+without an explicit ask; restart procedure lives in
+[`docs/restart.md`](docs/restart.md) — use it, don't re-derive it.
+
+---
+
 ## Current focus
 
 **Phase 5 prep — stabilization slices (5.0a → 5.0d) before Phase 5 proper.**
