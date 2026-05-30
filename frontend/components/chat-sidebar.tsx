@@ -554,8 +554,10 @@ function ConversationListItem({
             {onDelete ? (
               <DropdownMenuItem
                 variant="destructive"
+                disabled={isStreaming}
                 onSelect={(e) => {
                   e.preventDefault();
+                  if (isStreaming) return;
                   onDelete();
                 }}
               >

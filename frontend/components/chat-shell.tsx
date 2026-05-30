@@ -7,6 +7,7 @@ import { ChatHeader } from "@/components/chat-header";
 import { ChatSidebar } from "@/components/chat-sidebar";
 import { ChatsHistoryOverlay } from "@/components/chats-history-overlay";
 import { CitationsPanel } from "@/components/citations-panel";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { InConversationSearchBar } from "@/components/in-conversation-search-bar";
 import { MessageThread } from "@/components/message-thread";
 import { useChatStream } from "@/hooks/use-chat-stream";
@@ -227,61 +228,57 @@ export function ChatShell() {
     );
   }, []);
 
-  // Slice 5.0c-i.2: delete a conversation. Confirms first; refuses
-  // while the conversation is the active stream's target (the archive
-  // effect would otherwise write into a removed slot). If the deleted
-  // conversation was the active one, fall back to the greeting screen.
+  // Slice 5.0c-i.3: pending-delete state for the app-native
+  // confirmation dialog. handleDelete / handleBulkDelete *queue* the
+  // deletion here; the dialog renders, and confirmPendingDelete
+  // executes only when the user accepts. The streaming-protection
+  // path now silently no-ops (the menu items are also disabled for
+  // streaming conversations, so this path shouldn't fire — but the
+  // belt-and-braces stays).
+  const [pendingDelete, setPendingDelete] = useState<{
+    ids: string[];
+    titles: string[];
+  } | null>(null);
+
   const handleDelete = useCallback(
     (id: string) => {
-      if (streamingConvoId === id) {
-        window.alert(
-          "This conversation is still generating an answer. Wait for it to finish (or stop it) before deleting.",
-        );
-        return;
-      }
+      if (streamingConvoId === id) return;
       const target = conversations.find((c) => c.id === id);
       if (!target) return;
-      const ok = window.confirm(
-        `Delete "${target.title}"? This can't be undone.`,
-      );
-      if (!ok) return;
-      setConversations((prev) => prev.filter((c) => c.id !== id));
-      if (activeConvoId === id) {
-        setActiveConvoId(null);
-        if (stream.status.phase !== "running") {
-          stream.reset();
-          archivedRef.current = null;
-        }
-      }
+      setPendingDelete({ ids: [id], titles: [target.title] });
     },
-    [streamingConvoId, conversations, activeConvoId, stream],
+    [streamingConvoId, conversations],
   );
 
-  // Slice 5.0c-i.2: bulk delete from the chats-history overlay. Same
-  // streaming-protection rule; the overlay disables the Delete button
-  // when the selection contains the streaming convo, and we belt-and-
-  // braces here.
   const handleBulkDelete = useCallback(
     (ids: string[]) => {
-      const safe = ids.filter((id) => id !== streamingConvoId);
-      if (safe.length === 0) return;
-      const ok = window.confirm(
-        safe.length === 1
-          ? "Delete this conversation? This can't be undone."
-          : `Delete ${safe.length} conversations? This can't be undone.`,
-      );
-      if (!ok) return;
-      setConversations((prev) => prev.filter((c) => !safe.includes(c.id)));
-      if (activeConvoId && safe.includes(activeConvoId)) {
-        setActiveConvoId(null);
-        if (stream.status.phase !== "running") {
-          stream.reset();
-          archivedRef.current = null;
-        }
-      }
+      const safeIds = ids.filter((id) => id !== streamingConvoId);
+      if (safeIds.length === 0) return;
+      const titles = safeIds
+        .map((id) => conversations.find((c) => c.id === id)?.title)
+        .filter((t): t is string => typeof t === "string");
+      setPendingDelete({ ids: safeIds, titles });
     },
-    [streamingConvoId, activeConvoId, stream],
+    [streamingConvoId, conversations],
   );
+
+  const confirmPendingDelete = useCallback(() => {
+    if (!pendingDelete) return;
+    const ids = pendingDelete.ids;
+    setConversations((prev) => prev.filter((c) => !ids.includes(c.id)));
+    if (activeConvoId && ids.includes(activeConvoId)) {
+      setActiveConvoId(null);
+      if (stream.status.phase !== "running") {
+        stream.reset();
+        archivedRef.current = null;
+      }
+    }
+    setPendingDelete(null);
+  }, [pendingDelete, activeConvoId, stream]);
+
+  const cancelPendingDelete = useCallback(() => {
+    setPendingDelete(null);
+  }, []);
 
   // Slice 5.0c-i.2: keep the sidebar / overlay sorted by most-recent
   // activity. updated_at is set on every archive, so a new exchange
@@ -569,6 +566,45 @@ export function ChatShell() {
         onRename={handleRename}
         onToggleStar={handleToggleStar}
         onBulkDelete={handleBulkDelete}
+      />
+      {/* Slice 5.0c-i.3: app-native confirmation dialog. Mounted at the
+          shell level so it sits above both the chat UI and the chats-
+          history overlay; the dialog's own z-index (60) puts it above
+          the overlay's z-50. */}
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        variant="destructive"
+        title={
+          pendingDelete && pendingDelete.ids.length > 1
+            ? `Delete ${pendingDelete.ids.length} conversations?`
+            : "Delete this conversation?"
+        }
+        description={
+          pendingDelete ? (
+            pendingDelete.ids.length === 1 ? (
+              <>
+                <span className="font-medium text-foreground">
+                  &ldquo;{pendingDelete.titles[0]}&rdquo;
+                </span>{" "}
+                will be permanently removed. This can&apos;t be undone.
+              </>
+            ) : (
+              <>
+                The selected conversations will be permanently removed.
+                This can&apos;t be undone.
+              </>
+            )
+          ) : (
+            ""
+          )
+        }
+        confirmLabel={
+          pendingDelete && pendingDelete.ids.length > 1
+            ? `Delete ${pendingDelete.ids.length}`
+            : "Delete"
+        }
+        onConfirm={confirmPendingDelete}
+        onCancel={cancelPendingDelete}
       />
     </div>
   );
