@@ -1,10 +1,35 @@
 "use client";
 
-import { Loader2, MessageSquare, Plus, Search, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  Check,
+  Loader2,
+  MessageSquare,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  Search,
+  Star,
+  Trash2,
+  X,
+} from "lucide-react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 import type { Conversation } from "@/lib/types";
 
 type Props = {
@@ -46,17 +71,30 @@ export function ChatsHistoryOverlay({
   onClose,
   onSelect,
   onNew,
+  onRename,
+  onToggleStar,
+  onBulkDelete,
 }: Props) {
   const [query, setQuery] = useState("");
+  // Slice 5.0c-i.2 commit 3: selection-mode state. selectionMode is the
+  // toggle; selectedIds is the set of conversation ids currently
+  // ticked. Both reset to defaults on every open of the overlay so the
+  // user never lands inside selection mode unexpectedly.
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [renamingId, setRenamingId] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
   // Focus the search input the moment the overlay opens — primary
-  // affordance of this screen is "find a chat by content". Reset query
-  // too so each open is a fresh search (previous filter doesn't linger).
+  // affordance of this screen is "find a chat by content". Reset query,
+  // selection mode, and rename state so each open is a fresh session.
   useEffect(() => {
     if (open) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setQuery("");
+      setSelectionMode(false);
+      setSelectedIds(new Set());
+      setRenamingId(null);
       requestAnimationFrame(() => searchRef.current?.focus());
     }
   }, [open]);
@@ -79,6 +117,44 @@ export function ChatsHistoryOverlay({
     [query, conversations],
   );
 
+  // Selection helpers --------------------------------------------------
+  const toggleSelection = (id: string) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const enterSelectionWith = (id: string) => {
+    setSelectionMode(true);
+    setSelectedIds(new Set([id]));
+  };
+  const selectAllVisible = () =>
+    setSelectedIds(new Set(results.map((r) => r.conversation.id)));
+  const cancelSelection = () => {
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+  };
+  // We refuse to delete a conversation that's currently streaming —
+  // the archive effect would write into a removed slot. Mirror that
+  // protection here so the Delete button stays disabled when the
+  // selection contains the streaming conversation.
+  const selectionContainsStreaming =
+    streamingId !== null &&
+    streamingId !== undefined &&
+    selectedIds.has(streamingId);
+  const handleDeleteSelected = () => {
+    if (selectedIds.size === 0) return;
+    onBulkDelete?.(Array.from(selectedIds));
+    cancelSelection();
+  };
+
+  // Rename helpers -----------------------------------------------------
+  const commitRename = (id: string, next: string) => {
+    onRename?.(id, next);
+    setRenamingId(null);
+  };
+
   if (!open) return null;
 
   return (
@@ -88,7 +164,9 @@ export function ChatsHistoryOverlay({
       aria-label="Chats history"
       className="fixed inset-0 z-50 flex flex-col bg-background animate-in fade-in-0 duration-200"
     >
-      {/* Header */}
+      {/* Header — two variants. Normal: title left, "Select chats" +
+          "New chat" right. Selection: title left, counter + Select all
+          + Delete + Cancel right (image 4). */}
       <div className="flex h-14 shrink-0 items-center justify-between border-b border-border px-4">
         <div className="flex items-center gap-3">
           <Button
@@ -103,15 +181,60 @@ export function ChatsHistoryOverlay({
           </Button>
           <h2 className="text-xl font-semibold tracking-tight">Chats</h2>
         </div>
-        <Button
-          size="sm"
-          onClick={() => {
-            onNew();
-            onClose();
-          }}
-        >
-          <Plus className="mr-1 h-4 w-4" /> New chat
-        </Button>
+        {selectionMode ? (
+          <div className="flex items-center gap-2">
+            <span className="mr-1 text-xs text-muted-foreground">
+              {selectedIds.size} selected
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={selectAllVisible}
+              disabled={results.length === 0}
+            >
+              Select all
+            </Button>
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={handleDeleteSelected}
+              disabled={
+                selectedIds.size === 0 || selectionContainsStreaming
+              }
+              title={
+                selectionContainsStreaming
+                  ? "Can't delete a conversation that's still generating"
+                  : undefined
+              }
+            >
+              <Trash2 className="mr-1 h-4 w-4" />
+              Delete
+            </Button>
+            <Button size="sm" variant="ghost" onClick={cancelSelection}>
+              Cancel
+            </Button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setSelectionMode(true)}
+              disabled={conversations.length === 0}
+            >
+              Select chats
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => {
+                onNew();
+                onClose();
+              }}
+            >
+              <Plus className="mr-1 h-4 w-4" /> New chat
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Search row */}
@@ -173,49 +296,262 @@ export function ChatsHistoryOverlay({
           ) : (
             <ul className="space-y-2">
               {results.map((r) => (
-                <li key={r.conversation.id}>
-                  <button
-                    type="button"
-                    onClick={() => {
+                <ResultRow
+                  key={r.conversation.id}
+                  result={r}
+                  selectionMode={selectionMode}
+                  isSelected={selectedIds.has(r.conversation.id)}
+                  isStreaming={r.conversation.id === streamingId}
+                  isRenaming={r.conversation.id === renamingId}
+                  onActivate={() => {
+                    if (selectionMode) {
+                      toggleSelection(r.conversation.id);
+                    } else {
                       onSelect(r.conversation.id);
                       onClose();
-                    }}
-                    className="group/result block w-full rounded-md border border-border bg-card px-4 py-3 text-left transition-colors hover:border-primary/40 hover:bg-accent/30"
-                  >
-                    <div className="flex items-center gap-2">
-                      {r.conversation.id === streamingId ? (
-                        <Loader2 className="h-4 w-4 shrink-0 animate-spin text-primary" />
-                      ) : (
-                        <MessageSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
-                      )}
-                      <span className="line-clamp-1 text-sm font-medium group-hover/result:text-primary">
-                        {r.conversation.title}
-                      </span>
-                      <span className="ml-auto text-[10px] text-muted-foreground">
-                        {r.conversation.exchanges.length}{" "}
-                        turn
-                        {r.conversation.exchanges.length === 1 ? "" : "s"}
-                      </span>
-                    </div>
-                    {r.snippet ? (
-                      <p className="mt-1.5 line-clamp-2 text-xs text-muted-foreground">
-                        <span className="mr-1.5 inline-block rounded bg-muted px-1 py-0.5 font-mono text-[10px] uppercase">
-                          {r.snippet.from}
-                        </span>
-                        <HighlightedSnippet
-                          text={r.snippet.text}
-                          match={r.snippet.match}
-                        />
-                      </p>
-                    ) : null}
-                  </button>
-                </li>
+                    }
+                  }}
+                  onEnterSelectionWith={() =>
+                    enterSelectionWith(r.conversation.id)
+                  }
+                  onStar={
+                    onToggleStar
+                      ? () => onToggleStar(r.conversation.id)
+                      : undefined
+                  }
+                  onStartRename={
+                    onRename
+                      ? () => setRenamingId(r.conversation.id)
+                      : undefined
+                  }
+                  onCommitRename={(next) =>
+                    commitRename(r.conversation.id, next)
+                  }
+                  onCancelRename={() => setRenamingId(null)}
+                  onDelete={
+                    onBulkDelete
+                      ? () => onBulkDelete([r.conversation.id])
+                      : undefined
+                  }
+                />
               ))}
             </ul>
           )}
         </div>
       </div>
     </div>
+  );
+}
+
+// ─── ResultRow ──────────────────────────────────────────────────────────────
+
+type ResultRowProps = {
+  result: SearchResult;
+  selectionMode: boolean;
+  isSelected: boolean;
+  isStreaming: boolean;
+  isRenaming: boolean;
+  onActivate: () => void;
+  onEnterSelectionWith: () => void;
+  onStar?: () => void;
+  onStartRename?: () => void;
+  onCommitRename: (next: string) => void;
+  onCancelRename: () => void;
+  onDelete?: () => void;
+};
+
+function ResultRow({
+  result,
+  selectionMode,
+  isSelected,
+  isStreaming,
+  isRenaming,
+  onActivate,
+  onEnterSelectionWith,
+  onStar,
+  onStartRename,
+  onCommitRename,
+  onCancelRename,
+  onDelete,
+}: ResultRowProps) {
+  const { conversation, snippet } = result;
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [draft, setDraft] = useState(conversation.title);
+
+  useEffect(() => {
+    if (isRenaming) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setDraft(conversation.title);
+      requestAnimationFrame(() => inputRef.current?.select());
+    }
+  }, [isRenaming, conversation.title]);
+
+  function handleKeyDown(e: ReactKeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      onCommitRename(draft);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      onCancelRename();
+    }
+  }
+
+  // Inline rename mode — replaces the whole row body with an input.
+  if (isRenaming) {
+    return (
+      <li>
+        <div className="rounded-md border border-primary/40 bg-card p-3">
+          <Input
+            ref={inputRef}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={() => onCommitRename(draft)}
+            onKeyDown={handleKeyDown}
+            maxLength={80}
+            aria-label="Rename conversation"
+            className="h-8 text-sm"
+          />
+          <p className="mt-1 text-[10px] text-muted-foreground">
+            Enter to save · Esc to cancel
+          </p>
+        </div>
+      </li>
+    );
+  }
+
+  // Whether to show the trailing "…" menu. Hidden in selection mode
+  // (its actions don't apply when checkboxes are doing the work).
+  const showMenu =
+    !selectionMode &&
+    (onStar !== undefined ||
+      onStartRename !== undefined ||
+      onDelete !== undefined);
+
+  return (
+    <li>
+      <div
+        className={cn(
+          "group/result relative flex items-start gap-2 rounded-md border border-border bg-card pl-3 pr-2 py-3 transition-colors hover:border-primary/40 hover:bg-accent/30",
+          isSelected && "border-primary/60 bg-accent/40",
+        )}
+      >
+        {selectionMode ? (
+          <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center">
+            <input
+              type="checkbox"
+              checked={isSelected}
+              onChange={onActivate}
+              aria-label={`Select ${conversation.title}`}
+              className="h-4 w-4 cursor-pointer accent-primary"
+            />
+          </div>
+        ) : null}
+
+        <button
+          type="button"
+          onClick={onActivate}
+          className="flex-1 min-w-0 text-left"
+        >
+          <div className="flex items-center gap-2">
+            {isStreaming ? (
+              <Loader2 className="h-4 w-4 shrink-0 animate-spin text-primary" />
+            ) : conversation.starred ? (
+              <Star className="h-4 w-4 shrink-0 fill-amber-400 text-amber-500" />
+            ) : (
+              <MessageSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
+            )}
+            <span className="line-clamp-1 text-sm font-medium group-hover/result:text-primary">
+              {conversation.title}
+            </span>
+            <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">
+              {conversation.exchanges.length} turn
+              {conversation.exchanges.length === 1 ? "" : "s"}
+            </span>
+          </div>
+          {snippet ? (
+            <p className="mt-1.5 line-clamp-2 text-xs text-muted-foreground">
+              <span className="mr-1.5 inline-block rounded bg-muted px-1 py-0.5 font-mono text-[10px] uppercase">
+                {snippet.from}
+              </span>
+              <HighlightedSnippet text={snippet.text} match={snippet.match} />
+            </p>
+          ) : null}
+        </button>
+
+        {showMenu ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                aria-label={`Actions for ${conversation.title}`}
+                title="More actions"
+                onClick={(e) => e.stopPropagation()}
+                className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-accent/70 hover:text-foreground focus:opacity-100 group-hover/result:opacity-100"
+              >
+                <MoreHorizontal className="h-4 w-4" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuItem
+                onSelect={(e) => {
+                  e.preventDefault();
+                  onEnterSelectionWith();
+                }}
+              >
+                <Check className="mr-2 h-3.5 w-3.5" />
+                Select
+              </DropdownMenuItem>
+              {onStar ? (
+                <DropdownMenuItem
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    onStar();
+                  }}
+                >
+                  <Star
+                    className={cn(
+                      "mr-2 h-3.5 w-3.5",
+                      conversation.starred
+                        ? "fill-amber-400 text-amber-500"
+                        : "",
+                    )}
+                  />
+                  {conversation.starred ? "Unstar" : "Star"}
+                </DropdownMenuItem>
+              ) : null}
+              {onStartRename ? (
+                <DropdownMenuItem
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    onStartRename();
+                  }}
+                >
+                  <Pencil className="mr-2 h-3.5 w-3.5" />
+                  Rename
+                </DropdownMenuItem>
+              ) : null}
+              {onDelete ? (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    variant="destructive"
+                    disabled={isStreaming}
+                    onSelect={(e) => {
+                      e.preventDefault();
+                      if (isStreaming) return;
+                      onDelete();
+                    }}
+                  >
+                    <Trash2 className="mr-2 h-3.5 w-3.5" />
+                    Delete
+                  </DropdownMenuItem>
+                </>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : null}
+      </div>
+    </li>
   );
 }
 
