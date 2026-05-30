@@ -69,6 +69,24 @@ which now becomes its own dedicated phase *after* stabilization, not before.
    API (clipboard, web crypto, service workers, push) — removes the
    reason the 5.0c-b code-block Copy needed an execCommand fallback.
    See [[native-https-and-wolf-cert]] for design intent.
+   *Will grow by one subcommand* — `wolf-cert issue-relay <tenant>` —
+   to mint mTLS client certs for the Knowledge Relay (next item).
+1a. **Wolf Knowledge Relay** (proposed 2026-05-30, hard dep on Phase 5.4):
+   a native `wolf-relay` daemon installed on every Wazuh host (manager,
+   indexer, dashboard) as a system package. Reads `/var/ossec/ruleset/`
+   (rules, decoders, SCA), polls Wazuh-state indices (vulnerabilities,
+   inventory), parses → ships over mTLS to Wolf, which ingests into the
+   `knowledge_chunks` store under new source_types (`wazuh_rule`,
+   `wazuh_decoder`, `sca_check`, `cve`, `agent_inventory`). Massively
+   hydrates the grounding judge's evidence pool — turns categories of
+   claims that are currently *uncertain* (rule semantics, decoder
+   behaviour, compliance posture, vulnerability state) into *verified*.
+   Cluster-aware (per-node relays with stable-hash dedupe on Wolf side).
+   Operator-configurable via the Wolf Configuration panel in Settings.
+   Sized as MVP (rules + decoders + 2 lookup tools, single-instance,
+   CLI enrollment) → Full (add SCA + vuln + inventory + cluster + UI
+   enrollment + compliance/MITRE search tools). Full design intent in
+   [[wolf-knowledge-relay]].
 2. **Phase 5 — Organizations + RBAC** (decided 2026-05-28): superuser
    (default at install) creates orgs + assigns users/roles; org admins
    manage their own org; regular users only chat. Scope reserved for a
