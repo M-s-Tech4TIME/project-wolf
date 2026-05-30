@@ -7,6 +7,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { copyText } from "@/lib/clipboard";
+import { highlightSearchInChildren } from "@/lib/search-highlight";
 import { cn } from "@/lib/utils";
 
 /**
@@ -115,10 +116,31 @@ function highlightGroundingMarkers(children: ReactNode): ReactNode {
 export function Markdown({
   children,
   className,
+  searchHighlight = "",
+  searchHighlightActive = false,
 }: {
   children: string;
   className?: string;
+  /** Slice 5.0c-i.3: when set, every case-insensitive substring match
+   *  in the rendered text gets wrapped in a styled `<mark>` so the
+   *  in-conversation Find result is visible inline (not just at the
+   *  bubble border). Composed after the grounding-marker pass so
+   *  chip JSX is preserved verbatim — only flowing prose is split. */
+  searchHighlight?: string;
+  /** Pass `true` for the bubble that's the *current* Find target so
+   *  its highlights use the brighter orange shade (Firefox-style
+   *  active-match indicator). Other matching bubbles stay amber. */
+  searchHighlightActive?: boolean;
 }) {
+  // Compose the two highlighters: grounding markers first (so their
+  // chip JSX is treated as opaque elements by the search pass), then
+  // search-query highlighting on whatever string children remain.
+  const decorate = (nodes: ReactNode): ReactNode =>
+    highlightSearchInChildren(
+      highlightGroundingMarkers(nodes),
+      searchHighlight,
+      searchHighlightActive,
+    );
   return (
     <div
       className={cn(
@@ -146,15 +168,16 @@ export function Markdown({
         components={{
           code: CodeBlock,
           pre: ({ children }) => <>{children}</>,
-          // Highlight grounding markers (yellow [unverified] / red
-          // [unsupported]) wherever they appear in flowing text (paragraphs,
-          // list items, table cells, blockquotes).
-          p: ({ children }) => <p>{highlightGroundingMarkers(children)}</p>,
-          li: ({ children }) => <li>{highlightGroundingMarkers(children)}</li>,
-          td: ({ children }) => <td>{highlightGroundingMarkers(children)}</td>,
-          th: ({ children }) => <th>{highlightGroundingMarkers(children)}</th>,
+          // Highlight grounding markers + (when set) in-conversation
+          // Find query, in flowing prose (paragraphs, list items, table
+          // cells, blockquotes). Code blocks and chip JSX pass through
+          // unchanged because the walker doesn't recurse into elements.
+          p: ({ children }) => <p>{decorate(children)}</p>,
+          li: ({ children }) => <li>{decorate(children)}</li>,
+          td: ({ children }) => <td>{decorate(children)}</td>,
+          th: ({ children }) => <th>{decorate(children)}</th>,
           blockquote: ({ children }) => (
-            <blockquote>{highlightGroundingMarkers(children)}</blockquote>
+            <blockquote>{decorate(children)}</blockquote>
           ),
         }}
       >

@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import type { UseChatStream } from "@/hooks/use-chat-stream";
 import { copyText } from "@/lib/clipboard";
 import { absoluteTimeTitle, relativeTime } from "@/lib/format";
+import { highlightSearchInChildren } from "@/lib/search-highlight";
 import type { ChatExchange } from "@/lib/types";
 
 type Props = {
@@ -217,7 +218,6 @@ export function MessageThread({
           {exchanges.map((ex, i) => {
             const isLast = i === lastExchangeIdx;
             const isActiveMatch = i === activeMatchExchangeIdx;
-            const isAnyMatch = matchingExchangeIdxs.includes(i);
             return (
               <div
                 key={ex.id}
@@ -225,11 +225,15 @@ export function MessageThread({
                   exchangeRefs.current[i] = el;
                 }}
                 className={
+                  /* Slice 5.0c-i.3: bubble-level ring kept ONLY for the
+                     current Find target — gives the "where am I" cue
+                     when paging through matches. Non-active matches
+                     now signal via inline <mark> highlighting in the
+                     text itself, which made the soft outer ring
+                     redundant. */
                   isActiveMatch
                     ? "rounded-lg ring-2 ring-amber-400/60 ring-offset-2 ring-offset-background transition-shadow"
-                    : isAnyMatch
-                      ? "rounded-lg ring-1 ring-amber-400/30 transition-shadow"
-                      : "transition-shadow"
+                    : "transition-shadow"
                 }
               >
                 <CompletedExchange
@@ -238,6 +242,8 @@ export function MessageThread({
                   onEdit={isLast ? onEdit : undefined}
                   onRetry={isLast ? onRetry : undefined}
                   onAssistantRetry={isLast ? onAssistantRetry : undefined}
+                  searchQuery={searchQuery}
+                  searchActive={isActiveMatch}
                 />
               </div>
             );
@@ -392,12 +398,20 @@ function CompletedExchange({
   onEdit,
   onRetry,
   onAssistantRetry,
+  searchQuery = "",
+  searchActive = false,
 }: {
   exchange: ChatExchange;
   showMeta: boolean;
   onEdit?: (question: string) => void;
   onRetry?: (question: string) => void;
   onAssistantRetry?: (originatingQuestion: string) => void;
+  /** Slice 5.0c-i.3: in-conversation Find query. Empty disables
+   *  inline highlighting. */
+  searchQuery?: string;
+  /** True only when this exchange is the *current* Find target — its
+   *  highlights render in vivid orange instead of soft amber. */
+  searchActive?: boolean;
 }) {
   return (
     <div className="space-y-3">
@@ -406,6 +420,8 @@ function CompletedExchange({
         timestamp={exchange.started_at}
         onEdit={onEdit ? () => onEdit(exchange.question) : undefined}
         onRetry={onRetry ? () => onRetry(exchange.question) : undefined}
+        searchQuery={searchQuery}
+        searchActive={searchActive}
       />
       <AssistantBubble
         answer={exchange.answer}
@@ -415,6 +431,8 @@ function CompletedExchange({
             ? () => onAssistantRetry(exchange.question)
             : undefined
         }
+        searchQuery={searchQuery}
+        searchActive={searchActive}
       />
       {showMeta ? (
         <div className="flex flex-wrap items-center gap-2 px-12 text-[10px] text-muted-foreground">
@@ -587,16 +605,29 @@ function UserBubble({
   timestamp,
   onEdit,
   onRetry,
+  searchQuery = "",
+  searchActive = false,
 }: {
   text: string;
   timestamp: string | null;
   onEdit?: () => void;
   onRetry?: () => void;
+  /** Slice 5.0c-i.3: in-conversation Find query. Empty = no highlight. */
+  searchQuery?: string;
+  /** True when this bubble is the current Find target. */
+  searchActive?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const isLong = text.length > LONG_MESSAGE_THRESHOLD;
   const showExpander = isLong;
   const collapsed = isLong && !expanded;
+  // Slice 5.0c-i.3: inline-wrap every case-insensitive substring match
+  // with a `<mark>` so the user can see where their Find query landed
+  // inside the bubble, not just that the bubble matched.
+  const highlightedText = useMemo(
+    () => highlightSearchInChildren([text], searchQuery, searchActive),
+    [text, searchQuery, searchActive],
+  );
 
   return (
     <div className="group flex flex-col items-end gap-1">
@@ -609,7 +640,7 @@ function UserBubble({
                 : "whitespace-pre-wrap"
             }
           >
-            {text}
+            {highlightedText}
             {collapsed ? (
               <span
                 aria-hidden="true"
@@ -656,10 +687,14 @@ function AssistantBubble({
   answer,
   timestamp,
   onRetry,
+  searchQuery = "",
+  searchActive = false,
 }: {
   answer: string;
   timestamp: string | null;
   onRetry?: () => void;
+  searchQuery?: string;
+  searchActive?: boolean;
 }) {
   return (
     <div className="group flex flex-col gap-1">
@@ -669,7 +704,12 @@ function AssistantBubble({
         </div>
         <div className="flex-1 rounded-lg border border-border bg-card px-4 py-3">
           {answer ? (
-            <Markdown>{answer}</Markdown>
+            <Markdown
+              searchHighlight={searchQuery}
+              searchHighlightActive={searchActive}
+            >
+              {answer}
+            </Markdown>
           ) : (
             <div className="text-sm text-muted-foreground">(empty)</div>
           )}

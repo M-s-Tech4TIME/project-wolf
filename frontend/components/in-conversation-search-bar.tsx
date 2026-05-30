@@ -66,28 +66,30 @@ export function InConversationSearchBar({
 
   const hasQuery = query.trim().length > 0;
   const hasMatches = matchCount > 0;
-  const human =
-    hasQuery && hasMatches
-      ? `${activeIndex + 1} / ${matchCount}`
-      : hasQuery
-        ? "no matches"
-        : "";
+  // Slice 5.0c-i.3: the counter used to live inside the input with
+  // absolute positioning, which on narrow widths visually overlapped
+  // the close-X button. It now sits in the bar's flex layout right
+  // before the Close button (Firefox / Chrome convention).
+  const counter = !hasQuery
+    ? null
+    : hasMatches
+      ? `${activeIndex + 1} of ${matchCount} matches`
+      : "no matches";
 
   return (
     <div className="flex shrink-0 items-center gap-2 border-b border-border bg-card/90 px-4 py-2 backdrop-blur animate-in slide-in-from-top-2 duration-200">
-      <div className="relative mx-auto flex w-full max-w-3xl items-center gap-2">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          ref={inputRef}
-          value={query}
-          onChange={(e) => onQueryChange(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Find in this conversation…"
-          aria-label="Search within this conversation"
-          className="h-8 pl-9 pr-24 text-sm"
-        />
-        <div className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">
-          {human}
+      <div className="mx-auto flex w-full max-w-3xl items-center gap-2">
+        <div className="relative flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            ref={inputRef}
+            value={query}
+            onChange={(e) => onQueryChange(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Find in this conversation…"
+            aria-label="Search within this conversation"
+            className="h-8 pl-9 text-sm"
+          />
         </div>
         <Button
           variant="ghost"
@@ -111,6 +113,14 @@ export function InConversationSearchBar({
         >
           <ChevronDown className="h-4 w-4" />
         </Button>
+        {counter ? (
+          <span
+            className="min-w-[6.5rem] shrink-0 text-right text-[11px] text-muted-foreground"
+            aria-live="polite"
+          >
+            {counter}
+          </span>
+        ) : null}
         <Button
           variant="ghost"
           size="sm"
