@@ -46,8 +46,17 @@ export type UseChatStream = {
    * `model.delta`, finalised by the `answer` event.
    */
   streamingAnswer: string;
-  /** Submit a question with optional prior turns; rejects only on programmer errors. */
-  submit: (question: string, history?: ConversationTurn[]) => Promise<void>;
+  /**
+   * Submit a question with optional prior turns; rejects only on programmer
+   * errors. `opts.retryNudge` flips the backend's retry-nudge path on —
+   * caller must put the previous Q→A pair in `history` so the model has
+   * its prior attempt to critique (Slice 5.0c-g).
+   */
+  submit: (
+    question: string,
+    history?: ConversationTurn[],
+    opts?: { retryNudge?: boolean },
+  ) => Promise<void>;
   reset: () => void;
 };
 
@@ -95,7 +104,11 @@ export function useChatStream(): UseChatStream {
     streamingAnswerRef.current = "";
   }, []);
 
-  const submit = useCallback(async (question: string, history: ConversationTurn[] = []) => {
+  const submit = useCallback(async (
+    question: string,
+    history: ConversationTurn[] = [],
+    opts: { retryNudge?: boolean } = {},
+  ) => {
     const trimmed = question.trim();
     if (!trimmed) return;
 
@@ -113,7 +126,9 @@ export function useChatStream(): UseChatStream {
     questionRef.current = trimmed;
 
     try {
-      await chatStream({ question: trimmed, history }, (event) => {
+      await chatStream(
+        { question: trimmed, history, retry_nudge: opts.retryNudge ?? false },
+        (event) => {
         switch (event.type) {
           case "loop.started": {
             setStatus((s) => ({

@@ -8,8 +8,11 @@ import {
   Mail,
   MessageSquare,
   Plus,
+  Search,
   UserCircle,
+  X,
 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
 import { Button } from "@/components/ui/button";
@@ -21,6 +24,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import type { Conversation } from "@/lib/types";
@@ -55,6 +59,35 @@ export function ChatSidebar({
   collapsed,
   onToggleCollapsed,
 }: Props) {
+  const [query, setQuery] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  // `requestFocus` is bumped by the collapsed-mode Search icon: it expands
+  // the sidebar and then focuses the input on the next paint. We use a
+  // monotonically-increasing tick so re-clicks after focus drift still
+  // re-trigger the focus effect.
+  const [focusTick, setFocusTick] = useState(0);
+
+  useEffect(() => {
+    if (collapsed) return;
+    if (focusTick === 0) return;
+    // Run on next frame so the layout transition can settle.
+    const id = requestAnimationFrame(() => {
+      searchInputRef.current?.focus();
+    });
+    return () => cancelAnimationFrame(id);
+  }, [collapsed, focusTick]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return conversations;
+    return conversations.filter((c) => c.title.toLowerCase().includes(q));
+  }, [conversations, query]);
+
+  const handleSearchFromCollapsed = () => {
+    if (collapsed) onToggleCollapsed();
+    setFocusTick((n) => n + 1);
+  };
+
   return (
     <aside
       className={cn(
@@ -108,51 +141,97 @@ export function ChatSidebar({
           >
             <Plus className="h-4 w-4" />
           </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 w-8 p-0"
+            onClick={handleSearchFromCollapsed}
+            aria-label="Search conversations"
+            title="Search conversations"
+          >
+            <Search className="h-4 w-4" />
+          </Button>
         </div>
       ) : (
-        <ScrollArea className="flex-1">
-          <div className="space-y-1 px-2 pb-3">
-            {conversations.length === 0 ? (
-              <div className="px-3 py-8 text-center text-xs text-muted-foreground">
-                No conversations yet.
-                <br />
-                Ask something to start.
-              </div>
-            ) : (
-              conversations.map((c) => {
-                const totalToolCalls = c.exchanges.reduce(
-                  (sum, ex) => sum + ex.tool_call_count,
-                  0,
-                );
-                const turns = c.exchanges.length;
-                return (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => onSelect(c.id)}
-                    className={cn(
-                      "flex w-full flex-col items-start gap-1 rounded-md px-3 py-2 text-left transition-colors",
-                      c.id === activeId
-                        ? "bg-accent text-accent-foreground"
-                        : "hover:bg-accent/50",
-                    )}
-                  >
-                    <div className="flex w-full items-center gap-2">
-                      <MessageSquare className="h-3.5 w-3.5 shrink-0 opacity-70" />
-                      <span className="line-clamp-1 text-sm font-medium">
-                        {c.title}
-                      </span>
-                    </div>
-                    <div className="text-[10px] text-muted-foreground">
-                      {turns} turn{turns === 1 ? "" : "s"} · {totalToolCalls}{" "}
-                      tool call{totalToolCalls === 1 ? "" : "s"}
-                    </div>
-                  </button>
-                );
-              })
-            )}
+        <>
+          {/* Search input (Slice 5.0c-f). Filters the list client-side by
+              title — the only metadata we surface today. */}
+          <div className="px-2 pb-2">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                ref={searchInputRef}
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search conversations…"
+                aria-label="Search conversations"
+                className="h-8 pl-7 pr-7 text-xs"
+              />
+              {query ? (
+                <button
+                  type="button"
+                  onClick={() => setQuery("")}
+                  aria-label="Clear search"
+                  title="Clear search"
+                  className="absolute right-1 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              ) : null}
+            </div>
           </div>
-        </ScrollArea>
+          <ScrollArea className="flex-1">
+            <div className="space-y-1 px-2 pb-3">
+              {conversations.length === 0 ? (
+                <div className="px-3 py-8 text-center text-xs text-muted-foreground">
+                  No conversations yet.
+                  <br />
+                  Ask something to start.
+                </div>
+              ) : filtered.length === 0 ? (
+                <div className="px-3 py-8 text-center text-xs text-muted-foreground">
+                  No matches for{" "}
+                  <span className="font-medium text-foreground">
+                    “{query.trim()}”
+                  </span>
+                  .
+                </div>
+              ) : (
+                filtered.map((c) => {
+                  const totalToolCalls = c.exchanges.reduce(
+                    (sum, ex) => sum + ex.tool_call_count,
+                    0,
+                  );
+                  const turns = c.exchanges.length;
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => onSelect(c.id)}
+                      className={cn(
+                        "flex w-full flex-col items-start gap-1 rounded-md px-3 py-2 text-left transition-colors",
+                        c.id === activeId
+                          ? "bg-accent text-accent-foreground"
+                          : "hover:bg-accent/50",
+                      )}
+                    >
+                      <div className="flex w-full items-center gap-2">
+                        <MessageSquare className="h-3.5 w-3.5 shrink-0 opacity-70" />
+                        <span className="line-clamp-1 text-sm font-medium">
+                          {c.title}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-muted-foreground">
+                        {turns} turn{turns === 1 ? "" : "s"} · {totalToolCalls}{" "}
+                        tool call{totalToolCalls === 1 ? "" : "s"}
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </ScrollArea>
+        </>
       )}
 
       {/* Bottom: profile footer — Claude-style */}

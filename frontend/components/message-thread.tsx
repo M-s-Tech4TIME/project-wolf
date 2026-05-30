@@ -1,24 +1,68 @@
 "use client";
 
-import { ArrowDown, Bot, Loader2, ShieldAlert, ShieldCheck, User } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  ArrowDown,
+  Bot,
+  ChevronDown,
+  ChevronUp,
+  Copy,
+  Loader2,
+  Pencil,
+  RotateCcw,
+  ShieldAlert,
+  ShieldCheck,
+  User,
+} from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { useAuth } from "@/components/auth-provider";
 import { Markdown } from "@/components/markdown";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { UseChatStream } from "@/hooks/use-chat-stream";
+import { copyText } from "@/lib/clipboard";
+import { absoluteTimeTitle, relativeTime } from "@/lib/format";
 import type { ChatExchange } from "@/lib/types";
 
 type Props = {
   exchanges: ChatExchange[];
   stream: UseChatStream;
+  /** Drops the question into the composer for editing (Slice 5.0c-f). */
+  onEdit?: (question: string) => void;
+  /** Re-asks the question by pre-filling the composer (Slice 5.0c-f). */
+  onRetry?: (question: string) => void;
+  /** Quick-action card click from the greeting screen (Slice 5.0c-f). */
+  onQuickAsk?: (question: string) => void;
+  /**
+   * Retry on a Wolf answer (Slice 5.0c-g). Re-submits the originating
+   * question with retry_nudge=true so the backend asks the model to
+   * critique its previous attempt. Parent is responsible for building
+   * history that includes the previous Q→A pair.
+   */
+  onAssistantRetry?: (originatingQuestion: string) => void;
 };
+
+/**
+ * Long-message fade threshold (Slice 5.0c-f). Anything past this gets
+ * collapsed with a gradient and a "Show more" toggle. Chosen so two- or
+ * three-line questions stay fully visible while paragraph-length context
+ * dumps stay compact. Measured in characters since the message is
+ * pre-wrap and proportional-font.
+ */
+const LONG_MESSAGE_THRESHOLD = 280;
 
 /**
  * Renders every turn in the active conversation in order, then (if a
  * stream is in-flight) the live streaming view at the bottom.
  */
-export function MessageThread({ exchanges, stream }: Props) {
+export function MessageThread({
+  exchanges,
+  stream,
+  onEdit,
+  onRetry,
+  onQuickAsk,
+  onAssistantRetry,
+}: Props) {
   const isRunning = stream.status.phase === "running";
   const showStreamView = isRunning || stream.status.phase === "error";
   const empty = exchanges.length === 0 && !showStreamView;
@@ -53,6 +97,33 @@ export function MessageThread({ exchanges, stream }: Props) {
     return () => el.removeEventListener("scroll", onScroll);
   }, [exchanges.length, isRunning]);
 
+  // Edit / Retry only make semantic sense on the most recent user message;
+  // applying them to an arbitrary mid-conversation message would either
+  // fork the thread (out of scope) or be silently misleading. So we hand
+  // those callbacks down only for the last archived exchange. Same logic
+  // for assistant Retry (Slice 5.0c-g) — only the latest Wolf answer has
+  // meaningful "retry this".
+  const lastExchangeIdx = exchanges.length - 1;
+
+  // Greeting screen exit animation (Slice 5.0c-g). When the user submits
+  // their first message, `empty` flips false; we keep the greeting in the
+  // DOM for one transition cycle with opacity-0 so it fades out instead
+  // of snapping. After the timeout, the greeting unmounts entirely.
+  const [renderGreeting, setRenderGreeting] = useState(empty);
+  useEffect(() => {
+    if (empty) {
+      // Re-mounting the greeting after the user clears + starts a new
+      // chat is a real path; setting state from the effect here is the
+      // right shape — the SSR pass starts from `empty` so this only
+      // fires when the value actually flips back to true.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setRenderGreeting(true);
+      return;
+    }
+    const t = window.setTimeout(() => setRenderGreeting(false), 280);
+    return () => window.clearTimeout(t);
+  }, [empty]);
+
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
       <div
@@ -60,24 +131,38 @@ export function MessageThread({ exchanges, stream }: Props) {
         className="flex-1 overflow-y-auto overflow-x-hidden [scrollbar-gutter:stable] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-foreground/30 hover:[&::-webkit-scrollbar-thumb]:bg-foreground/50"
       >
         <div className="mx-auto max-w-3xl space-y-6 px-4 py-6">
-          {empty ? <EmptyState /> : null}
+          {renderGreeting ? (
+            <div
+              className={`transition-opacity duration-300 ease-out ${
+                empty ? "opacity-100" : "pointer-events-none opacity-0"
+              }`}
+              aria-hidden={empty ? undefined : "true"}
+            >
+              <GreetingScreen onQuickAsk={onQuickAsk} />
+            </div>
+          ) : null}
 
-          {exchanges.map((ex) => (
-            // 5.0c-b: meta row renders on EVERY archived exchange,
-            // ALWAYS — including while a new turn is streaming below.
-            // Archived turns are immutable; nothing about a new prompt
-            // should retroactively hide their provenance.
-            <CompletedExchange
-              key={ex.id}
-              exchange={ex}
-              showMeta={true}
-            />
-          ))}
+          {exchanges.map((ex, i) => {
+            const isLast = i === lastExchangeIdx;
+            return (
+              <CompletedExchange
+                key={ex.id}
+                exchange={ex}
+                showMeta
+                onEdit={isLast ? onEdit : undefined}
+                onRetry={isLast ? onRetry : undefined}
+                onAssistantRetry={isLast ? onAssistantRetry : undefined}
+              />
+            );
+          })}
 
           {showStreamView ? (
             <>
               {stream.currentQuestion ? (
-                <UserBubble text={stream.currentQuestion} />
+                <UserBubble
+                  text={stream.currentQuestion}
+                  timestamp={null}
+                />
               ) : null}
               <StreamingView stream={stream} />
             </>
@@ -103,29 +188,136 @@ export function MessageThread({ exchanges, stream }: Props) {
   );
 }
 
-function EmptyState() {
+// ─── Greeting screen (Slice 5.0c-f piece 5) ──────────────────────────────────
+
+type QuickAction = {
+  title: string;
+  blurb: string;
+  prompt: string;
+};
+
+const QUICK_ACTIONS: QuickAction[] = [
+  {
+    title: "Recent critical alerts",
+    blurb: "Wazuh hits at rule level ≥ 12 in the last 24 h.",
+    prompt:
+      "What are the most critical Wazuh alerts (rule level >= 12) in the last 24 hours? Summarise by rule and agent.",
+  },
+  {
+    title: "Suspicious authentication",
+    blurb: "Failed logins, brute-force patterns, off-hours sign-ins.",
+    prompt:
+      "Show me suspicious authentication activity in the last 24 hours — failed logins, brute-force patterns, off-hours sign-ins.",
+  },
+  {
+    title: "Agent health",
+    blurb: "Which agents stopped reporting and when.",
+    prompt:
+      "Which Wazuh agents are currently disconnected or have stopped reporting? Include when they last checked in.",
+  },
+  {
+    title: "MITRE technique lookup",
+    blurb: "Explain a T-code and check if we've seen it.",
+    prompt:
+      "Explain MITRE ATT&CK technique T1059 (Command and Scripting Interpreter) and check whether we've seen related alerts in the last 7 days.",
+  },
+];
+
+function GreetingScreen({ onQuickAsk }: { onQuickAsk?: (q: string) => void }) {
+  const { me } = useAuth();
+  // Greeting is rendered after mount so the server vs client time-of-day
+  // can never disagree. Until the effect runs we show a neutral fallback.
+  const [hour, setHour] = useState<number | null>(null);
+  useEffect(() => {
+    // Deliberately deferred to the client so SSR and client agree on the
+    // initial render — Date().getHours() would mismatch and hydrate-warn.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setHour(new Date().getHours());
+  }, []);
+
+  const greeting = useMemo(() => {
+    if (hour === null) return "Welcome back";
+    if (hour < 5) return "Working late";
+    if (hour < 12) return "Good morning";
+    if (hour < 17) return "Good afternoon";
+    if (hour < 22) return "Good evening";
+    return "Working late";
+  }, [hour]);
+
+  const firstName = useMemo(() => {
+    const dn = me?.display_name?.trim();
+    if (dn) return dn.split(/\s+/)[0];
+    const local = me?.email?.split("@")[0] ?? "";
+    return local || "";
+  }, [me?.display_name, me?.email]);
+
   return (
-    <div className="py-16 text-center text-sm text-muted-foreground">
-      <Bot className="mx-auto mb-3 h-8 w-8 opacity-50" />
-      <p>Start an investigation by asking a question.</p>
-      <p className="mt-1 text-xs">
-        Wolf will use read-only tools against your Wazuh deployment and cite every source.
-      </p>
+    <div className="py-12">
+      <div className="mb-8 flex flex-col items-center text-center">
+        <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-primary/10">
+          <Bot className="h-7 w-7 text-primary" />
+        </div>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          {greeting}
+          {firstName ? `, ${firstName}` : ""}.
+        </h1>
+        <p className="mt-2 max-w-md text-sm text-muted-foreground">
+          Ask Wolf about your Wazuh deployment. Every answer is grounded in
+          read-only tool calls and cited evidence.
+        </p>
+      </div>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        {QUICK_ACTIONS.map((qa) => (
+          <button
+            key={qa.title}
+            type="button"
+            onClick={() => onQuickAsk?.(qa.prompt)}
+            disabled={!onQuickAsk}
+            className="group flex flex-col items-start gap-1 rounded-lg border border-border bg-card px-3 py-3 text-left transition-colors hover:border-primary/40 hover:bg-accent/40 disabled:opacity-60"
+          >
+            <span className="text-sm font-medium group-hover:text-primary">
+              {qa.title}
+            </span>
+            <span className="text-xs text-muted-foreground">{qa.blurb}</span>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
 
+// ─── Completed exchange + bubbles (Slice 5.0c-f pieces 3 + 4) ────────────────
+
 function CompletedExchange({
   exchange,
   showMeta,
+  onEdit,
+  onRetry,
+  onAssistantRetry,
 }: {
   exchange: ChatExchange;
   showMeta: boolean;
+  onEdit?: (question: string) => void;
+  onRetry?: (question: string) => void;
+  onAssistantRetry?: (originatingQuestion: string) => void;
 }) {
   return (
     <div className="space-y-3">
-      <UserBubble text={exchange.question} />
-      <AssistantBubble answer={exchange.answer} />
+      <UserBubble
+        text={exchange.question}
+        timestamp={exchange.started_at}
+        onEdit={onEdit ? () => onEdit(exchange.question) : undefined}
+        onRetry={onRetry ? () => onRetry(exchange.question) : undefined}
+      />
+      <AssistantBubble
+        answer={exchange.answer}
+        timestamp={exchange.completed_at}
+        onRetry={
+          onAssistantRetry
+            ? () => onAssistantRetry(exchange.question)
+            : undefined
+        }
+      />
       {showMeta ? (
         <div className="flex flex-wrap items-center gap-2 px-12 text-[10px] text-muted-foreground">
           <Badge variant="secondary">{exchange.strategy}</Badge>
@@ -286,32 +478,214 @@ function StreamingView({ stream }: { stream: UseChatStream }) {
   );
 }
 
-function UserBubble({ text }: { text: string }) {
+/**
+ * User-side message bubble. Long text collapses with a fade + Show more
+ * (Slice 5.0c-f). When `onEdit` / `onRetry` are provided (only for the
+ * latest user message — see CompletedExchange), the hover action bar
+ * shows those buttons; Copy + timestamp are always present.
+ */
+function UserBubble({
+  text,
+  timestamp,
+  onEdit,
+  onRetry,
+}: {
+  text: string;
+  timestamp: string | null;
+  onEdit?: () => void;
+  onRetry?: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const isLong = text.length > LONG_MESSAGE_THRESHOLD;
+  const showExpander = isLong;
+  const collapsed = isLong && !expanded;
+
   return (
-    <div className="flex justify-end gap-3">
-      <div className="max-w-xl whitespace-pre-wrap rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground">
-        {text}
+    <div className="group flex flex-col items-end gap-1">
+      <div className="flex justify-end gap-3">
+        <div className="relative max-w-xl rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground">
+          <div
+            className={
+              collapsed
+                ? "relative max-h-32 overflow-hidden whitespace-pre-wrap"
+                : "whitespace-pre-wrap"
+            }
+          >
+            {text}
+            {collapsed ? (
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-primary to-transparent"
+              />
+            ) : null}
+          </div>
+          {showExpander ? (
+            <button
+              type="button"
+              onClick={() => setExpanded((v) => !v)}
+              className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-primary-foreground/80 hover:text-primary-foreground hover:underline"
+            >
+              {expanded ? (
+                <>
+                  <ChevronUp className="h-3 w-3" />
+                  Show less
+                </>
+              ) : (
+                <>
+                  <ChevronDown className="h-3 w-3" />
+                  Show more
+                </>
+              )}
+            </button>
+          ) : null}
+        </div>
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">
+          <User className="h-4 w-4" />
+        </div>
       </div>
-      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">
-        <User className="h-4 w-4" />
-      </div>
+      <HoverActionBar
+        align="end"
+        timestamp={timestamp}
+        copyText={text}
+        onEdit={onEdit}
+        onRetry={onRetry}
+      />
     </div>
   );
 }
 
-function AssistantBubble({ answer }: { answer: string }) {
+function AssistantBubble({
+  answer,
+  timestamp,
+  onRetry,
+}: {
+  answer: string;
+  timestamp: string | null;
+  onRetry?: () => void;
+}) {
   return (
-    <div className="flex gap-3">
-      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
-        <Bot className="h-4 w-4 text-primary" />
+    <div className="group flex flex-col gap-1">
+      <div className="flex gap-3">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
+          <Bot className="h-4 w-4 text-primary" />
+        </div>
+        <div className="flex-1 rounded-lg border border-border bg-card px-4 py-3">
+          {answer ? (
+            <Markdown>{answer}</Markdown>
+          ) : (
+            <div className="text-sm text-muted-foreground">(empty)</div>
+          )}
+        </div>
       </div>
-      <div className="flex-1 rounded-lg border border-border bg-card px-4 py-3">
-        {answer ? (
-          <Markdown>{answer}</Markdown>
-        ) : (
-          <div className="text-sm text-muted-foreground">(empty)</div>
-        )}
-      </div>
+      <HoverActionBar
+        align="start"
+        timestamp={timestamp}
+        copyText={answer}
+        onRetry={onRetry}
+        indent="left"
+      />
     </div>
   );
 }
+
+/**
+ * Per-message action chip row, revealed on hover of the surrounding
+ * `.group` container (Slice 5.0c-f). All actions are progressive: copy
+ * works even on stale messages, edit/retry only attach to the latest
+ * user message, the date is a relative-time chip with an absolute-time
+ * tooltip.
+ */
+function HoverActionBar({
+  align,
+  timestamp,
+  copyText: textToCopy,
+  onEdit,
+  onRetry,
+  indent,
+}: {
+  align: "start" | "end";
+  timestamp: string | null;
+  copyText: string;
+  onEdit?: () => void;
+  onRetry?: () => void;
+  /** Assistant bubbles need a left-indent matching the avatar gutter. */
+  indent?: "left";
+}) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = useCallback(async () => {
+    const ok = await copyText(textToCopy);
+    if (!ok) return;
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1500);
+  }, [textToCopy]);
+
+  // If there's literally nothing to show, render nothing so we don't
+  // reserve vertical space for an empty chrome row.
+  const hasTimestamp = !!timestamp;
+  const hasCopy = textToCopy.length > 0;
+  if (!hasTimestamp && !hasCopy && !onEdit && !onRetry) return null;
+
+  return (
+    <div
+      className={
+        "flex items-center gap-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100 " +
+        (align === "end" ? "justify-end pr-12" : "") +
+        (indent === "left" ? " pl-11" : "")
+      }
+    >
+      {hasTimestamp ? (
+        <span
+          className="text-[10px] text-muted-foreground"
+          title={absoluteTimeTitle(timestamp!)}
+        >
+          {relativeTime(timestamp!)}
+        </span>
+      ) : null}
+      {hasCopy ? (
+        <ActionChip
+          label={copied ? "Copied" : "Copy"}
+          onClick={handleCopy}
+          icon={<Copy className="h-3 w-3" />}
+        />
+      ) : null}
+      {onRetry ? (
+        <ActionChip
+          label="Retry"
+          onClick={onRetry}
+          icon={<RotateCcw className="h-3 w-3" />}
+        />
+      ) : null}
+      {onEdit ? (
+        <ActionChip
+          label="Edit"
+          onClick={onEdit}
+          icon={<Pencil className="h-3 w-3" />}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function ActionChip({
+  label,
+  onClick,
+  icon,
+}: {
+  label: string;
+  onClick: () => void;
+  icon: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground hover:bg-accent hover:text-foreground"
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+

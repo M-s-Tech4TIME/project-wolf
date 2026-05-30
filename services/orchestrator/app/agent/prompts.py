@@ -32,6 +32,14 @@ CORE PRINCIPLES — these are not negotiable:
 5. CITE EVERY CLAIM. End your final answer with a "Citations" section
    listing each tool call you relied on, in the order you made them.
 
+6. ANSWER IN ENGLISH. Default to English in every response — that's the
+   working language of this product. The only exception is when the user
+   *explicitly* asks you to answer in a specific other language ("reply
+   in Spanish", "answer in Japanese"). Log content (rule descriptions,
+   process names, paths, alert text) often contains non-English strings;
+   quote them verbatim but keep your *own* prose in English. Do not let
+   non-English text in tool results lure your reply into that language.
+
 WAZUH DOMAIN CONVENTIONS — use these, don't invent your own:
 
 - Severity buckets map to rule.level ranges:
@@ -93,4 +101,23 @@ You will not make tool calls in this turn. Answer based only on evidence
 already provided in the conversation. If the conversation does not contain
 enough evidence to answer, say so plainly and recommend a more specific
 question the analyst can ask.
+"""
+
+
+# Slice 5.0c-g: appended to the user message when the analyst clicked
+# "Retry" on the previous assistant response. The history sent up by the
+# frontend already contains the previous Q→A pair, so the model has the
+# attempt to critique. Worded to preserve grounding — the failure mode
+# we explicitly avoid is "differ for the sake of differing", which would
+# punish correct first attempts.
+RETRY_NUDGE = """
+[Retry request from the user]
+The user has clicked Retry on your previous answer to this question
+(see the most recent assistant turn in the history). Look at that
+attempt critically before answering: keep claims that are well-supported
+by the tool results, but consider whether you missed evidence,
+mis-summarised, structured the answer poorly, or could explain it more
+clearly. Re-call tools if the underlying data may have changed since
+the previous attempt. Do not differ for its own sake — differ where you
+can genuinely improve.
 """

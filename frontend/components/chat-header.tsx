@@ -15,18 +15,20 @@ import {
 
 /**
  * Top bar:
- *   left  — Wolf brand + tagline
- *   right — Tenant switcher · Settings gear (placeholder menu for the
- *           future User Settings + Wolf Configuration panels).
+ *   left   — Wolf brand + tagline
+ *   middle — Active conversation title (Slice 5.0c-g). Empty when no
+ *            conversation is selected (the greeting screen is showing).
+ *   right  — Tenant switcher · Settings gear (placeholder menu for the
+ *            future User Settings + Wolf Configuration panels).
  *
  * The signed-in user's identity now lives in the sidebar footer (see
  * `ChatSidebar`) so the header's right side can be reserved for org-wide
  * controls — tenant choice and the configuration surface that will grow
  * as Wolf gains operator-tunable knobs.
  */
-export function ChatHeader() {
+export function ChatHeader({ title }: { title?: string | null }) {
   return (
-    <header className="flex h-14 items-center justify-between border-b border-border bg-card px-4">
+    <header className="relative flex h-14 items-center justify-between border-b border-border bg-card px-4">
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-2 font-semibold tracking-tight">
           <ShieldCheck className="h-5 w-5 text-primary" />
@@ -36,6 +38,18 @@ export function ChatHeader() {
           Agentic AI for Wazuh
         </span>
       </div>
+      {/* Centered title — absolute-positioned so it lines up with the
+          window centre regardless of left/right cluster widths. Truncates
+          past ~50% of the bar width so it never collides with the
+          tenant switcher on narrow screens. */}
+      {title ? (
+        <div
+          className="pointer-events-none absolute left-1/2 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 max-w-[40%] truncate text-sm font-medium md:block"
+          title={title}
+        >
+          {title}
+        </div>
+      ) : null}
       <div className="flex items-center gap-2">
         <TenantSwitcher />
         <DropdownMenu>

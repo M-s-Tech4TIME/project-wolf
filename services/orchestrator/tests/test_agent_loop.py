@@ -388,3 +388,69 @@ async def test_pipeline_strategy_runs_one_step_with_no_tools_in_request(
     assert answer.step_count == 1
     assert provider.last_request is not None
     assert provider.last_request.tools is None  # pipeline exposes no tools
+
+
+# ─── Test: retry_nudge appends the nudge to the user message ────────────────
+
+
+@pytest.mark.asyncio
+async def test_retry_nudge_appends_critique_hint_to_user_message(
+    db: AsyncSession, tenant_ctx: TenantContext
+) -> None:
+    """Slice 5.0c-g: Retry-on-Wolf-response flips retry_nudge=True on the
+    chat request. The loop must append the RETRY_NUDGE text to the
+    fresh user message it sends to the model so the model knows to
+    critique its previous attempt (which the frontend put in history)."""
+    from app.agent.prompts import RETRY_NUDGE
+
+    provider = MockProvider([_response("Improved answer.")])
+    loop = AgentLoop(provider=provider, strategy=FrontierStrategy())
+    os_client, server_api = _fake_clients()
+
+    await loop.run(
+        question="any failed logins?",
+        ctx=tenant_ctx,
+        db=db,
+        opensearch=os_client,
+        server_api=server_api,
+        history=[
+            ("user", "any failed logins?"),
+            ("assistant", "No failed logins in the last hour."),
+        ],
+        retry_nudge=True,
+    )
+
+    assert provider.last_request is not None
+    last_user = next(
+        m for m in reversed(provider.last_request.messages) if m.role == "user"
+    )
+    assert "any failed logins?" in last_user.content
+    assert RETRY_NUDGE.strip() in last_user.content
+
+
+@pytest.mark.asyncio
+async def test_retry_nudge_default_false_leaves_user_message_unchanged(
+    db: AsyncSession, tenant_ctx: TenantContext
+) -> None:
+    """Sanity check: without retry_nudge, the user message is the bare
+    question — no nudge text leaks into the normal path."""
+    from app.agent.prompts import RETRY_NUDGE
+
+    provider = MockProvider([_response("Fresh answer.")])
+    loop = AgentLoop(provider=provider, strategy=FrontierStrategy())
+    os_client, server_api = _fake_clients()
+
+    await loop.run(
+        question="any failed logins?",
+        ctx=tenant_ctx,
+        db=db,
+        opensearch=os_client,
+        server_api=server_api,
+    )
+
+    assert provider.last_request is not None
+    last_user = next(
+        m for m in reversed(provider.last_request.messages) if m.role == "user"
+    )
+    assert last_user.content == "any failed logins?"
+    assert RETRY_NUDGE.strip() not in last_user.content

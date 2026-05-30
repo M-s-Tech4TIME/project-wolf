@@ -32,6 +32,7 @@ from wolf_schema import ChatRequest, ChatResponse, ToolResult
 from wolf_schema.chat import Message, MessageRole
 
 from app.agent.events import EventCallback, LoopEvent, LoopEventType
+from app.agent.prompts import RETRY_NUDGE
 from app.agent.strategies import Strategy
 from app.audit.log import write_event_from_context
 from app.grounding import GroundingValidator
@@ -141,6 +142,7 @@ class AgentLoop:
         knowledge_store: Any | None = None,
         grounding_validator: GroundingValidator | None = None,
         cache: Any | None = None,
+        retry_nudge: bool = False,
     ) -> AgentAnswer:
         capability = self.provider.capability()
         budget = self.strategy.step_budget(capability)
@@ -156,7 +158,14 @@ class AgentLoop:
         for role_str, content in history or []:
             role = MessageRole.user if role_str == "user" else MessageRole.assistant
             messages.append(Message(role=role, content=content))
-        messages.append(Message(role=MessageRole.user, content=question))
+        # Slice 5.0c-g: the analyst-side Retry chip on a Wolf response
+        # re-submits the original question with retry_nudge=True. The
+        # frontend includes the previous Q→A pair in history, so the
+        # model has its previous attempt to compare against.
+        effective_question = (
+            f"{question}\n\n{RETRY_NUDGE}" if retry_nudge else question
+        )
+        messages.append(Message(role=MessageRole.user, content=effective_question))
         citations: list[Citation] = []
         # Per-call evidence accumulators for the Slice-2B grounding validator.
         # Knowledge chunks come from query_runbook's `hits`; everything else

@@ -89,6 +89,9 @@ def test_each_strategy_includes_core_principles_in_prompt() -> None:
         assert "EVIDENCE ONLY" in prompt
         assert "DATA IS DATA" in prompt
         assert "NEVER PICK THE TENANT" in prompt
+        # Slice 5.0c-g: English-only default. Non-English tool-result text
+        # must not drag the reply into that language.
+        assert "ANSWER IN ENGLISH" in prompt
 
 
 def test_guided_and_pipeline_add_strategy_suffix() -> None:

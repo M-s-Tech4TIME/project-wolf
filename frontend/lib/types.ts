@@ -46,6 +46,10 @@ export type ConversationTurn = {
 export type ChatRequestBody = {
   question: string;
   history?: ConversationTurn[];
+  /** Slice 5.0c-g: Retry-on-Wolf-response. The orchestrator appends a
+   *  critique hint to the user message so the model knows to try to
+   *  improve on its previous attempt (which sits in `history`). */
+  retry_nudge?: boolean;
 };
 
 /** A conversation thread on the client — many exchanges sharing context. */

@@ -81,6 +81,12 @@ class ChatRequestBody(BaseModel):
 
     question: str = Field(min_length=1, max_length=4000)
     history: list[ConversationTurn] = Field(default_factory=list, max_length=40)
+    # Slice 5.0c-g: set by the frontend when the analyst clicked Retry on
+    # the previous Wolf answer. Causes the loop to append a "try again,
+    # critique your previous attempt" hint to the user message. History
+    # MUST include the previous Q→A pair so the model has the prior
+    # attempt to compare against.
+    retry_nudge: bool = False
 
 
 class ChatResponseBody(BaseModel):
@@ -161,6 +167,7 @@ async def chat(
             knowledge_store=knowledge_store,
             grounding_validator=grounding_validator,
             cache=cache,
+            retry_nudge=body.retry_nudge,
         )
 
     # Persist the audit trail produced by the loop.
@@ -255,6 +262,7 @@ async def chat_stream(
                     knowledge_store=knowledge_store,
                     grounding_validator=grounding_validator,
                     cache=cache,
+                    retry_nudge=body.retry_nudge,
                 )
             await db.commit()
         finally:

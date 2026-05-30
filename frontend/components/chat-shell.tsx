@@ -162,6 +162,39 @@ export function ChatShell() {
     [stream],
   );
 
+  // Composer draft handoff (Slice 5.0c-f). The hover Edit / Retry actions
+  // and the new-chat greeting screen all want the same thing: prefill the
+  // composer with some text and focus it. We hold the draft here and pass
+  // it down; the nonce bump re-triggers the child effect even for
+  // identical text (a second Retry click on the same question still
+  // refocuses + reselects).
+  const [composerDraft, setComposerDraft] = useState<{
+    value: string;
+    nonce: number;
+  }>({ value: "", nonce: 0 });
+  const setDraft = useCallback((value: string) => {
+    setComposerDraft((prev) => ({ value, nonce: prev.nonce + 1 }));
+  }, []);
+
+  // Retry-on-Wolf-response (Slice 5.0c-g). Submits the originating
+  // question with retry_nudge=true and history that includes the
+  // previous Q→A pair, so the model can critique its prior attempt.
+  // Unlike the composer-side Retry chip (which only prefills), this
+  // immediately fires a new request.
+  const handleAssistantRetry = useCallback(
+    async (originatingQuestion: string) => {
+      if (!activeConversation) return;
+      const history: ConversationTurn[] = activeConversation.exchanges.flatMap(
+        (ex) => [
+          { role: "user" as const, content: ex.question },
+          { role: "assistant" as const, content: ex.answer },
+        ],
+      );
+      await stream.submit(originatingQuestion, history, { retryNudge: true });
+    },
+    [activeConversation, stream],
+  );
+
   // What to render in the message thread:
   //   - the active conversation's exchanges
   //   - plus the in-flight exchange (or "running" view) if any
@@ -222,7 +255,7 @@ export function ChatShell() {
 
   return (
     <div className="flex h-screen flex-col">
-      <ChatHeader />
+      <ChatHeader title={activeConversation?.title ?? null} />
       <div className="flex flex-1 overflow-hidden">
         <ChatSidebar
           conversations={conversations}
@@ -236,11 +269,16 @@ export function ChatShell() {
           <MessageThread
             exchanges={visibleExchanges}
             stream={stream}
+            onEdit={setDraft}
+            onRetry={setDraft}
+            onQuickAsk={setDraft}
+            onAssistantRetry={handleAssistantRetry}
           />
           <div className="shrink-0 border-t border-border bg-card/50 px-4 pt-3 pb-2">
             <ChatComposer
               onSubmit={handleSubmit}
               disabled={isRunning}
+              draft={composerDraft.nonce > 0 ? composerDraft : undefined}
             />
             <p className="mt-2 text-center text-[10px] text-muted-foreground">
               Wolf is an AI agent and can make mistakes. Verify critical
