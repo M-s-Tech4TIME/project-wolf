@@ -27,6 +27,13 @@ import type { ChatExchange } from "@/lib/types";
 type Props = {
   exchanges: ChatExchange[];
   stream: UseChatStream;
+  /**
+   * True only when the currently-displayed conversation is the one the
+   * stream is in-flight for (Slice 5.0c-h). When false, the user has
+   * navigated away from a still-running conversation — render the
+   * archived exchanges only, no live view.
+   */
+  isActiveStreaming?: boolean;
   /** Drops the question into the composer for editing (Slice 5.0c-f). */
   onEdit?: (question: string) => void;
   /** Re-asks the question by pre-filling the composer (Slice 5.0c-f). */
@@ -58,13 +65,21 @@ const LONG_MESSAGE_THRESHOLD = 280;
 export function MessageThread({
   exchanges,
   stream,
+  isActiveStreaming = false,
   onEdit,
   onRetry,
   onQuickAsk,
   onAssistantRetry,
 }: Props) {
-  const isRunning = stream.status.phase === "running";
-  const showStreamView = isRunning || stream.status.phase === "error";
+  // The live view is gated on isActiveStreaming so a stream running in
+  // a *different* conversation doesn't bleed into the one the user is
+  // looking at. Errors only show in the active conversation too — the
+  // error state is bound to the conversation it occurred in (Slice
+  // 5.0c-h).
+  const showStreamView =
+    isActiveStreaming &&
+    (stream.status.phase === "running" || stream.status.phase === "error");
+  const isRunning = isActiveStreaming && stream.status.phase === "running";
   const empty = exchanges.length === 0 && !showStreamView;
 
   // The chat uses a NATIVE scroll container instead of Radix's

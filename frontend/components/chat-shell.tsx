@@ -86,6 +86,12 @@ export function ChatShell() {
   const stream = useChatStream();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConvoId, setActiveConvoId] = useState<string | null>(null);
+  // Slice 5.0c-h: which conversation the current in-flight stream belongs
+  // to. May differ from `activeConvoId` if the user navigated away during
+  // the run. Null when idle. The archive effect uses this — never
+  // `activeConvoId` — to find the conversation to append the completed
+  // exchange to.
+  const [streamingConvoId, setStreamingConvoId] = useState<string | null>(null);
   const archivedRef = useRef<string | null>(null);
 
   // Layout persistence ---------------------------------------------------
@@ -98,66 +104,99 @@ export function ChatShell() {
     EVIDENCE_DEFAULT_WIDTH,
   );
 
-  // When a stream completes, archive the exchange into the active
-  // conversation (or start a new one if none was active).
+  // When a stream completes, archive the exchange into the conversation
+  // it belongs to (Slice 5.0c-h — `streamingConvoId`, not `activeConvoId`,
+  // because the user may have switched conversations during the run).
+  // The conversation slot itself was created synchronously inside
+  // `handleSubmit` so it has already been visible in the sidebar for the
+  // whole stream — this effect just appends the finished exchange to it.
   useEffect(() => {
-    if (!stream.exchange) return;
+    if (!stream.exchange || !streamingConvoId) return;
     if (archivedRef.current === stream.exchange.id) return;
     archivedRef.current = stream.exchange.id;
 
     const ex = stream.exchange;
-    setConversations((prev) => {
-      if (activeConvoId) {
-        return prev.map((c) =>
-          c.id === activeConvoId
-            ? {
-                ...c,
-                exchanges: [...c.exchanges, ex],
-                updated_at: ex.completed_at,
-              }
-            : c,
-        );
-      }
-      // Start a fresh conversation seeded by this exchange.
-      const newConvo: Conversation = {
-        id: randomId(),
-        title: titleFromQuestion(ex.question),
-        exchanges: [ex],
-        created_at: ex.started_at,
-        updated_at: ex.completed_at,
-      };
-      setActiveConvoId(newConvo.id);
-      return [newConvo, ...prev];
-    });
-  }, [stream.exchange, activeConvoId]);
+    const targetId = streamingConvoId;
+    setConversations((prev) =>
+      prev.map((c) =>
+        c.id === targetId
+          ? {
+              ...c,
+              exchanges: [...c.exchanges, ex],
+              updated_at: ex.completed_at,
+            }
+          : c,
+      ),
+    );
+    setStreamingConvoId(null);
+  }, [stream.exchange, streamingConvoId]);
 
   const activeConversation =
     conversations.find((c) => c.id === activeConvoId) ?? null;
 
   const handleSubmit = useCallback(
     async (question: string) => {
-      const history: ConversationTurn[] = activeConversation
-        ? activeConversation.exchanges.flatMap((ex) => [
-            { role: "user" as const, content: ex.question },
-            { role: "assistant" as const, content: ex.answer },
-          ])
-        : [];
+      // One in-flight stream at a time. The composer is disabled while
+      // `isRunning`, so this guard is a belt-and-braces against a race
+      // (e.g. quick Enter-twice when the previous run only just flipped
+      // `phase` to "done" but a new submit hasn't entered "running" yet).
+      if (stream.status.phase === "running") return;
+
+      let targetConvoId = activeConvoId;
+      let history: ConversationTurn[] = [];
+      if (targetConvoId) {
+        const c = conversations.find((c) => c.id === targetConvoId);
+        history = c
+          ? c.exchanges.flatMap((ex) => [
+              { role: "user" as const, content: ex.question },
+              { role: "assistant" as const, content: ex.answer },
+            ])
+          : [];
+      } else {
+        // Slice 5.0c-h: create the conversation slot synchronously so it
+        // appears in the sidebar the moment the user submits — not after
+        // the stream completes. The empty exchanges array means the
+        // sidebar item shows "0 turns · 0 tool calls" until the live
+        // exchange archives in.
+        const now = new Date().toISOString();
+        const newConvo: Conversation = {
+          id: randomId(),
+          title: titleFromQuestion(question),
+          exchanges: [],
+          created_at: now,
+          updated_at: now,
+        };
+        setConversations((prev) => [newConvo, ...prev]);
+        targetConvoId = newConvo.id;
+        setActiveConvoId(targetConvoId);
+      }
+      setStreamingConvoId(targetConvoId);
       await stream.submit(question, history);
     },
-    [activeConversation, stream],
+    [activeConvoId, conversations, stream],
   );
 
   const handleNew = useCallback(() => {
-    stream.reset();
+    // If a stream is in-flight, leave it alone — just take the user to
+    // an empty greeting. The previous conversation keeps streaming in
+    // the background; the user can return to it via the sidebar.
+    if (stream.status.phase !== "running") {
+      stream.reset();
+      archivedRef.current = null;
+    }
     setActiveConvoId(null);
-    archivedRef.current = null;
   }, [stream]);
 
   const handleSelect = useCallback(
     (id: string) => {
-      stream.reset();
+      // Same survival rule: switching conversations while a stream is
+      // running must not kill the stream. Only reset the stream state
+      // when it's already settled.
+      if (stream.status.phase !== "running") {
+        stream.reset();
+        archivedRef.current = null;
+      }
       setActiveConvoId(id);
-      archivedRef.current = null;
     },
     [stream],
   );
@@ -184,12 +223,14 @@ export function ChatShell() {
   const handleAssistantRetry = useCallback(
     async (originatingQuestion: string) => {
       if (!activeConversation) return;
+      if (stream.status.phase === "running") return;
       const history: ConversationTurn[] = activeConversation.exchanges.flatMap(
         (ex) => [
           { role: "user" as const, content: ex.question },
           { role: "assistant" as const, content: ex.answer },
         ],
       );
+      setStreamingConvoId(activeConversation.id);
       await stream.submit(originatingQuestion, history, { retryNudge: true });
     },
     [activeConversation, stream],
@@ -197,24 +238,30 @@ export function ChatShell() {
 
   // What to render in the message thread:
   //   - the active conversation's exchanges
-  //   - plus the in-flight exchange (or "running" view) if any
+  //   - plus the in-flight exchange (or "running" view) if any — but
+  //     ONLY when the active conversation is the one being streamed
+  //     (Slice 5.0c-h). Otherwise the user navigated away; the live view
+  //     belongs to whichever conversation `streamingConvoId` points to.
   const isRunning = stream.status.phase === "running";
+  const isActiveStreaming =
+    isRunning && activeConvoId !== null && activeConvoId === streamingConvoId;
   const visibleExchanges: ChatExchange[] =
     activeConversation?.exchanges ?? [];
 
-  // Evidence: prefer in-flight stream citations, fall back to the latest
-  // archived exchange's evidence. This keeps the panel populated through
-  // the run-up of a new request instead of flashing empty (Slice 5.0c-b).
+  // Evidence: prefer in-flight stream citations only when the user is
+  // looking at the streaming conversation. Otherwise fall back to the
+  // latest archived exchange's evidence (or empty when the active convo
+  // hasn't accumulated turns yet).
   const latestArchived: ChatExchange | null =
     visibleExchanges.length > 0
       ? visibleExchanges[visibleExchanges.length - 1]
       : null;
   const citations: Citation[] =
-    isRunning && stream.citations.length > 0
+    isActiveStreaming && stream.citations.length > 0
       ? stream.citations
       : (latestArchived?.citations ?? []);
   const toolEvents: ToolEvent[] =
-    isRunning && stream.toolEvents.length > 0
+    isActiveStreaming && stream.toolEvents.length > 0
       ? stream.toolEvents
       : (latestArchived?.tool_events ?? []);
 
@@ -260,6 +307,7 @@ export function ChatShell() {
         <ChatSidebar
           conversations={conversations}
           activeId={activeConvoId}
+          streamingId={streamingConvoId}
           onSelect={handleSelect}
           onNew={handleNew}
           collapsed={sidebarCollapsed}
@@ -269,12 +317,23 @@ export function ChatShell() {
           <MessageThread
             exchanges={visibleExchanges}
             stream={stream}
+            isActiveStreaming={isActiveStreaming}
             onEdit={setDraft}
             onRetry={setDraft}
             onQuickAsk={setDraft}
             onAssistantRetry={handleAssistantRetry}
           />
           <div className="shrink-0 border-t border-border bg-card/50 px-4 pt-3 pb-2">
+            {/* Slice 5.0c-h: cross-conversation in-flight notice. When
+                the stream belongs to a different conversation than the
+                one currently displayed, surface that fact so the
+                disabled composer isn't unexplained. */}
+            {isRunning && !isActiveStreaming ? (
+              <p className="mb-2 text-center text-[10px] text-muted-foreground">
+                Another conversation is generating an answer. Wait for it
+                to finish, or open it from the sidebar to follow along.
+              </p>
+            ) : null}
             <ChatComposer
               onSubmit={handleSubmit}
               disabled={isRunning}

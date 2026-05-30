@@ -4,6 +4,7 @@ import {
   Building2,
   ChevronLeft,
   ChevronRight,
+  Loader2,
   LogOut,
   Mail,
   MessageSquare,
@@ -32,6 +33,14 @@ import type { Conversation } from "@/lib/types";
 type Props = {
   conversations: Conversation[];
   activeId: string | null;
+  /**
+   * The conversation a stream is currently in-flight for (Slice 5.0c-h),
+   * or null when idle. May differ from `activeId` if the user navigated
+   * away during the run; the in-flight indicator follows this, not
+   * `activeId`, so the running conversation stays visible regardless of
+   * where the user is looking.
+   */
+  streamingId?: string | null;
   onSelect: (id: string) => void;
   onNew: () => void;
   /** Sidebar collapsed state — owned by parent so the layout can shrink. */
@@ -54,6 +63,7 @@ function initialsOf(displayName?: string, email?: string): string {
 export function ChatSidebar({
   conversations,
   activeId,
+  streamingId,
   onSelect,
   onNew,
   collapsed,
@@ -203,6 +213,7 @@ export function ChatSidebar({
                     0,
                   );
                   const turns = c.exchanges.length;
+                  const isStreaming = c.id === streamingId;
                   return (
                     <button
                       key={c.id}
@@ -216,14 +227,22 @@ export function ChatSidebar({
                       )}
                     >
                       <div className="flex w-full items-center gap-2">
-                        <MessageSquare className="h-3.5 w-3.5 shrink-0 opacity-70" />
+                        {isStreaming ? (
+                          <Loader2
+                            className="h-3.5 w-3.5 shrink-0 animate-spin text-primary"
+                            aria-label="Generating an answer"
+                          />
+                        ) : (
+                          <MessageSquare className="h-3.5 w-3.5 shrink-0 opacity-70" />
+                        )}
                         <span className="line-clamp-1 text-sm font-medium">
                           {c.title}
                         </span>
                       </div>
                       <div className="text-[10px] text-muted-foreground">
-                        {turns} turn{turns === 1 ? "" : "s"} · {totalToolCalls}{" "}
-                        tool call{totalToolCalls === 1 ? "" : "s"}
+                        {isStreaming
+                          ? "Generating…"
+                          : `${turns} turn${turns === 1 ? "" : "s"} · ${totalToolCalls} tool call${totalToolCalls === 1 ? "" : "s"}`}
                       </div>
                     </button>
                   );
