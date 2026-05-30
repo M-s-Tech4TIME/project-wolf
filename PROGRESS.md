@@ -71,7 +71,7 @@ which now becomes its own dedicated phase *after* stabilization, not before.
    See [[native-https-and-wolf-cert]] for design intent.
    *Will grow by one subcommand* — `wolf-cert issue-relay <tenant>` —
    to mint mTLS client certs for the Knowledge Relay (next item).
-1a. **Wolf Knowledge Relay** (proposed 2026-05-30, hard dep on Phase 5.4):
+1a. **Wolf Knowledge Relay** (proposed 2026-05-30, **slotted right after Phase 5.4** per user decision 2026-05-30, hard dep on Phase 5.4; source catalogue swept 2026-05-30 across all 7 categories — see [[wolf-knowledge-relay]]):
    a native `wolf-relay` daemon installed on every Wazuh host (manager,
    indexer, dashboard) as a system package. Reads `/var/ossec/ruleset/`
    (rules, decoders, SCA), polls Wazuh-state indices (vulnerabilities,
