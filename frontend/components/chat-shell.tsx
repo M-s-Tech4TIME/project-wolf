@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ChatComposer } from "@/components/chat-composer";
 import { ChatHeader } from "@/components/chat-header";
@@ -216,6 +216,83 @@ export function ChatShell() {
     );
   }, []);
 
+  // Slice 5.0c-i.2: star / unstar. Stars surface the conversation in
+  // its own "Starred" section above "Recents" in the sidebar; toggling
+  // does not change updated_at, so position within the section is
+  // preserved.
+  const handleToggleStar = useCallback((id: string) => {
+    setConversations((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, starred: !c.starred } : c)),
+    );
+  }, []);
+
+  // Slice 5.0c-i.2: delete a conversation. Confirms first; refuses
+  // while the conversation is the active stream's target (the archive
+  // effect would otherwise write into a removed slot). If the deleted
+  // conversation was the active one, fall back to the greeting screen.
+  const handleDelete = useCallback(
+    (id: string) => {
+      if (streamingConvoId === id) {
+        window.alert(
+          "This conversation is still generating an answer. Wait for it to finish (or stop it) before deleting.",
+        );
+        return;
+      }
+      const target = conversations.find((c) => c.id === id);
+      if (!target) return;
+      const ok = window.confirm(
+        `Delete "${target.title}"? This can't be undone.`,
+      );
+      if (!ok) return;
+      setConversations((prev) => prev.filter((c) => c.id !== id));
+      if (activeConvoId === id) {
+        setActiveConvoId(null);
+        if (stream.status.phase !== "running") {
+          stream.reset();
+          archivedRef.current = null;
+        }
+      }
+    },
+    [streamingConvoId, conversations, activeConvoId, stream],
+  );
+
+  // Slice 5.0c-i.2: bulk delete from the chats-history overlay. Same
+  // streaming-protection rule; the overlay disables the Delete button
+  // when the selection contains the streaming convo, and we belt-and-
+  // braces here.
+  const handleBulkDelete = useCallback(
+    (ids: string[]) => {
+      const safe = ids.filter((id) => id !== streamingConvoId);
+      if (safe.length === 0) return;
+      const ok = window.confirm(
+        safe.length === 1
+          ? "Delete this conversation? This can't be undone."
+          : `Delete ${safe.length} conversations? This can't be undone.`,
+      );
+      if (!ok) return;
+      setConversations((prev) => prev.filter((c) => !safe.includes(c.id)));
+      if (activeConvoId && safe.includes(activeConvoId)) {
+        setActiveConvoId(null);
+        if (stream.status.phase !== "running") {
+          stream.reset();
+          archivedRef.current = null;
+        }
+      }
+    },
+    [streamingConvoId, activeConvoId, stream],
+  );
+
+  // Slice 5.0c-i.2: keep the sidebar / overlay sorted by most-recent
+  // activity. updated_at is set on every archive, so a new exchange
+  // bubbles its conversation back to the top of its section.
+  const sortedConversations = useMemo(
+    () =>
+      [...conversations].sort((a, b) =>
+        (b.updated_at || "").localeCompare(a.updated_at || ""),
+      ),
+    [conversations],
+  );
+
   // Slice 5.0c-j: full-screen chats-history pane open state.
   const [chatsOverlayOpen, setChatsOverlayOpen] = useState(false);
 
@@ -330,12 +407,14 @@ export function ChatShell() {
       />
       <div className="flex flex-1 overflow-hidden">
         <ChatSidebar
-          conversations={conversations}
+          conversations={sortedConversations}
           activeId={activeConvoId}
           streamingId={streamingConvoId}
           onSelect={handleSelect}
           onNew={handleNew}
           onRename={handleRename}
+          onToggleStar={handleToggleStar}
+          onDelete={handleDelete}
           onOpenChatsHistory={() => setChatsOverlayOpen(true)}
           collapsed={sidebarCollapsed}
           onToggleCollapsed={() => setSidebarCollapsed(!sidebarCollapsed)}
@@ -403,11 +482,14 @@ export function ChatShell() {
           when open. Closed state renders nothing. */}
       <ChatsHistoryOverlay
         open={chatsOverlayOpen}
-        conversations={conversations}
+        conversations={sortedConversations}
         streamingId={streamingConvoId}
         onClose={() => setChatsOverlayOpen(false)}
         onSelect={handleSelect}
         onNew={handleNew}
+        onRename={handleRename}
+        onToggleStar={handleToggleStar}
+        onBulkDelete={handleBulkDelete}
       />
     </div>
   );

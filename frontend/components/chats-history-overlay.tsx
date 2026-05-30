@@ -15,6 +15,16 @@ type Props = {
   onClose: () => void;
   onSelect: (id: string) => void;
   onNew: () => void;
+  /**
+   * Slice 5.0c-i.2 — per-row actions reached from the result row's
+   * "…" menu. Wiring for the menu itself lands in commit 3 of this
+   * slice; these props are typed here so the parent can pass them now
+   * without a TS error during the gradual roll-out.
+   */
+  onRename?: (id: string, nextTitle: string) => void;
+  onToggleStar?: (id: string) => void;
+  /** Bulk delete used by Select-chats mode (commit 3). */
+  onBulkDelete?: (ids: string[]) => void;
 };
 
 /**

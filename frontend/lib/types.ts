@@ -59,6 +59,12 @@ export type Conversation = {
   exchanges: ChatExchange[];
   created_at: string;
   updated_at: string;
+  /**
+   * Slice 5.0c-i.2: starred conversations float to the top of the
+   * sidebar in their own "Starred" section. Omitted / false for the
+   * default "Recents" section.
+   */
+  starred?: boolean;
 };
 
 export type ChatResponseBody = {

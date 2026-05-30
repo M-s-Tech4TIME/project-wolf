@@ -13,6 +13,8 @@ import {
   Pencil,
   Plus,
   Search,
+  Star,
+  Trash2,
   UserCircle,
   X,
 } from "lucide-react";
@@ -48,6 +50,15 @@ type Props = {
   onNew: () => void;
   /** Slice 5.0c-i: per-item rename via the "…" menu (or top-bar title). */
   onRename?: (id: string, nextTitle: string) => void;
+  /** Slice 5.0c-i.2: toggle a conversation's starred flag. Starred
+   *  conversations float into their own "Starred" section above
+   *  "Recents". */
+  onToggleStar?: (id: string) => void;
+  /** Slice 5.0c-i.2: permanently delete a conversation. The handler
+   *  is expected to confirm with the user; this prop is a fire-and-
+   *  forget signal. Disabled by the parent (via the omitted-prop
+   *  pattern) for conversations currently being streamed. */
+  onDelete?: (id: string) => void;
   /** Slice 5.0c-j: opens the full-screen chats-history pane with
    *  content search across every user + assistant message. */
   onOpenChatsHistory?: () => void;
@@ -75,6 +86,8 @@ export function ChatSidebar({
   onSelect,
   onNew,
   onRename,
+  onToggleStar,
+  onDelete,
   onOpenChatsHistory,
   collapsed,
   onToggleCollapsed,
@@ -105,6 +118,18 @@ export function ChatSidebar({
     if (!q) return conversations;
     return conversations.filter((c) => c.title.toLowerCase().includes(q));
   }, [conversations, query]);
+
+  // Slice 5.0c-i.2: split into Starred + Recents. Each section keeps
+  // the parent's updated_at order — stars don't get re-ranked when
+  // toggled, only relocated.
+  const starredConvos = useMemo(
+    () => filtered.filter((c) => c.starred),
+    [filtered],
+  );
+  const recentConvos = useMemo(
+    () => filtered.filter((c) => !c.starred),
+    [filtered],
+  );
 
   const handleSearchFromCollapsed = () => {
     if (collapsed) onToggleCollapsed();
@@ -228,7 +253,7 @@ export function ChatSidebar({
             </div>
           </div>
           <ScrollArea className="flex-1">
-            <div className="space-y-1 px-2 pb-3">
+            <div className="space-y-3 px-2 pb-3">
               {conversations.length === 0 ? (
                 <div className="px-3 py-8 text-center text-xs text-muted-foreground">
                   No conversations yet.
@@ -244,23 +269,44 @@ export function ChatSidebar({
                   .
                 </div>
               ) : (
-                filtered.map((c) => (
-                  <ConversationListItem
-                    key={c.id}
-                    conversation={c}
-                    isActive={c.id === activeId}
-                    isStreaming={c.id === streamingId}
-                    isRenaming={c.id === renamingId}
-                    onSelect={() => onSelect(c.id)}
-                    onStartRename={() => setRenamingId(c.id)}
-                    onCommitRename={(next) => {
+                <>
+                  {starredConvos.length > 0 ? (
+                    <ConversationListSection
+                      label="Starred"
+                      conversations={starredConvos}
+                      activeId={activeId}
+                      streamingId={streamingId}
+                      renamingId={renamingId}
+                      onSelect={onSelect}
+                      onStartRename={(id) => setRenamingId(id)}
+                      onCommitRename={(id, next) => {
+                        setRenamingId(null);
+                        onRename?.(id, next);
+                      }}
+                      onCancelRename={() => setRenamingId(null)}
+                      onToggleStar={onToggleStar}
+                      onDelete={onDelete}
+                      canRename={!!onRename}
+                    />
+                  ) : null}
+                  <ConversationListSection
+                    label={starredConvos.length > 0 ? "Recents" : null}
+                    conversations={recentConvos}
+                    activeId={activeId}
+                    streamingId={streamingId}
+                    renamingId={renamingId}
+                    onSelect={onSelect}
+                    onStartRename={(id) => setRenamingId(id)}
+                    onCommitRename={(id, next) => {
                       setRenamingId(null);
-                      onRename?.(c.id, next);
+                      onRename?.(id, next);
                     }}
                     onCancelRename={() => setRenamingId(null)}
+                    onToggleStar={onToggleStar}
+                    onDelete={onDelete}
                     canRename={!!onRename}
                   />
-                ))
+                </>
               )}
             </div>
           </ScrollArea>
@@ -274,12 +320,75 @@ export function ChatSidebar({
 }
 
 /**
+ * Slice 5.0c-i.2: a labelled group of conversation rows (e.g. "Starred"
+ * / "Recents"). The "Recents" label is only shown when there's also a
+ * "Starred" section above — when nothing is starred we just render a
+ * flat list without a header (avoids a "Recents" label hovering over
+ * the only group of items).
+ */
+function ConversationListSection({
+  label,
+  conversations,
+  activeId,
+  streamingId,
+  renamingId,
+  onSelect,
+  onStartRename,
+  onCommitRename,
+  onCancelRename,
+  onToggleStar,
+  onDelete,
+  canRename,
+}: {
+  label: string | null;
+  conversations: Conversation[];
+  activeId: string | null;
+  streamingId?: string | null;
+  renamingId: string | null;
+  onSelect: (id: string) => void;
+  onStartRename: (id: string) => void;
+  onCommitRename: (id: string, next: string) => void;
+  onCancelRename: () => void;
+  onToggleStar?: (id: string) => void;
+  onDelete?: (id: string) => void;
+  canRename: boolean;
+}) {
+  if (conversations.length === 0) return null;
+  return (
+    <div className="space-y-1">
+      {label ? (
+        <div className="px-3 pt-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          {label}
+        </div>
+      ) : null}
+      {conversations.map((c) => (
+        <ConversationListItem
+          key={c.id}
+          conversation={c}
+          isActive={c.id === activeId}
+          isStreaming={c.id === streamingId}
+          isRenaming={c.id === renamingId}
+          onSelect={() => onSelect(c.id)}
+          onStartRename={() => onStartRename(c.id)}
+          onCommitRename={(next) => onCommitRename(c.id, next)}
+          onCancelRename={onCancelRename}
+          onToggleStar={onToggleStar ? () => onToggleStar(c.id) : undefined}
+          onDelete={onDelete ? () => onDelete(c.id) : undefined}
+          canRename={canRename}
+        />
+      ))}
+    </div>
+  );
+}
+
+/**
  * One row in the conversation list. Renders as either:
  *   - a click-to-select button (default)
  *   - an inline rename input (when isRenaming)
  * Plus a hover-revealed "…" menu button that opens a dropdown with the
- * Rename action. The "…" stays out of the way until the row is hovered
- * so the list reads cleanly when the user is just browsing.
+ * Rename / Star / Delete actions (Slice 5.0c-i.2). The "…" stays out
+ * of the way until the row is hovered so the list reads cleanly when
+ * the user is just browsing.
  */
 function ConversationListItem({
   conversation,
@@ -290,6 +399,8 @@ function ConversationListItem({
   onStartRename,
   onCommitRename,
   onCancelRename,
+  onToggleStar,
+  onDelete,
   canRename,
 }: {
   conversation: Conversation;
@@ -300,6 +411,8 @@ function ConversationListItem({
   onStartRename: () => void;
   onCommitRename: (next: string) => void;
   onCancelRename: () => void;
+  onToggleStar?: () => void;
+  onDelete?: () => void;
   canRename: boolean;
 }) {
   const totalToolCalls = conversation.exchanges.reduce(
@@ -377,6 +490,11 @@ function ConversationListItem({
               className="h-3.5 w-3.5 shrink-0 animate-spin text-primary"
               aria-label="Generating an answer"
             />
+          ) : conversation.starred ? (
+            <Star
+              className="h-3.5 w-3.5 shrink-0 fill-amber-400 text-amber-500"
+              aria-label="Starred"
+            />
           ) : (
             <MessageSquare className="h-3.5 w-3.5 shrink-0 opacity-70" />
           )}
@@ -390,7 +508,7 @@ function ConversationListItem({
             : `${turns} turn${turns === 1 ? "" : "s"} · ${totalToolCalls} tool call${totalToolCalls === 1 ? "" : "s"}`}
         </div>
       </button>
-      {canRename ? (
+      {canRename || onToggleStar || onDelete ? (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
@@ -403,16 +521,48 @@ function ConversationListItem({
               <MoreHorizontal className="h-4 w-4" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-40">
-            <DropdownMenuItem
-              onSelect={(e) => {
-                e.preventDefault();
-                onStartRename();
-              }}
-            >
-              <Pencil className="mr-2 h-3.5 w-3.5" />
-              Rename
-            </DropdownMenuItem>
+          <DropdownMenuContent align="end" className="w-44">
+            {onToggleStar ? (
+              <DropdownMenuItem
+                onSelect={(e) => {
+                  e.preventDefault();
+                  onToggleStar();
+                }}
+              >
+                <Star
+                  className={cn(
+                    "mr-2 h-3.5 w-3.5",
+                    conversation.starred
+                      ? "fill-amber-400 text-amber-500"
+                      : "",
+                  )}
+                />
+                {conversation.starred ? "Unstar" : "Star"}
+              </DropdownMenuItem>
+            ) : null}
+            {canRename ? (
+              <DropdownMenuItem
+                onSelect={(e) => {
+                  e.preventDefault();
+                  onStartRename();
+                }}
+              >
+                <Pencil className="mr-2 h-3.5 w-3.5" />
+                Rename
+              </DropdownMenuItem>
+            ) : null}
+            {onDelete ? (
+              <DropdownMenuItem
+                variant="destructive"
+                onSelect={(e) => {
+                  e.preventDefault();
+                  onDelete();
+                }}
+              >
+                <Trash2 className="mr-2 h-3.5 w-3.5" />
+                Delete
+              </DropdownMenuItem>
+            ) : null}
           </DropdownMenuContent>
         </DropdownMenu>
       ) : null}
