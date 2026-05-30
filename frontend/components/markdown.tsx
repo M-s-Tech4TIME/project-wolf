@@ -117,7 +117,7 @@ export function Markdown({
   children,
   className,
   searchHighlight = "",
-  searchHighlightActive = false,
+  searchHighlightActiveLocalIdx = -1,
 }: {
   children: string;
   className?: string;
@@ -127,11 +127,18 @@ export function Markdown({
    *  bubble border). Composed after the grounding-marker pass so
    *  chip JSX is preserved verbatim — only flowing prose is split. */
   searchHighlight?: string;
-  /** Pass `true` for the bubble that's the *current* Find target so
-   *  its highlights use the brighter orange shade (Firefox-style
-   *  active-match indicator). Other matching bubbles stay amber. */
-  searchHighlightActive?: boolean;
+  /** Slice 5.0c-i.4: the LOCAL index (within this bubble's matches,
+   *  0-based across every block-renderer call below) of the active
+   *  Find target, or -1 if the active match is in a different bubble.
+   *  Replaces the previous boolean `searchHighlightActive` so we can
+   *  highlight ONE specific mark rather than the whole bubble. */
+  searchHighlightActiveLocalIdx?: number;
 }) {
+  // Per-render counter shared by every decorate() call below so the
+  // multiple per-block invocations (p / li / td / th / blockquote)
+  // agree on "this is mark #N in this bubble". Fresh per render —
+  // strict-mode double-renders rebuild the closure, no state bleed.
+  const counter = { current: 0 };
   // Compose the two highlighters: grounding markers first (so their
   // chip JSX is treated as opaque elements by the search pass), then
   // search-query highlighting on whatever string children remain.
@@ -139,7 +146,8 @@ export function Markdown({
     highlightSearchInChildren(
       highlightGroundingMarkers(nodes),
       searchHighlight,
-      searchHighlightActive,
+      searchHighlightActiveLocalIdx,
+      counter,
     );
   return (
     <div

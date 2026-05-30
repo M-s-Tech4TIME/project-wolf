@@ -113,14 +113,10 @@ export function InConversationSearchBar({
         >
           <ChevronDown className="h-4 w-4" />
         </Button>
-        {counter ? (
-          <span
-            className="min-w-[6.5rem] shrink-0 text-right text-[11px] text-muted-foreground"
-            aria-live="polite"
-          >
-            {counter}
-          </span>
-        ) : null}
+        {/* Slice 5.0c-i.4: layout reorder per user feedback —
+            counter moves to the FAR RIGHT, after the Close X, so
+            the close affordance keeps its conventional position
+            adjacent to the navigation buttons. */}
         <Button
           variant="ghost"
           size="sm"
@@ -131,6 +127,14 @@ export function InConversationSearchBar({
         >
           <X className="h-4 w-4" />
         </Button>
+        {counter ? (
+          <span
+            className="min-w-[6.5rem] shrink-0 text-right text-[11px] text-muted-foreground"
+            aria-live="polite"
+          >
+            {counter}
+          </span>
+        ) : null}
       </div>
     </div>
   );
