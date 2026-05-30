@@ -18,9 +18,30 @@ type Props = {
   draft?: { value: string; nonce: number };
 };
 
+/**
+ * Slice 5.0c-i.4: cap on how tall the composer can grow before it
+ * starts scrolling internally instead of pushing the layout. Equivalent
+ * to ~10 lines at the current text-sm line-height (1.625 × 14px ≈
+ * 22.75px; rounded up to make the breakpoint feel like 10 clean rows).
+ */
+const COMPOSER_MAX_HEIGHT_PX = 240;
+
 export function ChatComposer({ onSubmit, disabled, draft }: Props) {
   const [value, setValue] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Slice 5.0c-i.4: auto-expand the textarea vertically as the user
+  // types. Reset to `auto` first so shrinking on backspace works, then
+  // grow back up to the scrollHeight (capped). Re-runs whenever `value`
+  // changes (typing, draft-prefill, submit-clear), so every path that
+  // mutates the text triggers a re-measurement.
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height =
+      Math.min(el.scrollHeight, COMPOSER_MAX_HEIGHT_PX) + "px";
+  }, [value]);
 
   useEffect(() => {
     if (!draft) return;
@@ -63,13 +84,14 @@ export function ChatComposer({ onSubmit, disabled, draft }: Props) {
       <div className="flex items-end gap-2 rounded-lg border border-input bg-background p-2 focus-within:ring-1 focus-within:ring-ring">
         <textarea
           ref={textareaRef}
-          className="flex-1 resize-none bg-transparent px-2 py-1.5 text-sm outline-none placeholder:text-muted-foreground"
+          className="flex-1 resize-none overflow-y-auto bg-transparent px-2 py-1.5 text-sm leading-relaxed outline-none placeholder:text-muted-foreground [scrollbar-gutter:stable] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-foreground/30 hover:[&::-webkit-scrollbar-thumb]:bg-foreground/50"
           rows={2}
           placeholder='Ask something — e.g. "why did agent web-07 trigger alert 5710 at 10:32 UTC?"'
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={handleKeyDown}
           disabled={disabled}
+          style={{ maxHeight: `${COMPOSER_MAX_HEIGHT_PX}px` }}
         />
         <Button
           type="submit"
