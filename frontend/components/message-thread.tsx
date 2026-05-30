@@ -120,10 +120,12 @@ export function MessageThread({
   // meaningful "retry this".
   const lastExchangeIdx = exchanges.length - 1;
 
-  // Greeting screen exit animation (Slice 5.0c-g). When the user submits
-  // their first message, `empty` flips false; we keep the greeting in the
-  // DOM for one transition cycle with opacity-0 so it fades out instead
-  // of snapping. After the timeout, the greeting unmounts entirely.
+  // Greeting screen exit animation (Slice 5.0c-g, slowed in 5.0c-i to
+  // 1500ms after user feedback that the original 280ms was too snappy).
+  // When the user submits their first message, `empty` flips false; we
+  // keep the greeting in the DOM for the full transition cycle with
+  // opacity-0 so it fades out smoothly. After the timeout the greeting
+  // unmounts entirely.
   const [renderGreeting, setRenderGreeting] = useState(empty);
   useEffect(() => {
     if (empty) {
@@ -135,7 +137,7 @@ export function MessageThread({
       setRenderGreeting(true);
       return;
     }
-    const t = window.setTimeout(() => setRenderGreeting(false), 280);
+    const t = window.setTimeout(() => setRenderGreeting(false), 1500);
     return () => window.clearTimeout(t);
   }, [empty]);
 
@@ -148,7 +150,7 @@ export function MessageThread({
         <div className="mx-auto max-w-3xl space-y-6 px-4 py-6">
           {renderGreeting ? (
             <div
-              className={`transition-opacity duration-300 ease-out ${
+              className={`transition-opacity duration-[1500ms] ease-out ${
                 empty ? "opacity-100" : "pointer-events-none opacity-0"
               }`}
               aria-hidden={empty ? undefined : "true"}
@@ -172,7 +174,12 @@ export function MessageThread({
           })}
 
           {showStreamView ? (
-            <>
+            /* Slice 5.0c-i: the in-flight chat view fades + slides in
+               instead of snapping. tw-animate-css's `animate-in
+               fade-in-0 slide-in-from-bottom-2` fires once on mount of
+               this container. Duration matches the greeting fade-out so
+               the two crossfade naturally. */
+            <div className="space-y-6 animate-in fade-in-0 slide-in-from-bottom-2 duration-[700ms] ease-out">
               {stream.currentQuestion ? (
                 <UserBubble
                   text={stream.currentQuestion}
@@ -180,7 +187,7 @@ export function MessageThread({
                 />
               ) : null}
               <StreamingView stream={stream} />
-            </>
+            </div>
           ) : null}
 
           <div ref={bottomRef} />

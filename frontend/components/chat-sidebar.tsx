@@ -8,12 +8,14 @@ import {
   LogOut,
   Mail,
   MessageSquare,
+  MoreHorizontal,
+  Pencil,
   Plus,
   Search,
   UserCircle,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 
 import { useAuth } from "@/components/auth-provider";
 import { Button } from "@/components/ui/button";
@@ -43,6 +45,8 @@ type Props = {
   streamingId?: string | null;
   onSelect: (id: string) => void;
   onNew: () => void;
+  /** Slice 5.0c-i: per-item rename via the "…" menu (or top-bar title). */
+  onRename?: (id: string, nextTitle: string) => void;
   /** Sidebar collapsed state — owned by parent so the layout can shrink. */
   collapsed: boolean;
   onToggleCollapsed: () => void;
@@ -66,10 +70,14 @@ export function ChatSidebar({
   streamingId,
   onSelect,
   onNew,
+  onRename,
   collapsed,
   onToggleCollapsed,
 }: Props) {
   const [query, setQuery] = useState("");
+  // Which conversation is currently being inline-renamed in the sidebar
+  // (null when no item is in edit mode). Slice 5.0c-i.
+  const [renamingId, setRenamingId] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   // `requestFocus` is bumped by the collapsed-mode Search icon: it expands
   // the sidebar and then focuses the input on the next paint. We use a
@@ -207,46 +215,23 @@ export function ChatSidebar({
                   .
                 </div>
               ) : (
-                filtered.map((c) => {
-                  const totalToolCalls = c.exchanges.reduce(
-                    (sum, ex) => sum + ex.tool_call_count,
-                    0,
-                  );
-                  const turns = c.exchanges.length;
-                  const isStreaming = c.id === streamingId;
-                  return (
-                    <button
-                      key={c.id}
-                      type="button"
-                      onClick={() => onSelect(c.id)}
-                      className={cn(
-                        "flex w-full flex-col items-start gap-1 rounded-md px-3 py-2 text-left transition-colors",
-                        c.id === activeId
-                          ? "bg-accent text-accent-foreground"
-                          : "hover:bg-accent/50",
-                      )}
-                    >
-                      <div className="flex w-full items-center gap-2">
-                        {isStreaming ? (
-                          <Loader2
-                            className="h-3.5 w-3.5 shrink-0 animate-spin text-primary"
-                            aria-label="Generating an answer"
-                          />
-                        ) : (
-                          <MessageSquare className="h-3.5 w-3.5 shrink-0 opacity-70" />
-                        )}
-                        <span className="line-clamp-1 text-sm font-medium">
-                          {c.title}
-                        </span>
-                      </div>
-                      <div className="text-[10px] text-muted-foreground">
-                        {isStreaming
-                          ? "Generating…"
-                          : `${turns} turn${turns === 1 ? "" : "s"} · ${totalToolCalls} tool call${totalToolCalls === 1 ? "" : "s"}`}
-                      </div>
-                    </button>
-                  );
-                })
+                filtered.map((c) => (
+                  <ConversationListItem
+                    key={c.id}
+                    conversation={c}
+                    isActive={c.id === activeId}
+                    isStreaming={c.id === streamingId}
+                    isRenaming={c.id === renamingId}
+                    onSelect={() => onSelect(c.id)}
+                    onStartRename={() => setRenamingId(c.id)}
+                    onCommitRename={(next) => {
+                      setRenamingId(null);
+                      onRename?.(c.id, next);
+                    }}
+                    onCancelRename={() => setRenamingId(null)}
+                    canRename={!!onRename}
+                  />
+                ))
               )}
             </div>
           </ScrollArea>
@@ -256,6 +241,153 @@ export function ChatSidebar({
       {/* Bottom: profile footer — Claude-style */}
       <SidebarProfileFooter collapsed={collapsed} />
     </aside>
+  );
+}
+
+/**
+ * One row in the conversation list. Renders as either:
+ *   - a click-to-select button (default)
+ *   - an inline rename input (when isRenaming)
+ * Plus a hover-revealed "…" menu button that opens a dropdown with the
+ * Rename action. The "…" stays out of the way until the row is hovered
+ * so the list reads cleanly when the user is just browsing.
+ */
+function ConversationListItem({
+  conversation,
+  isActive,
+  isStreaming,
+  isRenaming,
+  onSelect,
+  onStartRename,
+  onCommitRename,
+  onCancelRename,
+  canRename,
+}: {
+  conversation: Conversation;
+  isActive: boolean;
+  isStreaming: boolean;
+  isRenaming: boolean;
+  onSelect: () => void;
+  onStartRename: () => void;
+  onCommitRename: (next: string) => void;
+  onCancelRename: () => void;
+  canRename: boolean;
+}) {
+  const totalToolCalls = conversation.exchanges.reduce(
+    (sum, ex) => sum + ex.tool_call_count,
+    0,
+  );
+  const turns = conversation.exchanges.length;
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [draft, setDraft] = useState(conversation.title);
+
+  useEffect(() => {
+    if (isRenaming) {
+      // setState in an effect here: we're syncing the editable draft to
+      // the current authoritative title when the row enters edit mode.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setDraft(conversation.title);
+      // Focus + select on next paint so the rename is a single keystroke
+      // replace.
+      requestAnimationFrame(() => inputRef.current?.select());
+    }
+  }, [isRenaming, conversation.title]);
+
+  function handleKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      onCommitRename(draft);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      onCancelRename();
+    }
+  }
+
+  if (isRenaming) {
+    return (
+      <div
+        className={cn(
+          "rounded-md px-3 py-2",
+          isActive ? "bg-accent text-accent-foreground" : "bg-accent/30",
+        )}
+      >
+        <Input
+          ref={inputRef}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => onCommitRename(draft)}
+          onKeyDown={handleKeyDown}
+          maxLength={80}
+          aria-label="Rename conversation"
+          className="h-7 text-sm"
+        />
+        <p className="mt-1 text-[10px] text-muted-foreground">
+          Enter to save · Esc to cancel
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={cn(
+        "group/item relative rounded-md transition-colors",
+        isActive
+          ? "bg-accent text-accent-foreground"
+          : "hover:bg-accent/50",
+      )}
+    >
+      <button
+        type="button"
+        onClick={onSelect}
+        className="flex w-full flex-col items-start gap-1 px-3 py-2 pr-9 text-left"
+      >
+        <div className="flex w-full items-center gap-2">
+          {isStreaming ? (
+            <Loader2
+              className="h-3.5 w-3.5 shrink-0 animate-spin text-primary"
+              aria-label="Generating an answer"
+            />
+          ) : (
+            <MessageSquare className="h-3.5 w-3.5 shrink-0 opacity-70" />
+          )}
+          <span className="line-clamp-1 text-sm font-medium">
+            {conversation.title}
+          </span>
+        </div>
+        <div className="text-[10px] text-muted-foreground">
+          {isStreaming
+            ? "Generating…"
+            : `${turns} turn${turns === 1 ? "" : "s"} · ${totalToolCalls} tool call${totalToolCalls === 1 ? "" : "s"}`}
+        </div>
+      </button>
+      {canRename ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              aria-label={`Actions for ${conversation.title}`}
+              title="More actions"
+              onClick={(e) => e.stopPropagation()}
+              className="absolute right-1 top-1/2 -translate-y-1/2 flex h-7 w-7 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-accent/70 hover:text-foreground focus:opacity-100 group-hover/item:opacity-100"
+            >
+              <MoreHorizontal className="h-4 w-4" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-40">
+            <DropdownMenuItem
+              onSelect={(e) => {
+                e.preventDefault();
+                onStartRename();
+              }}
+            >
+              <Pencil className="mr-2 h-3.5 w-3.5" />
+              Rename
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : null}
+    </div>
   );
 }
 

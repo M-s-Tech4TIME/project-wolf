@@ -201,6 +201,20 @@ export function ChatShell() {
     [stream],
   );
 
+  // Slice 5.0c-i: conversation rename. Both the top-bar title and the
+  // sidebar's per-item "…" menu route here. Trims whitespace, rejects
+  // an empty rename (the convo keeps its old title), and caps the
+  // length so the sidebar item can still render on one line.
+  const handleRename = useCallback((id: string, nextTitle: string) => {
+    const trimmed = nextTitle.trim();
+    if (!trimmed) return;
+    setConversations((prev) =>
+      prev.map((c) =>
+        c.id === id ? { ...c, title: trimmed.slice(0, 80) } : c,
+      ),
+    );
+  }, []);
+
   // Composer draft handoff (Slice 5.0c-f). The hover Edit / Retry actions
   // and the new-chat greeting screen all want the same thing: prefill the
   // composer with some text and focus it. We hold the draft here and pass
@@ -302,7 +316,14 @@ export function ChatShell() {
 
   return (
     <div className="flex h-screen flex-col">
-      <ChatHeader title={activeConversation?.title ?? null} />
+      <ChatHeader
+        title={activeConversation?.title ?? null}
+        onRename={
+          activeConversation
+            ? (next) => handleRename(activeConversation.id, next)
+            : undefined
+        }
+      />
       <div className="flex flex-1 overflow-hidden">
         <ChatSidebar
           conversations={conversations}
@@ -310,6 +331,7 @@ export function ChatShell() {
           streamingId={streamingConvoId}
           onSelect={handleSelect}
           onNew={handleNew}
+          onRename={handleRename}
           collapsed={sidebarCollapsed}
           onToggleCollapsed={() => setSidebarCollapsed(!sidebarCollapsed)}
         />
