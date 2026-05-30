@@ -492,22 +492,15 @@ function ResultRow({
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-44">
-              <DropdownMenuItem
-                onSelect={(e) => {
-                  e.preventDefault();
-                  onEnterSelectionWith();
-                }}
-              >
+              {/* Slice 5.0c-i.4: no preventDefault — let the menu close
+                  normally on select. See sidebar's matching comment for
+                  why (delete-dialog focus race when the menu stays open). */}
+              <DropdownMenuItem onSelect={() => onEnterSelectionWith()}>
                 <Check className="mr-2 h-3.5 w-3.5" />
                 Select
               </DropdownMenuItem>
               {onStar ? (
-                <DropdownMenuItem
-                  onSelect={(e) => {
-                    e.preventDefault();
-                    onStar();
-                  }}
-                >
+                <DropdownMenuItem onSelect={() => onStar()}>
                   <Star
                     className={cn(
                       "mr-2 h-3.5 w-3.5",
@@ -520,12 +513,7 @@ function ResultRow({
                 </DropdownMenuItem>
               ) : null}
               {onStartRename ? (
-                <DropdownMenuItem
-                  onSelect={(e) => {
-                    e.preventDefault();
-                    onStartRename();
-                  }}
-                >
+                <DropdownMenuItem onSelect={() => onStartRename()}>
                   <Pencil className="mr-2 h-3.5 w-3.5" />
                   Rename
                 </DropdownMenuItem>
@@ -536,8 +524,7 @@ function ResultRow({
                   <DropdownMenuItem
                     variant="destructive"
                     disabled={isStreaming}
-                    onSelect={(e) => {
-                      e.preventDefault();
+                    onSelect={() => {
                       if (isStreaming) return;
                       onDelete();
                     }}

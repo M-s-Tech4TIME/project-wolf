@@ -522,13 +522,15 @@ function ConversationListItem({
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-44">
+            {/* Slice 5.0c-i.4: previously these onSelect handlers called
+                e.preventDefault(), which in Radix DropdownMenu keeps the
+                menu OPEN after selection. With the menu still open, the
+                outside-click handler intercepted the first click in any
+                follow-up UI (notably the Delete confirm dialog), causing
+                the "needs an extra click" focus bug the user reported.
+                Letting the menu close normally fixes it. */}
             {onToggleStar ? (
-              <DropdownMenuItem
-                onSelect={(e) => {
-                  e.preventDefault();
-                  onToggleStar();
-                }}
-              >
+              <DropdownMenuItem onSelect={() => onToggleStar()}>
                 <Star
                   className={cn(
                     "mr-2 h-3.5 w-3.5",
@@ -541,12 +543,7 @@ function ConversationListItem({
               </DropdownMenuItem>
             ) : null}
             {canRename ? (
-              <DropdownMenuItem
-                onSelect={(e) => {
-                  e.preventDefault();
-                  onStartRename();
-                }}
-              >
+              <DropdownMenuItem onSelect={() => onStartRename()}>
                 <Pencil className="mr-2 h-3.5 w-3.5" />
                 Rename
               </DropdownMenuItem>
@@ -555,8 +552,7 @@ function ConversationListItem({
               <DropdownMenuItem
                 variant="destructive"
                 disabled={isStreaming}
-                onSelect={(e) => {
-                  e.preventDefault();
+                onSelect={() => {
                   if (isStreaming) return;
                   onDelete();
                 }}
