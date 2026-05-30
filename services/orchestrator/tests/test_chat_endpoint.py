@@ -196,6 +196,24 @@ async def test_chat_returns_grounded_answer_with_citations(
                 stop_reason="end_turn",
                 model_id="mock-claude",
             ),
+            # Third response: the grounding judge call. Without
+            # GROUNDING_JUDGE_MODEL_ID env set, the judge reuses the chat
+            # provider, so the same queue must include its JSON verdict.
+            # Before this entry the queue ran dry on the judge call and
+            # the validator silently failed twice with IndexError — the
+            # `[verified]` chip below was never actually emitted in CI
+            # despite the prior assertion update implying it was.
+            ChatResponse(
+                content=(
+                    '[{"index": 0, "verdict": "supported", '
+                    '"reason": "trace to search_alerts result"}]'
+                ),
+                tool_calls=[],
+                input_tokens=5,
+                output_tokens=10,
+                stop_reason="end_turn",
+                model_id="mock-claude",
+            ),
         ]
     )
     _patch_chat_module(
