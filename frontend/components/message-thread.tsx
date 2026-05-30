@@ -244,16 +244,16 @@ export function MessageThread({
           })}
 
           {showStreamView ? (
-            /* Slice 5.0c-i.2: the in-flight chat view fades + slides up
+            /* Slice 5.0c-i.3: in-flight chat view fades + slides up
                into view. tw-animate-css's `animate-in fade-in-0
-               slide-in-from-bottom-8` fires once on mount of this
-               container; the custom cubic-bezier ease-out-expo curve
-               gives the deceleration its smooth "comes to a gentle stop"
-               feel that the previous `ease-out` (cubic) was too sharp
-               for. 600ms total — long enough to register as motion,
-               short enough not to feel sluggish. */
+               slide-in-from-bottom-8` fires once on mount; the custom
+               cubic-bezier ease-out-expo curve gives the deceleration
+               its smooth "comes to a gentle stop" feel. Bumped to
+               1000ms (from 600ms) per user feedback that the slide
+               should feel like a car going from down to up — at 1s
+               the motion reads clearly without dragging. */
             <div
-              className="space-y-6 animate-in fade-in-0 slide-in-from-bottom-8 duration-[600ms]"
+              className="space-y-6 animate-in fade-in-0 slide-in-from-bottom-8 duration-[1000ms]"
               style={{ animationTimingFunction: "cubic-bezier(0.16, 1, 0.3, 1)" }}
             >
               {stream.currentQuestion ? (
