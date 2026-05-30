@@ -1,6 +1,6 @@
 "use client";
 
-import { Cog, Settings as SettingsIcon, ShieldCheck, Sliders, UserCircle } from "lucide-react";
+import { Cog, Search, Settings as SettingsIcon, ShieldCheck, Sliders, UserCircle } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import { TenantSwitcher } from "@/components/tenant-switcher";
@@ -32,10 +32,17 @@ import { Input } from "@/components/ui/input";
 export function ChatHeader({
   title,
   onRename,
+  onToggleInConversationSearch,
+  inConversationSearchOpen,
 }: {
   title?: string | null;
   /** Slice 5.0c-i: click-to-edit the active conversation's title. */
   onRename?: (next: string) => void;
+  /** Slice 5.0c-i.2: opens / closes the in-conversation search bar. */
+  onToggleInConversationSearch?: () => void;
+  /** True when the search bar is currently visible — toggles the icon
+   *  button's active state so the trigger is obviously stateful. */
+  inConversationSearchOpen?: boolean;
 }) {
   return (
     <header className="relative flex h-14 items-center justify-between border-b border-border bg-card px-4">
@@ -56,6 +63,23 @@ export function ChatHeader({
         <HeaderTitle title={title} onRename={onRename} />
       ) : null}
       <div className="flex items-center gap-2">
+        {onToggleInConversationSearch ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className={
+              inConversationSearchOpen
+                ? "h-9 w-9 rounded-full bg-accent p-0 text-foreground"
+                : "h-9 w-9 rounded-full p-0"
+            }
+            onClick={onToggleInConversationSearch}
+            aria-label="Find in this conversation"
+            title="Find in this conversation"
+            aria-pressed={inConversationSearchOpen ?? false}
+          >
+            <Search className="!h-5 !w-5" />
+          </Button>
+        ) : null}
         <TenantSwitcher />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

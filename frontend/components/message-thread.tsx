@@ -47,6 +47,19 @@ type Props = {
    * history that includes the previous Q→A pair.
    */
   onAssistantRetry?: (originatingQuestion: string) => void;
+  /**
+   * Slice 5.0c-i.2: in-conversation Find. `searchQuery` empty disables
+   * the highlight; `searchActiveIndex` is a 0-based pointer into the
+   * matching exchanges (the i-th exchange whose question or answer
+   * contains the query). When the active index changes we scroll the
+   * corresponding bubble into view with a ring highlight.
+   */
+  searchQuery?: string;
+  searchActiveIndex?: number;
+  /** Callback fired whenever the match count changes — lets chat-shell
+   *  render "M / N" in the search bar and clamp the active index when
+   *  characters are added to the query. */
+  onSearchMatchCountChange?: (n: number) => void;
 };
 
 /**
@@ -70,6 +83,9 @@ export function MessageThread({
   onRetry,
   onQuickAsk,
   onAssistantRetry,
+  searchQuery = "",
+  searchActiveIndex = -1,
+  onSearchMatchCountChange,
 }: Props) {
   // The live view is gated on isActiveStreaming so a stream running in
   // a *different* conversation doesn't bleed into the one the user is
@@ -111,6 +127,47 @@ export function MessageThread({
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => el.removeEventListener("scroll", onScroll);
   }, [exchanges.length, isRunning]);
+
+  // Slice 5.0c-i.2 in-conversation search. The list of exchange indices
+  // whose question or answer contains the (trimmed, lowercased) query.
+  // Reported to chat-shell so the search bar can render "M / N".
+  const matchingExchangeIdxs = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return [] as number[];
+    const out: number[] = [];
+    exchanges.forEach((ex, i) => {
+      if (
+        ex.question.toLowerCase().includes(q) ||
+        ex.answer.toLowerCase().includes(q)
+      ) {
+        out.push(i);
+      }
+    });
+    return out;
+  }, [exchanges, searchQuery]);
+
+  useEffect(() => {
+    onSearchMatchCountChange?.(matchingExchangeIdxs.length);
+  }, [matchingExchangeIdxs.length, onSearchMatchCountChange]);
+
+  // One ref slot per archived exchange — used to scroll the active
+  // match into view. The slots are populated by ref callbacks attached
+  // to each exchange wrapper below; we don't touch `exchangeRefs.current`
+  // during render. Stale slots past `exchanges.length` are harmless —
+  // we only index into the array by the active-match's exchange index,
+  // which is always in bounds (or -1).
+  const exchangeRefs = useRef<Array<HTMLDivElement | null>>([]);
+
+  const activeMatchExchangeIdx =
+    searchActiveIndex >= 0 && searchActiveIndex < matchingExchangeIdxs.length
+      ? matchingExchangeIdxs[searchActiveIndex]
+      : -1;
+
+  useEffect(() => {
+    if (activeMatchExchangeIdx < 0) return;
+    const el = exchangeRefs.current[activeMatchExchangeIdx];
+    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [activeMatchExchangeIdx]);
 
   // Edit / Retry only make semantic sense on the most recent user message;
   // applying them to an arbitrary mid-conversation message would either
@@ -159,15 +216,30 @@ export function MessageThread({
 
           {exchanges.map((ex, i) => {
             const isLast = i === lastExchangeIdx;
+            const isActiveMatch = i === activeMatchExchangeIdx;
+            const isAnyMatch = matchingExchangeIdxs.includes(i);
             return (
-              <CompletedExchange
+              <div
                 key={ex.id}
-                exchange={ex}
-                showMeta
-                onEdit={isLast ? onEdit : undefined}
-                onRetry={isLast ? onRetry : undefined}
-                onAssistantRetry={isLast ? onAssistantRetry : undefined}
-              />
+                ref={(el) => {
+                  exchangeRefs.current[i] = el;
+                }}
+                className={
+                  isActiveMatch
+                    ? "rounded-lg ring-2 ring-amber-400/60 ring-offset-2 ring-offset-background transition-shadow"
+                    : isAnyMatch
+                      ? "rounded-lg ring-1 ring-amber-400/30 transition-shadow"
+                      : "transition-shadow"
+                }
+              >
+                <CompletedExchange
+                  exchange={ex}
+                  showMeta
+                  onEdit={isLast ? onEdit : undefined}
+                  onRetry={isLast ? onRetry : undefined}
+                  onAssistantRetry={isLast ? onAssistantRetry : undefined}
+                />
+              </div>
             );
           })}
 

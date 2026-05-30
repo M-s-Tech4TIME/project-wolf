@@ -7,6 +7,7 @@ import { ChatHeader } from "@/components/chat-header";
 import { ChatSidebar } from "@/components/chat-sidebar";
 import { ChatsHistoryOverlay } from "@/components/chats-history-overlay";
 import { CitationsPanel } from "@/components/citations-panel";
+import { InConversationSearchBar } from "@/components/in-conversation-search-bar";
 import { MessageThread } from "@/components/message-thread";
 import { useChatStream } from "@/hooks/use-chat-stream";
 import type {
@@ -296,6 +297,67 @@ export function ChatShell() {
   // Slice 5.0c-j: full-screen chats-history pane open state.
   const [chatsOverlayOpen, setChatsOverlayOpen] = useState(false);
 
+  // Slice 5.0c-i.2: in-conversation Find. Toggled from the top-bar
+  // Search icon; the bar mounts just below the header. Match count and
+  // active index are reported by MessageThread (which owns the actual
+  // matching logic) so chat-shell stays the single source of truth and
+  // the bar UI stays decoupled from the message rendering.
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchMatchCount, setSearchMatchCount] = useState(0);
+  const [searchActiveIndex, setSearchActiveIndex] = useState(-1);
+
+  // Reset search state when the user switches conversations — a Find
+  // query from one chat shouldn't linger when you move to another.
+  // setState here is the right pattern: we sync local search state to
+  // an external prop (activeConvoId), not deriving state from itself.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSearchOpen(false);
+    setSearchQuery("");
+    setSearchActiveIndex(-1);
+  }, [activeConvoId]);
+
+  // When the query changes, reset the active match to the first one
+  // (or -1 if none). The match-count effect from MessageThread will
+  // arrive in a separate render; we don't try to coordinate, the user
+  // just sees "M / N" tick into place.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSearchActiveIndex(searchQuery.trim() ? 0 : -1);
+  }, [searchQuery]);
+
+  // Clamp the active index when the match count drops below it (e.g.
+  // user typed more characters and the previous active match no
+  // longer matches).
+  useEffect(() => {
+    if (searchActiveIndex >= searchMatchCount) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSearchActiveIndex(searchMatchCount === 0 ? -1 : searchMatchCount - 1);
+    }
+  }, [searchMatchCount, searchActiveIndex]);
+
+  const searchNext = useCallback(() => {
+    setSearchActiveIndex((prev) =>
+      searchMatchCount === 0 ? -1 : (prev + 1) % searchMatchCount,
+    );
+  }, [searchMatchCount]);
+  const searchPrev = useCallback(() => {
+    setSearchActiveIndex((prev) =>
+      searchMatchCount === 0
+        ? -1
+        : (prev - 1 + searchMatchCount) % searchMatchCount,
+    );
+  }, [searchMatchCount]);
+  const closeSearch = useCallback(() => {
+    setSearchOpen(false);
+    setSearchQuery("");
+    setSearchActiveIndex(-1);
+  }, []);
+  const toggleSearch = useCallback(() => {
+    setSearchOpen((v) => !v);
+  }, []);
+
   // Composer draft handoff (Slice 5.0c-f). The hover Edit / Retry actions
   // and the new-chat greeting screen all want the same thing: prefill the
   // composer with some text and focus it. We hold the draft here and pass
@@ -404,6 +466,20 @@ export function ChatShell() {
             ? (next) => handleRename(activeConversation.id, next)
             : undefined
         }
+        onToggleInConversationSearch={
+          activeConversation ? toggleSearch : undefined
+        }
+        inConversationSearchOpen={searchOpen}
+      />
+      <InConversationSearchBar
+        open={searchOpen && activeConversation !== null}
+        query={searchQuery}
+        matchCount={searchMatchCount}
+        activeIndex={searchActiveIndex}
+        onQueryChange={setSearchQuery}
+        onNext={searchNext}
+        onPrev={searchPrev}
+        onClose={closeSearch}
       />
       <div className="flex flex-1 overflow-hidden">
         <ChatSidebar
@@ -424,6 +500,9 @@ export function ChatShell() {
             exchanges={visibleExchanges}
             stream={stream}
             isActiveStreaming={isActiveStreaming}
+            searchQuery={searchOpen ? searchQuery : ""}
+            searchActiveIndex={searchOpen ? searchActiveIndex : -1}
+            onSearchMatchCountChange={setSearchMatchCount}
             onEdit={setDraft}
             onRetry={setDraft}
             onQuickAsk={setDraft}
