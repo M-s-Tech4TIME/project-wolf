@@ -4,6 +4,7 @@ import {
   Building2,
   ChevronLeft,
   ChevronRight,
+  History,
   Loader2,
   LogOut,
   Mail,
@@ -47,6 +48,9 @@ type Props = {
   onNew: () => void;
   /** Slice 5.0c-i: per-item rename via the "…" menu (or top-bar title). */
   onRename?: (id: string, nextTitle: string) => void;
+  /** Slice 5.0c-j: opens the full-screen chats-history pane with
+   *  content search across every user + assistant message. */
+  onOpenChatsHistory?: () => void;
   /** Sidebar collapsed state — owned by parent so the layout can shrink. */
   collapsed: boolean;
   onToggleCollapsed: () => void;
@@ -71,6 +75,7 @@ export function ChatSidebar({
   onSelect,
   onNew,
   onRename,
+  onOpenChatsHistory,
   collapsed,
   onToggleCollapsed,
 }: Props) {
@@ -139,6 +144,18 @@ export function ChatSidebar({
             <span className="ml-1 flex-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
               Conversations
             </span>
+            {onOpenChatsHistory ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0"
+                onClick={onOpenChatsHistory}
+                aria-label="Browse chats"
+                title="Browse chats (full-text search)"
+              >
+                <History className="h-4 w-4" />
+              </Button>
+            ) : null}
             <Button variant="ghost" size="sm" onClick={onNew}>
               <Plus className="mr-1 h-4 w-4" /> New
             </Button>
@@ -165,10 +182,22 @@ export function ChatSidebar({
             className="h-8 w-8 p-0"
             onClick={handleSearchFromCollapsed}
             aria-label="Search conversations"
-            title="Search conversations"
+            title="Search conversations (titles)"
           >
             <Search className="h-4 w-4" />
           </Button>
+          {onOpenChatsHistory ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 w-8 p-0"
+              onClick={onOpenChatsHistory}
+              aria-label="Browse chats"
+              title="Browse chats (full-text search)"
+            >
+              <History className="h-4 w-4" />
+            </Button>
+          ) : null}
         </div>
       ) : (
         <>

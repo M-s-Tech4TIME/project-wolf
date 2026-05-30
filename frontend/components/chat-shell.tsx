@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ChatComposer } from "@/components/chat-composer";
 import { ChatHeader } from "@/components/chat-header";
 import { ChatSidebar } from "@/components/chat-sidebar";
+import { ChatsHistoryOverlay } from "@/components/chats-history-overlay";
 import { CitationsPanel } from "@/components/citations-panel";
 import { MessageThread } from "@/components/message-thread";
 import { useChatStream } from "@/hooks/use-chat-stream";
@@ -215,6 +216,9 @@ export function ChatShell() {
     );
   }, []);
 
+  // Slice 5.0c-j: full-screen chats-history pane open state.
+  const [chatsOverlayOpen, setChatsOverlayOpen] = useState(false);
+
   // Composer draft handoff (Slice 5.0c-f). The hover Edit / Retry actions
   // and the new-chat greeting screen all want the same thing: prefill the
   // composer with some text and focus it. We hold the draft here and pass
@@ -332,6 +336,7 @@ export function ChatShell() {
           onSelect={handleSelect}
           onNew={handleNew}
           onRename={handleRename}
+          onOpenChatsHistory={() => setChatsOverlayOpen(true)}
           collapsed={sidebarCollapsed}
           onToggleCollapsed={() => setSidebarCollapsed(!sidebarCollapsed)}
         />
@@ -393,6 +398,17 @@ export function ChatShell() {
           </div>
         </aside>
       </div>
+      {/* Slice 5.0c-j: full-screen chats history pane. Mounted at the
+          shell level so it covers the entire viewport (header included)
+          when open. Closed state renders nothing. */}
+      <ChatsHistoryOverlay
+        open={chatsOverlayOpen}
+        conversations={conversations}
+        streamingId={streamingConvoId}
+        onClose={() => setChatsOverlayOpen(false)}
+        onSelect={handleSelect}
+        onNew={handleNew}
+      />
     </div>
   );
 }
