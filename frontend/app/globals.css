@@ -298,31 +298,42 @@
 }
 
 /*
- * Slice 5.0c-i.6: in-conversation Find — mark styling.
+ * Slice 5.0c-i.7: in-conversation Find — mark styling.
  *
  * Every search match is wrapped in `<mark class="wolf-find-mark">`.
  * The helper additionally sets `data-find-active="true"` on whichever
  * mark is the current Find target (driven by React state, not DOM
  * mutation, so the attribute survives every re-render).
  *
+ * Recolor from 5.0c-i.6 per user feedback:
+ *   - Previous passive `amber-200` read as orange-ish; new passive
+ *     uses `yellow-200` for a clean pale yellow.
+ *   - Previous active `orange-400` wasn't visually distinct enough
+ *     from the orange-ish passive. New active uses `yellow-500`
+ *     (saturated golden yellow) — still in the yellow family the
+ *     user asked for, but unmistakably darker / more saturated than
+ *     the passive shade.
+ *
+ * The attribute selector `[data-find-active]` (no value match) is
+ * more lenient than `[data-find-active="true"]` — if React ever
+ * normalises the boolean attribute differently the rule still binds.
+ *
  * All styling lives here so we don't fight Tailwind utility classes
- * in the cascade — the mark element gets ONE class and the styling
- * comes from this stylesheet. The active variant is more specific
- * by virtue of the extra attribute selector, so it wins cleanly.
+ * in the cascade.
  */
 .wolf-find-mark {
-  background-color: rgba(254, 215, 170, 0.7); /* amber-200/70 */
+  background-color: rgba(254, 240, 138, 0.7); /* yellow-200/70 */
   color: var(--foreground);
   padding-left: 0.125rem;
   padding-right: 0.125rem;
   border-radius: 0.125rem;
 }
 .dark .wolf-find-mark {
-  background-color: rgba(251, 191, 36, 0.4); /* amber-400/40 */
+  background-color: rgba(250, 204, 21, 0.35); /* yellow-400/35 */
 }
-.wolf-find-mark[data-find-active="true"] {
-  background-color: rgba(251, 146, 60, 0.85); /* orange-400/85 */
+.wolf-find-mark[data-find-active] {
+  background-color: rgba(234, 179, 8, 0.85); /* yellow-500/85 */
 }
-.dark .wolf-find-mark[data-find-active="true"] {
-  background-color: rgba(249, 115, 22, 0.65); /* orange-500/65 */
+.dark .wolf-find-mark[data-find-active] {
+  background-color: rgba(202, 138, 4, 0.7); /* yellow-600/70 */
 }

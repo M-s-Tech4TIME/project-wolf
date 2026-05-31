@@ -558,14 +558,13 @@ export function ChatShell() {
             stream={stream}
             isActiveStreaming={isActiveStreaming}
             searchQuery={
-              /* Slice 5.0c-i.5: 3-character threshold. Only push the
-                 query into the message thread (and thus into the
-                 highlighter) once the user has typed at least three
-                 characters. Below that we keep the bar open so the
-                 user sees their typing, but no marks are emitted and
-                 the count reads "type 3+ characters" via the bar's
-                 own logic. */
-              searchOpen && searchQuery.trim().length >= 3 ? searchQuery : ""
+              /* Slice 5.0c-i.7: dropped the 3-character minimum per
+                 user request — search now runs from the very first
+                 character, matching the chats-overlay search's
+                 immediate-feedback behaviour. Empty query still
+                 disables highlighting (the helper short-circuits on
+                 empty input). */
+              searchOpen ? searchQuery : ""
             }
             searchActiveIndex={searchOpen ? searchActiveIndex : -1}
             onSearchMatchCountChange={setSearchMatchCount}

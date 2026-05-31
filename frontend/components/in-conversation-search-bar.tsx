@@ -64,21 +64,15 @@ export function InConversationSearchBar({
 
   if (!open) return null;
 
-  const trimmedLen = query.trim().length;
-  const hasQuery = trimmedLen > 0;
-  const tooShort = hasQuery && trimmedLen < 3;
+  const hasQuery = query.trim().length > 0;
   const hasMatches = matchCount > 0;
-  // Slice 5.0c-i.5: 3-character threshold message takes priority over
-  // "no matches" so the user understands WHY nothing is highlighted.
-  // The "M of N matches" form only kicks in once the query is long
-  // enough to drive a real search.
+  // Slice 5.0c-i.7: 3-character threshold dropped — search fires from
+  // the first character. Counter just reads matches-or-no-matches.
   const counter = !hasQuery
     ? null
-    : tooShort
-      ? "type 3+ characters"
-      : hasMatches
-        ? `${activeIndex + 1} of ${matchCount} matches`
-        : "no matches";
+    : hasMatches
+      ? `${activeIndex + 1} of ${matchCount} matches`
+      : "no matches";
 
   return (
     <div className="flex shrink-0 items-center gap-2 border-b border-border bg-card/90 px-4 py-2 backdrop-blur animate-in slide-in-from-top-2 duration-200">
