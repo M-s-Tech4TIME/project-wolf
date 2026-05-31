@@ -4,6 +4,7 @@ import { AlertTriangle, Check, Copy, Info, MessageCircle } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 import { Children, Fragment, isValidElement, useCallback, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
 
 import { copyText } from "@/lib/clipboard";
@@ -173,6 +174,17 @@ export function Markdown({
     >
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
+        rehypePlugins={[
+          // Slice 5.0c-i.5: per-language tokenisation for fenced code
+          // blocks. `detect: true` lets highlight.js auto-detect when a
+          // block doesn't declare ```language. `subset: false` keeps
+          // ALL bundled grammars available — Python / YAML / JSON /
+          // Bash / TypeScript / SQL / etc all get coloured without us
+          // hand-listing them. Token classes (.hljs-keyword,
+          // .hljs-string, …) are styled by globals.css + the github
+          // theme imported in layout.tsx (light + a dark override).
+          [rehypeHighlight, { detect: true, subset: false }],
+        ]}
         components={{
           code: CodeBlock,
           pre: ({ children }) => <>{children}</>,
