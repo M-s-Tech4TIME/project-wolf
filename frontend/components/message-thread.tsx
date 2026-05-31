@@ -129,6 +129,44 @@ export function MessageThread({
     return () => el.removeEventListener("scroll", onScroll);
   }, [exchanges.length, isRunning]);
 
+  // Slice 5.0c-i.5: composer-expand scroll re-pin. When the composer
+  // textarea auto-grows, the flex sibling that holds it gets taller,
+  // which shrinks the message-thread scroll container by the same
+  // amount. Without intervention, the user sees the chat "scroll up"
+  // by exactly that delta — because the visible viewport shrinks
+  // while scrollTop stays the same.
+  //
+  // Fix: ResizeObserver on the scroll container. When its height
+  // changes AND the user was at (or very near) the bottom before the
+  // resize, scroll the new bottom back into view. The "near bottom"
+  // threshold matches the scroll-to-bottom-button threshold (200px)
+  // so the heuristic stays consistent.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    let lastDistanceToBottom =
+      el.scrollHeight - el.scrollTop - el.clientHeight;
+    const onScroll = () => {
+      lastDistanceToBottom =
+        el.scrollHeight - el.scrollTop - el.clientHeight;
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    const ro = new ResizeObserver(() => {
+      // After a resize, if we WERE pinned at the bottom (or within
+      // 200px), keep the view pinned. Use `auto` (instant) so the
+      // re-pin is invisible — a smooth scroll here would look like
+      // the chat is "settling" and feels wrong while typing.
+      if (lastDistanceToBottom <= 200) {
+        el.scrollTop = el.scrollHeight - el.clientHeight;
+      }
+    });
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      el.removeEventListener("scroll", onScroll);
+    };
+  }, []);
+
   // Slice 5.0c-i.4 in-conversation search. We now enumerate EVERY
   // individual substring match — one entry per `<mark>` that will be
   // rendered — instead of just the matching exchanges. The total count
