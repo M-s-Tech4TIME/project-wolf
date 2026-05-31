@@ -86,9 +86,13 @@ def create_app() -> FastAPI:
     )
 
     # ── Middleware ──────────────────────────────────────────────────────────
+    # Dev: any origin (regex) so a LAN-IP rotation isn't a paper-cut.
+    # Production: set CORS_ALLOW_ORIGIN_REGEX="" and CORS_ALLOW_ORIGINS to
+    # the exact frontend URL(s) — see app.config.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=_settings.cors_origin_list,
+        allow_origin_regex=_settings.cors_allow_origin_regex or None,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

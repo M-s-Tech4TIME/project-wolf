@@ -15,8 +15,19 @@ import type {
   TenantMembership,
 } from "./types";
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_ORCHESTRATOR_URL ?? "http://localhost:8000";
+// Resolve at call time, not module load: in the browser we use whichever
+// host the page was served from (so the LAN IP follows whatever the user
+// typed in the address bar), with port 8000. `NEXT_PUBLIC_ORCHESTRATOR_URL`
+// overrides for production / pinned deploys.
+function apiBase(): string {
+  if (process.env.NEXT_PUBLIC_ORCHESTRATOR_URL) {
+    return process.env.NEXT_PUBLIC_ORCHESTRATOR_URL;
+  }
+  if (typeof window !== "undefined") {
+    return `${window.location.protocol}//${window.location.hostname}:8000`;
+  }
+  return "http://localhost:8000";
+}
 
 export class ApiError extends Error {
   constructor(
@@ -33,7 +44,7 @@ async function apiFetch(
   path: string,
   init: RequestInit = {},
 ): Promise<Response> {
-  return fetch(`${API_BASE}${path}`, {
+  return fetch(`${apiBase()}${path}`, {
     ...init,
     credentials: "include",
     headers: {
@@ -108,7 +119,7 @@ export async function chatStream(
   onEvent: (event: LoopEvent) => void,
   signal?: AbortSignal,
 ): Promise<void> {
-  const resp = await fetch(`${API_BASE}/api/v1/chat/stream`, {
+  const resp = await fetch(`${apiBase()}/api/v1/chat/stream`, {
     method: "POST",
     credentials: "include",
     headers: {

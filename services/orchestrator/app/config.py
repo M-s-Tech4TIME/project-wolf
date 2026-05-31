@@ -48,6 +48,18 @@ class Settings(BaseSettings):
     # credentials.  Add the URL the analyst's browser uses to reach the
     # frontend.  Empty in production unless you explicitly configure it.
     cors_allow_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+    # Regex evaluated IN ADDITION to the exact list above. Default matches
+    # any private-network IP (192.168/16, 10/8, 172.16/12) or loopback on
+    # any port, so dev LAN-IP rotations don't require an env edit. Set to
+    # "" in production to disable.
+    cors_allow_origin_regex: str = (
+        r"^https?://("
+        r"localhost|127\.0\.0\.1|\[::1\]"
+        r"|192\.168\.\d+\.\d+"
+        r"|10\.\d+\.\d+\.\d+"
+        r"|172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+"
+        r")(?::\d+)?$"
+    )
 
     @property
     def cors_origin_list(self) -> list[str]:
