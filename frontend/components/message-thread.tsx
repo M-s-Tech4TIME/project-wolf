@@ -13,7 +13,7 @@ import {
   ShieldCheck,
   User,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
 import { Markdown } from "@/components/markdown";
@@ -129,35 +129,50 @@ export function MessageThread({
     return () => el.removeEventListener("scroll", onScroll);
   }, [exchanges.length, isRunning]);
 
-  // Slice 5.0c-i.5: composer-expand scroll re-pin. When the composer
-  // textarea auto-grows, the flex sibling that holds it gets taller,
-  // which shrinks the message-thread scroll container by the same
-  // amount. Without intervention, the user sees the chat "scroll up"
-  // by exactly that delta — because the visible viewport shrinks
-  // while scrollTop stays the same.
+  // Slice 5.0c-i.6: composer-expand scroll re-pin (defensive rewrite
+  // after 5.0c-i.5's version still misbehaved in the user's testing).
+  // When the composer textarea auto-grows, its flex sibling that
+  // holds it gets taller, which shrinks the message-thread scroll
+  // container. Without intervention the visible viewport shrinks
+  // while scrollTop stays the same — and the user sees the chat
+  // "scroll up" by exactly that delta.
   //
-  // Fix: ResizeObserver on the scroll container. When its height
-  // changes AND the user was at (or very near) the bottom before the
-  // resize, scroll the new bottom back into view. The "near bottom"
-  // threshold matches the scroll-to-bottom-button threshold (200px)
-  // so the heuristic stays consistent.
-  useEffect(() => {
+  // Approach:
+  //   - Track `prevClientHeight` so we can detect that the container
+  //     specifically SHRANK (not just any size change — window
+  //     resizes that GROW the container shouldn't re-pin).
+  //   - Track `lastDistance` via a scroll listener so we know the
+  //     user's bottom-relative position immediately before the
+  //     resize (the resize event itself doesn't fire scroll).
+  //   - On shrink, if the user was at-or-near-bottom (<= 200px),
+  //     re-pin to the new bottom instantly. Smooth scroll would
+  //     feel like the chat is "settling" while typing.
+  //
+  // useLayoutEffect (rather than useEffect) so the initial
+  // measurement of `prevClientHeight` happens after the DOM is
+  // laid out but before the browser paints — avoids a one-frame
+  // mismatch on first mount.
+  useLayoutEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    let lastDistanceToBottom =
+    let prevClientHeight = el.clientHeight;
+    let lastDistance =
       el.scrollHeight - el.scrollTop - el.clientHeight;
     const onScroll = () => {
-      lastDistanceToBottom =
+      lastDistance =
         el.scrollHeight - el.scrollTop - el.clientHeight;
     };
     el.addEventListener("scroll", onScroll, { passive: true });
     const ro = new ResizeObserver(() => {
-      // After a resize, if we WERE pinned at the bottom (or within
-      // 200px), keep the view pinned. Use `auto` (instant) so the
-      // re-pin is invisible — a smooth scroll here would look like
-      // the chat is "settling" and feels wrong while typing.
-      if (lastDistanceToBottom <= 200) {
+      const newClientHeight = el.clientHeight;
+      const shrunk = newClientHeight < prevClientHeight;
+      prevClientHeight = newClientHeight;
+      if (shrunk && lastDistance <= 200) {
         el.scrollTop = el.scrollHeight - el.clientHeight;
+        // After the re-pin, distance to bottom is 0. Update local
+        // state so a follow-up resize before the next user scroll
+        // still re-pins.
+        lastDistance = 0;
       }
     });
     ro.observe(el);
