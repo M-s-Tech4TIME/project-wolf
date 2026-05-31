@@ -64,17 +64,21 @@ export function InConversationSearchBar({
 
   if (!open) return null;
 
-  const hasQuery = query.trim().length > 0;
+  const trimmedLen = query.trim().length;
+  const hasQuery = trimmedLen > 0;
+  const tooShort = hasQuery && trimmedLen < 3;
   const hasMatches = matchCount > 0;
-  // Slice 5.0c-i.3: the counter used to live inside the input with
-  // absolute positioning, which on narrow widths visually overlapped
-  // the close-X button. It now sits in the bar's flex layout right
-  // before the Close button (Firefox / Chrome convention).
+  // Slice 5.0c-i.5: 3-character threshold message takes priority over
+  // "no matches" so the user understands WHY nothing is highlighted.
+  // The "M of N matches" form only kicks in once the query is long
+  // enough to drive a real search.
   const counter = !hasQuery
     ? null
-    : hasMatches
-      ? `${activeIndex + 1} of ${matchCount} matches`
-      : "no matches";
+    : tooShort
+      ? "type 3+ characters"
+      : hasMatches
+        ? `${activeIndex + 1} of ${matchCount} matches`
+        : "no matches";
 
   return (
     <div className="flex shrink-0 items-center gap-2 border-b border-border bg-card/90 px-4 py-2 backdrop-blur animate-in slide-in-from-top-2 duration-200">

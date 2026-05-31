@@ -167,66 +167,50 @@ export function MessageThread({
     };
   }, []);
 
-  // Slice 5.0c-i.4 in-conversation search. We now enumerate EVERY
-  // individual substring match — one entry per `<mark>` that will be
-  // rendered — instead of just the matching exchanges. The total count
-  // ("3 of 12 matches") and the active-match identity both come out
-  // of this flat list. Per-exchange `localIdx` resets on the
-  // question/answer boundary so each side carries its own counter
-  // (UserBubble's helper counts question matches starting at 0; the
-  // Markdown's counter resets at the assistant side).
-  type MatchSpan = {
-    exchangeIdx: number;
-    side: "question" | "answer";
-    localIdx: number;
-  };
-  const matchSpans = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return [] as MatchSpan[];
-    const spans: MatchSpan[] = [];
-    exchanges.forEach((ex, exchangeIdx) => {
-      const enumerate = (text: string, side: "question" | "answer") => {
-        const lower = text.toLowerCase();
-        let pos = lower.indexOf(q);
-        let localIdx = 0;
-        while (pos !== -1) {
-          spans.push({ exchangeIdx, side, localIdx: localIdx++ });
-          pos = lower.indexOf(q, pos + q.length);
-        }
-      };
-      enumerate(ex.question, "question");
-      enumerate(ex.answer, "answer");
-    });
-    return spans;
-  }, [exchanges, searchQuery]);
+  // Slice 5.0c-i.5: in-conversation Find — DOM-based. The previous
+  // (5.0c-i.4) approach enumerated matches in raw text and threaded an
+  // active-local-idx through every bubble. It drifted from reality
+  // whenever markdown wrapped a match inside `<strong>` / inline
+  // `<code>` / etc., because the highlighter didn't recurse into
+  // React elements. Now the highlighter recurses (and emits ALL marks
+  // with the same passive class + data-find-match attribute), and
+  // here we read the actual rendered marks back out of the DOM —
+  // counter = querySelectorAll length, active = mark[index]. Count
+  // is by construction equal to "what the user sees".
+  //
+  // Two effects:
+  //   1. After every search-relevant render, re-count rendered marks
+  //      and report the total to chat-shell.
+  //   2. After every active-index change, sweep the marks: clear
+  //      `data-find-active` from all, set it on the active one, and
+  //      scroll THAT mark into view (centred). CSS in globals.css
+  //      colours the active mark vivid orange.
+  useEffect(() => {
+    const root = scrollRef.current;
+    if (!root) return;
+    const marks = root.querySelectorAll<HTMLElement>('mark[data-find-match]');
+    onSearchMatchCountChange?.(marks.length);
+    // Re-run when the rendered tree changes shape in a way that could
+    // change mark count: query, archived exchanges, or the streaming
+    // answer (live highlighting while Wolf types).
+  }, [
+    searchQuery,
+    exchanges,
+    stream.streamingAnswer,
+    onSearchMatchCountChange,
+  ]);
 
   useEffect(() => {
-    onSearchMatchCountChange?.(matchSpans.length);
-  }, [matchSpans.length, onSearchMatchCountChange]);
-
-  // One ref slot per archived exchange — used to scroll the active
-  // match into view. The slots are populated by ref callbacks attached
-  // to each exchange wrapper below; we don't touch `exchangeRefs.current`
-  // during render. Stale slots past `exchanges.length` are harmless —
-  // we only index into the array by the active-match's exchange index,
-  // which is always in bounds (or -1).
-  const exchangeRefs = useRef<Array<HTMLDivElement | null>>([]);
-
-  const activeSpan =
-    searchActiveIndex >= 0 && searchActiveIndex < matchSpans.length
-      ? matchSpans[searchActiveIndex]
-      : null;
-
-  useEffect(() => {
-    if (!activeSpan) return;
-    const el = exchangeRefs.current[activeSpan.exchangeIdx];
-    el?.scrollIntoView({ behavior: "smooth", block: "center" });
-    // We deliberately depend on the *destructured* span fields so the
-    // effect re-fires only when the active match's identity changes —
-    // a new activeSpan object with the same shape (which can happen
-    // when matchSpans memo recomputes) shouldn't re-scroll.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeSpan?.exchangeIdx, activeSpan?.side, activeSpan?.localIdx]);
+    const root = scrollRef.current;
+    if (!root) return;
+    const marks = root.querySelectorAll<HTMLElement>('mark[data-find-match]');
+    marks.forEach((m) => m.removeAttribute("data-find-active"));
+    if (searchActiveIndex >= 0 && searchActiveIndex < marks.length) {
+      const active = marks[searchActiveIndex];
+      active.setAttribute("data-find-active", "true");
+      active.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [searchActiveIndex, searchQuery, exchanges, stream.streamingAnswer]);
 
   // Edit / Retry only make semantic sense on the most recent user message;
   // applying them to an arbitrary mid-conversation message would either
@@ -275,44 +259,16 @@ export function MessageThread({
 
           {exchanges.map((ex, i) => {
             const isLast = i === lastExchangeIdx;
-            // Slice 5.0c-i.4: per-side active-local-idx derivation.
-            // Only the bubble that contains the active span gets a
-            // non-negative idx; the other side stays at -1 so its
-            // marks render in the passive amber.
-            const inThisExchange = activeSpan?.exchangeIdx === i;
-            const questionActiveLocalIdx =
-              inThisExchange && activeSpan?.side === "question"
-                ? activeSpan.localIdx
-                : -1;
-            const answerActiveLocalIdx =
-              inThisExchange && activeSpan?.side === "answer"
-                ? activeSpan.localIdx
-                : -1;
             return (
-              // Slice 5.0c-i.4: bubble-level active ring dropped per
-              // user feedback. The single vivid-orange `<mark>` inside
-              // the text gives a clearer "current target" cue than a
-              // ring around the whole bubble, and the ring was visual
-              // noise when navigating between matches in the same
-              // bubble. We still need this wrapper for the ref so the
-              // scroll-into-view effect can find the exchange.
-              <div
+              <CompletedExchange
                 key={ex.id}
-                ref={(el) => {
-                  exchangeRefs.current[i] = el;
-                }}
-              >
-                <CompletedExchange
-                  exchange={ex}
-                  showMeta
-                  onEdit={isLast ? onEdit : undefined}
-                  onRetry={isLast ? onRetry : undefined}
-                  onAssistantRetry={isLast ? onAssistantRetry : undefined}
-                  searchQuery={searchQuery}
-                  questionActiveLocalIdx={questionActiveLocalIdx}
-                  answerActiveLocalIdx={answerActiveLocalIdx}
-                />
-              </div>
+                exchange={ex}
+                showMeta
+                onEdit={isLast ? onEdit : undefined}
+                onRetry={isLast ? onRetry : undefined}
+                onAssistantRetry={isLast ? onAssistantRetry : undefined}
+                searchQuery={searchQuery}
+              />
             );
           })}
 
@@ -466,8 +422,6 @@ function CompletedExchange({
   onRetry,
   onAssistantRetry,
   searchQuery = "",
-  questionActiveLocalIdx = -1,
-  answerActiveLocalIdx = -1,
 }: {
   exchange: ChatExchange;
   showMeta: boolean;
@@ -475,13 +429,9 @@ function CompletedExchange({
   onRetry?: (question: string) => void;
   onAssistantRetry?: (originatingQuestion: string) => void;
   /** Slice 5.0c-i.3: in-conversation Find query. Empty disables
-   *  inline highlighting. */
+   *  inline highlighting. Active-match selection happens in
+   *  MessageThread via DOM mutation (Slice 5.0c-i.5). */
   searchQuery?: string;
-  /** Slice 5.0c-i.4: index (within the question's matches) of the
-   *  active Find target if it's in THIS exchange's question, else -1. */
-  questionActiveLocalIdx?: number;
-  /** Slice 5.0c-i.4: same idea for the answer side. */
-  answerActiveLocalIdx?: number;
 }) {
   return (
     <div className="space-y-3">
@@ -491,7 +441,6 @@ function CompletedExchange({
         onEdit={onEdit ? () => onEdit(exchange.question) : undefined}
         onRetry={onRetry ? () => onRetry(exchange.question) : undefined}
         searchQuery={searchQuery}
-        searchActiveLocalIdx={questionActiveLocalIdx}
       />
       <AssistantBubble
         answer={exchange.answer}
@@ -502,7 +451,6 @@ function CompletedExchange({
             : undefined
         }
         searchQuery={searchQuery}
-        searchActiveLocalIdx={answerActiveLocalIdx}
       />
       {showMeta ? (
         <div className="flex flex-wrap items-center gap-2 px-12 text-[10px] text-muted-foreground">
@@ -676,7 +624,6 @@ function UserBubble({
   onEdit,
   onRetry,
   searchQuery = "",
-  searchActiveLocalIdx = -1,
 }: {
   text: string;
   timestamp: string | null;
@@ -684,27 +631,19 @@ function UserBubble({
   onRetry?: () => void;
   /** Slice 5.0c-i.3: in-conversation Find query. Empty = no highlight. */
   searchQuery?: string;
-  /** Slice 5.0c-i.4: index (within this bubble's matches) of the active
-   *  Find target, or -1 if the active match isn't in this bubble. */
-  searchActiveLocalIdx?: number;
 }) {
   const [expanded, setExpanded] = useState(false);
   const isLong = text.length > LONG_MESSAGE_THRESHOLD;
   const showExpander = isLong;
   const collapsed = isLong && !expanded;
-  // Slice 5.0c-i.3 (refined in -i.4): inline-wrap every case-insensitive
-  // substring match with a `<mark>`. The fresh counter is local to this
-  // render — UserBubble is a single text run, no shared state needed
-  // across components.
-  const highlightedText = useMemo(() => {
-    const counter = { current: 0 };
-    return highlightSearchInChildren(
-      [text],
-      searchQuery,
-      searchActiveLocalIdx,
-      counter,
-    );
-  }, [text, searchQuery, searchActiveLocalIdx]);
+  // Slice 5.0c-i.5: inline-wrap every case-insensitive substring match
+  // with a passive `<mark>` (data-find-match="true"). The active mark
+  // is picked by MessageThread later via DOM mutation, so this bubble
+  // doesn't track an active idx itself.
+  const highlightedText = useMemo(
+    () => highlightSearchInChildren([text], searchQuery),
+    [text, searchQuery],
+  );
 
   return (
     <div className="group flex flex-col items-end gap-1">
@@ -765,13 +704,11 @@ function AssistantBubble({
   timestamp,
   onRetry,
   searchQuery = "",
-  searchActiveLocalIdx = -1,
 }: {
   answer: string;
   timestamp: string | null;
   onRetry?: () => void;
   searchQuery?: string;
-  searchActiveLocalIdx?: number;
 }) {
   return (
     <div className="group flex flex-col gap-1">
@@ -781,12 +718,7 @@ function AssistantBubble({
         </div>
         <div className="flex-1 rounded-lg border border-border bg-card px-4 py-3">
           {answer ? (
-            <Markdown
-              searchHighlight={searchQuery}
-              searchHighlightActiveLocalIdx={searchActiveLocalIdx}
-            >
-              {answer}
-            </Markdown>
+            <Markdown searchHighlight={searchQuery}>{answer}</Markdown>
           ) : (
             <div className="text-sm text-muted-foreground">(empty)</div>
           )}

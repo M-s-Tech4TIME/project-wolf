@@ -296,3 +296,21 @@
 .hljs {
   background: transparent !important;
 }
+
+/*
+ * Slice 5.0c-i.5: in-conversation Find — active-match styling.
+ *
+ * The helper emits every match with the same passive class and a
+ * `data-find-match="true"` attribute. MessageThread's DOM-mutation
+ * effect picks the current Find target and sets
+ * `data-find-active="true"` on that one specific element. CSS swaps
+ * it to vivid orange. This is more reliable than threading an
+ * activeLocalIdx through the React tree — the count and the active
+ * mark are both read off of the actually-rendered DOM.
+ */
+mark[data-find-match][data-find-active="true"] {
+  background-color: rgba(251, 146, 60, 0.85); /* orange-400/85 */
+}
+.dark mark[data-find-match][data-find-active="true"] {
+  background-color: rgba(249, 115, 22, 0.65); /* orange-500/65 */
+}
