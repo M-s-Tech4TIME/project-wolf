@@ -97,15 +97,17 @@ export function highlightSearchInChildren(
         "data-grounding-chip"?: string;
       }>;
       const props = el.props;
-      // Opt-out 1: grounding chips have their own background and
-      //            shouldn't be split with marks.
-      // Opt-out 2: function-component elements (FencedCodeBlock,
-      //            etc.) own their internal rendering. Inline code
-      //            uses the HTML `<code>` tag (string type), so we
-      //            recurse into it — that's the path that catches
-      //            search hits inside ` `tokens` `.
+      // Single opt-out: grounding chips have their own background
+      // and shouldn't be split with marks. Slice 5.0c-i.7 removed
+      // the previous `typeof el.type !== "string"` guard so we now
+      // recurse into function-component elements too — that
+      // includes FencedCodeBlock, so a search hit inside a fenced
+      // code block gets highlighted just like one in inline code or
+      // prose. The component's internal `children` prop receives
+      // the highlighted tree via cloneElement; FencedCodeBlock
+      // renders it inside its `<code>` and nodeToString still flat-
+      // tens marks for the copy-to-clipboard text.
       if (props["data-grounding-chip"]) return child;
-      if (typeof el.type !== "string") return child;
       const recursed = highlightSearchInChildren(
         props.children,
         query,
