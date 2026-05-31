@@ -206,10 +206,10 @@ function CodeBlock(props: ComponentProps<"code">) {
       <code
         // Slice 5.0c-i.4: inline code text colour uses the Wolf palette's
         // Dusk Blue (#274c77) on light backgrounds for a calmer contrast
-        // against `bg-muted`. Icy Blue (#a3cef1) takes over in dark mode
-        // so the same identifier stays legible without changing the
-        // background. Background tint preserved verbatim.
-        className="rounded bg-muted px-1 py-0.5 font-mono text-[0.85em] text-[var(--palette-dusk-blue)] dark:text-[var(--palette-icy-blue)]"
+        // against `bg-muted`. Icy Blue (#a3cef1) takes over in dark mode.
+        // Slice 5.0c-i.5: bold weight too — the user wants identifiers
+        // and timestamps to read as visually structural, not prose.
+        className="rounded bg-muted px-1 py-0.5 font-mono font-semibold text-[0.85em] text-[var(--palette-dusk-blue)] dark:text-[var(--palette-icy-blue)]"
         {...rest}
       >
         {children}
