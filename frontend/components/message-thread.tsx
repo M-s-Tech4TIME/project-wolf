@@ -22,7 +22,6 @@ import { Button } from "@/components/ui/button";
 import type { UseChatStream } from "@/hooks/use-chat-stream";
 import { copyText } from "@/lib/clipboard";
 import { absoluteTimeTitle, relativeTime } from "@/lib/format";
-import { highlightSearchInChildren } from "@/lib/search-highlight";
 import type { ChatExchange } from "@/lib/types";
 
 type Props = {
@@ -48,19 +47,6 @@ type Props = {
    * history that includes the previous Q→A pair.
    */
   onAssistantRetry?: (originatingQuestion: string) => void;
-  /**
-   * Slice 5.0c-i.2: in-conversation Find. `searchQuery` empty disables
-   * the highlight; `searchActiveIndex` is a 0-based pointer into the
-   * matching exchanges (the i-th exchange whose question or answer
-   * contains the query). When the active index changes we scroll the
-   * corresponding bubble into view with a ring highlight.
-   */
-  searchQuery?: string;
-  searchActiveIndex?: number;
-  /** Callback fired whenever the match count changes — lets chat-shell
-   *  render "M / N" in the search bar and clamp the active index when
-   *  characters are added to the query. */
-  onSearchMatchCountChange?: (n: number) => void;
 };
 
 /**
@@ -84,9 +70,6 @@ export function MessageThread({
   onRetry,
   onQuickAsk,
   onAssistantRetry,
-  searchQuery = "",
-  searchActiveIndex = -1,
-  onSearchMatchCountChange,
 }: Props) {
   // The live view is gated on isActiveStreaming so a stream running in
   // a *different* conversation doesn't bleed into the one the user is
@@ -189,64 +172,6 @@ export function MessageThread({
     };
   }, []);
 
-  // Slice 5.0c-i.6: in-conversation Find — matchSpans enumeration.
-  // Since the helper now recurses into HTML React elements, the raw-
-  // text substring count equals the rendered mark count, so we can
-  // identify the active match by (exchangeIdx, side, localIdx) and
-  // hand each bubble its active-local-idx via React state. The active
-  // mark gets `data-find-active="true"` directly in JSX — no DOM
-  // mutation, no reconciliation race.
-  type MatchSpan = {
-    exchangeIdx: number;
-    side: "question" | "answer";
-    localIdx: number;
-  };
-  const matchSpans = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return [] as MatchSpan[];
-    const spans: MatchSpan[] = [];
-    exchanges.forEach((ex, exchangeIdx) => {
-      const enumerate = (text: string, side: "question" | "answer") => {
-        const lower = text.toLowerCase();
-        let pos = lower.indexOf(q);
-        let localIdx = 0;
-        while (pos !== -1) {
-          spans.push({ exchangeIdx, side, localIdx: localIdx++ });
-          pos = lower.indexOf(q, pos + q.length);
-        }
-      };
-      enumerate(ex.question, "question");
-      enumerate(ex.answer, "answer");
-    });
-    return spans;
-  }, [exchanges, searchQuery]);
-
-  useEffect(() => {
-    onSearchMatchCountChange?.(matchSpans.length);
-  }, [matchSpans.length, onSearchMatchCountChange]);
-
-  const activeSpan =
-    searchActiveIndex >= 0 && searchActiveIndex < matchSpans.length
-      ? matchSpans[searchActiveIndex]
-      : null;
-
-  // Scroll the active mark into view. We read the mark out of the DOM
-  // via attribute selector AFTER React has committed — it's a read,
-  // not a mutation, so it can't race with reconciliation. block:
-  // "center" centres the match in the visible scroll viewport (more
-  // precise than scrolling to the bubble — the user reported
-  // overshoot when the next match was already partially visible).
-  useEffect(() => {
-    if (!activeSpan) return;
-    const root = scrollRef.current;
-    if (!root) return;
-    const active = root.querySelector<HTMLElement>(
-      'mark[data-find-active="true"]',
-    );
-    active?.scrollIntoView({ behavior: "smooth", block: "center" });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeSpan?.exchangeIdx, activeSpan?.side, activeSpan?.localIdx]);
-
   // Edit / Retry only make semantic sense on the most recent user message;
   // applying them to an arbitrary mid-conversation message would either
   // fork the thread (out of scope) or be silently misleading. So we hand
@@ -303,15 +228,6 @@ export function MessageThread({
 
           {exchanges.map((ex, i) => {
             const isLast = i === lastExchangeIdx;
-            const inThisExchange = activeSpan?.exchangeIdx === i;
-            const questionActiveLocalIdx =
-              inThisExchange && activeSpan?.side === "question"
-                ? activeSpan.localIdx
-                : -1;
-            const answerActiveLocalIdx =
-              inThisExchange && activeSpan?.side === "answer"
-                ? activeSpan.localIdx
-                : -1;
             return (
               <CompletedExchange
                 key={ex.id}
@@ -320,9 +236,6 @@ export function MessageThread({
                 onEdit={isLast ? onEdit : undefined}
                 onRetry={isLast ? onRetry : undefined}
                 onAssistantRetry={isLast ? onAssistantRetry : undefined}
-                searchQuery={searchQuery}
-                questionActiveLocalIdx={questionActiveLocalIdx}
-                answerActiveLocalIdx={answerActiveLocalIdx}
               />
             );
           })}
@@ -476,23 +389,12 @@ function CompletedExchange({
   onEdit,
   onRetry,
   onAssistantRetry,
-  searchQuery = "",
-  questionActiveLocalIdx = -1,
-  answerActiveLocalIdx = -1,
 }: {
   exchange: ChatExchange;
   showMeta: boolean;
   onEdit?: (question: string) => void;
   onRetry?: (question: string) => void;
   onAssistantRetry?: (originatingQuestion: string) => void;
-  /** Slice 5.0c-i.3: in-conversation Find query. Empty disables
-   *  inline highlighting. */
-  searchQuery?: string;
-  /** Slice 5.0c-i.6: index (within this question's marks) of the
-   *  active Find target if it lives in THIS question, else -1. */
-  questionActiveLocalIdx?: number;
-  /** Same for the answer side. */
-  answerActiveLocalIdx?: number;
 }) {
   return (
     <div className="space-y-3">
@@ -501,8 +403,6 @@ function CompletedExchange({
         timestamp={exchange.started_at}
         onEdit={onEdit ? () => onEdit(exchange.question) : undefined}
         onRetry={onRetry ? () => onRetry(exchange.question) : undefined}
-        searchQuery={searchQuery}
-        searchActiveLocalIdx={questionActiveLocalIdx}
       />
       <AssistantBubble
         answer={exchange.answer}
@@ -512,8 +412,6 @@ function CompletedExchange({
             ? () => onAssistantRetry(exchange.question)
             : undefined
         }
-        searchQuery={searchQuery}
-        searchActiveLocalIdx={answerActiveLocalIdx}
       />
       {showMeta ? (
         <div className="flex flex-wrap items-center gap-2 px-12 text-[10px] text-muted-foreground">
@@ -686,35 +584,16 @@ function UserBubble({
   timestamp,
   onEdit,
   onRetry,
-  searchQuery = "",
-  searchActiveLocalIdx = -1,
 }: {
   text: string;
   timestamp: string | null;
   onEdit?: () => void;
   onRetry?: () => void;
-  /** Slice 5.0c-i.3: in-conversation Find query. Empty = no highlight. */
-  searchQuery?: string;
-  /** Slice 5.0c-i.6: index (within this bubble's marks) of the active
-   *  Find target, or -1 when the active match isn't in this bubble. */
-  searchActiveLocalIdx?: number;
 }) {
   const [expanded, setExpanded] = useState(false);
   const isLong = text.length > LONG_MESSAGE_THRESHOLD;
   const showExpander = isLong;
   const collapsed = isLong && !expanded;
-  // Slice 5.0c-i.6: highlight every case-insensitive match in the
-  // bubble's text. Fresh counter per render — UserBubble is a single
-  // text run, no shared state needed across components.
-  const highlightedText = useMemo(() => {
-    const counter = { current: 0 };
-    return highlightSearchInChildren(
-      [text],
-      searchQuery,
-      searchActiveLocalIdx,
-      counter,
-    );
-  }, [text, searchQuery, searchActiveLocalIdx]);
 
   return (
     <div className="group flex flex-col items-end gap-1">
@@ -727,7 +606,7 @@ function UserBubble({
                 : "whitespace-pre-wrap"
             }
           >
-            {highlightedText}
+            {text}
             {collapsed ? (
               <span
                 aria-hidden="true"
@@ -774,14 +653,10 @@ function AssistantBubble({
   answer,
   timestamp,
   onRetry,
-  searchQuery = "",
-  searchActiveLocalIdx = -1,
 }: {
   answer: string;
   timestamp: string | null;
   onRetry?: () => void;
-  searchQuery?: string;
-  searchActiveLocalIdx?: number;
 }) {
   return (
     <div className="group flex flex-col gap-1">
@@ -791,12 +666,7 @@ function AssistantBubble({
         </div>
         <div className="flex-1 rounded-lg border border-border bg-card px-4 py-3">
           {answer ? (
-            <Markdown
-              searchHighlight={searchQuery}
-              searchHighlightActiveLocalIdx={searchActiveLocalIdx}
-            >
-              {answer}
-            </Markdown>
+            <Markdown>{answer}</Markdown>
           ) : (
             <div className="text-sm text-muted-foreground">(empty)</div>
           )}
