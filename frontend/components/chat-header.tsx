@@ -45,7 +45,10 @@ export function ChatHeader({
   inConversationSearchOpen?: boolean;
 }) {
   return (
-    <header className="relative flex h-14 items-center justify-between border-b border-border bg-card px-4">
+    <header
+      data-chat-context="true"
+      className="relative flex h-14 items-center justify-between border-b border-border bg-card px-4"
+    >
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-2 font-semibold tracking-tight">
           <ShieldCheck className="h-5 w-5 text-primary" />

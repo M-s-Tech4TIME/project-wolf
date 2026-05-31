@@ -355,6 +355,43 @@ export function ChatShell() {
     setSearchOpen((v) => !v);
   }, []);
 
+  // Slice 5.0c-i.5: Ctrl+F / Cmd+F intercept. Opens the in-conversation
+  // Find bar when the user is focused inside the chat pane (we use the
+  // <main> element below as the boundary). Outside it — sidebar,
+  // chats-history overlay, delete dialog — we let the browser's native
+  // Find handle the keystroke, because each of those has its own
+  // search surface (the overlay's content search; the browser is the
+  // sensible default for the sidebar). When focus is on `body` (no
+  // explicit input/button focused — e.g. the user just scrolled with
+  // the mouse wheel), we treat that as "in the chat" so Ctrl+F still
+  // works after a passive read session.
+  const mainRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.key === "f" || e.key === "F") && (e.ctrlKey || e.metaKey)) {
+        // Defer to browser when a modal context is open.
+        if (chatsOverlayOpen) return;
+        if (pendingDelete !== null) return;
+        const active = document.activeElement;
+        const inChat =
+          active === null ||
+          active === document.body ||
+          (active instanceof HTMLElement &&
+            mainRef.current?.contains(active)) ||
+          // Treat the top bar (Search button, title) as part of the chat
+          // context — its parent header is a sibling to <main>, not a
+          // descendant.
+          (active instanceof HTMLElement &&
+            active.closest("[data-chat-context]") !== null);
+        if (!inChat) return;
+        e.preventDefault();
+        setSearchOpen(true);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [chatsOverlayOpen, pendingDelete]);
+
   // Composer draft handoff (Slice 5.0c-f). The hover Edit / Retry actions
   // and the new-chat greeting screen all want the same thing: prefill the
   // composer with some text and focus it. We hold the draft here and pass
@@ -492,7 +529,10 @@ export function ChatShell() {
           collapsed={sidebarCollapsed}
           onToggleCollapsed={() => setSidebarCollapsed(!sidebarCollapsed)}
         />
-        <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <main
+          ref={mainRef}
+          className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+        >
           <MessageThread
             exchanges={visibleExchanges}
             stream={stream}
