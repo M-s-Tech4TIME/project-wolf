@@ -8,50 +8,60 @@ import {
 } from "react";
 
 /**
+ * Mutable counter threaded through `highlightSearchInChildren` so each
+ * call within one bubble's render agrees on "this is mark #N". Markdown
+ * invokes the helper once per block renderer (p / li / td / th /
+ * blockquote); a shared counter keeps the numbering consistent across
+ * those calls.
+ */
+export type MatchCounter = { current: number };
+
+/**
  * Walk a tree of React children and wrap every case-insensitive
- * substring match of `query` with a styled `<mark>` (Slice 5.0c-i.5
- * rewrite).
+ * substring match of `query` with a `<mark>` carrying the
+ * `wolf-find-mark` class (Slice 5.0c-i.6 reimplementation).
  *
- * Design notes:
+ * The earlier (5.0c-i.5) version drove the active-mark selection from
+ * a DOM-mutation effect that set `data-find-active="true"` on the
+ * i-th rendered mark. That had two problems:
  *
- *   - The earlier (5.0c-i.4) helper threaded a counter + activeLocalIdx
- *     to colour one specific mark in the vivid active style. That was
- *     fragile because the raw-text match enumeration in MessageThread
- *     drifted from the rendered-tree mark emission whenever markdown
- *     wrapped a match inside `<strong>`, inline `<code>`, or any other
- *     React element (the walker didn't recurse into elements). The
- *     drift meant "5 of 8 matches" but only 3 visible marks, and the
- *     orange highlight pointed at the wrong one — most visible to the
- *     user when traversing from a user message to a Wolf response.
+ *   1. The attribute was overridden / removed by React reconciliation
+ *      on subsequent renders, so the orange highlight vanished
+ *      whenever any other state changed.
+ *   2. Inline code (`<code>list_agents</code>`) sometimes wasn't
+ *      picked up by the helper at all when rehype-highlight wrapped
+ *      its contents in `<span class="hljs-…">` — the original walker
+ *      handled that fine, but the DOM-mutation timing made it look
+ *      like a no-match.
  *
- *   - This rewrite emits ALL marks with the SAME passive class +
- *     `data-find-match="true"`. The currently-active mark is selected
- *     by MessageThread via a DOM mutation effect that picks the i-th
- *     match in document order and sets `data-find-active="true"`. CSS
- *     in globals.css colours that one mark vivid orange. Match count
- *     is read off the DOM with `querySelectorAll`, so it is by
- *     construction equal to the number of rendered marks.
+ * This rewrite returns to a React-state-driven approach:
  *
- *   - The walker now RECURSES into HTML React elements (`<strong>`,
- *     `<em>`, `<a>`, inline `<code>`, …) so matches inside them get
- *     highlighted. Two opt-outs:
- *       1. Function-component elements (like FencedCodeBlock) — those
- *          have their own syntax-highlighting and we don't want
- *          `<mark>`s breaking up colourised tokens.
- *       2. Elements with `data-grounding-chip="true"` — the grounding
- *          chips already carry their own background and shouldn't
- *          double-paint.
+ *   - The helper recurses into HTML React elements (skipping
+ *     grounding chips via `data-grounding-chip="true"` and
+ *     function-component elements like FencedCodeBlock).
+ *   - A counter + activeLocalIdx are passed in; the mark whose index
+ *     matches activeLocalIdx is emitted with `data-find-active="true"`
+ *     directly in JSX, so the attribute survives every re-render
+ *     because React owns it.
+ *   - Recursion means the raw-text match count and rendered mark
+ *     count agree — which is exactly what MessageThread's matchSpans
+ *     enumeration relies on. The drift bug that originally forced
+ *     the DOM-based approach is fixed at its root.
+ *   - The mark uses ONE class (`wolf-find-mark`) styled in
+ *     globals.css. No Tailwind utility classes on the mark, so the
+ *     CSS cascade can't fight us — `.wolf-find-mark[data-find-active]`
+ *     wins over `.wolf-find-mark` cleanly by specificity.
  */
 export function highlightSearchInChildren(
   children: ReactNode,
   query: string,
+  activeLocalIdx: number,
+  counter: MatchCounter,
 ): ReactNode {
   if (!query) return children;
   const trimmed = query.trim();
   if (!trimmed) return children;
   const needle = trimmed.toLowerCase();
-  const markClass =
-    "wolf-find-mark rounded-sm bg-amber-200/70 px-0.5 text-foreground dark:bg-amber-400/40";
 
   return Children.map(children, (child, index) => {
     if (typeof child === "string") {
@@ -63,11 +73,14 @@ export function highlightSearchInChildren(
       let chunkIdx = 0;
       while (pos !== -1) {
         if (pos > lastEnd) parts.push(child.slice(lastEnd, pos));
+        const myIdx = counter.current++;
+        const isActive = myIdx === activeLocalIdx;
         parts.push(
           <mark
             key={`m-${index}-${chunkIdx++}`}
-            className={markClass}
+            className="wolf-find-mark"
             data-find-match="true"
+            data-find-active={isActive ? "true" : undefined}
           >
             {child.slice(pos, pos + needle.length)}
           </mark>,
@@ -84,14 +97,21 @@ export function highlightSearchInChildren(
         "data-grounding-chip"?: string;
       }>;
       const props = el.props;
-      // Opt-out 1: grounding chips carry their own background; don't
-      //            double-paint.
-      // Opt-out 2: function-component elements (FencedCodeBlock) own
-      //            their internal rendering (syntax-highlighting); a
-      //            `<mark>` inside them would break the token spans.
+      // Opt-out 1: grounding chips have their own background and
+      //            shouldn't be split with marks.
+      // Opt-out 2: function-component elements (FencedCodeBlock,
+      //            etc.) own their internal rendering. Inline code
+      //            uses the HTML `<code>` tag (string type), so we
+      //            recurse into it — that's the path that catches
+      //            search hits inside ` `tokens` `.
       if (props["data-grounding-chip"]) return child;
       if (typeof el.type !== "string") return child;
-      const recursed = highlightSearchInChildren(props.children, query);
+      const recursed = highlightSearchInChildren(
+        props.children,
+        query,
+        activeLocalIdx,
+        counter,
+      );
       return cloneElement(el, undefined, recursed);
     }
     return child;

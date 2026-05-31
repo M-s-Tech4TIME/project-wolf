@@ -298,19 +298,31 @@
 }
 
 /*
- * Slice 5.0c-i.5: in-conversation Find — active-match styling.
+ * Slice 5.0c-i.6: in-conversation Find — mark styling.
  *
- * The helper emits every match with the same passive class and a
- * `data-find-match="true"` attribute. MessageThread's DOM-mutation
- * effect picks the current Find target and sets
- * `data-find-active="true"` on that one specific element. CSS swaps
- * it to vivid orange. This is more reliable than threading an
- * activeLocalIdx through the React tree — the count and the active
- * mark are both read off of the actually-rendered DOM.
+ * Every search match is wrapped in `<mark class="wolf-find-mark">`.
+ * The helper additionally sets `data-find-active="true"` on whichever
+ * mark is the current Find target (driven by React state, not DOM
+ * mutation, so the attribute survives every re-render).
+ *
+ * All styling lives here so we don't fight Tailwind utility classes
+ * in the cascade — the mark element gets ONE class and the styling
+ * comes from this stylesheet. The active variant is more specific
+ * by virtue of the extra attribute selector, so it wins cleanly.
  */
-mark[data-find-match][data-find-active="true"] {
+.wolf-find-mark {
+  background-color: rgba(254, 215, 170, 0.7); /* amber-200/70 */
+  color: var(--foreground);
+  padding-left: 0.125rem;
+  padding-right: 0.125rem;
+  border-radius: 0.125rem;
+}
+.dark .wolf-find-mark {
+  background-color: rgba(251, 191, 36, 0.4); /* amber-400/40 */
+}
+.wolf-find-mark[data-find-active="true"] {
   background-color: rgba(251, 146, 60, 0.85); /* orange-400/85 */
 }
-.dark mark[data-find-match][data-find-active="true"] {
+.dark .wolf-find-mark[data-find-active="true"] {
   background-color: rgba(249, 115, 22, 0.65); /* orange-500/65 */
 }

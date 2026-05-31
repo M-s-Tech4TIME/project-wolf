@@ -119,27 +119,36 @@ export function Markdown({
   children,
   className,
   searchHighlight = "",
+  searchHighlightActiveLocalIdx = -1,
 }: {
   children: string;
   className?: string;
   /** Slice 5.0c-i.3: when set, every case-insensitive substring match
    *  in the rendered text gets wrapped in a styled `<mark>` so the
    *  in-conversation Find result is visible inline. Composed AFTER
-   *  the grounding-marker pass so chip JSX is preserved verbatim.
-   *  Slice 5.0c-i.5: the active-mark selection now lives in
-   *  MessageThread (DOM-based), so this component only flags
-   *  matches; it no longer tracks an active index. */
+   *  the grounding-marker pass so chip JSX is preserved verbatim. */
   searchHighlight?: string;
+  /** Slice 5.0c-i.6: index (within this bubble's matches, 0-based
+   *  across every block-renderer call below) of the active Find
+   *  target, or -1 when the active match is in a different bubble.
+   *  The matching mark renders with `data-find-active="true"` so the
+   *  `.wolf-find-mark[data-find-active]` CSS rule paints it orange.
+   *  Drove this from React state (not DOM mutation) after the
+   *  5.0c-i.5 approach had reconciliation races. */
+  searchHighlightActiveLocalIdx?: number;
 }) {
-  // Compose the two highlighters: grounding markers first (so their
-  // chip JSX is treated as opaque elements by the search pass — the
-  // chip span carries `data-grounding-chip="true"` so the search
-  // walker skips recursion into it), then search-query highlighting
-  // on whatever string children remain.
+  // Per-render counter shared by every decorate() call below so the
+  // multiple per-block invocations (p / li / td / th / blockquote)
+  // agree on "this is mark #N in this bubble". Recreated each
+  // render — strict-mode double-render rebuilds the closure too, so
+  // no state bleed.
+  const counter = { current: 0 };
   const decorate = (nodes: ReactNode): ReactNode =>
     highlightSearchInChildren(
       highlightGroundingMarkers(nodes),
       searchHighlight,
+      searchHighlightActiveLocalIdx,
+      counter,
     );
   return (
     <div
