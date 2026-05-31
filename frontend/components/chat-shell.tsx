@@ -385,6 +385,26 @@ export function ChatShell() {
             active.closest("[data-chat-context]") !== null);
         if (!inChat) return;
         e.preventDefault();
+        // Slice 5.0c-i.6: if the user had text selected in the chat
+        // when they pressed Ctrl+F, prefill the Find bar with that
+        // selection — saves them from having to retype what they're
+        // already pointing at. Cap to 200 chars so a wild triple-click
+        // doesn't dump a paragraph into the input. Reading the
+        // selection only when it's inside the chat pane keeps the
+        // experience tight (selecting in the sidebar then Ctrl+F'ing
+        // shouldn't lift sidebar text into the chat search).
+        const selection = window.getSelection?.();
+        const selectedText = selection?.toString().trim() ?? "";
+        const anchorNode = selection?.anchorNode ?? null;
+        const anchorEl =
+          anchorNode instanceof Element
+            ? anchorNode
+            : anchorNode?.parentElement ?? null;
+        const selectionInChat =
+          anchorEl !== null && mainRef.current?.contains(anchorEl);
+        if (selectedText && selectionInChat) {
+          setSearchQuery(selectedText.slice(0, 200));
+        }
         setSearchOpen(true);
       }
     };
