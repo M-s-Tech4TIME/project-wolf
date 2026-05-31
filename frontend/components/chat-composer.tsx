@@ -30,17 +30,33 @@ export function ChatComposer({ onSubmit, disabled, draft }: Props) {
   const [value, setValue] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Slice 5.0c-i.4: auto-expand the textarea vertically as the user
-  // types. Reset to `auto` first so shrinking on backspace works, then
-  // grow back up to the scrollHeight (capped). Re-runs whenever `value`
-  // changes (typing, draft-prefill, submit-clear), so every path that
-  // mutates the text triggers a re-measurement.
+  // Slice 5.0c-i.7: flicker-free auto-resize. The previous (5.0c-i.4)
+  // version reset `height` to "auto" before re-measuring on every
+  // keystroke, which caused a brief layout flicker — even at max
+  // height, the two-style-write cycle triggered enough recalc that
+  // the chat thread's scroll position would jitter (user-reported).
+  //
+  // New strategy: only reset to "auto" when the value got SHORTER
+  // (the only case where the textarea might need to shrink). When
+  // the value grows, the existing scrollHeight already includes the
+  // new content (the browser updates scrollHeight as content is
+  // added to the textarea, regardless of the rendered height), so we
+  // just set `height = min(scrollHeight, MAX)` directly. At max
+  // height with content overflowing, scrollHeight stays > MAX and we
+  // keep the explicit "240px" — no auto round-trip, no flicker.
+  const prevLengthRef = useRef(0);
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
-    el.style.height = "auto";
-    el.style.height =
-      Math.min(el.scrollHeight, COMPOSER_MAX_HEIGHT_PX) + "px";
+    const shrinking = value.length < prevLengthRef.current;
+    prevLengthRef.current = value.length;
+    if (shrinking) {
+      // Only the shrinking path needs the auto-reset dance: without
+      // it the textarea would never get shorter on backspace.
+      el.style.height = "auto";
+    }
+    const desired = Math.min(el.scrollHeight, COMPOSER_MAX_HEIGHT_PX);
+    el.style.height = desired + "px";
   }, [value]);
 
   useEffect(() => {

@@ -167,11 +167,18 @@ export function MessageThread({
       const newClientHeight = el.clientHeight;
       const shrunk = newClientHeight < prevClientHeight;
       prevClientHeight = newClientHeight;
-      if (shrunk && lastDistance <= 200) {
+      if (!shrunk) return;
+      // Use OR semantics across two distance signals (Slice 5.0c-i.7):
+      // `lastDistance` is the distance the user was at when they last
+      // scrolled — best signal of intent. `currentDistance` is what
+      // the layout currently reads after the shrink — catches the
+      // case where a phantom scroll during the textarea resize
+      // updated `lastDistance` away from 0 but the user is in fact
+      // still near the bottom in absolute terms. Either qualifies.
+      const currentDistance =
+        el.scrollHeight - el.scrollTop - el.clientHeight;
+      if (lastDistance <= 200 || currentDistance <= 200) {
         el.scrollTop = el.scrollHeight - el.clientHeight;
-        // After the re-pin, distance to bottom is 0. Update local
-        // state so a follow-up resize before the next user scroll
-        // still re-pins.
         lastDistance = 0;
       }
     });
@@ -271,7 +278,16 @@ export function MessageThread({
     <div className="relative flex min-h-0 flex-1 flex-col">
       <div
         ref={scrollRef}
-        className="flex-1 overflow-y-auto overflow-x-hidden [scrollbar-gutter:stable] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-foreground/30 hover:[&::-webkit-scrollbar-thumb]:bg-foreground/50"
+        /* Slice 5.0c-i.7: `overflow-anchor: auto` (the default on
+           most browsers but spelled out here so it survives any
+           future Tailwind reset) lets the browser pick a stable
+           anchor element near the user's viewport and keep its
+           visual position fixed when the surrounding layout
+           reflows. Backup defence against the composer-expand
+           scroll-up bug — the JS-side ResizeObserver re-pin is the
+           primary fix, but if anything slips through the browser-
+           native anchoring keeps the chat content visually stable. */
+        className="flex-1 overflow-y-auto overflow-x-hidden [overflow-anchor:auto] [scrollbar-gutter:stable] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-foreground/30 hover:[&::-webkit-scrollbar-thumb]:bg-foreground/50"
       >
         <div className="mx-auto max-w-3xl space-y-6 px-4 py-6">
           {renderGreeting ? (
