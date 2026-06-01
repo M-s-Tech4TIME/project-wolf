@@ -13,3 +13,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["wolf_schema"]
+# PEP 561: ship `py.typed` so downstream services see type information.
+# Without this, mypy treats the whole package as untyped and silently
+# drops every import — the Phase-0 blind spot fixed 2026-06-01.
+include = ["wolf_schema/py.typed"]

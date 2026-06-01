@@ -62,7 +62,7 @@ class KnowledgeChunk(Base):
     # Free-form metadata for retrieval filtering: rule_id, technique,
     # wazuh_version, attack_version, title, url, etc. Per doc 06, "metadata
     # is half the system."
-    chunk_metadata: Mapped[dict] = mapped_column(
+    chunk_metadata: Mapped[dict[str, object]] = mapped_column(
         JSONB, nullable=False, default=dict
     )
     # Re-embedding trigger: a swap of embedding_model forces a planned

@@ -40,6 +40,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.database import db_session
 from app.knowledge.embeddings import (
+    EmbeddingProvider,
     make_embedding_provider,
     make_embedding_provider_aux,
 )
@@ -106,7 +107,7 @@ AUX_CHAR_LIMIT = 1800
 async def _reembed_batch(
     session: AsyncSession,
     rows: list[KnowledgeChunk],
-    embedder,
+    embedder: EmbeddingProvider,
     *,
     is_aux: bool,
 ) -> int:

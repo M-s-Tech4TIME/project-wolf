@@ -44,7 +44,13 @@ def _make_token(data: dict[str, Any], expires_delta: timedelta) -> str:
     payload = data.copy()
     payload["exp"] = datetime.now(UTC) + expires_delta
     payload["iat"] = datetime.now(UTC)
-    return jwt.encode(payload, _settings.secret_key, algorithm=_settings.jwt_algorithm)
+    # `jose` ships no PEP-561 stubs (see root pyproject's mypy overrides),
+    # so `jwt.encode` is typed as `Any`. Cast at the boundary so the `Any`
+    # does not leak into call sites.
+    encoded: str = jwt.encode(
+        payload, _settings.secret_key, algorithm=_settings.jwt_algorithm
+    )
+    return encoded
 
 
 def create_access_token(

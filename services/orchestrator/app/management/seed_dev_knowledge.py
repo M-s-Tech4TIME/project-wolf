@@ -37,7 +37,7 @@ logger = structlog.get_logger(__name__)
 
 
 # Shared corpora (visible to every tenant) — tenant_id=None.
-SHARED_CHUNKS: list[tuple[str, dict, str]] = [
+SHARED_CHUNKS: list[tuple[str, dict[str, object], str]] = [
     (
         "wazuh_doc",
         {"rule_id": "5710", "title": "Rule 5710 — sshd authentication failure"},
@@ -102,7 +102,7 @@ SHARED_CHUNKS: list[tuple[str, dict, str]] = [
 # Tenant-private chunks — these are seeded under the named tenant only.
 # The cross-tenant isolation test seeds the other tenant with different
 # content so a leak is observable.
-def runbook_chunks_for(tenant_slug: str) -> list[tuple[str, dict, str]]:
+def runbook_chunks_for(tenant_slug: str) -> list[tuple[str, dict[str, object], str]]:
     return [
         (
             "runbook",
