@@ -35,8 +35,13 @@ import type { Conversation } from "@/lib/types";
 type Props = {
   open: boolean;
   conversations: Conversation[];
-  /** Slice 5.0c-h: in-flight stream's target conversation (or null). */
-  streamingId?: string | null;
+  /**
+   * Slice 5.0c-k: Set of conversation IDs currently streaming. Multiple
+   * conversations can stream in parallel, so a single id is no longer
+   * sufficient. Bulk-delete uses `.has()` to guard against deleting a
+   * running conversation.
+   */
+  streamingIds?: Set<string>;
   onClose: () => void;
   onSelect: (id: string) => void;
   onNew: () => void;
@@ -67,7 +72,7 @@ type Props = {
 export function ChatsHistoryOverlay({
   open,
   conversations,
-  streamingId,
+  streamingIds,
   onClose,
   onSelect,
   onNew,
@@ -138,11 +143,11 @@ export function ChatsHistoryOverlay({
   // We refuse to delete a conversation that's currently streaming —
   // the archive effect would write into a removed slot. Mirror that
   // protection here so the Delete button stays disabled when the
-  // selection contains the streaming conversation.
-  const selectionContainsStreaming =
-    streamingId !== null &&
-    streamingId !== undefined &&
-    selectedIds.has(streamingId);
+  // selection contains any streaming conversation. With Slice 5.0c-k,
+  // many conversations can stream concurrently, so iterate the set.
+  const selectionContainsStreaming = streamingIds
+    ? Array.from(selectedIds).some((id) => streamingIds.has(id))
+    : false;
   const handleDeleteSelected = () => {
     if (selectedIds.size === 0) return;
     onBulkDelete?.(Array.from(selectedIds));
@@ -301,7 +306,7 @@ export function ChatsHistoryOverlay({
                   result={r}
                   selectionMode={selectionMode}
                   isSelected={selectedIds.has(r.conversation.id)}
-                  isStreaming={r.conversation.id === streamingId}
+                  isStreaming={streamingIds?.has(r.conversation.id) ?? false}
                   isRenaming={r.conversation.id === renamingId}
                   onActivate={() => {
                     if (selectionMode) {

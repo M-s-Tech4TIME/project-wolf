@@ -39,13 +39,11 @@ type Props = {
   conversations: Conversation[];
   activeId: string | null;
   /**
-   * The conversation a stream is currently in-flight for (Slice 5.0c-h),
-   * or null when idle. May differ from `activeId` if the user navigated
-   * away during the run; the in-flight indicator follows this, not
-   * `activeId`, so the running conversation stays visible regardless of
-   * where the user is looking.
+   * Set of conversation IDs that are currently streaming. Slice 5.0c-k:
+   * multiple conversations can stream simultaneously, so this is a Set,
+   * not a single id. Per-row check is `streamingIds?.has(c.id)`.
    */
-  streamingId?: string | null;
+  streamingIds?: Set<string>;
   onSelect: (id: string) => void;
   onNew: () => void;
   /** Slice 5.0c-i: per-item rename via the "…" menu (or top-bar title). */
@@ -82,7 +80,7 @@ function initialsOf(displayName?: string, email?: string): string {
 export function ChatSidebar({
   conversations,
   activeId,
-  streamingId,
+  streamingIds,
   onSelect,
   onNew,
   onRename,
@@ -275,7 +273,7 @@ export function ChatSidebar({
                       label="Starred"
                       conversations={starredConvos}
                       activeId={activeId}
-                      streamingId={streamingId}
+                      streamingIds={streamingIds}
                       renamingId={renamingId}
                       onSelect={onSelect}
                       onStartRename={(id) => setRenamingId(id)}
@@ -293,7 +291,7 @@ export function ChatSidebar({
                     label={starredConvos.length > 0 ? "Recents" : null}
                     conversations={recentConvos}
                     activeId={activeId}
-                    streamingId={streamingId}
+                    streamingIds={streamingIds}
                     renamingId={renamingId}
                     onSelect={onSelect}
                     onStartRename={(id) => setRenamingId(id)}
@@ -330,7 +328,7 @@ function ConversationListSection({
   label,
   conversations,
   activeId,
-  streamingId,
+  streamingIds,
   renamingId,
   onSelect,
   onStartRename,
@@ -343,7 +341,7 @@ function ConversationListSection({
   label: string | null;
   conversations: Conversation[];
   activeId: string | null;
-  streamingId?: string | null;
+  streamingIds?: Set<string>;
   renamingId: string | null;
   onSelect: (id: string) => void;
   onStartRename: (id: string) => void;
@@ -366,7 +364,7 @@ function ConversationListSection({
           key={c.id}
           conversation={c}
           isActive={c.id === activeId}
-          isStreaming={c.id === streamingId}
+          isStreaming={streamingIds?.has(c.id) ?? false}
           isRenaming={c.id === renamingId}
           onSelect={() => onSelect(c.id)}
           onStartRename={() => onStartRename(c.id)}

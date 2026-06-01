@@ -11,6 +11,7 @@ import {
   RotateCcw,
   ShieldAlert,
   ShieldCheck,
+  Square,
   User,
 } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -19,21 +20,22 @@ import { useAuth } from "@/components/auth-provider";
 import { Markdown } from "@/components/markdown";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { UseChatStream } from "@/hooks/use-chat-stream";
+import type { StreamState } from "@/hooks/use-conversation-streams";
 import { copyText } from "@/lib/clipboard";
 import { absoluteTimeTitle, relativeTime } from "@/lib/format";
 import type { ChatExchange } from "@/lib/types";
 
 type Props = {
   exchanges: ChatExchange[];
-  stream: UseChatStream;
   /**
-   * True only when the currently-displayed conversation is the one the
-   * stream is in-flight for (Slice 5.0c-h). When false, the user has
-   * navigated away from a still-running conversation — render the
-   * archived exchanges only, no live view.
+   * The slice of stream state for the currently-displayed
+   * conversation. Slice 5.0c-k: each conversation has its own
+   * StreamState now — chat-shell picks the right one and hands it
+   * down. `stream.status.phase === "running"` IS the
+   * "this-convo-is-streaming" check; the old `isActiveStreaming`
+   * prop went away with the singleton hook.
    */
-  isActiveStreaming?: boolean;
+  stream: StreamState;
   /** Drops the question into the composer for editing (Slice 5.0c-f). */
   onEdit?: (question: string) => void;
   /** Re-asks the question by pre-filling the composer (Slice 5.0c-f). */
@@ -65,21 +67,17 @@ const LONG_MESSAGE_THRESHOLD = 280;
 export function MessageThread({
   exchanges,
   stream,
-  isActiveStreaming = false,
   onEdit,
   onRetry,
   onQuickAsk,
   onAssistantRetry,
 }: Props) {
-  // The live view is gated on isActiveStreaming so a stream running in
-  // a *different* conversation doesn't bleed into the one the user is
-  // looking at. Errors only show in the active conversation too — the
-  // error state is bound to the conversation it occurred in (Slice
-  // 5.0c-h).
+  // Slice 5.0c-k: stream is now scoped to THIS conversation (chat-shell
+  // looks up the right StreamState), so the previous isActiveStreaming
+  // gate is just stream.status.phase === "running".
   const showStreamView =
-    isActiveStreaming &&
-    (stream.status.phase === "running" || stream.status.phase === "error");
-  const isRunning = isActiveStreaming && stream.status.phase === "running";
+    stream.status.phase === "running" || stream.status.phase === "error";
+  const isRunning = stream.status.phase === "running";
   const empty = exchanges.length === 0 && !showStreamView;
 
   // The chat uses a NATIVE scroll container instead of Radix's
@@ -412,21 +410,36 @@ function CompletedExchange({
             ? () => onAssistantRetry(exchange.question)
             : undefined
         }
+        interrupted={exchange.stop_reason === "interrupted"}
       />
       {showMeta ? (
         <div className="flex flex-wrap items-center gap-2 px-12 text-[10px] text-muted-foreground">
-          <Badge variant="secondary">{exchange.strategy}</Badge>
-          <Badge variant="outline">{exchange.model_id}</Badge>
-          <span>·</span>
-          <span>{exchange.step_count} steps</span>
-          <span>·</span>
-          <span>{exchange.tool_call_count} tool calls</span>
-          <span>·</span>
-          <span>{exchange.input_tokens + exchange.output_tokens} tokens</span>
-          <GroundingBadge exchange={exchange} />
-          {exchange.stop_reason !== "answer" ? (
-            <Badge variant="destructive">{exchange.stop_reason}</Badge>
-          ) : null}
+          {/* Interrupted exchanges don't carry strategy / model / steps /
+              tokens (the backend never finished telling us), so collapse
+              the meta to just the stop reason. The "Response interrupted
+              by user" footer inside the bubble carries the primary cue. */}
+          {exchange.stop_reason === "interrupted" ? (
+            <Badge variant="outline" className="text-muted-foreground">
+              interrupted
+            </Badge>
+          ) : (
+            <>
+              <Badge variant="secondary">{exchange.strategy}</Badge>
+              <Badge variant="outline">{exchange.model_id}</Badge>
+              <span>·</span>
+              <span>{exchange.step_count} steps</span>
+              <span>·</span>
+              <span>{exchange.tool_call_count} tool calls</span>
+              <span>·</span>
+              <span>
+                {exchange.input_tokens + exchange.output_tokens} tokens
+              </span>
+              <GroundingBadge exchange={exchange} />
+              {exchange.stop_reason !== "answer" ? (
+                <Badge variant="destructive">{exchange.stop_reason}</Badge>
+              ) : null}
+            </>
+          )}
         </div>
       ) : null}
     </div>
@@ -506,12 +519,13 @@ function GroundingBadge({ exchange }: { exchange: ChatExchange }) {
   );
 }
 
-function StreamingView({ stream }: { stream: UseChatStream }) {
+function StreamingView({ stream }: { stream: StreamState }) {
   const hasStreamingText = stream.streamingAnswer.trim().length > 0;
+  const isRunning = stream.status.phase === "running";
   return (
     <div className="flex gap-3 px-2">
       <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
-        {stream.status.phase === "running" ? (
+        {isRunning ? (
           <Loader2 className="h-4 w-4 animate-spin text-primary" />
         ) : (
           <Bot className="h-4 w-4 text-primary" />
@@ -653,11 +667,21 @@ function AssistantBubble({
   answer,
   timestamp,
   onRetry,
+  interrupted = false,
 }: {
   answer: string;
   timestamp: string | null;
   onRetry?: () => void;
+  /**
+   * Slice 5.0c-k: the user clicked Stop before the answer event
+   * arrived. Renders a small "Response interrupted by user" footer
+   * inside the bubble so it's clear the answer is partial. Empty
+   * answers (Stop pressed before any model.delta arrived) get an
+   * extra italic note instead of the "(empty)" placeholder.
+   */
+  interrupted?: boolean;
 }) {
+  const hasAnswer = answer.trim().length > 0;
   return (
     <div className="group flex flex-col gap-1">
       <div className="flex gap-3">
@@ -665,11 +689,21 @@ function AssistantBubble({
           <Bot className="h-4 w-4 text-primary" />
         </div>
         <div className="flex-1 rounded-lg border border-border bg-card px-4 py-3">
-          {answer ? (
+          {hasAnswer ? (
             <Markdown>{answer}</Markdown>
+          ) : interrupted ? (
+            <div className="text-sm italic text-muted-foreground">
+              (no response generated before stop)
+            </div>
           ) : (
             <div className="text-sm text-muted-foreground">(empty)</div>
           )}
+          {interrupted ? (
+            <div className="mt-2 flex items-center gap-1.5 border-t border-border pt-2 text-[11px] italic text-muted-foreground">
+              <Square className="h-2.5 w-2.5 fill-current" aria-hidden="true" />
+              Response interrupted by user.
+            </div>
+          ) : null}
         </div>
       </div>
       <HoverActionBar

@@ -1,13 +1,29 @@
 "use client";
 
-import { SendHorizontal } from "lucide-react";
+import { SendHorizontal, Square } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 
 import { Button } from "@/components/ui/button";
 
 type Props = {
   onSubmit: (question: string) => void | Promise<void>;
-  disabled?: boolean;
+  /**
+   * Slice 5.0c-k: true while the active conversation's stream is
+   * in-flight. The textarea stays interactive so the user can keep
+   * drafting their next message during a run, but the Send button is
+   * swapped for a Stop button (see `onStop` below) so the user can
+   * interrupt without scrolling up into the thread. Pressing Enter
+   * mid-stream is a no-op — the drafted text persists until the
+   * stream settles or the user clicks Stop, then sending unblocks.
+   */
+  streaming?: boolean;
+  /**
+   * Slice 5.0c-k: handler invoked when the user clicks the Stop
+   * button that replaces Send while `streaming` is true. The parent
+   * calls into the per-conversation stream manager to abort the
+   * in-flight fetch and synthesise an "interrupted" exchange.
+   */
+  onStop?: () => void;
   /**
    * External "fill the input with this text" trigger for the hover Edit
    * and Retry actions, and for the new-chat greeting screen's quick-action
@@ -26,7 +42,7 @@ type Props = {
  */
 const COMPOSER_MAX_HEIGHT_PX = 240;
 
-export function ChatComposer({ onSubmit, disabled, draft }: Props) {
+export function ChatComposer({ onSubmit, streaming, onStop, draft }: Props) {
   const [value, setValue] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -77,7 +93,11 @@ export function ChatComposer({ onSubmit, disabled, draft }: Props) {
   }, [draft?.nonce]);
 
   async function send() {
-    if (!value.trim() || disabled) return;
+    // Same `streaming` gate the Send button shows visually + the
+    // Enter-keyboard-shortcut respects, so a draft that's blocked from
+    // sending also survives across "type ... press Enter ... still
+    // streaming ... click Stop ... press Enter again" cycles.
+    if (!value.trim() || streaming) return;
     const q = value;
     setValue("");
     await onSubmit(q);
@@ -106,17 +126,35 @@ export function ChatComposer({ onSubmit, disabled, draft }: Props) {
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={handleKeyDown}
-          disabled={disabled}
           style={{ maxHeight: `${COMPOSER_MAX_HEIGHT_PX}px` }}
         />
-        <Button
-          type="submit"
-          size="sm"
-          disabled={disabled || !value.trim()}
-          className="h-9"
-        >
-          <SendHorizontal className="h-4 w-4" />
-        </Button>
+        {streaming && onStop ? (
+          // While streaming, the Send button is replaced by a Stop
+          // button at the same location, so the user can interrupt
+          // without scrolling up into the thread (Slice 5.0c-k UX
+          // refinement, 2026-06-01).
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={onStop}
+            className="h-9"
+            aria-label="Stop response"
+            title="Stop response"
+          >
+            <Square className="h-3 w-3 fill-current" />
+          </Button>
+        ) : (
+          <Button
+            type="submit"
+            size="sm"
+            disabled={!value.trim()}
+            className="h-9"
+            aria-label="Send message"
+          >
+            <SendHorizontal className="h-4 w-4" />
+          </Button>
+        )}
       </div>
       <p className="mt-1.5 px-1 text-[10px] text-muted-foreground">
         Press <kbd className="rounded bg-muted px-1 py-0.5">Enter</kbd> to send,{" "}

@@ -9,7 +9,10 @@ import { ChatsHistoryOverlay } from "@/components/chats-history-overlay";
 import { CitationsPanel } from "@/components/citations-panel";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { MessageThread } from "@/components/message-thread";
-import { useChatStream } from "@/hooks/use-chat-stream";
+import {
+  NEUTRAL_STREAM,
+  useConversationStreams,
+} from "@/hooks/use-conversation-streams";
 import type {
   ChatExchange,
   Citation,
@@ -32,9 +35,6 @@ const STORAGE_EVIDENCE_WIDTH = "wolf.evidence.width";
  */
 function usePersistedState<T>(key: string, initial: T): [T, (next: T) => void] {
   const [value, setValue] = useState<T>(initial);
-  // Read from storage once on mount. The SSR pass returns `initial`; on the
-  // client we replace it with the persisted value. Setting state from an
-  // effect is the right shape for SSR-safe persistence here.
   useEffect(() => {
     try {
       const raw = window.localStorage.getItem(key);
@@ -46,7 +46,6 @@ function usePersistedState<T>(key: string, initial: T): [T, (next: T) => void] {
       /* corrupted entry — ignore and keep default */
     }
   }, [key]);
-  // Write on every change.
   useEffect(() => {
     try {
       window.localStorage.setItem(key, JSON.stringify(value));
@@ -77,24 +76,24 @@ function usePersistedState<T>(key: string, initial: T): [T, (next: T) => void] {
  *   - "New" starts a fresh conversation; clicking one in the sidebar
  *     resumes it.
  *
- * Layout details (Slice 5.0c-b):
- *   - Sidebar collapses to an icon rail (persisted to localStorage).
- *   - Evidence panel width is drag-resizable on its left edge
- *     (persisted to localStorage).
- *   - Evidence panel PERSISTS the previous exchange's citations while a
- *     new run is starting up — no flash of empty state.
+ * Slice 5.0c-k: concurrent streams. The stream manager
+ * (`useConversationStreams`) keeps independent state per conversation,
+ * so the user can start a second conversation while a first is still
+ * generating. The composer textarea stays editable even while THIS
+ * conversation is streaming (drafts survive); only the Send button is
+ * gated until the stream settles (or the user clicks Stop).
  */
 export function ChatShell() {
-  const stream = useChatStream();
+  const streams = useConversationStreams();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConvoId, setActiveConvoId] = useState<string | null>(null);
-  // Slice 5.0c-h: which conversation the current in-flight stream belongs
-  // to. May differ from `activeConvoId` if the user navigated away during
-  // the run. Null when idle. The archive effect uses this — never
-  // `activeConvoId` — to find the conversation to append the completed
-  // exchange to.
-  const [streamingConvoId, setStreamingConvoId] = useState<string | null>(null);
-  const archivedRef = useRef<string | null>(null);
+
+  // Archive-dedupe: tracks which `${convoId}:${exchange.id}` pairs we've
+  // already appended to a conversation's `exchanges`. Without this the
+  // archive effect would re-append on every render. Set semantics
+  // because lookups must be O(1) over potentially many concurrent
+  // streams.
+  const archivedKeysRef = useRef<Set<string>>(new Set());
 
   // Layout persistence ---------------------------------------------------
   const [sidebarCollapsed, setSidebarCollapsed] = usePersistedState<boolean>(
@@ -106,47 +105,51 @@ export function ChatShell() {
     EVIDENCE_DEFAULT_WIDTH,
   );
 
-  // When a stream completes, archive the exchange into the conversation
-  // it belongs to (Slice 5.0c-h — `streamingConvoId`, not `activeConvoId`,
-  // because the user may have switched conversations during the run).
-  // The conversation slot itself was created synchronously inside
-  // `handleSubmit` so it has already been visible in the sidebar for the
-  // whole stream — this effect just appends the finished exchange to it.
+  // Archive freshly-completed (or interrupted) exchanges into their
+  // respective conversations. Iterates over every stream so we catch
+  // completions even for conversations the user isn't currently
+  // viewing. Slice 5.0c-k.
   useEffect(() => {
-    if (!stream.exchange || !streamingConvoId) return;
-    if (archivedRef.current === stream.exchange.id) return;
-    archivedRef.current = stream.exchange.id;
-
-    const ex = stream.exchange;
-    const targetId = streamingConvoId;
-    setConversations((prev) =>
-      prev.map((c) =>
-        c.id === targetId
-          ? {
-              ...c,
-              exchanges: [...c.exchanges, ex],
-              updated_at: ex.completed_at,
-            }
-          : c,
-      ),
-    );
-    setStreamingConvoId(null);
-  }, [stream.exchange, streamingConvoId]);
+    for (const [convoId, state] of Object.entries(streams.streams)) {
+      if (!state.exchange) continue;
+      const key = `${convoId}:${state.exchange.id}`;
+      if (archivedKeysRef.current.has(key)) continue;
+      archivedKeysRef.current.add(key);
+      const ex = state.exchange;
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === convoId
+            ? {
+                ...c,
+                exchanges: [...c.exchanges, ex],
+                updated_at: ex.completed_at,
+              }
+            : c,
+        ),
+      );
+    }
+  }, [streams.streams]);
 
   const activeConversation =
     conversations.find((c) => c.id === activeConvoId) ?? null;
+  const activeStream =
+    activeConvoId !== null
+      ? streams.streams[activeConvoId] ?? NEUTRAL_STREAM
+      : NEUTRAL_STREAM;
+  const isActiveStreaming = activeStream.status.phase === "running";
 
   const handleSubmit = useCallback(
     async (question: string) => {
-      // One in-flight stream at a time. The composer is disabled while
-      // `isRunning`, so this guard is a belt-and-braces against a race
-      // (e.g. quick Enter-twice when the previous run only just flipped
-      // `phase` to "done" but a new submit hasn't entered "running" yet).
-      if (stream.status.phase === "running") return;
-
+      // Determine the target conversation: existing active, or create
+      // a new one synchronously so it appears in the sidebar the moment
+      // the user submits.
       let targetConvoId = activeConvoId;
       let history: ConversationTurn[] = [];
       if (targetConvoId) {
+        // Guard against re-submit while THIS conversation is streaming
+        // (the Send button is also disabled in that state, but this
+        // catches keyboard-Enter races).
+        if (streams.runningIds.has(targetConvoId)) return;
         const c = conversations.find((c) => c.id === targetConvoId);
         history = c
           ? c.exchanges.flatMap((ex) => [
@@ -155,11 +158,6 @@ export function ChatShell() {
             ])
           : [];
       } else {
-        // Slice 5.0c-h: create the conversation slot synchronously so it
-        // appears in the sidebar the moment the user submits — not after
-        // the stream completes. The empty exchanges array means the
-        // sidebar item shows "0 turns · 0 tool calls" until the live
-        // exchange archives in.
         const now = new Date().toISOString();
         const newConvo: Conversation = {
           id: randomId(),
@@ -172,41 +170,29 @@ export function ChatShell() {
         targetConvoId = newConvo.id;
         setActiveConvoId(targetConvoId);
       }
-      setStreamingConvoId(targetConvoId);
-      await stream.submit(question, history);
+      await streams.submit(targetConvoId, question, history);
     },
-    [activeConvoId, conversations, stream],
+    [activeConvoId, conversations, streams],
   );
+
+  // Slice 5.0c-k: Stop button for the currently-active conversation.
+  // No-op if the active conversation isn't streaming.
+  const handleStop = useCallback(() => {
+    if (activeConvoId !== null) streams.stop(activeConvoId);
+  }, [activeConvoId, streams]);
 
   const handleNew = useCallback(() => {
-    // If a stream is in-flight, leave it alone — just take the user to
-    // an empty greeting. The previous conversation keeps streaming in
-    // the background; the user can return to it via the sidebar.
-    if (stream.status.phase !== "running") {
-      stream.reset();
-      archivedRef.current = null;
-    }
+    // No need to abort other conversations' streams — each has its own
+    // state and AbortController. Just navigate to the empty greeting.
     setActiveConvoId(null);
-  }, [stream]);
+  }, []);
 
-  const handleSelect = useCallback(
-    (id: string) => {
-      // Same survival rule: switching conversations while a stream is
-      // running must not kill the stream. Only reset the stream state
-      // when it's already settled.
-      if (stream.status.phase !== "running") {
-        stream.reset();
-        archivedRef.current = null;
-      }
-      setActiveConvoId(id);
-    },
-    [stream],
-  );
+  const handleSelect = useCallback((id: string) => {
+    setActiveConvoId(id);
+  }, []);
 
   // Slice 5.0c-i: conversation rename. Both the top-bar title and the
-  // sidebar's per-item "…" menu route here. Trims whitespace, rejects
-  // an empty rename (the convo keeps its old title), and caps the
-  // length so the sidebar item can still render on one line.
+  // sidebar's per-item "…" menu route here.
   const handleRename = useCallback((id: string, nextTitle: string) => {
     const trimmed = nextTitle.trim();
     if (!trimmed) return;
@@ -217,23 +203,14 @@ export function ChatShell() {
     );
   }, []);
 
-  // Slice 5.0c-i.2: star / unstar. Stars surface the conversation in
-  // its own "Starred" section above "Recents" in the sidebar; toggling
-  // does not change updated_at, so position within the section is
-  // preserved.
+  // Slice 5.0c-i.2: star / unstar.
   const handleToggleStar = useCallback((id: string) => {
     setConversations((prev) =>
       prev.map((c) => (c.id === id ? { ...c, starred: !c.starred } : c)),
     );
   }, []);
 
-  // Slice 5.0c-i.3: pending-delete state for the app-native
-  // confirmation dialog. handleDelete / handleBulkDelete *queue* the
-  // deletion here; the dialog renders, and confirmPendingDelete
-  // executes only when the user accepts. The streaming-protection
-  // path now silently no-ops (the menu items are also disabled for
-  // streaming conversations, so this path shouldn't fire — but the
-  // belt-and-braces stays).
+  // Slice 5.0c-i.3: pending-delete state for the app-native dialog.
   const [pendingDelete, setPendingDelete] = useState<{
     ids: string[];
     titles: string[];
@@ -241,39 +218,45 @@ export function ChatShell() {
 
   const handleDelete = useCallback(
     (id: string) => {
-      if (streamingConvoId === id) return;
+      // Refuse if this conversation is currently streaming — the
+      // archive effect would otherwise write to a removed slot. The
+      // sidebar / overlay menus also disable Delete for streaming
+      // conversations, but belt-and-braces here.
+      if (streams.runningIds.has(id)) return;
       const target = conversations.find((c) => c.id === id);
       if (!target) return;
       setPendingDelete({ ids: [id], titles: [target.title] });
     },
-    [streamingConvoId, conversations],
+    [streams.runningIds, conversations],
   );
 
   const handleBulkDelete = useCallback(
     (ids: string[]) => {
-      const safeIds = ids.filter((id) => id !== streamingConvoId);
+      const safeIds = ids.filter((id) => !streams.runningIds.has(id));
       if (safeIds.length === 0) return;
       const titles = safeIds
         .map((id) => conversations.find((c) => c.id === id)?.title)
         .filter((t): t is string => typeof t === "string");
       setPendingDelete({ ids: safeIds, titles });
     },
-    [streamingConvoId, conversations],
+    [streams.runningIds, conversations],
   );
 
   const confirmPendingDelete = useCallback(() => {
     if (!pendingDelete) return;
     const ids = pendingDelete.ids;
     setConversations((prev) => prev.filter((c) => !ids.includes(c.id)));
+    // Drop the stream state for each deleted conversation so the hook
+    // doesn't keep stale buffers around. `reset` is a no-op for unknown
+    // ids, safe to call on every deletion.
+    for (const id of ids) {
+      streams.reset(id);
+    }
     if (activeConvoId && ids.includes(activeConvoId)) {
       setActiveConvoId(null);
-      if (stream.status.phase !== "running") {
-        stream.reset();
-        archivedRef.current = null;
-      }
     }
     setPendingDelete(null);
-  }, [pendingDelete, activeConvoId, stream]);
+  }, [pendingDelete, activeConvoId, streams]);
 
   const cancelPendingDelete = useCallback(() => {
     setPendingDelete(null);
@@ -293,12 +276,7 @@ export function ChatShell() {
   // Slice 5.0c-j: full-screen chats-history pane open state.
   const [chatsOverlayOpen, setChatsOverlayOpen] = useState(false);
 
-  // Composer draft handoff (Slice 5.0c-f). The hover Edit / Retry actions
-  // and the new-chat greeting screen all want the same thing: prefill the
-  // composer with some text and focus it. We hold the draft here and pass
-  // it down; the nonce bump re-triggers the child effect even for
-  // identical text (a second Retry click on the same question still
-  // refocuses + reselects).
+  // Composer draft handoff (Slice 5.0c-f).
   const [composerDraft, setComposerDraft] = useState<{
     value: string;
     nonce: number;
@@ -310,51 +288,43 @@ export function ChatShell() {
   // Retry-on-Wolf-response (Slice 5.0c-g). Submits the originating
   // question with retry_nudge=true and history that includes the
   // previous Q→A pair, so the model can critique its prior attempt.
-  // Unlike the composer-side Retry chip (which only prefills), this
-  // immediately fires a new request.
   const handleAssistantRetry = useCallback(
     async (originatingQuestion: string) => {
       if (!activeConversation) return;
-      if (stream.status.phase === "running") return;
-      const history: ConversationTurn[] = activeConversation.exchanges.flatMap(
-        (ex) => [
+      // Refuse if this conversation is currently streaming — the user
+      // should stop it first before kicking off a Retry.
+      if (streams.runningIds.has(activeConversation.id)) return;
+      const history: ConversationTurn[] =
+        activeConversation.exchanges.flatMap((ex) => [
           { role: "user" as const, content: ex.question },
           { role: "assistant" as const, content: ex.answer },
-        ],
+        ]);
+      await streams.submit(
+        activeConversation.id,
+        originatingQuestion,
+        history,
+        { retryNudge: true },
       );
-      setStreamingConvoId(activeConversation.id);
-      await stream.submit(originatingQuestion, history, { retryNudge: true });
     },
-    [activeConversation, stream],
+    [activeConversation, streams],
   );
 
-  // What to render in the message thread:
-  //   - the active conversation's exchanges
-  //   - plus the in-flight exchange (or "running" view) if any — but
-  //     ONLY when the active conversation is the one being streamed
-  //     (Slice 5.0c-h). Otherwise the user navigated away; the live view
-  //     belongs to whichever conversation `streamingConvoId` points to.
-  const isRunning = stream.status.phase === "running";
-  const isActiveStreaming =
-    isRunning && activeConvoId !== null && activeConvoId === streamingConvoId;
+  // Evidence panel: prefer in-flight stream citations when the active
+  // conversation is the one streaming. Otherwise fall back to the
+  // latest archived exchange's evidence.
   const visibleExchanges: ChatExchange[] =
     activeConversation?.exchanges ?? [];
-
-  // Evidence: prefer in-flight stream citations only when the user is
-  // looking at the streaming conversation. Otherwise fall back to the
-  // latest archived exchange's evidence (or empty when the active convo
-  // hasn't accumulated turns yet).
   const latestArchived: ChatExchange | null =
     visibleExchanges.length > 0
       ? visibleExchanges[visibleExchanges.length - 1]
       : null;
   const citations: Citation[] =
-    isActiveStreaming && stream.citations.length > 0
-      ? stream.citations
+    isActiveStreaming && activeStream.citations.length > 0
+      ? activeStream.citations
       : (latestArchived?.citations ?? []);
   const toolEvents: ToolEvent[] =
-    isActiveStreaming && stream.toolEvents.length > 0
-      ? stream.toolEvents
+    isActiveStreaming && activeStream.toolEvents.length > 0
+      ? activeStream.toolEvents
       : (latestArchived?.tool_events ?? []);
 
   // Resizable evidence panel: drag-from-left-edge handle. ---------------
@@ -372,7 +342,6 @@ export function ChatShell() {
     (e: React.PointerEvent<HTMLDivElement>) => {
       const state = resizeStateRef.current;
       if (!state) return;
-      // Dragging the handle LEFT widens the panel (handle sits on its left edge).
       const delta = state.startX - e.clientX;
       const next = Math.min(
         EVIDENCE_MAX_WIDTH,
@@ -406,7 +375,7 @@ export function ChatShell() {
         <ChatSidebar
           conversations={sortedConversations}
           activeId={activeConvoId}
-          streamingId={streamingConvoId}
+          streamingIds={streams.runningIds}
           onSelect={handleSelect}
           onNew={handleNew}
           onRename={handleRename}
@@ -419,27 +388,17 @@ export function ChatShell() {
         <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <MessageThread
             exchanges={visibleExchanges}
-            stream={stream}
-            isActiveStreaming={isActiveStreaming}
+            stream={activeStream}
             onEdit={setDraft}
             onRetry={setDraft}
             onQuickAsk={setDraft}
             onAssistantRetry={handleAssistantRetry}
           />
           <div className="shrink-0 border-t border-border bg-card/50 px-4 pt-3 pb-2">
-            {/* Slice 5.0c-h: cross-conversation in-flight notice. When
-                the stream belongs to a different conversation than the
-                one currently displayed, surface that fact so the
-                disabled composer isn't unexplained. */}
-            {isRunning && !isActiveStreaming ? (
-              <p className="mb-2 text-center text-[10px] text-muted-foreground">
-                Another conversation is generating an answer. Wait for it
-                to finish, or open it from the sidebar to follow along.
-              </p>
-            ) : null}
             <ChatComposer
               onSubmit={handleSubmit}
-              disabled={isRunning}
+              streaming={isActiveStreaming}
+              onStop={handleStop}
               draft={composerDraft.nonce > 0 ? composerDraft : undefined}
             />
             <p className="mt-2 text-center text-[10px] text-muted-foreground">
@@ -452,7 +411,6 @@ export function ChatShell() {
           className="hidden border-l border-border bg-card/30 lg:flex"
           style={{ width: `${evidenceWidth}px` }}
         >
-          {/* Drag handle: 6px wide hit area on the panel's left edge */}
           <div
             role="separator"
             aria-orientation="vertical"
@@ -463,7 +421,6 @@ export function ChatShell() {
             onPointerUp={onResizeEnd}
             onPointerCancel={onResizeEnd}
           >
-            {/* Visible thin guide that brightens on hover/drag */}
             <span
               aria-hidden="true"
               className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border transition-colors group-hover:bg-primary/40"
@@ -474,13 +431,10 @@ export function ChatShell() {
           </div>
         </aside>
       </div>
-      {/* Slice 5.0c-j: full-screen chats history pane. Mounted at the
-          shell level so it covers the entire viewport (header included)
-          when open. Closed state renders nothing. */}
       <ChatsHistoryOverlay
         open={chatsOverlayOpen}
         conversations={sortedConversations}
-        streamingId={streamingConvoId}
+        streamingIds={streams.runningIds}
         onClose={() => setChatsOverlayOpen(false)}
         onSelect={handleSelect}
         onNew={handleNew}
@@ -488,10 +442,6 @@ export function ChatShell() {
         onToggleStar={handleToggleStar}
         onBulkDelete={handleBulkDelete}
       />
-      {/* Slice 5.0c-i.3: app-native confirmation dialog. Mounted at the
-          shell level so it sits above both the chat UI and the chats-
-          history overlay; the dialog's own z-index (60) puts it above
-          the overlay's z-50. */}
       <ConfirmDialog
         open={pendingDelete !== null}
         variant="destructive"
