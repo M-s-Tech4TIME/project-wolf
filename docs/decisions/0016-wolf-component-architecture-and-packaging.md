@@ -1,6 +1,6 @@
 # 0016 — Wolf component architecture & packaging
 
-**Date:** 2026-06-03
+**Date:** 2026-06-03 (v1) · revised same day (v2)
 **Status:** accepted
 **Decider:** human (project owner) with claude-code drafting
 **Related:** [`native-https-and-wolf-cert.md`](../../README.md) (cross-session memory),
@@ -152,7 +152,53 @@ private key + the CA's *public* cert (for chain verification).
 `wolf-cert` already enforces 0600 on key files; the distribution
 mechanism in Phase 5.8 will preserve this.
 
-### 4. systemd lifecycle
+### 4. Users and groups
+
+Wolf adopts **Wazuh's per-component user pattern**, not a single
+shared user. Each deployable component runs as its own dedicated
+system user with `/usr/sbin/nologin` as shell; all per-component
+users are members of a shared `wolf` group so a small number of
+genuinely cross-component files (the CA public cert, optional
+shared cache directories) can be granted via group permissions
+without giving any one component access to another's private
+state.
+
+Created by the install-package postinst hooks (Phase 5.8), present
+in the dev environment via `make setup-users` (Phase 5.5+):
+
+| User | Primary group | Owns | Why isolated |
+|---|---|---|---|
+| `wolf-database` | `wolf-database` | `/etc/wolf-database/` + `/var/lib/wolf-database/` (Postgres data dir) | A compromise of `wolf-server`'s process must not be able to read the raw database files. Same defence Wazuh applies between `wazuh-indexer` and `wazuh-manager`. |
+| `wolf-server` | `wolf-server` | `/etc/wolf-server/` + `/var/lib/wolf-server/` | Holds the SECRET_KEY for JWT signing; holds the wolf-server leaf key. Compromise of `wolf-dashboard` (the more exposed component) must not yield these. |
+| `wolf-dashboard` | `wolf-dashboard` | `/etc/wolf-dashboard/` + `/var/lib/wolf-dashboard/` | The edge component — most exposed to the browser. Owning only its own state limits the blast radius. |
+| `wolf-gateway` | `wolf-gateway` | `/etc/wolf-gateway/` + `/var/lib/wolf-gateway/` | Phase 6+. Same isolation argument; will hold the action-execution credentials. |
+
+The shared **`wolf` group** is the supplementary group on every
+per-component user. Use cases:
+
+* The CA *public* cert (`/etc/wolf-shared/ca-cert.pem`) is
+  `0640 root:wolf` — every component can read it for chain
+  verification, no component can rewrite it (only the operator
+  via `wolf-cert` running as root can).
+* (Future) a shared metrics socket if we add a Prometheus
+  exporter spanning components.
+
+What the per-component users **do NOT** have:
+
+* No login shell — `/usr/sbin/nologin` (matches Wazuh's pattern).
+* No home directory in `/home/`. Each user's `HOME` is its
+  `/var/lib/wolf-<component>/` state dir.
+* No sudo entry. Operators interact via `systemctl` (which
+  doesn't require sudo for status / journal reads when the
+  user is in the `systemd-journal` group) and via the
+  `wolf-cert` etc. CLIs which the operator runs as their
+  own login user.
+
+The CA private key NEVER has any of these users as owner — it
+lives only on the operator's admin workstation, owned by the
+operator's login user, never deployed to any component host.
+
+### 5. systemd lifecycle
 
 Per-component systemd units shipping in Phase 5.8:
 
@@ -166,76 +212,154 @@ Per-component systemd units shipping in Phase 5.8:
 
 Each unit:
 
-* Runs as the dedicated `wolf` system user (created by postinst).
+* `User=wolf-<component>` + `Group=wolf-<component>` (per §4).
+* `SupplementaryGroups=wolf` so the shared CA cert is readable.
 * `EnvironmentFile=` points at `/etc/wolf-<component>/wolf-<component>.conf`.
+* `ProtectSystem=strict`, `ProtectHome=true`, `PrivateTmp=true`,
+  `NoNewPrivileges=true` — standard systemd sandboxing applied
+  uniformly across components.
 * Logs to journald (no `/var/log/wolf-*/` files — `journalctl -u wolf-<component>` is the supported tail).
-* Restart policy: `on-failure` with a 5s back-off.
+* Restart policy: `on-failure` with a 5 s back-off.
 
-Dependency chain (all-in-one):
+**Same-host dependency chain (all-in-one):**
+
+systemd's `Requires=` is the right primitive here — it works
+within a single host. Boot-order constraints:
+
 ```
-wolf-database.service          (no Requires)
-wolf-server.service            Requires=wolf-database.service
-wolf-dashboard.service         Requires=wolf-server.service
-wolf-gateway.service           Requires=wolf-server.service (when enabled)
+wolf-database.service       (no Requires)
+wolf-server.service         Requires=wolf-database.service
+                            After=wolf-database.service
+wolf-dashboard.service      Requires=wolf-server.service
+                            After=wolf-server.service
+wolf-gateway.service        Requires=wolf-server.service
+                            After=wolf-server.service
+                            (and: disabled by default;
+                             only enabled when Phase 6 is in use)
 ```
 
-In distributed mode the operator simply disables / masks the
-units they're not running on each host. The dependency chain
-across hosts is enforced by health-check polling on the depending
-component's startup (e.g., `wolf-server` waits for
-`wolf-database` to accept TLS connections before announcing
-ready).
+`Requires=` ensures the upstream unit is started; it does NOT
+wait for it to be *ready* (accepting connections). Each
+downstream unit therefore polls its upstream at startup before
+announcing systemd ready via `sd_notify(READY=1)`:
 
-### 5. FHS install layout
+* `wolf-server` opens a TLS socket to `wolf-database` on the
+  configured `DATABASE_URL`; if it can complete a handshake +
+  `SELECT 1` within 30 s it signals ready.
+* `wolf-dashboard` does an HTTPS GET against `wolf-server`'s
+  `/healthz` over mTLS until it returns 200; same 30 s
+  budget.
+
+This same readiness check is what makes **distributed** mode
+work. In distributed mode `Requires=` cannot reach across
+hosts — there's no equivalent of "systemd on host A waits for a
+service on host B." The boot order is enforced entirely by the
+client's own startup polling. On each host:
+
+* `wolf-server.service` on its own host starts; the same
+  startup polling reaches across the network to whichever host
+  is running `wolf-database`. If that host is down, `wolf-server`
+  exits non-zero after 30 s and systemd restarts it (subject to
+  `on-failure` back-off). When `wolf-database` comes back, the
+  next restart succeeds.
+
+This makes the all-in-one and distributed startup semantics
+identical from the application's POV: every component is
+responsible for confirming its upstream is reachable, regardless
+of whether that upstream is on the loopback or across the LAN.
+**Operators should follow the same install order in both
+topologies — database first, then server, then dashboard** (see
+§7 for the operator command flow).
+
+### 6. FHS install layout
 
 Full FHS — no `/opt/wolf/`. Each component has its own slice of
-the filesystem hierarchy:
+the filesystem hierarchy, with ownership keyed to the
+per-component users from §4:
 
 ```
-/usr/bin/                                  Operator CLIs (shipped from repo `bin/`)
-  wolf-cert                                  cert lifecycle
-  wolf-status         (future)               component health rundown
-  wolf-backup         (future)               db + config backup
-  wolf-trust          (future)               trust-store helper
+/usr/bin/                                            Operator CLIs (shipped from repo `bin/`)
+  wolf-cert                                            cert lifecycle
+  wolf-status         (future)                         component health rundown
+  wolf-backup         (future)                         db + config backup
+  wolf-trust          (future)                         trust-store helper
 
-/usr/lib/wolf-dashboard/                   Component code + dependencies
-/usr/lib/wolf-server/                        installed read-only from
-/usr/lib/wolf-database/                      package extraction
-/usr/lib/wolf-gateway/
+/usr/lib/wolf-dashboard/    (0755 root:root)         Component code + dependencies
+/usr/lib/wolf-server/                                  installed read-only from
+/usr/lib/wolf-database/                                package extraction (no
+/usr/lib/wolf-gateway/                                 per-component user owns
+                                                       code — only data + config)
 
-/etc/wolf-dashboard/
-  wolf-dashboard.conf                      EnvironmentFile (systemd reads this)
-  certs/                                   leaf cert + key + ca-cert.pem
-    cert.pem    (0644 wolf:wolf)
-    key.pem     (0600 wolf:wolf)
-    ca-cert.pem (0644 wolf:wolf)
-  conf.d/                                  drop-in dir for overrides
-/etc/wolf-server/                          same shape
-/etc/wolf-database/                        same shape + postgresql.conf
-/etc/wolf-gateway/                         same shape
+/etc/wolf-shared/                                    Cross-component shared state
+  ca-cert.pem        (0640 root:wolf)                  CA public cert — readable by
+                                                       all wolf-* users via the
+                                                       `wolf` supplementary group
 
-/var/lib/wolf-dashboard/                   (mostly empty — Next.js needs no state)
-/var/lib/wolf-server/                      session keys, cache state if any
-/var/lib/wolf-database/                    Postgres data dir (the big one)
-/var/lib/wolf-gateway/                     state (Phase 6)
+/etc/wolf-dashboard/        (0750 wolf-dashboard:wolf-dashboard)
+  wolf-dashboard.conf       (0640 root:wolf-dashboard) EnvironmentFile (systemd reads)
+  certs/
+    cert.pem                (0644 wolf-dashboard:wolf-dashboard)  leaf cert (public)
+    key.pem                 (0600 wolf-dashboard:wolf-dashboard)  leaf key  (private)
+  conf.d/                   (0750 wolf-dashboard:wolf-dashboard)  drop-in overrides
 
-/var/log/                                  (nothing — journald is the log target)
+/etc/wolf-server/           (0750 wolf-server:wolf-server)          same shape
+/etc/wolf-database/         (0750 wolf-database:wolf-database)      same shape + postgresql.conf
+/etc/wolf-gateway/          (0750 wolf-gateway:wolf-gateway)        same shape
+
+/var/lib/wolf-dashboard/    (0750 wolf-dashboard:wolf-dashboard)  (mostly empty — Next.js needs no state)
+/var/lib/wolf-server/       (0750 wolf-server:wolf-server)        session keys, cache state if any
+/var/lib/wolf-database/     (0750 wolf-database:wolf-database)    Postgres data dir (the big one)
+/var/lib/wolf-gateway/      (0750 wolf-gateway:wolf-gateway)      state (Phase 6)
+
+/var/log/                                            (nothing — journald is the log target)
 ```
 
 The certs sit alongside their owning component's config — each
 host only carries the certs it actually needs (Wazuh's pattern).
+The CA *public* cert (`/etc/wolf-shared/ca-cert.pem`) is the
+single file that crosses component boundaries; everything else
+is component-private.
 
-### 6. Operator-facing commands
+### 7. Operator-facing commands
 
 After Phase 5.8 lands, the operator interacts with Wolf entirely
-through `systemctl` + `/usr/bin/wolf-*` CLIs:
+through `systemctl` + `/usr/bin/wolf-*` CLIs.
+
+**Recommended deploy order — database → server → dashboard.**
+This mirrors Wazuh's documented install order (indexer →
+manager → dashboard) and matches the dependency chain in §5.
+Wolf's docs (forthcoming installation-guide module) will frame
+this as the supported path:
 
 ```bash
-# Component lifecycle
-systemctl start  wolf-database wolf-server wolf-dashboard
-systemctl status wolf-server
+# Step 1. Bring up the database first. It has no upstream
+# dependencies; everything else depends on it.
+systemctl enable --now wolf-database
+systemctl status wolf-database
+# Wait for journald to log "wolf-database: ready to accept connections"
+
+# Step 2. Then the server. Its startup polls the database
+# until ready (see §5). If the database is down the server
+# unit will keep failing — that's the design.
+systemctl enable --now wolf-server
+journalctl -u wolf-server -f
+# Wait for "wolf-server: ready (database reachable)"
+
+# Step 3. Then the dashboard. Its startup polls the server.
+systemctl enable --now wolf-dashboard
+
+# Step 4 (optional / Phase 6+). The gateway, only if you
+# need the propose/execute action path.
+systemctl enable --now wolf-gateway
+```
+
+Day-2 operations — same pattern in any order, just verbs:
+
+```bash
+# Lifecycle
 systemctl restart wolf-dashboard
-systemctl stop   wolf-gateway      # (Phase 6+)
+systemctl stop    wolf-gateway
+systemctl status  wolf-server
 
 # Cert lifecycle
 wolf-cert init                     # mints CA + leaves for every local component
@@ -250,7 +374,7 @@ journalctl -u wolf-server -f       # tail server logs in real time
 journalctl -u wolf-database --since "1 hour ago" --grep error
 ```
 
-### 7. Repo-level layout
+### 8. Repo-level layout
 
 Source-tree structure after Phase 5.5 (the renaming refactor):
 
@@ -280,7 +404,7 @@ project-wolf/
 └── ...
 ```
 
-### 8. The `NetworkError` resolution path
+### 9. The `NetworkError` resolution path
 
 Concrete trace of how the user's reported `Runtime TypeError —
 NetworkError when attempting to fetch resource` disappears under
@@ -314,7 +438,7 @@ The user clicks through the warning ONCE for `wolf-dashboard` (or
 imports the CA once for a permanent fix); everything else just
 works.
 
-### 9. Phase ordering (active program of work)
+### 10. Phase ordering (active program of work)
 
 | Phase | Scope | Status |
 |---|---|---|
@@ -331,7 +455,7 @@ operators install via the dev path (`git clone` + `uv sync`).
 This lets us iterate on systemd / FHS / configs without the
 overhead of rebuilding packages on every change.
 
-### 10. The Wazuh parallel
+### 11. The Wazuh parallel
 
 Pointing at this for the avoidance of doubt — Wolf is
 **deliberately** mirroring Wazuh's component model because the
@@ -345,6 +469,8 @@ MSSPs) already runs Wazuh and understands this shape:
 | `wazuh-dashboard` | `wolf-dashboard` |
 | `wazuh-agent` | (no parallel — Wolf reads Wazuh, doesn't enroll endpoints) |
 | `wazuh-certs-tool.sh` | `wolf-cert` |
+| Per-component users (`wazuh-indexer`, `wazuh`, `wazuh-dashboard`) | Per-component users (`wolf-database`, `wolf-server`, `wolf-dashboard`, `wolf-gateway`) plus a shared `wolf` group |
+| Recommended install order: indexer → manager → dashboard | Recommended install order: database → server → dashboard |
 | `/var/ossec/` | FHS-distributed across `/usr/lib/wolf-*`, `/etc/wolf-*`, `/var/lib/wolf-*` |
 | `systemctl <verb> wazuh-<component>` | `systemctl <verb> wolf-<component>` |
 | `.deb` / `.rpm` packages | `.deb` (5.9) / `.rpm` (5.10) — deferred to release phase |
