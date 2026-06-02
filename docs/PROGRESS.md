@@ -6,13 +6,44 @@
 >
 > For history of what changed when, see `CHANGELOG.md` (append-only).
 
-**Last updated:** 2026-06-02 by claude-code (Phase 5 prep CLOSED)
+**Last updated:** 2026-06-03 by claude-code (Phase 5.4 CLOSED; ADR 0016 next)
 
 ---
 
 ## 1. Where we are right now
 
-**Current phase:** Phase 5.4 — Native HTTPS + `wolf-cert` CLI (next per cross-session memory).
+**Current phase:** Phase 5.5 — Wolf component architecture &
+packaging (per ADR 0016 — pending draft). The next code slice is
+the component-renaming refactor (`frontend → wolf-dashboard`,
+`orchestrator → wolf-server`, plus the new `wolf-database`
+component); the architectural fix (dashboard-as-edge-proxy + mTLS
+between dashboard ↔ server) lands as Phase 5.6 on top of the new
+naming. APT and DNF packaging are deferred to the final-release
+phase per the 2026-06-03 user direction.
+
+**Phase 5.4 — Native HTTPS + `wolf-cert` CLI — CLOSED 2026-06-03.**
+Five sub-slices shipped between 2026-06-02 and 2026-06-03:
+* 5.4-a (`9a44b65`) — `wolf_cert` library (CA generation, leaf
+  signing, PEM I/O with strict permissions, status parsing) + 24
+  tests. Workspace package shipped with `py.typed` for downstream
+  mypy. `LeafKind.CLIENT` hook in place for the future relay
+  phase.
+* 5.4-b (`80e0f10`) — `wolf-cert` CLI dispatcher (`init` / `status`
+  / `export-ca` / `add-host` / `renew` / `revoke`) + 21 tests.
+  Console-script entry point + `python -m wolf_cert` module form.
+* 5.4-c (`5afd4e9`) — Orchestrator HTTPS auto-detect launcher
+  (`python -m app`) with pure-function `resolve_tls()` + 6 tests.
+  Cert files themselves are the signal — no env flag.
+* 5.4-d (`c7fed44`) — Frontend HTTPS auto-detect via
+  `scripts/dev.mjs`. Same posture as orchestrator; mirrors the
+  cert-files-are-the-signal contract.
+* 5.4-e (`b064b82`) — `ONBOARDING.md` per-OS trust-install
+  walkthrough; chain verified via `openssl verify`.
+
+End-to-end verified: `wolf-cert init` flips both servers to HTTPS
+(login HTTP 200 with TLS verify_result = 0 against the freshly-
+minted Wolf CA); `wolf-cert revoke --yes` drops back to HTTP
+automatically.
 
 **Phase 5 prep (the 5.0a → 5.0c series) — CLOSED 2026-06-02.** The
 chat UI now matches the Claude/ChatGPT class of interactions:
@@ -353,6 +384,19 @@ to `CHANGELOG.md` as ADRs.
 
 ## 6. Known issues and tech debt
 
+- **Cross-origin `NetworkError` after `wolf-cert init`** (2026-06-03).
+  When TLS is enabled (`wolf-cert init` run), the browser sees
+  two Wolf origins: `https://<host>:3000` (dashboard) and
+  `https://<host>:8000` (server). Clicking through the warning on
+  the dashboard origin doesn't authorise cross-origin fetches to
+  the server origin, so the dashboard's JS sees
+  `NetworkError when attempting to fetch resource`. **Resolution
+  scheduled in Phase 5.6** (edge-component architecture per the
+  pending ADR 0016): the dashboard's Next.js `/api/*` routes
+  reverse-proxy to the server over mTLS, so the browser only
+  ever talks to one Wolf origin. This is the Wazuh-style pattern
+  the user wants — see the design conversation in CHANGELOG
+  2026-06-03 for context.
 - **Conversations are in-memory only** (frontend `useState`).
   A page refresh wipes them. Full persistence plan captured in
   cross-session memory `conversation-tree-persistence-plan.md`

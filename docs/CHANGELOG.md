@@ -49,6 +49,278 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-03 — Phase 5.4 close-out + Phase 5.5+ direction locked
+
+**Session type:** mixed (claude-code + human design conversation)
+**Phase:** Phase 5.4 closed → Phase 5.5+ planning
+**Duration:** half-session for the close-out + design discussion
+**Branch / commit:** `main` — close-out commit pending.
+
+### What we did
+- Phase 5.4 — Native HTTPS + `wolf-cert` CLI — formally CLOSED.
+  Five sub-slices shipped (see the individual entries below):
+  5.4-a (`9a44b65`), 5.4-b (`80e0f10`), 5.4-c (`5afd4e9`),
+  5.4-d (`c7fed44`), 5.4-e (`b064b82`).
+- Hit and diagnosed the `NetworkError when attempting to fetch
+  resource` cross-origin issue with the just-shipped HTTPS stack.
+  Browser opens `https://<host>:3000/` (dashboard), JS does cross-
+  origin `fetch()` to `https://<host>:8000/` (server) — that
+  second origin's cert isn't trust-established, browser blocks
+  the fetch silently in JS.
+- Walked through whether to fix this via a trust-portal UX
+  (originally floated as 5.4-f) or via an architectural change.
+  Operator rejected the trust-portal UX as bad UX ("forcing CA
+  installation"); rejected forcing the CA install step entirely.
+- Reframed: the right architectural fix is the **edge-component
+  pattern** — same as Wazuh's `wazuh-dashboard ↔ wazuh-indexer
+  ↔ wazuh-manager` model. Single edge origin visible to the
+  browser; everything else is component-to-component mTLS using
+  a shared internal CA. Cleanly maps to Wolf's existing wolf-cert
+  infrastructure (`LeafKind.CLIENT` is already in 5.4-a's
+  library, ready to mint dashboard / server / future-relay
+  client certs).
+
+### What we decided
+- **Drop the trust-portal slice** (the originally-floated 5.4-f).
+  No wizard-driven CA install; we solve the NetworkError by
+  removing the second browser-visible origin, not by guiding the
+  user to install certs.
+- **Reorganise the project around Wazuh-style components.**
+  Three deployable services + dev/operator tooling, mapped to
+  Wazuh's component model:
+    * `wolf-dashboard` (rename of `frontend/`) — Next.js edge
+      component, the only thing browsers talk to. Reverse-proxies
+      to `wolf-server` internally.
+    * `wolf-server` (rename of `services/orchestrator/`) — FastAPI
+      brain; binds `127.0.0.1` in all-in-one, exposed with mTLS
+      required in distributed.
+    * `wolf-database` (new, bundled) — wraps Postgres 17 +
+      pgvector via a Wolf-managed systemd unit, akin to
+      `wazuh-indexer`. Data dir under FHS `/var/lib/wolf-database/`.
+    * `wolf-gateway` (rename of `services/gateway/`, currently
+      stubbed) — Phase 6's propose/execute path. Lives in its
+      own systemd unit, disabled by default until Phase 6 turns
+      it on.
+- **Phase ordering** (5.9 + 5.10 deferred to final-release phase
+  per operator direction):
+    * Phase 5.5 — Component renaming + directory restructure
+      (pure refactor; no functional change). The wolf-cert
+      leaves get renamed from `orchestrator` / `frontend` to
+      `server` / `dashboard` as part of this.
+    * Phase 5.6 — Edge-component + mTLS architecture (the
+      B-slice in the new naming). **Kills the NetworkError.**
+    * Phase 5.7 — `wolf-database` extraction as a bundled
+      component.
+    * Phase 5.8 — systemd units + `/bin` layout + FHS install
+      paths.
+    * Phase 5.9 (APT) + Phase 5.10 (DNF) — deferred to the
+      official-release phase.
+- **`bin/` is for shipped CLIs** (`wolf-cert`, future
+  `wolf-status` / `wolf-backup`). `tools/` keeps dev-internal
+  probes and smoke tests.
+- **Full FHS layout** at install time: `/usr/bin/wolf-*`,
+  `/usr/lib/wolf-<component>/`, `/etc/wolf-<component>/`,
+  `/var/lib/wolf-<component>/`, journald for logs.
+- **`wolf-database` is BUNDLED** (Wazuh-indexer style) rather
+  than tooling-only. Depends on system Postgres 17 + pgvector
+  packages but managed via a Wolf-owned systemd unit with
+  Wolf-controlled data dir + configs.
+
+### What's next
+- **ADR 0016** — "Wolf component architecture & packaging" —
+  drafted before any Phase 5.5 code lands. Captures the
+  three-component model, two deployment topologies (all-in-one
+  + distributed), trust model (shared Wolf CA + mTLS between
+  machine components), systemd lifecycle, FHS install paths,
+  and the deferred-packaging note.
+- After ADR sign-off: open Phase 5.5 (renaming refactor).
+
+### Why this matters
+The Wazuh parallel: Wazuh's components share one CA, each has
+its own leaf cert, and inter-component traffic is mTLS. Browsers
+only talk to `wazuh-dashboard`. Wolf has been heading toward this
+model since Phase 5.4 minted the shared CA; the 2026-06-03
+direction nails the operational shape (systemd units, FHS paths,
+bundled Postgres) so the platform is reproducible at install time.
+This is the architectural step that takes Wolf from "dev box that
+runs locally" to "deployable security tool."
+
+## 2026-06-03 — Slice 5.4-e: ONBOARDING.md trust-install per OS
+
+**Session type:** claude-code
+**Phase:** Phase 5.4 — final sub-slice
+**Duration:** ~1 h
+**Branch / commit:** `main` — `b064b82`.
+
+### What we did
+- Added a new §3.12 "Enable HTTPS via `wolf-cert`" to
+  `ONBOARDING.md` documenting the full lifecycle (`init` →
+  `status` → `export-ca` → `add-host` / `renew` / `revoke`) plus
+  per-OS trust-install commands: Ubuntu/Debian
+  (`update-ca-certificates`), Fedora/RHEL (`update-ca-trust`),
+  macOS (`security add-trusted-cert`), Windows PowerShell
+  (`Import-Certificate`), Chrome / Edge NSS DB on Linux
+  (`certutil`), Firefox on every OS (`about:preferences#privacy`).
+- Updated §3.10 to use the Phase 5.4-c / 5.4-d launchers
+  (`uv run python -m app`, `npm run dev`) instead of the legacy
+  `uvicorn app.main:app` / direct `next dev` invocations.
+- Updated Gotcha #1 (two `app/` packages) and rewrote Gotcha #4
+  (LAN access — the IP-agnostic dev change made the original
+  three-file-edit checklist mostly obsolete).
+- Verified the cert chain end-to-end via `openssl verify` (both
+  orchestrator and frontend leaves chain to the CA) and
+  `openssl x509` parse of the exported CA cert (PEM format
+  consumed correctly by every documented per-OS install step).
+
+### What we discovered
+- The trust-install requires sudo and persistent system state,
+  so we documented it rather than running it in-session; the
+  cryptographic verification (openssl chain check) is enough to
+  confirm the documented steps will work.
+
+### What's next
+- Phase 5.4 close-out commit (this commit's parent).
+
+## 2026-06-02 — Slice 5.4-d: frontend HTTPS auto-detect launcher
+
+**Session type:** claude-code
+**Phase:** Phase 5.4 — fourth sub-slice
+**Duration:** ~1.5 h
+**Branch / commit:** `main` — `c7fed44`.
+
+### What we did
+- Wrote `frontend/scripts/dev.mjs` — a tiny Node launcher that
+  detects `<repo>/.local/certs/frontend/{cert,key}.pem` and
+  invokes `next dev` with `--experimental-https
+  --experimental-https-cert <…> --experimental-https-key <…>`
+  when both files exist. Falls back to plain `next dev` otherwise.
+  Forwards extra args and propagates SIGINT/SIGTERM to the child.
+- Updated `package.json` so `npm run dev` invokes the wrapper;
+  `npm run dev:plain` preserves a direct `next dev` escape
+  hatch for the rare case the auto-detect needs to be bypassed.
+- Refreshed the `clipboard.ts` comment to reflect the new
+  posture — execCommand fallback is now the HTTP-fallback
+  path, not the default; secure-context API is the default
+  whenever `wolf-cert init` has been run.
+- Verified end-to-end with curl + the freshly-minted Wolf CA
+  on three states (no certs / init / revoke).
+
+### What's next
+- Slice 5.4-e: ONBOARDING.md trust-install per OS.
+
+## 2026-06-02 — Slice 5.4-c: orchestrator HTTPS auto-detect launcher
+
+**Session type:** claude-code
+**Phase:** Phase 5.4 — third sub-slice
+**Duration:** ~2 h
+**Branch / commit:** `main` — `5afd4e9`.
+
+### What we did
+- Added a `python -m app` launcher
+  (`services/orchestrator/app/__main__.py`) that flips between
+  HTTPS and HTTP based purely on the existence of the TLS cert
+  + key files. Pure-function `resolve_tls()` decides; truth
+  table covers cert-only / key-only / neither / both, with the
+  broken-pair cases surfaced in a `reason` string so the
+  operator sees why the launcher picked the scheme it did.
+- Added `bind_host` / `bind_port` / `tls_cert_path` /
+  `tls_key_path` to `app.config.Settings`. Defaults anchored at
+  `Path(__file__).resolve().parents[3]` so the launcher finds
+  certs from the repo regardless of which directory it was
+  invoked from.
+- Updated `docs/restart.md` for the new invocation form
+  (`uv run python -m app`).
+- 6 tests covering the resolution truth table.
+- End-to-end verified on the dev box: real `/api/v1/auth/login`
+  POST returned HTTP 200 over HTTPS with TLS verify_result = 0
+  against the freshly-minted Wolf CA; `wolf-cert revoke`
+  flipped the launcher back to HTTP on the next start.
+
+### What's next
+- Slice 5.4-d: frontend `next dev --experimental-https` wiring.
+
+## 2026-06-01 — Slice 5.4-b: `wolf-cert` CLI dispatcher
+
+**Session type:** claude-code
+**Phase:** Phase 5.4 — second sub-slice
+**Duration:** ~2 h
+**Branch / commit:** `main` — `80e0f10`.
+
+### What we did
+- Wrote `packages/cert/wolf_cert/cli.py` — argparse-stdlib
+  dispatcher over the 5.4-a library. Six subcommands:
+  `init` / `status` / `export-ca` / `add-host` / `renew` /
+  `revoke`. Owns the on-disk cert layout (default
+  `.local/certs/<role>/{cert,key}.pem`).
+- Added a console-script entry point
+  (`wolf-cert = "wolf_cert.cli:main"` in
+  `packages/cert/pyproject.toml`) plus a `__main__.py` so
+  `python -m wolf_cert <subcommand>` works identically.
+- 21 tests covering store layout, refusal paths, flag plumbing,
+  SAN merging, leaf-kind preservation across `renew` and
+  `add-host`, and one subprocess round-trip for the console-
+  script wiring.
+
+### Drive-by
+- Fixed the ruff `per-file-ignores` glob: was `tests/**`
+  (only matched top-level), now `**/tests/**` (nested test
+  suites in `services/orchestrator/tests/` and
+  `packages/*/tests/` weren't picking up the test-specific
+  rule relaxations).
+
+### What's next
+- Slice 5.4-c: orchestrator HTTPS auto-detect launcher.
+
+## 2026-06-01 — Slice 5.4-a: `wolf_cert` library — self-signed CA + leaf primitives
+
+**Session type:** claude-code
+**Phase:** Phase 5.4 — first sub-slice
+**Duration:** ~3 h
+**Branch / commit:** `main` — `9a44b65`.
+
+### What we did
+- New workspace package `packages/cert/` (`wolf-cert`) — the
+  pure-library layer of Wolf's HTTPS story. Pure dependency
+  on `cryptography>=42`. PEP-561 `py.typed` marker shipped.
+- `generate_ca(...)` — RSA-4096 self-signed root CA with
+  `basicConstraints CA:TRUE`, `keyUsage keyCertSign,cRLSign`,
+  `SubjectKeyIdentifier`. Default validity 100 years (the
+  "practical infinity" pattern — RFC 5280 forbids truly
+  unlimited). Clamps at year 9999 to dodge TLS-stack edge cases.
+- `sign_leaf(...)` — RSA-4096 leaf signed by a given CA.
+  `basicConstraints CA:FALSE`, leaf `keyUsage`, configurable
+  `ExtendedKeyUsage` via `LeafKind` (SERVER / CLIENT / DUAL),
+  `SubjectAlternativeName` (DNS + IP), Subject + Authority
+  Key Identifiers. **`LeafKind.CLIENT` is the hook for the
+  future `wolf-cert issue-relay <tenant>` subcommand** —
+  Wolf Knowledge Relay phase will mint relay client certs
+  via this exact code path with no library change.
+- `write_cert_pem` / `write_key_pem` — strict permissions
+  enforced post-write (0644 for certs, 0600 for keys) via
+  explicit `chmod`. Caller's umask is irrelevant.
+- `cert_status` — extracts subject CN, SANs (DNS + IP),
+  issuer CN, UTC-aware validity (uses cryptography 42+'s
+  `not_valid_*_utc` properties), is_ca, sha256 fingerprint,
+  serial. Drives the CLI's `status` subcommand.
+- `discover_local_sans` — best-effort hostname + loopback
+  enumeration for sensible defaults during `wolf-cert init`.
+- 24 tests covering CA shape, leaf shape (chains to CA via
+  actual signature verification), SAN propagation, EKU per
+  LeafKind, year-9999 clamp, empty-SAN refusal, PEM round-trip,
+  permission bits under hostile umask, non-RSA key rejection,
+  `cert_status` parsing, and local SAN discovery.
+
+### Drive-by
+- Fixed a pre-existing environment-fragile test
+  (`test_factory_accepts_sentence_transformers_aliases`) that
+  was OOMing on the dev GPU when Ollama was hot. Pinned to CPU
+  via `monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "")` so the
+  suite passes regardless of GPU memory state — per the
+  *no-unaddressed-errors* standing rule.
+
+### What's next
+- Slice 5.4-b: `wolf-cert` CLI dispatcher.
+
 ## 2026-06-02 — Slice 5.0c-l: conversation tree branching
 
 **Session type:** claude-code
