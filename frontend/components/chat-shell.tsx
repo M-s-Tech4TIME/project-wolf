@@ -13,11 +13,23 @@ import {
   NEUTRAL_STREAM,
   useConversationStreams,
 } from "@/hooks/use-conversation-streams";
+import {
+  activeLeaf,
+  activePathNodes,
+  appendChildOf,
+  fork,
+  historyUpTo,
+  makeAssistantNode,
+  makeUserNode,
+  selectPathTo,
+  switchToSibling,
+} from "@/lib/branches";
 import type {
-  ChatExchange,
+  AssistantMessageNode,
   Citation,
   Conversation,
   ConversationTurn,
+  MessageNode,
   ToolEvent,
 } from "@/lib/types";
 import { randomId } from "@/lib/uuid";
@@ -105,29 +117,82 @@ export function ChatShell() {
     EVIDENCE_DEFAULT_WIDTH,
   );
 
-  // Archive freshly-completed (or interrupted) exchanges into their
-  // respective conversations. Iterates over every stream so we catch
-  // completions even for conversations the user isn't currently
-  // viewing. Slice 5.0c-k.
+  // Archive freshly-completed (or interrupted) stream completions
+  // into their respective conversations. Iterates over every stream
+  // so we catch completions even for conversations the user isn't
+  // currently viewing.
+  //
+  // Slice 5.0c-l (node-tree refactor): each completion produces a
+  // single AssistantMessageNode appended to the user-message node
+  // identified by `completion.parent_user_node_id`. The user node
+  // itself was already added to the tree synchronously at submit /
+  // save / retry time, so this archive layer never creates user
+  // nodes — only assistant ones. The bug we're fixing (cross-fork
+  // merge into a "3/3" sibling set) is impossible here because the
+  // append goes to `nodes[parent_user_node_id].children` and nothing
+  // else.
   useEffect(() => {
     for (const [convoId, state] of Object.entries(streams.streams)) {
-      if (!state.exchange) continue;
-      const key = `${convoId}:${state.exchange.id}`;
+      const completion = state.completion;
+      if (!completion) continue;
+      const key = `${convoId}:${completion.id}`;
       if (archivedKeysRef.current.has(key)) continue;
       archivedKeysRef.current.add(key);
-      const ex = state.exchange;
       setConversations((prev) =>
-        prev.map((c) =>
-          c.id === convoId
-            ? {
-                ...c,
-                exchanges: [...c.exchanges, ex],
-                updated_at: ex.completed_at,
-              }
-            : c,
-        ),
+        prev.map((c) => {
+          if (c.id !== convoId) return c;
+          const parent_user_node = c.nodes[completion.parent_user_node_id];
+          // Defensive guard: if the user node disappeared (e.g. the
+          // conversation was reset mid-stream), drop the completion
+          // silently rather than crashing.
+          if (!parent_user_node || parent_user_node.role !== "user") {
+            return c;
+          }
+          const assistant_node: AssistantMessageNode = makeAssistantNode({
+            id: completion.id,
+            parent_user_node_id: completion.parent_user_node_id,
+            content: completion.content,
+            citations: completion.citations,
+            tool_events: completion.tool_events,
+            stop_reason: completion.stop_reason,
+            loop_id: completion.loop_id,
+            strategy: completion.strategy,
+            model_id: completion.model_id,
+            step_count: completion.step_count,
+            tool_call_count: completion.tool_call_count,
+            input_tokens: completion.input_tokens,
+            output_tokens: completion.output_tokens,
+            started_at: completion.started_at,
+            completed_at: completion.completed_at,
+            grounding_supported: completion.grounding_supported,
+            grounding_unsupported: completion.grounding_unsupported,
+            grounding_uncertain: completion.grounding_uncertain,
+            grounding_unverifiable: completion.grounding_unverifiable,
+          });
+          const next = appendChildOf(
+            c,
+            completion.parent_user_node_id,
+            assistant_node,
+          );
+          return { ...next, updated_at: completion.completed_at };
+        }),
       );
+      // Slice 5.0c-l v4.1: the completion has been consumed. Clear
+      // the stream's `completion` field so the render-time filter
+      // in MessageThread (which uses `completion !== null` as part
+      // of its "should I hide the prior sibling?" predicate)
+      // doesn't re-fire on later navigate-back clicks. Without this
+      // step the prior assistant sibling would still render empty
+      // after the user uses the `<` navigator to return to it —
+      // even though its data is intact in `conversation.nodes`.
+      streams.clearCompletion(convoId);
     }
+    // `streams.clearCompletion` is wrapped in useCallback with no
+    // deps — referentially stable, so we deliberately depend only
+    // on the streams state record (`streams.streams`). Listing the
+    // whole `streams` object would refire this effect every render
+    // since the hook returns a fresh wrapper each time.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [streams.streams]);
 
   const activeConversation =
@@ -140,37 +205,75 @@ export function ChatShell() {
 
   const handleSubmit = useCallback(
     async (question: string) => {
-      // Determine the target conversation: existing active, or create
-      // a new one synchronously so it appears in the sidebar the moment
-      // the user submits.
+      const trimmed = question.trim();
+      if (!trimmed) return;
+      const now = new Date().toISOString();
+      const newUserNodeId = randomId();
+
+      // Slice 5.0c-l (node-tree refactor): fresh turn at the tip.
+      // The user-message node is created HERE, synchronously, so the
+      // tree is fully consistent before the stream starts. The
+      // assistant node is appended in the archive effect once the
+      // run settles. Both never collapse into a single Q+A unit.
+      //
+      // Parent rules:
+      //   - Empty conversation       → user node is a root (parent_id null).
+      //   - Existing conversation     → user node is appended under the
+      //     active LEAF, which is always an assistant node when the
+      //     prior turn settled. Strict alternation along the path.
       let targetConvoId = activeConvoId;
       let history: ConversationTurn[] = [];
+
       if (targetConvoId) {
-        // Guard against re-submit while THIS conversation is streaming
-        // (the Send button is also disabled in that state, but this
-        // catches keyboard-Enter races).
         if (streams.runningIds.has(targetConvoId)) return;
         const c = conversations.find((c) => c.id === targetConvoId);
-        history = c
-          ? c.exchanges.flatMap((ex) => [
-              { role: "user" as const, content: ex.question },
-              { role: "assistant" as const, content: ex.answer },
-            ])
-          : [];
+        if (!c) return;
+        const leaf = activeLeaf(c);
+        // The new user message hangs off the current leaf. For a
+        // freshly-created conversation that ran zero turns this leaf
+        // could be a user node with no children — defensive: still
+        // OK because the new turn becomes its child and the tree
+        // alternates again from there.
+        const userNode = makeUserNode({
+          id: newUserNodeId,
+          parent_id: leaf?.id ?? null,
+          content: trimmed,
+          created_at: now,
+        });
+        history = activePathNodes(c).map((n) => ({
+          role: n.role,
+          content: n.content,
+        }));
+        setConversations((prev) =>
+          prev.map((conv) =>
+            conv.id === targetConvoId
+              ? appendChildOf(conv, leaf?.id ?? null, userNode)
+              : conv,
+          ),
+        );
       } else {
-        const now = new Date().toISOString();
         const newConvo: Conversation = {
           id: randomId(),
           title: titleFromQuestion(question),
-          exchanges: [],
+          nodes: {},
+          root_children: [],
+          selected_root_id: null,
           created_at: now,
           updated_at: now,
         };
-        setConversations((prev) => [newConvo, ...prev]);
+        const userNode = makeUserNode({
+          id: newUserNodeId,
+          parent_id: null,
+          content: trimmed,
+          created_at: now,
+        });
+        const seeded = appendChildOf(newConvo, null, userNode);
+        setConversations((prev) => [seeded, ...prev]);
         targetConvoId = newConvo.id;
         setActiveConvoId(targetConvoId);
       }
-      await streams.submit(targetConvoId, question, history);
+
+      await streams.submit(targetConvoId, trimmed, history, newUserNodeId);
     },
     [activeConvoId, conversations, streams],
   );
@@ -190,6 +293,24 @@ export function ChatShell() {
   const handleSelect = useCallback((id: string) => {
     setActiveConvoId(id);
   }, []);
+
+  // Slice 5.0c-l v4: history-overlay variant of select. If the user
+  // clicked a search match, `matched_node_id` points at the node
+  // the match came from — possibly off the active branch. We
+  // re-point every selected-child pointer along the chain root→
+  // target so the match surfaces the moment the overlay closes.
+  // Other branch points off the chain keep their own selections.
+  const handleSelectFromHistory = useCallback(
+    (id: string, matched_node_id: string | null) => {
+      if (matched_node_id) {
+        setConversations((prev) =>
+          prev.map((c) => (c.id === id ? selectPathTo(c, matched_node_id) : c)),
+        );
+      }
+      setActiveConvoId(id);
+    },
+    [],
+  );
 
   // Slice 5.0c-i: conversation rename. Both the top-bar title and the
   // sidebar's per-item "…" menu route here.
@@ -285,47 +406,133 @@ export function ChatShell() {
     setComposerDraft((prev) => ({ value, nonce: prev.nonce + 1 }));
   }, []);
 
-  // Retry-on-Wolf-response (Slice 5.0c-g). Submits the originating
-  // question with retry_nudge=true and history that includes the
-  // previous Q→A pair, so the model can critique its prior attempt.
-  const handleAssistantRetry = useCallback(
-    async (originatingQuestion: string) => {
+  // Slice 5.0c-l v4: Retry an assistant message.
+  //
+  //   fork(targetAssistantNode):
+  //     parent  = targetAssistantNode.parent_id     // a USER node
+  //     newAsst = AssistantMessageNode (filled in by the archive
+  //               effect once the stream settles)
+  //     append newAsst to parent.children          // and select it
+  //
+  // The new assistant becomes a sibling of the target — `< N/M >`
+  // navigator appears at the assistant-message position because the
+  // user-node parent's `children.length` is now > 1. The retry's
+  // critique target is whichever sibling was on the active path at
+  // submit time, since that's what `historyUpTo` walked.
+  //
+  // The new user node is NOT created here — the target's user
+  // parent already exists and we hang the new assistant off it.
+  const handleRetryAssistant = useCallback(
+    async (target_assistant_id: string) => {
       if (!activeConversation) return;
-      // Refuse if this conversation is currently streaming — the user
-      // should stop it first before kicking off a Retry.
       if (streams.runningIds.has(activeConversation.id)) return;
-      const history: ConversationTurn[] =
-        activeConversation.exchanges.flatMap((ex) => [
-          { role: "user" as const, content: ex.question },
-          { role: "assistant" as const, content: ex.answer },
-        ]);
+      const target = activeConversation.nodes[target_assistant_id];
+      if (!target || target.role !== "assistant") return;
+      const parentUserNode = activeConversation.nodes[target.parent_id];
+      if (!parentUserNode || parentUserNode.role !== "user") return;
+      const history = historyUpTo(activeConversation, target.id);
       await streams.submit(
         activeConversation.id,
-        originatingQuestion,
+        parentUserNode.content,
         history,
+        parentUserNode.id,
         { retryNudge: true },
       );
     },
     [activeConversation, streams],
   );
 
+  // Slice 5.0c-l v4: Edit a user message.
+  //
+  //   fork(targetUserNode):
+  //     parent  = targetUserNode.parent_id    // assistant OR root (null)
+  //     newUser = UserMessageNode(edited)
+  //     append newUser to parent.children     // and select it
+  //   then start the stream so a new assistant child of newUser
+  //   gets generated and appended in the archive effect.
+  //
+  // The new user-sibling lives in `parent.children` — a DIFFERENT
+  // children array from `targetUserNode.children` (which holds the
+  // original's assistant siblings). This is the structural fix for
+  // the cross-fork merge bug.
+  const handleEditUserMessage = useCallback(
+    async (target_user_id: string, edited_question: string) => {
+      if (!activeConversation) return;
+      if (streams.runningIds.has(activeConversation.id)) return;
+      const target = activeConversation.nodes[target_user_id];
+      if (!target || target.role !== "user") return;
+      const trimmed = edited_question.trim();
+      if (!trimmed) return;
+      const now = new Date().toISOString();
+      const newUserNodeId = randomId();
+      const newUserNode = makeUserNode({
+        id: newUserNodeId,
+        parent_id: target.parent_id,
+        content: trimmed,
+        created_at: now,
+      });
+      // Build the history BEFORE we mutate, walking the path up to
+      // (but excluding) the target — same context the backend would
+      // have seen for the original turn.
+      const history = historyUpTo(activeConversation, target.id);
+      // Append the new user sibling to target.parent_id's children
+      // (the one and only array the fork primitive ever touches).
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === activeConversation.id ? fork(c, target.id, newUserNode) : c,
+        ),
+      );
+      await streams.submit(
+        activeConversation.id,
+        trimmed,
+        history,
+        newUserNodeId,
+      );
+    },
+    [activeConversation, streams],
+  );
+
+  // Slice 5.0c-l v4: navigator click — re-point the active branch at
+  // a fork to `new_sibling_id`. Both ids share a parent, and only
+  // that parent's `selected_child_id` (or `selected_root_id` for
+  // top-level forks) changes. Every other branch point's selection
+  // along the path stays intact.
+  const handleSwitchBranch = useCallback(
+    (current_id: string, new_sibling_id: string) => {
+      const convoId = activeConversation?.id;
+      if (!convoId) return;
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === convoId ? switchToSibling(c, current_id, new_sibling_id) : c,
+        ),
+      );
+    },
+    [activeConversation],
+  );
+
   // Evidence panel: prefer in-flight stream citations when the active
   // conversation is the one streaming. Otherwise fall back to the
-  // latest archived exchange's evidence.
-  const visibleExchanges: ChatExchange[] =
-    activeConversation?.exchanges ?? [];
-  const latestArchived: ChatExchange | null =
-    visibleExchanges.length > 0
-      ? visibleExchanges[visibleExchanges.length - 1]
-      : null;
+  // latest assistant node on the visible branch — siblings on other
+  // branches stay in `nodes` but should not influence the evidence
+  // panel for the current view.
+  const visibleNodes: MessageNode[] = activeConversation
+    ? activePathNodes(activeConversation)
+    : [];
+  const latestAssistant: AssistantMessageNode | null = (() => {
+    for (let i = visibleNodes.length - 1; i >= 0; i--) {
+      const n = visibleNodes[i];
+      if (n.role === "assistant") return n;
+    }
+    return null;
+  })();
   const citations: Citation[] =
     isActiveStreaming && activeStream.citations.length > 0
       ? activeStream.citations
-      : (latestArchived?.citations ?? []);
+      : (latestAssistant?.citations ?? []);
   const toolEvents: ToolEvent[] =
     isActiveStreaming && activeStream.toolEvents.length > 0
       ? activeStream.toolEvents
-      : (latestArchived?.tool_events ?? []);
+      : (latestAssistant?.tool_events ?? []);
 
   // Resizable evidence panel: drag-from-left-edge handle. ---------------
   const resizeStateRef = useRef<{ startX: number; startWidth: number } | null>(
@@ -387,12 +594,12 @@ export function ChatShell() {
         />
         <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <MessageThread
-            exchanges={visibleExchanges}
+            conversation={activeConversation}
             stream={activeStream}
-            onEdit={setDraft}
-            onRetry={setDraft}
+            onEditUserMessage={handleEditUserMessage}
+            onRetryAssistant={handleRetryAssistant}
+            onSwitchBranch={handleSwitchBranch}
             onQuickAsk={setDraft}
-            onAssistantRetry={handleAssistantRetry}
           />
           <div className="shrink-0 border-t border-border bg-card/50 px-4 pt-3 pb-2">
             <ChatComposer
@@ -436,7 +643,7 @@ export function ChatShell() {
         conversations={sortedConversations}
         streamingIds={streams.runningIds}
         onClose={() => setChatsOverlayOpen(false)}
-        onSelect={handleSelect}
+        onSelect={handleSelectFromHistory}
         onNew={handleNew}
         onRename={handleRename}
         onToggleStar={handleToggleStar}

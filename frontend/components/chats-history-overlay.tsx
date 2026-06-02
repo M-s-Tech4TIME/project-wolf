@@ -43,7 +43,15 @@ type Props = {
    */
   streamingIds?: Set<string>;
   onClose: () => void;
-  onSelect: (id: string) => void;
+  /**
+   * Slice 5.0c-l: routes the user to a conversation. The second
+   * argument is the id of the exchange the search match came from
+   * (null when the row was clicked without a query, or when the
+   * match was on the title). The parent uses this to re-point
+   * `active_path` to the exchange's branch so a buried match isn't
+   * hidden by the current branch view.
+   */
+  onSelect: (id: string, matched_exchange_id: string | null) => void;
   onNew: () => void;
   /**
    * Slice 5.0c-i.2 — per-row actions reached from the result row's
@@ -312,7 +320,7 @@ export function ChatsHistoryOverlay({
                     if (selectionMode) {
                       toggleSelection(r.conversation.id);
                     } else {
-                      onSelect(r.conversation.id);
+                      onSelect(r.conversation.id, r.matched_exchange_id);
                       onClose();
                     }
                   }}
@@ -469,8 +477,8 @@ function ResultRow({
               {conversation.title}
             </span>
             <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">
-              {conversation.exchanges.length} turn
-              {conversation.exchanges.length === 1 ? "" : "s"}
+              {userMessageCount(conversation)} turn
+              {userMessageCount(conversation) === 1 ? "" : "s"}
             </span>
           </div>
           {snippet ? (
@@ -583,6 +591,15 @@ type SearchResult = {
   /** The matching turn's role + a ~120-char snippet, or null when the
    *  match was on the title only / query was empty. */
   snippet: { from: "you" | "wolf" | "title"; text: string; match: string } | null;
+  /**
+   * Slice 5.0c-l: the id of the exchange the match came from, or
+   * null when the match was on the title only / query was empty.
+   * When the user clicks the row we re-point the conversation's
+   * `active_path` so this exchange is on the visible thread — a
+   * match buried on an off-branch sibling would otherwise be
+   * invisible after navigating into the conversation.
+   */
+  matched_exchange_id: string | null;
 };
 
 const SNIPPET_WINDOW = 120;
@@ -593,34 +610,36 @@ function searchConversations(
 ): SearchResult[] {
   const q = rawQuery.trim().toLowerCase();
   if (!q) {
-    return conversations.map((c) => ({ conversation: c, snippet: null }));
+    return conversations.map((c) => ({
+      conversation: c,
+      snippet: null,
+      matched_exchange_id: null,
+    }));
   }
   const results: SearchResult[] = [];
   for (const c of conversations) {
     const titleHit = c.title.toLowerCase().includes(q);
     let snippet: SearchResult["snippet"] = null;
-    for (const ex of c.exchanges) {
-      const inQuestion = ex.question.toLowerCase().includes(q);
-      const inAnswer = ex.answer.toLowerCase().includes(q);
-      if (inQuestion) {
-        snippet = {
-          from: "you",
-          text: extractWindow(ex.question, q),
-          match: rawQuery.trim(),
-        };
-        break;
-      }
-      if (inAnswer) {
-        snippet = {
-          from: "wolf",
-          text: extractWindow(ex.answer, q),
-          match: rawQuery.trim(),
-        };
-        break;
-      }
+    let matched_exchange_id: string | null = null;
+    // Slice 5.0c-l v4: search scans every node in the tree —
+    // including off-active-branch siblings. A buried branch's
+    // content is still findable; clicking the row re-points the
+    // active path through that node via `selectPathTo` in
+    // chat-shell. Iteration order is `Object.values(nodes)`, which
+    // for ES2015+ engines preserves insertion order — i.e., the
+    // chronological order nodes were appended.
+    for (const node of Object.values(c.nodes)) {
+      if (!node.content.toLowerCase().includes(q)) continue;
+      snippet = {
+        from: node.role === "user" ? "you" : "wolf",
+        text: extractWindow(node.content, q),
+        match: rawQuery.trim(),
+      };
+      matched_exchange_id = node.id;
+      break;
     }
     if (snippet) {
-      results.push({ conversation: c, snippet });
+      results.push({ conversation: c, snippet, matched_exchange_id });
     } else if (titleHit) {
       results.push({
         conversation: c,
@@ -629,6 +648,7 @@ function searchConversations(
           text: c.title,
           match: rawQuery.trim(),
         },
+        matched_exchange_id: null,
       });
     }
   }
@@ -641,6 +661,19 @@ function searchConversations(
  * verbatim when the source fits in the window. Adds ellipses on
  * either side when trimmed.
  */
+/**
+ * Slice 5.0c-l v4: count user messages in a conversation tree
+ * (across every branch, not just the active path). Drives the
+ * "N turns" summary on each row.
+ */
+function userMessageCount(conversation: Conversation): number {
+  let n = 0;
+  for (const node of Object.values(conversation.nodes)) {
+    if (node.role === "user") n += 1;
+  }
+  return n;
+}
+
 function extractWindow(source: string, query: string): string {
   if (source.length <= SNIPPET_WINDOW) return source;
   const at = source.toLowerCase().indexOf(query.toLowerCase());

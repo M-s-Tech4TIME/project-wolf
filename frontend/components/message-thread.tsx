@@ -1,9 +1,13 @@
 "use client";
 
 import {
+  AlertCircle,
   ArrowDown,
   Bot,
+  Check,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   ChevronUp,
   Copy,
   Loader2,
@@ -13,20 +17,41 @@ import {
   ShieldCheck,
   Square,
   User,
+  X,
 } from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { useAuth } from "@/components/auth-provider";
 import { Markdown } from "@/components/markdown";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { StreamState } from "@/hooks/use-conversation-streams";
+import { activePathNodes, siblingsOfNode } from "@/lib/branches";
 import { copyText } from "@/lib/clipboard";
 import { absoluteTimeTitle, relativeTime } from "@/lib/format";
-import type { ChatExchange } from "@/lib/types";
+import type {
+  AssistantMessageNode,
+  Conversation,
+  MessageNode,
+  UserMessageNode,
+} from "@/lib/types";
 
 type Props = {
-  exchanges: ChatExchange[];
+  /**
+   * Slice 5.0c-l v4: the conversation object (or null for the
+   * greeting screen). Visible thread is derived by walking the node
+   * tree via `selected_root_id` → repeated `selected_child_id`.
+   * Siblings of each node come from its parent's `children` array
+   * (or `root_children` for top-level user nodes).
+   */
+  conversation: Conversation | null;
   /**
    * The slice of stream state for the currently-displayed
    * conversation. Slice 5.0c-k: each conversation has its own
@@ -36,19 +61,28 @@ type Props = {
    * prop went away with the singleton hook.
    */
   stream: StreamState;
-  /** Drops the question into the composer for editing (Slice 5.0c-f). */
-  onEdit?: (question: string) => void;
-  /** Re-asks the question by pre-filling the composer (Slice 5.0c-f). */
-  onRetry?: (question: string) => void;
+  /**
+   * Slice 5.0c-l v4: inline Edit on a USER message node. On Save,
+   * chat-shell forks the target — creating a new user-sibling under
+   * `target.parent_id` — and starts a fresh stream so an assistant
+   * child is generated for the new user-sibling.
+   */
+  onEditUserMessage?: (target_user_id: string, new_question: string) => void;
+  /**
+   * Slice 5.0c-l v4: Retry on an ASSISTANT message node. chat-shell
+   * starts a new stream whose result becomes a sibling of the
+   * target under the same user parent.
+   */
+  onRetryAssistant?: (target_assistant_id: string) => void;
+  /**
+   * Slice 5.0c-l v4: navigator click. Re-points the active path at
+   * the target's fork: parent.selected_child_id (or
+   * conversation.selected_root_id for top-level) flips to
+   * `new_sibling_id`. The two ids must share a `parent_id`.
+   */
+  onSwitchBranch?: (current_id: string, new_sibling_id: string) => void;
   /** Quick-action card click from the greeting screen (Slice 5.0c-f). */
   onQuickAsk?: (question: string) => void;
-  /**
-   * Retry on a Wolf answer (Slice 5.0c-g). Re-submits the originating
-   * question with retry_nudge=true so the backend asks the model to
-   * critique its previous attempt. Parent is responsible for building
-   * history that includes the previous Q→A pair.
-   */
-  onAssistantRetry?: (originatingQuestion: string) => void;
 };
 
 /**
@@ -65,12 +99,12 @@ const LONG_MESSAGE_THRESHOLD = 280;
  * stream is in-flight) the live streaming view at the bottom.
  */
 export function MessageThread({
-  exchanges,
+  conversation,
   stream,
-  onEdit,
-  onRetry,
+  onEditUserMessage,
+  onRetryAssistant,
+  onSwitchBranch,
   onQuickAsk,
-  onAssistantRetry,
 }: Props) {
   // Slice 5.0c-k: stream is now scoped to THIS conversation (chat-shell
   // looks up the right StreamState), so the previous isActiveStreaming
@@ -78,7 +112,41 @@ export function MessageThread({
   const showStreamView =
     stream.status.phase === "running" || stream.status.phase === "error";
   const isRunning = stream.status.phase === "running";
-  const empty = exchanges.length === 0 && !showStreamView;
+
+  // Slice 5.0c-l v4: walk the active branch as a flat list of nodes
+  // (user/assistant alternating). Each node is rendered independently
+  // and looks up its own siblings via the tree.
+  //
+  // Truncation rule: while a branch run is IN FLIGHT (only), hide
+  // the old assistant sibling so the streaming view visually
+  // replaces it in place. The condition is solely `isRunning` —
+  // chat-shell's archive layer calls `clearCompletion` after
+  // appending the new assistant node (v4.1), so `stream.completion`
+  // never lingers past archive to drive this filter on subsequent
+  // navigate-back clicks. (That stale-completion-driven filter was
+  // the v4.0 bug that hid earlier siblings' content even though
+  // the data was intact in `conversation.nodes`.)
+  //
+  // The brief render tick between `phase === "done"` and the
+  // archive effect running is also covered: in that window
+  // `stream.completion` is set but the new node isn't yet on the
+  // path. We don't rely on completion-existence for truncation
+  // here, but the streaming view itself stays mounted during
+  // `phase === "running"` only — so the visual handoff is the
+  // user node remains rendered, the streaming view disappears the
+  // moment `phase` flips to "done", and the new assistant node
+  // appears on the path on the very next React tick.
+  const visibleNodes: MessageNode[] = useMemo(() => {
+    if (!conversation) return [];
+    const path = activePathNodes(conversation);
+    if (!isRunning) return path;
+    const parentUserId = stream.parentUserNodeId;
+    if (parentUserId === null) return [];
+    const idx = path.findIndex((n) => n.id === parentUserId);
+    return idx >= 0 ? path.slice(0, idx + 1) : path;
+  }, [conversation, isRunning, stream.parentUserNodeId]);
+
+  const empty = visibleNodes.length === 0 && !showStreamView;
 
   // The chat uses a NATIVE scroll container instead of Radix's
   // ScrollArea. Radix's primitive introduces a nested viewport that
@@ -96,7 +164,7 @@ export function MessageThread({
 
   useEffect(() => {
     scrollToBottom("smooth");
-  }, [exchanges.length, isRunning, scrollToBottom]);
+  }, [visibleNodes.length, isRunning, scrollToBottom]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -108,7 +176,7 @@ export function MessageThread({
     onScroll();
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => el.removeEventListener("scroll", onScroll);
-  }, [exchanges.length, isRunning]);
+  }, [visibleNodes.length, isRunning]);
 
   // Slice 5.0c-i.6: composer-expand scroll re-pin (defensive rewrite
   // after 5.0c-i.5's version still misbehaved in the user's testing).
@@ -170,13 +238,12 @@ export function MessageThread({
     };
   }, []);
 
-  // Edit / Retry only make semantic sense on the most recent user message;
-  // applying them to an arbitrary mid-conversation message would either
-  // fork the thread (out of scope) or be silently misleading. So we hand
-  // those callbacks down only for the last archived exchange. Same logic
-  // for assistant Retry (Slice 5.0c-g) — only the latest Wolf answer has
-  // meaningful "retry this".
-  const lastExchangeIdx = exchanges.length - 1;
+  // Slice 5.0c-l: Edit and Retry are available on EVERY message, not
+  // just the latest, because they now produce branches rather than
+  // mutating the thread tail. Editing an early user message spawns
+  // a sibling that becomes the new active branch; the prior attempt
+  // is preserved and reachable via the `< N/M >` navigator. The
+  // `isLast` gate from Slice 5.0c-f / 5.0c-g is gone.
 
   // Greeting screen exit animation (Slice 5.0c-i.2). 280ms felt snappy
   // and 1500ms felt sluggish; user landed on 500ms in testing. When
@@ -224,39 +291,36 @@ export function MessageThread({
             </div>
           ) : null}
 
-          {exchanges.map((ex, i) => {
-            const isLast = i === lastExchangeIdx;
-            return (
-              <CompletedExchange
-                key={ex.id}
-                exchange={ex}
-                showMeta
-                onEdit={isLast ? onEdit : undefined}
-                onRetry={isLast ? onRetry : undefined}
-                onAssistantRetry={isLast ? onAssistantRetry : undefined}
+          {visibleNodes.map((node) =>
+            node.role === "user" ? (
+              <UserMessageView
+                key={node.id}
+                node={node}
+                conversation={conversation}
+                onEdit={onEditUserMessage}
+                onSwitchBranch={onSwitchBranch}
               />
-            );
-          })}
+            ) : (
+              <AssistantMessageView
+                key={node.id}
+                node={node}
+                conversation={conversation}
+                onRetry={onRetryAssistant}
+                onSwitchBranch={onSwitchBranch}
+              />
+            ),
+          )}
 
           {showStreamView ? (
-            /* Slice 5.0c-i.3: in-flight chat view fades + slides up
-               into view. tw-animate-css's `animate-in fade-in-0
-               slide-in-from-bottom-8` fires once on mount; the custom
-               cubic-bezier ease-out-expo curve gives the deceleration
-               its smooth "comes to a gentle stop" feel. Bumped to
-               1000ms (from 600ms) per user feedback that the slide
-               should feel like a car going from down to up — at 1s
-               the motion reads clearly without dragging. */
+            /* Slice 5.0c-l v4: the streaming view shows ONLY the
+               assistant slot. The user message that triggered this
+               run is already in the rendered path above (chat-shell
+               appends the user node synchronously before submit), so
+               we no longer render a duplicate UserBubble here. */
             <div
               className="space-y-6 animate-in fade-in-0 slide-in-from-bottom-8 duration-[1000ms]"
               style={{ animationTimingFunction: "cubic-bezier(0.16, 1, 0.3, 1)" }}
             >
-              {stream.currentQuestion ? (
-                <UserBubble
-                  text={stream.currentQuestion}
-                  timestamp={null}
-                />
-              ) : null}
               <StreamingView stream={stream} />
             </div>
           ) : null}
@@ -379,69 +443,104 @@ function GreetingScreen({ onQuickAsk }: { onQuickAsk?: (q: string) => void }) {
   );
 }
 
-// ─── Completed exchange + bubbles (Slice 5.0c-f pieces 3 + 4) ────────────────
+// ─── Per-node views (Slice 5.0c-l v4) ────────────────────────────────────────
+//
+// Each message node renders independently. The navigator for any
+// node is driven SOLELY by its parent's `children` array — there is
+// no cross-fork merging because there is no cross-fork lookup. A
+// user node with siblings shows the navigator above its hover row;
+// an assistant node with siblings shows the navigator on its row.
+// Different branch points along the path each have their own
+// counter; they never interfere.
 
-function CompletedExchange({
-  exchange,
-  showMeta,
+function navigatorFor(
+  node: MessageNode,
+  conversation: Conversation | null,
+  onSwitchBranch: ((current_id: string, new_id: string) => void) | undefined,
+): NavigatorData | null {
+  if (!conversation) return null;
+  const siblings = siblingsOfNode(conversation, node.id);
+  if (siblings.length <= 1) return null;
+  return {
+    siblings,
+    index: siblings.findIndex((s) => s.id === node.id),
+    onSwitch: onSwitchBranch
+      ? (new_id: string) => onSwitchBranch(node.id, new_id)
+      : undefined,
+  };
+}
+
+function UserMessageView({
+  node,
+  conversation,
   onEdit,
-  onRetry,
-  onAssistantRetry,
+  onSwitchBranch,
 }: {
-  exchange: ChatExchange;
-  showMeta: boolean;
-  onEdit?: (question: string) => void;
-  onRetry?: (question: string) => void;
-  onAssistantRetry?: (originatingQuestion: string) => void;
+  node: UserMessageNode;
+  conversation: Conversation | null;
+  onEdit?: (target_user_id: string, new_question: string) => void;
+  onSwitchBranch?: (current_id: string, new_id: string) => void;
 }) {
   return (
+    <UserBubble
+      exchangeId={node.id}
+      text={node.content}
+      timestamp={node.created_at}
+      onEdit={onEdit}
+      navigator={navigatorFor(node, conversation, onSwitchBranch)}
+    />
+  );
+}
+
+function AssistantMessageView({
+  node,
+  conversation,
+  onRetry,
+  onSwitchBranch,
+}: {
+  node: AssistantMessageNode;
+  conversation: Conversation | null;
+  onRetry?: (target_assistant_id: string) => void;
+  onSwitchBranch?: (current_id: string, new_id: string) => void;
+}) {
+  const interrupted = node.stop_reason === "interrupted";
+  return (
     <div className="space-y-3">
-      <UserBubble
-        text={exchange.question}
-        timestamp={exchange.started_at}
-        onEdit={onEdit ? () => onEdit(exchange.question) : undefined}
-        onRetry={onRetry ? () => onRetry(exchange.question) : undefined}
-      />
       <AssistantBubble
-        answer={exchange.answer}
-        timestamp={exchange.completed_at}
-        onRetry={
-          onAssistantRetry
-            ? () => onAssistantRetry(exchange.question)
-            : undefined
-        }
-        interrupted={exchange.stop_reason === "interrupted"}
+        answer={node.content}
+        timestamp={node.completed_at}
+        onRetry={onRetry ? () => onRetry(node.id) : undefined}
+        interrupted={interrupted}
+        navigator={navigatorFor(node, conversation, onSwitchBranch)}
       />
-      {showMeta ? (
-        <div className="flex flex-wrap items-center gap-2 px-12 text-[10px] text-muted-foreground">
-          {/* Interrupted exchanges don't carry strategy / model / steps /
-              tokens (the backend never finished telling us), so collapse
-              the meta to just the stop reason. The "Response interrupted
-              by user" footer inside the bubble carries the primary cue. */}
-          {exchange.stop_reason === "interrupted" ? (
-            <Badge variant="outline" className="text-muted-foreground">
-              interrupted
-            </Badge>
-          ) : (
-            <>
-              <Badge variant="secondary">{exchange.strategy}</Badge>
-              <Badge variant="outline">{exchange.model_id}</Badge>
-              <span>·</span>
-              <span>{exchange.step_count} steps</span>
-              <span>·</span>
-              <span>{exchange.tool_call_count} tool calls</span>
-              <span>·</span>
-              <span>
-                {exchange.input_tokens + exchange.output_tokens} tokens
-              </span>
-              <GroundingBadge exchange={exchange} />
-              {exchange.stop_reason !== "answer" ? (
-                <Badge variant="destructive">{exchange.stop_reason}</Badge>
-              ) : null}
-            </>
-          )}
-        </div>
-      ) : null}
+      <div className="flex flex-wrap items-center gap-2 px-12 text-[10px] text-muted-foreground">
+        {/* Interrupted runs don't carry strategy / model / steps /
+            tokens (the backend never finished telling us), so collapse
+            the meta to just the stop reason. The "Response interrupted
+            by user" footer inside the bubble carries the primary cue. */}
+        {interrupted ? (
+          <Badge variant="outline" className="text-muted-foreground">
+            interrupted
+          </Badge>
+        ) : (
+          <>
+            <Badge variant="secondary">{node.strategy}</Badge>
+            <Badge variant="outline">{node.model_id}</Badge>
+            <span>·</span>
+            <span>{node.step_count} steps</span>
+            <span>·</span>
+            <span>{node.tool_call_count} tool calls</span>
+            <span>·</span>
+            <span>
+              {node.input_tokens + node.output_tokens} tokens
+            </span>
+            <GroundingBadge node={node} />
+            {node.stop_reason !== "answer" ? (
+              <Badge variant="destructive">{node.stop_reason}</Badge>
+            ) : null}
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -451,13 +550,13 @@ function CompletedExchange({
  * verdict to the analyst. Renders nothing when the validator didn't run
  * (no citations / judge failed) — counts are all `null` in that case.
  */
-function GroundingBadge({ exchange }: { exchange: ChatExchange }) {
+function GroundingBadge({ node }: { node: AssistantMessageNode }) {
   const {
     grounding_supported,
     grounding_unsupported,
     grounding_uncertain,
     grounding_unverifiable,
-  } = exchange;
+  } = node;
   if (
     grounding_supported === null &&
     grounding_unsupported === null &&
@@ -589,76 +688,171 @@ function StreamingView({ stream }: { stream: StreamState }) {
 
 /**
  * User-side message bubble. Long text collapses with a fade + Show more
- * (Slice 5.0c-f). When `onEdit` / `onRetry` are provided (only for the
- * latest user message — see CompletedExchange), the hover action bar
- * shows those buttons; Copy + timestamp are always present.
+ * (Slice 5.0c-f). Slice 5.0c-l: hover Edit opens an inline textarea
+ * with Save / Cancel; Save spawns a sibling branch at the same parent
+ * via `onEdit(exchangeId, newText)`. If the exchange has Edit-lineage
+ * siblings (other Edit attempts at this fork), a `< N/M >` navigator
+ * is rendered under the bubble.
  */
 function UserBubble({
+  exchangeId,
   text,
   timestamp,
   onEdit,
-  onRetry,
+  navigator = null,
 }: {
+  /**
+   * Slice 5.0c-l: the archived exchange's id. Omitted when the
+   * bubble is rendered for the in-flight question (which has no
+   * archived id yet); in that case Edit is unavailable, which is
+   * the desired behavior — you can't edit a message that's still
+   * being asked.
+   */
+  exchangeId?: string;
   text: string;
   timestamp: string | null;
-  onEdit?: () => void;
-  onRetry?: () => void;
+  onEdit?: (exchange_id: string, new_question: string) => void;
+  navigator?: NavigatorData | null;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(text);
+  // No effect to reset draft on text/exchangeId change: branch-switch
+  // reroutes the active path and the parent map's `key={ex.id}` forces
+  // a fresh remount, which gives us a clean initial state for free.
+  // Exchanges are immutable once archived, so the in-place text of a
+  // mounted UserBubble never changes mid-life.
   const isLong = text.length > LONG_MESSAGE_THRESHOLD;
   const showExpander = isLong;
   const collapsed = isLong && !expanded;
 
+  const handleSave = () => {
+    if (!onEdit || !exchangeId) return;
+    const trimmed = draft.trim();
+    if (!trimmed || trimmed === text) {
+      setEditing(false);
+      setDraft(text);
+      return;
+    }
+    setEditing(false);
+    onEdit(exchangeId, trimmed);
+  };
+  const handleCancel = () => {
+    setEditing(false);
+    setDraft(text);
+  };
+
   return (
     <div className="group flex flex-col items-end gap-1">
       <div className="flex justify-end gap-3">
-        <div className="relative max-w-xl rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground">
-          <div
-            className={
-              collapsed
-                ? "relative max-h-32 overflow-hidden whitespace-pre-wrap"
-                : "whitespace-pre-wrap"
-            }
-          >
-            {text}
-            {collapsed ? (
-              <span
+        {editing ? (
+          // Slice 5.0c-l: inline editor. Width matches the bubble's
+          // max width so the textarea grows into the same space the
+          // bubble would have occupied; the Save / Cancel row sits
+          // below, and a small disclaimer underneath explains the
+          // branch behaviour (so users aren't surprised that their
+          // previous attempt is preserved rather than overwritten).
+          <div className="flex w-full max-w-xl flex-col gap-2 rounded-lg border border-primary/50 bg-primary/5 p-3">
+            <textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  handleCancel();
+                } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault();
+                  handleSave();
+                }
+              }}
+              autoFocus
+              rows={Math.min(Math.max(2, draft.split("\n").length), 10)}
+              className="resize-none rounded border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-ring"
+            />
+            <p className="flex items-start gap-1.5 text-[11px] italic text-muted-foreground">
+              <AlertCircle
+                className="mt-0.5 h-3 w-3 shrink-0"
                 aria-hidden="true"
-                className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-primary to-transparent"
               />
+              <span>
+                Editing creates a new branch. Your previous attempt stays
+                accessible via the navigator below.
+              </span>
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={handleCancel}
+                className="h-7 gap-1 text-xs"
+              >
+                <X className="h-3 w-3" />
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={handleSave}
+                disabled={!draft.trim() || draft.trim() === text}
+                className="h-7 gap-1 text-xs"
+              >
+                <Check className="h-3 w-3" />
+                Save & re-ask
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="relative max-w-xl rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground">
+            <div
+              className={
+                collapsed
+                  ? "relative max-h-32 overflow-hidden whitespace-pre-wrap"
+                  : "whitespace-pre-wrap"
+              }
+            >
+              {text}
+              {collapsed ? (
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-primary to-transparent"
+                />
+              ) : null}
+            </div>
+            {showExpander ? (
+              <button
+                type="button"
+                onClick={() => setExpanded((v) => !v)}
+                className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-primary-foreground/80 hover:text-primary-foreground hover:underline"
+              >
+                {expanded ? (
+                  <>
+                    <ChevronUp className="h-3 w-3" />
+                    Show less
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown className="h-3 w-3" />
+                    Show more
+                  </>
+                )}
+              </button>
             ) : null}
           </div>
-          {showExpander ? (
-            <button
-              type="button"
-              onClick={() => setExpanded((v) => !v)}
-              className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-primary-foreground/80 hover:text-primary-foreground hover:underline"
-            >
-              {expanded ? (
-                <>
-                  <ChevronUp className="h-3 w-3" />
-                  Show less
-                </>
-              ) : (
-                <>
-                  <ChevronDown className="h-3 w-3" />
-                  Show more
-                </>
-              )}
-            </button>
-          ) : null}
-        </div>
+        )}
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">
           <User className="h-4 w-4" />
         </div>
       </div>
-      <HoverActionBar
-        align="end"
-        timestamp={timestamp}
-        copyText={text}
-        onEdit={onEdit}
-        onRetry={onRetry}
-      />
+      {!editing ? (
+        <HoverActionBar
+          align="end"
+          timestamp={timestamp}
+          copyText={text}
+          onEdit={onEdit && exchangeId ? () => setEditing(true) : undefined}
+          navigator={navigator}
+        />
+      ) : null}
     </div>
   );
 }
@@ -668,6 +862,7 @@ function AssistantBubble({
   timestamp,
   onRetry,
   interrupted = false,
+  navigator,
 }: {
   answer: string;
   timestamp: string | null;
@@ -680,6 +875,13 @@ function AssistantBubble({
    * extra italic note instead of the "(empty)" placeholder.
    */
   interrupted?: boolean;
+  /**
+   * Slice 5.0c-l: navigator data when this exchange has Retry-
+   * lineage siblings (same question, different answers). Rendered
+   * below the bubble, aligned with the assistant column. Null when
+   * there's no fork at this answer.
+   */
+  navigator: NavigatorData | null;
 }) {
   const hasAnswer = answer.trim().length > 0;
   return (
@@ -711,8 +913,65 @@ function AssistantBubble({
         timestamp={timestamp}
         copyText={answer}
         onRetry={onRetry}
+        navigator={navigator}
         indent="left"
       />
+    </div>
+  );
+}
+
+/**
+ * Slice 5.0c-l — `< N/M >` branch navigator. Rendered inline inside
+ * the HoverActionBar — alongside Edit (user-bubble Edit lineage) or
+ * Retry (assistant-bubble Retry lineage). Shares the row's
+ * group-hover fade so the whole action row reveals as one unit on
+ * hover. Clicking `<` or `>` calls `data.onSwitch` with the id of
+ * the sibling to move to; the parent re-points the conversation's
+ * `active_path` and the thread re-renders along the new branch.
+ */
+type NavigatorData = {
+  siblings: MessageNode[];
+  index: number;
+  onSwitch?: (new_branch_id: string) => void;
+};
+
+function BranchNavigator({ data }: { data: NavigatorData }) {
+  const { siblings, index, onSwitch } = data;
+  const total = siblings.length;
+  const canPrev = index > 0;
+  const canNext = index < total - 1;
+  const goPrev = () => {
+    if (canPrev && onSwitch) onSwitch(siblings[index - 1].id);
+  };
+  const goNext = () => {
+    if (canNext && onSwitch) onSwitch(siblings[index + 1].id);
+  };
+  return (
+    <div
+      className="flex items-center gap-0.5 text-[11px] text-muted-foreground"
+      aria-label={`Branch ${index + 1} of ${total}`}
+    >
+      <button
+        type="button"
+        onClick={goPrev}
+        disabled={!canPrev}
+        aria-label="Previous branch"
+        className="inline-flex h-5 w-5 items-center justify-center rounded hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30"
+      >
+        <ChevronLeft className="h-3 w-3" />
+      </button>
+      <span className="tabular-nums">
+        {index + 1} / {total}
+      </span>
+      <button
+        type="button"
+        onClick={goNext}
+        disabled={!canNext}
+        aria-label="Next branch"
+        className="inline-flex h-5 w-5 items-center justify-center rounded hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30"
+      >
+        <ChevronRight className="h-3 w-3" />
+      </button>
     </div>
   );
 }
@@ -730,6 +989,7 @@ function HoverActionBar({
   copyText: textToCopy,
   onEdit,
   onRetry,
+  navigator = null,
   indent,
 }: {
   align: "start" | "end";
@@ -737,6 +997,14 @@ function HoverActionBar({
   copyText: string;
   onEdit?: () => void;
   onRetry?: () => void;
+  /**
+   * Slice 5.0c-l: when this exchange is at a fork, the navigator
+   * chip is rendered alongside the Edit / Retry chip in this row.
+   * It participates in the same group-hover fade as the other
+   * chips so the row reads as a single visual unit (per the user
+   * feedback on 2026-06-02).
+   */
+  navigator?: NavigatorData | null;
   /** Assistant bubbles need a left-indent matching the avatar gutter. */
   indent?: "left";
 }) {
@@ -752,8 +1020,14 @@ function HoverActionBar({
   // reserve vertical space for an empty chrome row.
   const hasTimestamp = !!timestamp;
   const hasCopy = textToCopy.length > 0;
-  if (!hasTimestamp && !hasCopy && !onEdit && !onRetry) return null;
+  const hasActions = hasTimestamp || hasCopy || !!onEdit || !!onRetry;
+  if (!hasActions && !navigator) return null;
 
+  // Slice 5.0c-l v3a: the navigator participates in the same
+  // group-hover fade as the other chips per user feedback —
+  // visual consistency with Copy / Retry / Edit. (Earlier v2 kept
+  // it always-visible; reverted after the user noted the
+  // inconsistency on Wolf's response row.)
   return (
     <div
       className={
@@ -791,6 +1065,7 @@ function HoverActionBar({
           icon={<Pencil className="h-3 w-3" />}
         />
       ) : null}
+      {navigator ? <BranchNavigator data={navigator} /> : null}
     </div>
   );
 }

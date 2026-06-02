@@ -413,11 +413,20 @@ function ConversationListItem({
   onDelete?: () => void;
   canRename: boolean;
 }) {
-  const totalToolCalls = conversation.exchanges.reduce(
-    (sum, ex) => sum + ex.tool_call_count,
-    0,
-  );
-  const turns = conversation.exchanges.length;
+  // Slice 5.0c-l v4 (node-tree refactor): "turns" counts user
+  // messages across ALL branches (since the sidebar's summary should
+  // reflect the conversation's overall activity, not just the
+  // currently-selected branch). Same for tool calls — sum across
+  // every assistant node in the tree.
+  let totalToolCalls = 0;
+  let turns = 0;
+  for (const node of Object.values(conversation.nodes)) {
+    if (node.role === "user") {
+      turns += 1;
+    } else {
+      totalToolCalls += node.tool_call_count;
+    }
+  }
   const inputRef = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState(conversation.title);
 

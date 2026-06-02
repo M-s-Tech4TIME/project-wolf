@@ -5,10 +5,10 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { phraseFor } from "@/lib/activity-phrases";
 import { ApiError, chatStream } from "@/lib/api";
 import type {
-  ChatExchange,
   Citation,
   ConversationTurn,
   LoopEvent,
+  StreamCompletion,
   ToolEvent,
 } from "@/lib/types";
 import { randomId } from "@/lib/uuid";
@@ -33,12 +33,28 @@ export type StreamStatus = {
  */
 export type StreamState = {
   status: StreamStatus;
-  exchange: ChatExchange | null;
+  /**
+   * Slice 5.0c-l (node-tree refactor): the assistant-side completion
+   * payload — chat-shell's archive layer converts this into an
+   * `AssistantMessageNode` and appends it as a child of
+   * `parent_user_node_id`. The user message itself is created
+   * synchronously by chat-shell at submit/save time, not by this
+   * hook.
+   */
+  completion: StreamCompletion | null;
   toolEvents: ToolEvent[];
   citations: Citation[];
   error: string | null;
   currentQuestion: string;
   streamingAnswer: string;
+  /**
+   * Slice 5.0c-l: the user message node id this in-flight run
+   * answers. Always set when a stream is running (the user node
+   * was created synchronously before submit). MessageThread reads
+   * this so the streaming view's activity feed can render in the
+   * assistant slot directly under the right user message.
+   */
+  parentUserNodeId: string | null;
 };
 
 /**
@@ -48,12 +64,13 @@ export type StreamState = {
  */
 export const NEUTRAL_STREAM: StreamState = {
   status: { phase: "idle" },
-  exchange: null,
+  completion: null,
   toolEvents: [],
   citations: [],
   error: null,
   currentQuestion: "",
   streamingAnswer: "",
+  parentUserNodeId: null,
 };
 
 export type UseConversationStreams = {
@@ -66,11 +83,19 @@ export type UseConversationStreams = {
   /** Start a stream for `convoId`. Refuses (no-op) if the same
    *  conversation already has a stream in flight; the caller should
    *  gate UI accordingly. Different conversations can stream
-   *  simultaneously. */
+   *  simultaneously.
+   *
+   *  Slice 5.0c-l (node-tree refactor): the caller (chat-shell)
+   *  creates the user-message node synchronously BEFORE calling
+   *  submit and passes its id as `parentUserNodeId`. The hook
+   *  stamps that id onto the completion payload (success or
+   *  interrupted), so the archive layer always attaches the new
+   *  assistant node to the exact right user parent. */
   submit: (
     convoId: string,
     question: string,
-    history?: ConversationTurn[],
+    history: ConversationTurn[],
+    parentUserNodeId: string,
     opts?: { retryNudge?: boolean },
   ) => Promise<void>;
   /** Abort the in-flight stream for `convoId` (if any). The fetch
@@ -81,6 +106,14 @@ export type UseConversationStreams = {
   /** Drop all state for `convoId` (aborts an in-flight stream first
    *  if one exists). Used when a conversation is deleted. */
   reset: (convoId: string) => void;
+  /** Slice 5.0c-l v4.1: clear ONLY the `completion` field of the
+   *  named conversation's stream state. Called by chat-shell right
+   *  after the archive effect appends the new assistant node, so
+   *  no stale completion data lingers to drive render-time filters
+   *  (the bug that hid earlier siblings' content on navigate-back).
+   *  Leaves all other fields intact so the user's "Stop" / Retry
+   *  affordances on the new assistant remain wired up. */
+  clearCompletion: (convoId: string) => void;
 };
 
 function asString(v: unknown, fallback = ""): string {
@@ -139,6 +172,11 @@ export function useConversationStreams(): UseConversationStreams {
   const citationsRef = useRef<Record<string, Citation[]>>({});
   const questionRef = useRef<Record<string, string>>({});
   const startedAtRef = useRef<Record<string, string>>({});
+  // Slice 5.0c-l (node-tree refactor): the user-message node id this
+  // run answers. Captured at submit time so the synthesised/completed
+  // StreamCompletion can stamp `parent_user_node_id` correctly
+  // without leaking tree concerns into the SSE event handlers.
+  const parentUserNodeIdRef = useRef<Record<string, string>>({});
 
   // Internal helpers — closure over the stable refs / state setter, so
   // we don't have to thread these through every event-handler case.
@@ -162,7 +200,8 @@ export function useConversationStreams(): UseConversationStreams {
     async (
       convoId: string,
       question: string,
-      history: ConversationTurn[] = [],
+      history: ConversationTurn[],
+      parentUserNodeId: string,
       opts: { retryNudge?: boolean } = {},
     ): Promise<void> => {
       // Refuse if this conversation already has a stream in flight.
@@ -182,16 +221,18 @@ export function useConversationStreams(): UseConversationStreams {
       citationsRef.current[convoId] = [];
       questionRef.current[convoId] = trimmed;
       startedAtRef.current[convoId] = new Date().toISOString();
+      parentUserNodeIdRef.current[convoId] = parentUserNodeId;
 
       // Initialise displayable state.
       updateStream(convoId, () => ({
         status: { phase: "running", last_event_type: undefined },
-        exchange: null,
+        completion: null,
         toolEvents: [],
         citations: [],
         error: null,
         currentQuestion: trimmed,
         streamingAnswer: "",
+        parentUserNodeId,
       }));
 
       try {
@@ -358,14 +399,24 @@ export function useConversationStreams(): UseConversationStreams {
                   backendCitations.length > 0
                     ? backendCitations
                     : citationsRef.current[convoId] ?? [];
-                const completed: ChatExchange = {
-                  id: asString(data.loop_id) || randomId(),
-                  question: questionRef.current[convoId] ?? trimmed,
-                  answer: asString(data.content),
+                const completed: StreamCompletion = {
+                  // Slice 5.0c-l v4.1: node ids are always generated
+                  // client-side and never reuse loop_id. Loop ids are
+                  // unique per orchestrator run today, but coupling
+                  // node-identity to a backend-issued field made the
+                  // tree's uniqueness guarantee depend on the
+                  // backend's. A randomId() here means a future
+                  // backend regression (e.g. echoing a cached
+                  // loop_id) can never collide with an existing node
+                  // and overwrite its content via the spread in
+                  // `appendChildOf`.
+                  id: randomId(),
+                  parent_user_node_id: parentUserNodeIdRef.current[convoId],
+                  content: asString(data.content),
                   citations: finalCitations,
                   tool_events: toolEventsRef.current[convoId] ?? [],
                   stop_reason:
-                    (data.stop_reason as ChatExchange["stop_reason"]) ??
+                    (data.stop_reason as StreamCompletion["stop_reason"]) ??
                     "answer",
                   loop_id: asString(data.loop_id),
                   strategy: asString(data.strategy),
@@ -393,7 +444,7 @@ export function useConversationStreams(): UseConversationStreams {
                 streamingAnswerRef.current[convoId] = "";
                 updateStream(convoId, (s) => ({
                   ...s,
-                  exchange: completed,
+                  completion: completed,
                   citations: finalCitations,
                   streamingAnswer: "",
                   status: {
@@ -415,14 +466,14 @@ export function useConversationStreams(): UseConversationStreams {
         if (controller.signal.aborted) {
           const completedAt = new Date().toISOString();
           const partialAnswer = streamingAnswerRef.current[convoId] ?? "";
-          // Synthesise an interrupted ChatExchange. Token counts /
-          // step counts default to 0 because we don't have the
-          // backend's tallies; the tool_call_count reflects how many
+          // Synthesise an interrupted StreamCompletion. Token counts
+          // / step counts default to 0 because we don't have the
+          // backend's tallies; tool_call_count reflects how many
           // tools the agent had actually completed before the abort.
-          const interrupted: ChatExchange = {
+          const interrupted: StreamCompletion = {
             id: randomId(),
-            question: questionRef.current[convoId] ?? trimmed,
-            answer: partialAnswer,
+            parent_user_node_id: parentUserNodeIdRef.current[convoId],
+            content: partialAnswer,
             citations: citationsRef.current[convoId] ?? [],
             tool_events: toolEventsRef.current[convoId] ?? [],
             stop_reason: "interrupted",
@@ -443,7 +494,7 @@ export function useConversationStreams(): UseConversationStreams {
           streamingAnswerRef.current[convoId] = "";
           updateStream(convoId, (s) => ({
             ...s,
-            exchange: interrupted,
+            completion: interrupted,
             streamingAnswer: "",
             error: null,
             status: { ...s.status, phase: "done", message: undefined },
@@ -490,10 +541,25 @@ export function useConversationStreams(): UseConversationStreams {
     delete citationsRef.current[convoId];
     delete questionRef.current[convoId];
     delete startedAtRef.current[convoId];
+    delete parentUserNodeIdRef.current[convoId];
     setStreams((prev) => {
       const next = { ...prev };
       delete next[convoId];
       return next;
+    });
+  }, []);
+
+  // Slice 5.0c-l v4.1: clear the just-archived completion so the
+  // truncation filter in MessageThread (which keys off `completion`)
+  // doesn't re-fire on subsequent navigate-back. The hook stays
+  // otherwise stateful — running guards, abort controllers, etc. —
+  // because the archive layer can pre-empt new submits via the
+  // controller ref.
+  const clearCompletion = useCallback((convoId: string): void => {
+    setStreams((prev) => {
+      const state = prev[convoId];
+      if (!state || state.completion === null) return prev;
+      return { ...prev, [convoId]: { ...state, completion: null } };
     });
   }, []);
 
@@ -505,5 +571,5 @@ export function useConversationStreams(): UseConversationStreams {
     return ids;
   }, [streams]);
 
-  return { streams, runningIds, submit, stop, reset };
+  return { streams, runningIds, submit, stop, reset, clearCompletion };
 }
