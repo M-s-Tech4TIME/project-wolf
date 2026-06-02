@@ -318,16 +318,23 @@ In two separate terminals (or use `nohup` / `tmux`):
 ```bash
 # Terminal 1 — orchestrator
 cd services/orchestrator
-uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+uv run python -m app
 
 # Terminal 2 — frontend
 cd frontend
-npm run dev -- --hostname 0.0.0.0 --port 3000
+npm run dev
 ```
 
+Both launchers auto-detect TLS state (Phase 5.4-c / 5.4-d): when
+the cert pair exists under `<repo>/.local/certs/{orchestrator,
+frontend}/{cert,key}.pem` they serve HTTPS; otherwise they fall back
+to plain HTTP. The first line each prints reports which scheme was
+picked. Run `wolf-cert init` (see §3.12) when you want to turn on
+HTTPS; until then HTTP is the default.
+
 **Important:** always `cd services/orchestrator` before launching
-uvicorn. See Gotcha #1 — running it from repo root picks up the
-gateway's `app/` package instead of orchestrator's.
+the orchestrator. See Gotcha #1 — running it from repo root picks
+up the gateway's `app/` package instead of orchestrator's.
 
 ### 3.11 First request
 
@@ -348,6 +355,115 @@ curl -fsS -b /tmp/wolf-cookie.txt -H 'Content-Type: application/json' \
 
 Or open the frontend at `http://localhost:3000` (or your LAN IP, e.g.
 `http://192.168.1.50:3000`), log in, and chat from the UI.
+
+### 3.12 Enable HTTPS via `wolf-cert` (optional but recommended)
+
+Plain HTTP works for everything functional, but browsers gate
+"secure-context" APIs (clipboard, notifications, Web Crypto,
+service workers) on a secure origin. Wolf ships a `wolf-cert` CLI
+(Phase 5.4) that mints a self-signed CA + leaf certs in a single
+command. Once installed in your OS / browser trust store, the
+browser shows the green padlock and the orchestrator + frontend
+both serve over HTTPS automatically.
+
+**The lifecycle:**
+
+```bash
+# 1. Mint the CA + orchestrator + frontend leaves under
+#    <repo>/.local/certs/. Default validity is 100 years — the
+#    "practical infinity" pattern (RFC 5280 forbids truly unlimited).
+wolf-cert init
+
+# 2. Inspect what was minted.
+wolf-cert status
+
+# 3. Export the CA cert so you can install it in your OS / browser
+#    trust stores (§ "Trust the Wolf root CA" below).
+wolf-cert export-ca --out ./wolf-ca.crt
+
+# 4. (Later) extend an existing cert's SAN list — e.g. when your
+#    LAN IP changes or you add a new hostname.
+wolf-cert add-host 192.168.42.7
+
+# 5. (Later) reissue with fresh validity, or fully wipe + start over.
+wolf-cert renew --years 100
+wolf-cert revoke --yes      # deletes everything in .local/certs/
+```
+
+After `wolf-cert init`, restart the orchestrator and frontend —
+their launchers see the cert pair and flip to HTTPS automatically.
+The Next.js dev server will print a "Self-signed certificates are
+currently an experimental feature, use with caution" notice on
+startup; that's Next.js's own warning about its experimental flag,
+not an indication of a problem with our certs.
+
+**Trust the Wolf root CA on your machine.** Until you import the
+CA, browsers will show "Your connection is not secure" even though
+TLS is mathematically sound. One-time install per machine per OS:
+
+#### Linux — Ubuntu / Debian-derived
+
+```bash
+sudo cp wolf-ca.crt /usr/local/share/ca-certificates/wolf-root-ca.crt
+sudo update-ca-certificates
+```
+
+#### Linux — Fedora / RHEL-derived
+
+```bash
+sudo cp wolf-ca.crt /etc/pki/ca-trust/source/anchors/wolf-root-ca.crt
+sudo update-ca-trust
+```
+
+#### macOS
+
+```bash
+sudo security add-trusted-cert -d -r trustRoot \
+  -k /Library/Keychains/System.keychain wolf-ca.crt
+```
+
+#### Windows (PowerShell, as Administrator)
+
+```powershell
+Import-Certificate -FilePath "wolf-ca.crt" `
+  -CertStoreLocation Cert:\LocalMachine\Root
+```
+
+#### Browser-specific notes
+
+* **Chrome / Edge** on Windows / macOS use the OS trust store
+  installed above — no extra step.
+* **Chrome / Edge on Linux** use their own NSS database:
+
+  ```bash
+  certutil -d sql:$HOME/.pki/nssdb -A \
+    -t "C,," -n "Wolf Root CA" -i wolf-ca.crt
+  ```
+
+  (Install `libnss3-tools` if `certutil` isn't on `$PATH`.)
+* **Firefox** uses its own trust store on every OS. Open
+  `about:preferences#privacy` → **View Certificates…** →
+  **Authorities** tab → **Import…** → pick `wolf-ca.crt` → tick
+  "Trust this CA to identify websites."
+
+After importing the CA, **fully quit and reopen the browser** —
+NSS caches the trust store at startup; a tab reload isn't enough.
+Then revisit `https://localhost:3000` (or your LAN IP) and verify
+the padlock shows green.
+
+**Verify end-to-end from the command line:**
+
+```bash
+# Both should return HTTP 200 with the freshly-minted CA trusted.
+CA=.local/certs/ca/ca-cert.pem
+curl -s --cacert "$CA" -o /dev/null -w "frontend: %{http_code}\n" https://localhost:3000/
+curl -s --cacert "$CA" -o /dev/null -w "orchestrator: %{http_code}\n" https://localhost:8000/healthz
+```
+
+**To roll back to HTTP-only:** `wolf-cert revoke --yes` deletes
+the cert directory; the next launcher start drops back to plain
+HTTP automatically. You can also remove the CA from your OS trust
+store via the inverse of the install commands above.
 
 ---
 
@@ -523,8 +639,9 @@ Both `services/orchestrator/app/` and `services/gateway/app/` expose
 a top-level Python package named `app`. With the editable workspace
 install, whichever one Python finds first on `sys.path` wins.
 
-- **For uvicorn:** always `cd services/orchestrator` before
-  `uvicorn app.main:app ...`. Running from repo root picks the
+- **For the orchestrator launcher** (Phase 5.4-c): always `cd
+  services/orchestrator` before `python -m app` (or the legacy
+  `uvicorn app.main:app …`). Running from repo root picks the
   gateway's `app/`, which has `/healthz` but none of the chat/auth
   routes, and `/api/v1/auth/login` returns 404.
 - **For the model_probe CLI:** the CLI's `__main__.py` already has a
@@ -551,15 +668,31 @@ filtering correctly, the data just doesn't carry the field. Leave it
 turn it on for MSSP deployments where ingestion stamps the field at
 indexing time. See [`docs/05-multi-tenancy.md`](docs/05-multi-tenancy.md).
 
-### Gotcha #4 — LAN access needs three settings
+### Gotcha #4 — LAN access has mostly become a non-issue
 
-If you want to reach the orchestrator + frontend from a different
-machine on the LAN (e.g. a browser on your laptop hitting the VM's
-IP), check all three:
+The `a3fdd73` IP-agnostic-dev change (2026-05-31) folded the
+three-file LAN-IP rotation paper-cut into one regex: the backend's
+`CORS_ALLOW_ORIGIN_REGEX` default and the frontend's
+`allowedDevOrigins` both match any private-network range
+(192.168/16, 10/8, 172.16/12) on any port. The orchestrator binds
+`0.0.0.0` by default (the `BIND_HOST` setting, see `.env.example`).
+So in dev, a fresh LAN IP usually requires zero edits.
 
-1. **Orchestrator bound `0.0.0.0`**, not `127.0.0.1` (the `--host 0.0.0.0` flag in Section 3.10).
-2. **`CORS_ALLOW_ORIGINS`** in `.env` includes the LAN-IP origin (e.g. `http://192.168.1.50:3000`).
-3. **`allowedDevOrigins`** in [`frontend/next.config.ts`](frontend/next.config.ts) includes the LAN IP (Next 16 enforces this for cross-origin dev requests).
+If you need to lock it down (production deployments, restricted
+networks), explicitly set:
+
+1. `BIND_HOST` in `.env` to a specific interface.
+2. `CORS_ALLOW_ORIGINS` (the exact-list field) to the URLs you
+   accept.
+3. `CORS_ALLOW_ORIGIN_REGEX` to `""` to disable the
+   any-private-range wildcard.
+4. `allowedDevOrigins` in [`frontend/next.config.ts`](frontend/next.config.ts)
+   for the dev-server-side check.
+
+If you're running HTTPS via `wolf-cert` (Phase 5.4) and the LAN IP
+changes, you also need `wolf-cert add-host <new-ip>` so the new IP
+ends up in the leaf cert's SAN list — without it the browser
+rejects the connection on hostname mismatch.
 
 ### Gotcha #5 — Models occasionally send `{"limit": null}`
 
