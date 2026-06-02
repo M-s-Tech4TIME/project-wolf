@@ -29,8 +29,16 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S", "T20"]
+# Match tests at any depth (services/<svc>/tests/**, packages/<pkg>/tests/**,
+# top-level tests/**, ...). The prior `tests/**` glob only matched
+# top-level paths, so nested test suites silently inherited the
+# stricter ruleset.
+"**/tests/**" = ["S", "T20"]
 "**/migrations/**" = ["N999"]
+# CLI modules — `print` is the whole point. T20 (flake8-print) is
+# the correct rule for application code but doesn't apply here.
+"packages/cert/wolf_cert/cli.py" = ["T20"]
+"packages/cert/wolf_cert/__main__.py" = ["T20"]
 
 [tool.mypy]
 python_version = "3.13"
