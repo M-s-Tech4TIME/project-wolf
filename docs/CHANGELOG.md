@@ -49,6 +49,389 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-02 — Slice 5.0c-l: conversation tree branching
+
+**Session type:** claude-code
+**Phase:** Phase 5 prep — branching as the final UX block of the 5.0c series
+**Duration:** large — single coherent slice landed across one session
+**Branch / commit:** `main` — `e7e2bd1` (squashed v4 architecture + v4.1 bug fix into one slice commit)
+
+### What we did
+- Replaced the Q+A-as-one-unit `ChatExchange` list with a true
+  message tree: each user message and each assistant message is its
+  own node with its own `children: string[]` array. Conversations
+  carry `{ nodes: Record<id, MessageNode>, root_children: string[],
+  selected_root_id: string | null }`; the active thread is derived
+  by following `selected_root_id` then repeated `selected_child_id`
+  until a leaf.
+- Single primitive — `fork(conversation, target_id, new_node)` —
+  unified Edit (on a user node) and Retry (on an assistant node).
+  Fork's contract: the new version is appended to
+  `target.parent_id`'s children (and ONLY there). Two assertions
+  enforce it at runtime: (a) `new_node.parent_id === target.parent_id`,
+  (b) `new_node.id` is not already in the node map (id-uniqueness
+  guard against silent overwrite).
+- `< N/M >` navigator inline in the HoverActionBar — shares the
+  group-hover fade with Copy / Retry / Edit. Driven solely by
+  `parent.children.length > 1`; user-node navigators read
+  `root_children` when `parent_id === null`. Distinct fork points
+  along the active path each render their own counter; sibling sets
+  never merge.
+- Inline Edit on user messages with a Save / Cancel UI and an
+  `AlertCircle` disclaimer (`Editing creates a new branch. Your
+  previous attempt stays accessible via the navigator below.`).
+  Retry available on every assistant message, not just the last.
+- Hide-prior-sibling during streaming: while a branch run is
+  `phase === "running"`, the visible path truncates at
+  `stream.parentUserNodeId` so the old assistant sibling visually
+  disappears and the streaming view replaces it in place. Once
+  archived, the new node joins the path naturally.
+- History overlay search now scans ALL nodes (off-branch siblings
+  included); clicking a buried match calls `selectPathTo` so the
+  active path re-points to surface the matched node.
+- Stream hook's `submit` signature gained `parentUserNodeId` (the
+  user-message id this assistant response answers). The hook
+  produces a `StreamCompletion` payload that chat-shell converts
+  to an `AssistantMessageNode` and appends via the fork primitive.
+- New `frontend/lib/branches.ts` is the only place the tree is
+  mutated. Helpers: `activePathNodes`, `siblingsOfNode`,
+  `historyUpTo`, `appendChildOf`, `fork`, `switchToSibling`,
+  `selectPathTo`, `makeUserNode`, `makeAssistantNode`.
+
+### The v4.0 → v4.1 bug
+- v4.0 had a render filter (`completionPending`) that hid the
+  prior sibling between settle and archive. The bug: the hook
+  never cleared `stream.completion` post-archive, so on later
+  navigate-back the predicate still matched and the filter sliced
+  the visible path at `parentUserNodeId`, **hiding the sibling
+  whose data was, in fact, fully present in `conversation.nodes`**.
+  User reported it as "Wolf's previous response disappears when I
+  navigate back."
+- v4.1 fixes: (a) new `streams.clearCompletion(convoId)` API,
+  called from the archive effect after appending the new node;
+  (b) truncation predicate simplified to `isRunning` only;
+  (c) node ids always `randomId()` — never reuse backend's
+  `loop_id` (which stays as its own field), so a future backend
+  regression cannot collide ids and silently overwrite a node.
+
+### What we verified
+- Integrity gate clean: tsc 0 / eslint 0 / mypy 0 / ruff 0 /
+  backend pytest 260/260 / live tenant-isolation 6/6.
+- Acceptance test (manual): send "Hello" → retry the assistant
+  reply → edit the user message. Result: 2/2 navigator on the
+  assistant message AND a separate independent 2/2 navigator at
+  the user-message level. The retry-set `[a1, a2]` under the
+  original user message stays intact and reappears when
+  navigating back via `<` on the user-level navigator. No merged
+  "3/3" appears anywhere. Each version's full content (user and
+  assistant) preserved verbatim across all navigation paths.
+
+### What we deferred
+- Conversation tree persistence to the database. Conversations
+  remain in-memory only today; refresh wipes them. Complete plan
+  captured in cross-session memory `conversation-tree-persistence-
+  plan.md` so when the DB-storage phase begins nothing gets lost:
+  two-table schema (`conversations`, `message_nodes`), explicit
+  `position` integer for stable sibling order, atomic version-add
+  transaction wrapping the new INSERT + parent's
+  `selected_child_id` UPDATE, no path flattening on save, lossless
+  round-trip test, tenant scoping via `TenantScopedQueryBuilder`.
+
+### What's next
+- Wrap 5.0c with this PROGRESS.md + CHANGELOG catch-up commit, then
+  Phase 5.4 (Native HTTPS + `wolf-cert` CLI), then Phase 5 proper
+  (RBAC / cases / reporting).
+
+## 2026-06-01 — Slice 5.0c-k: Stop button + concurrent per-conversation streams (incl. typing-foundation pre-fix)
+
+**Session type:** claude-code
+**Phase:** Phase 5 prep — stream lifecycle hardening
+**Duration:** ~3 h across the three commits
+**Branch / commits:** `main` — `ec4ff9d` (`stop_reason` type widening), `bf00c01` (typing-foundation), `2d83607` (the slice itself)
+
+### What we did
+- Replaced the singleton `useChatStream` hook with
+  `useConversationStreams` — a per-conversation stream manager
+  keyed by conversation id. Each conversation has its own
+  `StreamState` (status, exchange, working buffers) and its own
+  `AbortController`. Two conversations can stream in parallel; the
+  in-flight indicator in the sidebar shows BOTH simultaneously.
+- Composer's Send button is swapped for a Stop button at the same
+  position whenever the active conversation is streaming (user-
+  requested UX refinement — keeps the interrupt in reach without
+  scrolling up into the thread). The textarea itself stays fully
+  interactive throughout: drafts survive across "type → press
+  Enter → still streaming → click Stop → press Enter" cycles.
+- On `AbortError` (the user clicked Stop), the catch path
+  synthesises a `ChatExchange` with `stop_reason: "interrupted"`
+  carrying whatever partial answer + tool events + citations
+  arrived before the abort. Archived like any other exchange; an
+  `interrupted` exchange renders a "Response interrupted by user."
+  footer under the partial answer with the meta row collapsed.
+- Sidebar + Chats-history overlay accept `streamingIds: Set<string>`
+  instead of a single `streamingId`. Bulk-delete in the overlay
+  guards against any selected row being a member of the set.
+- Pre-slice typing-foundation fix (`bf00c01`) — closed a Phase-0
+  blind spot: workspace packages (`wolf_common`, `wolf_secrets`,
+  `wolf_schema`) had been shipping without PEP-561 `py.typed`
+  markers since the very first phase commit. mypy was silently
+  treating every workspace import as `Any`. Dropped markers into
+  all three packages, updated each hatch build to ship them, and
+  pruned + tightened the root mypy overrides. Cascading fixes:
+  `Mapped[dict]` → `Mapped[dict[str, object]]` (knowledge models),
+  explicit `EmbeddingProvider` annotation on `_reembed_batch`,
+  `jwt.encode` boundary cast in `app/auth/local.py`. mypy went
+  from 56 errors to 0 across orchestrator + gateway + all
+  packages.
+
+### What we verified
+- Integrity gate clean before slice commit: tsc 0 / eslint 0 /
+  mypy 0 (down from 56) / ruff 0 / pytest 260/260 / live tenant-
+  isolation 6/6.
+- Manual two-conversation concurrent stream verified by the user:
+  start a run in convo A, switch to convo B, start another, both
+  sidebar rows show the in-flight glyph independently. Stop on
+  the active conversation freezes its partial answer with the
+  interrupted footer; the inactive conversation's stream keeps
+  running.
+
+### What we decided
+- Added a new standing rule: "no unaddressed errors / warnings /
+  silent diagnostics — pre-existing baseline is not a pass; fix
+  or track with plan, never just report-and-move-on." The
+  Phase-0 mypy blind spot would have stayed open under the prior
+  "this slice didn't introduce it" framing.
+
+### What's next
+- Slice 5.0c-l: conversation tree branching (Edit/Retry create
+  branches with `< N/M >` navigator).
+
+## 2026-05-31 — In-conversation Find: tried six iteration passes, removed entirely
+
+**Session type:** claude-code
+**Phase:** Phase 5 prep — feature attempted then withdrawn
+**Duration:** ~6 h across passes
+**Branch / commits:** `main` — Find feature commits `b23999d` (5.0c-i.2), `8587954`/`2744038` (5.0c-i.3), `366c6b8` (5.0c-i.4), `5ef6df3`/`eea089a` (5.0c-i.5), `34c1a35`/`517cade` (5.0c-i.6), `a86785f`/`97bc34e` (5.0c-i.7). Removal: `ebbe186` (-632 lines).
+
+### What we did
+- Built an in-conversation Find feature (Ctrl+F to open, scan
+  the visible thread, highlight matches in-place with `<mark>`
+  injection, per-match counter with `<` / `>` navigation).
+- Six iteration passes addressing user-reported issues: DOM-based
+  counting + recursion through nested elements, React-state-driven
+  active-mark highlighting (not direct DOM mutation), per-mark
+  counter, color tuning to palette-yellow, drop the 3-char minimum,
+  Ctrl+F prefills with currently-selected text.
+- After every pass the user-flagged a new edge case; pass 7 still
+  had layout quirks (composer auto-resize interacting with the
+  match-highlight DOM mutations would scroll-jump the active
+  match off-screen).
+
+### What we decided
+- Removed the feature entirely on user request (`ebbe186`,
+  -632 lines). The interaction between match-highlighting and the
+  scroll/composer-resize machinery proved too fragile to land
+  cleanly. Browser-native Find (Ctrl+F) is good enough for the
+  MVP; we revisit if/when the chat content needs deeper search
+  affordances.
+- Saved as a lesson for future-me: features with non-trivial DOM
+  injection inside an already-complex scroll/sizing flex chain
+  need a different architecture (e.g., a search overlay layer,
+  not in-thread highlights).
+
+### What's next
+- Resume the planned 5.0c track with the next non-Find slice.
+
+## 2026-05-31 — Chore: IP-agnostic local access
+
+**Session type:** claude-code
+**Phase:** Phase 5 prep — dev-environment paper-cut
+**Duration:** ~30 min
+**Branch / commit:** `main` — `a3fdd73`
+
+### What we did
+- Stopped requiring three-file edits every time the host's LAN IP
+  rotated. Backend now allows any private-network origin via a
+  regex CORS rule (`r"^https?://(localhost|127\.0\.0\.1|\[::1\]|
+  192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(?:1[6-9]|2\d|3[01])\.
+  \d+\.\d+)(?::\d+)?$"`). Frontend's `apiBase()` derives the
+  orchestrator URL from `window.location.hostname` at runtime when
+  `NEXT_PUBLIC_ORCHESTRATOR_URL` is unset. Next.js
+  `allowedDevOrigins` switched to wildcards for the same private
+  ranges.
+- The earlier "edit three files on every LAN IP change" checklist
+  in `docs/restart.md` is now mostly dead — restart works from any
+  IP without config edits, including localhost vs. a LAN IP, on
+  the same dev box.
+
+### What's next
+- Per-slice work continues from a stable dev environment.
+
+## 2026-05-30 → 31 — Slice 5.0c-i + 5.0c-i.2 → i.5: conversation rename + polish wave
+
+**Session type:** claude-code
+**Phase:** Phase 5 prep — UX polish trickle
+**Duration:** ~5 h across many small commits
+**Branch / commits:** `main` — `11a6237` (5.0c-i base), `9b99d2a` / `e2087f7` / `3737561` (5.0c-i.2), `c4974db` / `8587954` / `2744038` (5.0c-i.3), `3382aa2` / `27d9c6d` / `4830c00` / `366c6b8` (5.0c-i.4), `a07858f` / `ac493e5` / `cbb54c9` (5.0c-i.5)
+
+### What we did
+- **5.0c-i (`11a6237`):** conversation rename via the top-bar title
+  + the sidebar's per-row "…" menu. Greeting screen exit
+  animation slowed to 500 ms (felt right after testing 280 ms
+  snappy / 1500 ms sluggish).
+- **5.0c-i.2:** sidebar / chats-history-overlay polish wave —
+  per-conversation star + delete via the row menu; sort by
+  `updated_at` so freshly-active conversations float up;
+  Starred / Recents section split; animation tuning after user
+  feedback; chats-overlay per-row "…" menu with Select-chats
+  mode for bulk delete.
+- **5.0c-i.3:** app-native confirmation dialog component
+  (`ConfirmDialog`) for destructive actions (replaces `window.
+  confirm` — required for keyboard a11y inside the app's focus
+  trap). Composer slide-in / slide-out animation cubic-bezier
+  retuned (600 → 1000 ms) per user feedback.
+- **5.0c-i.4:** composer textarea auto-expand to a max of ~10
+  lines then internal scroll; inline-code text color set to
+  palette Dusk Blue; per-message hover action bar no longer
+  shows a redundant focus ring on the underlying bubble.
+- **5.0c-i.5:** Markdown rendering polish — inline code becomes
+  bold, fenced code blocks get syntax highlighting via Shiki
+  via `react-markdown`'s plugin pipeline; defensive composer-
+  expand re-pin (the start of what later became the `5.0c-i.7`
+  flicker-free rewrite).
+
+### What's next
+- Slice 5.0c-j (chats history pane), 5.0c-k (Stop + concurrent
+  streams), 5.0c-l (branching). Find feature still on the
+  backlog at this point (later removed entirely on 2026-05-31).
+
+## 2026-05-30 — Slice 5.0c-j: chats history pane with full-text search
+
+**Session type:** claude-code
+**Phase:** Phase 5 prep
+**Duration:** ~1.5 h
+**Branch / commit:** `main` — `e4efd60`
+
+### What we did
+- New full-screen `ChatsHistoryOverlay` reached from the sidebar's
+  History icon. Differs from the sidebar's title-search in one
+  important way: this pane searches the full **body** of every
+  user and assistant message in every conversation. Matches
+  surface as ~120-char snippets centered on the match with
+  bold highlighting in-context.
+- Layout follows Claude's Chats page: title left, New chat right,
+  search row below, results list filling the rest. ESC closes;
+  clicking a result closes the overlay and routes to that
+  conversation. Auto-focus on the search input on open; clean
+  reset on every open of the overlay (search query, selection
+  mode, rename state).
+
+### What's next
+- Slice 5.0c-k: Stop response button + concurrent streams.
+
+## 2026-05-30 — Slice 5.0c-h: async stream lifecycle + immediate sidebar slot
+
+**Session type:** claude-code
+**Phase:** Phase 5 prep
+**Duration:** ~45 min
+**Branch / commit:** `main` — `c5c7d2b`
+
+### What we did
+- New conversations now appear in the sidebar the *moment* the
+  user submits, not after the first stream event arrives. Previous
+  behaviour caused a flash of "no active conversation" between
+  Send and the first SSE event landing.
+- Stream lifecycle now distinguishes a few cleaner phases:
+  `idle` → `running` (start) → `done` (answer event) / `error`.
+  The streaming-view component reads `phase` exclusively rather
+  than mixing it with the exchange-archived state.
+
+### What's next
+- Slice 5.0c-i: conversation rename + greeting fade.
+
+## 2026-05-30 — Slice 5.0c-f + 5.0c-g: polish backlog + English-only + retry-nudge
+
+**Session type:** claude-code
+**Phase:** Phase 5 prep — combined polish slices
+**Duration:** ~2 h
+**Branch / commit:** `main` — `abbcd1b`
+
+### What we did
+- **5.0c-f (polish backlog):** long-message fade-and-show-more
+  on user bubbles (`LONG_MESSAGE_THRESHOLD = 280` chars);
+  hover-on-message action bar (date / Copy / Retry / Edit on
+  user bubbles, date / Copy / Retry on assistant); greeting-
+  screen quick-action cards (recent critical alerts /
+  suspicious authentication / agent health) that prefill the
+  composer; scroll-to-bottom floating FAB only when scrolled
+  more than 200 px off bottom; inline relative-time tooltips
+  with the absolute time as `title`.
+- **5.0c-g (retry-nudge):** Retry on a Wolf answer re-submits
+  the originating question with `retry_nudge: true` so the
+  orchestrator appends a critique hint to the user message
+  ("the prior attempt was X — try to improve on it"). At this
+  point Retry only worked on the latest assistant message;
+  5.0c-l later widened it to every assistant message under the
+  branching model.
+- English-only system prompt addition (the orchestrator agent
+  loop occasionally fell back to non-English text from training
+  data on small-model runs; now explicitly instructed to keep
+  the user-facing answer in English regardless of the input
+  language unless the user asks otherwise).
+
+### What's next
+- Slice 5.0c-h: async stream lifecycle.
+
+## 2026-05-30 — Slice 5.0c-e: live activity feed
+
+**Session type:** claude-code
+**Phase:** Phase 5 prep
+**Duration:** ~1.5 h
+**Branch / commits:** `main` — `fcff12b` (slice), `c2fd0a5` (test fixup)
+
+### What we did
+- The streaming view's status line is now a narrated activity
+  feed: each SSE loop event flips it to a varied human-readable
+  phrase ("Starting (frontier, qwen3:8b)" / "Step 2 of 8 — picking
+  the next move…" / "Calling `search_alerts`…" / "Reading the
+  judge's verdict on 3 claims…" / etc.). New
+  `frontend/lib/activity-phrases.ts` carries the phrase bank;
+  phrases are deterministic per event type so the user sees a
+  predictable progression rather than a random sample.
+- `c2fd0a5` fixed a chat-endpoint test that was missing a
+  judge-model mock response — surfaced when the slice's stream
+  refactor stopped tolerating the missing fixture silently.
+
+### What's next
+- Slice 5.0c-f + 5.0c-g polish + retry-nudge.
+
+## 2026-05-30 — Slice 5.0c-d: progressive answer rendering (Ollama `stream:true` + `model.delta` SSE)
+
+**Session type:** claude-code
+**Phase:** Phase 5 prep
+**Duration:** ~2 h
+**Branch / commits:** `main` — `c3a31df` (slice), `bb2741d` (backend re-verify + fix 5.0c-a silent regression)
+
+### What we did
+- Token-by-token answer reveal during streaming. Backend's
+  Ollama adapter now flips `stream: true` on its
+  chat-completion call; the orchestrator's SSE stream relays
+  each token as a `model.delta` event carrying
+  `{ content_delta }`. Frontend accumulates the deltas into
+  `streamingAnswer` and renders them progressively via the same
+  `Markdown` component that renders the archived answer — so
+  the layout doesn't shift when the final `answer` event lands.
+- A soft pulsing caret at the end of the streaming text hints
+  "still generating" without being noisy.
+- `bb2741d` re-ran the full backend suite after 5.0c-d's
+  refactor and caught a silent regression in 5.0c-a (one
+  grounding-marker case): the `_VERDICT_MARKER` regex priority
+  had shifted under a `re.sub` boundary; restored explicit
+  alternation order. Now back to a known-good baseline.
+
+### What's next
+- Slice 5.0c-e: live activity feed.
+
 ## 2026-05-29 — Slice 5.0c-c: theme — Platinum / Dusk Blue / Steel Blue / Icy Blue palette
 
 **Session type:** claude-code

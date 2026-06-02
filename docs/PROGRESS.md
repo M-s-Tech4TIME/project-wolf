@@ -6,23 +6,59 @@
 >
 > For history of what changed when, see `CHANGELOG.md` (append-only).
 
-**Last updated:** 2026-05-27 by claude-code (Phase 4 CLOSED)
+**Last updated:** 2026-06-02 by claude-code (Phase 5 prep CLOSED)
 
 ---
 
 ## 1. Where we are right now
 
-**Current phase:** Phase 3 — Knowledge & RAG (per `docs/10-build-roadmap.md`).
+**Current phase:** Phase 5.4 — Native HTTPS + `wolf-cert` CLI (next per cross-session memory).
 
-**Current phase:** Phase 5 — Cases and reporting (next per `docs/10-build-roadmap.md`).
+**Phase 5 prep (the 5.0a → 5.0c series) — CLOSED 2026-06-02.** The
+chat UI now matches the Claude/ChatGPT class of interactions:
+progressive token-by-token rendering, narrated activity feed,
+concurrent per-conversation streams with a Stop button, full
+conversation-tree branching (Edit / Retry with `< N/M >` navigator),
+chats history pane with full-text search across every branch.
+
+The 5.0c series itself shipped as: c-a (four-chip grounding +
+verdict rename), c-b (layout overhaul + resizable Evidence panel),
+c-c (Platinum / Dusk Blue / Steel Blue / Icy Blue palette), c-d
+(progressive answer rendering — Ollama `stream:true` +
+`model.delta` SSE), c-e (live activity feed), c-f + c-g (polish
+backlog + retry-nudge + English-only), c-h (async stream
+lifecycle + immediate sidebar slot), c-i + i.2 → i.5 (conversation
+rename + polish wave + native delete dialog + Markdown polish),
+c-j (chats history pane with full-text search), c-k (Stop button +
+concurrent per-conversation streams), c-l (conversation tree
+branching). Two cross-cutting commits landed in the same window:
+typing-foundation fix (`bf00c01` — Phase-0 PEP-561 blind spot
+closed, mypy 56 → 0) and IP-agnostic local access (`a3fdd73` —
+stops the LAN-IP-rotation paper-cut). One feature tried and
+removed in the same window: in-conversation Find (six iteration
+passes, then reverted at user's request — too fragile a DOM-
+injection interaction with the surrounding scroll machinery; full
+narrative in CHANGELOG 2026-05-31).
+
+**Standing rules active across the project** (cross-session memory):
+- *Integrity across the stack* (2026-05-30) — every change preserves
+  integrity across frontend / backend / DB / libraries / UI; full
+  backend suite + cross-tenant gate on every `services/` change.
+- *Quality + secure coding discipline* (2026-05-31) — features-first;
+  quality + secure coding applied inline as each slice is built;
+  dedicated hardening + audit pass deferred to a later phase but
+  tracked, never abandoned.
+- *No unaddressed errors* (2026-06-01) — never leave errors /
+  warnings / silent diagnostics unaddressed; "pre-existing baseline"
+  is not a pass; fix or track-with-plan, never just report-and-move-on.
 
 **Phase 4 — multi-tenancy hardening — CLOSED 2026-05-27.** Four slices
 shipped: two-tenant live DB + RAG isolation tests (4.1, `338413f`),
 `bootstrap_tenant` validates + `--update` flag (4.2, `1da9e1c`),
 `TenantScopedCache` + agent_name caching + audit-write isolation
 (4.3, `3ff751c`), and the runnable `tools/tenant_isolation_test` live
-smoke + ONBOARDING gotchas + close-out (4.4, this commit). Live
-isolation suite: 6/6 checks pass against the dev two-tenant state.
+smoke + ONBOARDING gotchas + close-out (4.4). Live isolation suite:
+6/6 checks pass against the dev two-tenant state.
 
 **Phase status:** **Phase 3 shipped end-to-end** (Slices 1, 1.5, 2A, 2B,
 and 3). Phase 2 closed (ADR 0005). Phase 3 vertical:
@@ -317,6 +353,27 @@ to `CHANGELOG.md` as ADRs.
 
 ## 6. Known issues and tech debt
 
+- **Conversations are in-memory only** (frontend `useState`).
+  A page refresh wipes them. Full persistence plan captured in
+  cross-session memory `conversation-tree-persistence-plan.md`
+  for the eventual DB-storage phase: two-table schema
+  (`conversations`, `message_nodes`), explicit `position` integer
+  for stable sibling order, atomic version-add transaction
+  (INSERT new node + UPDATE parent's `selected_child_id` in one
+  tx), no path flattening on save, lossless round-trip test,
+  tenant scoping via `TenantScopedQueryBuilder`. Land this when
+  the project's general DB-storage phase begins; do not flatten
+  to the active path on serialise — that would silently drop
+  every off-branch subtree.
+- **Inline security / efficiency gaps from Phase 5 prep.** The
+  *quality-and-secure-coding-discipline* standing rule applies
+  quality + secure coding inline at every slice but tracks
+  deferred items (rate limits at the API boundary, additional
+  audit-event categories for branch operations, secret-leakage
+  scan of streaming text, etc.) for a dedicated post-feature
+  hardening pass. Backlog accumulated through 5.0c — to be
+  burned down in a focused slice labelled `5.0d` or similar
+  before the open-source handover.
 - Llama 3.2 on CPU-only inference is slow (~30-60s for first token cold
   start). Functional but a real UX limit; switching to `qwen3:4b` would
   also benefit here.
@@ -331,22 +388,28 @@ to `CHANGELOG.md` as ADRs.
 
 ## 7. Test coverage status
 
-- **180 backend tests passing** (128 baseline + 21 knowledge + 16
-  validator + 11 ingester + 4 agent-name lookup tests across the
-  Phase 3 work — including the two new 3-way RRF tests for ADR 0014)
-- **0 failures**, **0 skipped**
-- ruff: clean across the workspace
-- mypy strict: 33 source files clean
-  (`packages/{common,secrets,schema}/*` and
-  `services/orchestrator/app/{tenancy,audit,wazuh,guardrails,agent}`)
-- Cross-tenant isolation suite: in
-  `services/orchestrator/tests/test_cross_tenant_isolation.py`, runs as
-  part of the main suite. All 4 negative tests pass.
-- Frontend: `next build` clean, `next lint` clean. No frontend test
-  framework wired yet — deferred.
-- CI: configured (`.github/workflows/ci.yml`) but not yet run against a
-  remote (the repo's `main` is ahead of `origin/main` by 8 commits as of
-  this session start).
+- **260 backend tests passing** (orchestrator-side, `services/
+  orchestrator`). 0 failures, 0 skipped.
+- **ruff:** clean across the workspace.
+- **mypy strict: 0 errors** across orchestrator (66 source files),
+  gateway (2), and all three workspace packages (`wolf_common`,
+  `wolf_secrets`, `wolf_schema`). The Phase-0 PEP-561 blind spot
+  that had hidden 56 errors since the very first phase commit was
+  closed in `bf00c01` (2026-06-01). Workspace packages now ship
+  `py.typed` markers; mypy resolves their imports correctly end-
+  to-end.
+- **Cross-tenant unit suite:** 8/8 passing
+  (`services/orchestrator/tests/test_cross_tenant_isolation.py`,
+  runs as part of the main suite).
+- **Live tenant-isolation probe** (`tools/tenant_isolation_test`):
+  6/6 checks pass against the dev two-tenant state. Run after every
+  `services/` change per the *integrity-across-the-stack* standing
+  rule.
+- **Frontend:** `tsc --noEmit` clean, `eslint` clean. No frontend
+  test framework wired yet — deferred to the dedicated hardening
+  phase.
+- **CI:** configured (`.github/workflows/ci.yml`); `origin/main` is
+  current as of 2026-06-02 push.
 
 ---
 
