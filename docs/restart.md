@@ -129,7 +129,7 @@ These keep running and rarely need a reset:
 |---|---|---|
 | PostgreSQL | `5432` | System-managed. Restart only if the DB itself misbehaves. |
 | Ollama daemon | `11434` | The daemon keeps running; we only unload its models. Restart the daemon (`systemctl restart ollama`) only if it stops responding. |
-| Next.js dev server | `3000` | Hot-reloads file changes. Restart only after `next.config.ts` changes or if compilation gets stuck. To restart: `pkill -f "next dev"` then `cd frontend && npm run dev` (or whatever script `package.json` defines). |
+| Next.js dev server | `3000` | Hot-reloads file changes. Restart only after `next.config.ts` changes or if compilation gets stuck. To restart: `pkill -f "next dev"` (covers both `npm run dev` and `npm run dev:plain`) then `cd frontend && npm run dev`. Phase 5.4-d: `npm run dev` invokes `scripts/dev.mjs`, which serves HTTPS when both `.local/certs/frontend/{cert,key}.pem` exist and HTTP otherwise — the first stdout line reports the scheme. `npm run dev:plain` forces plain HTTP regardless of cert state if you need the old behaviour. |
 | Wazuh deployment | `192.168.245.128:9200` / `:55000` | Separate machine. Wolf never restarts it. |
 
 ---

@@ -1,11 +1,15 @@
 /**
  * Copy text to the clipboard, with a textarea+execCommand fallback for
- * non-secure contexts. The Wolf dev server runs over plain HTTP on a LAN
- * IP, where `navigator.clipboard.writeText` is undefined or throws —
- * without the fallback, copy actions silently do nothing.
+ * non-secure contexts.
  *
- * Once Phase 5.4 (native HTTPS via `wolf-cert`) lands the secure-context
- * branch will always be taken; the fallback can stay as a belt-and-braces.
+ * Phase 5.4 update: when Wolf is running with self-signed certs minted
+ * by `wolf-cert init`, the dev server serves HTTPS and the browser
+ * sees a secure context, so the `navigator.clipboard.writeText` branch
+ * is taken on every modern browser. The execCommand fallback is now
+ * the HTTP-fallback path — exercised only when the operator hasn't
+ * run `wolf-cert init` yet (or has revoked the certs deliberately).
+ * Kept as belt-and-braces so plain-HTTP dev keeps working without a
+ * forced HTTPS dependency.
  */
 export async function copyText(text: string): Promise<boolean> {
   if (
