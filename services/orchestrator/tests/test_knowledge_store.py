@@ -450,8 +450,22 @@ def test_factory_rejects_unknown_provider() -> None:
         make_embedding_provider(settings)
 
 
-def test_factory_accepts_sentence_transformers_aliases() -> None:
-    """The factory accepts the canonical name plus common aliases."""
+def test_factory_accepts_sentence_transformers_aliases(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The factory accepts the canonical name plus common aliases.
+
+    Forces CPU device selection via `CUDA_VISIBLE_DEVICES=""`. Why:
+    on a dev workstation with a single GPU already busy hosting
+    Ollama (the common Wolf dev shape), the SentenceTransformers
+    constructor's "prefer CUDA when available" logic would try to
+    allocate on the busy GPU and OOM. The test only cares about
+    factory dispatch, not where the model lives, so pinning it to
+    CPU keeps the test environment-independent. Captured 2026-06-02
+    while landing Phase 5.4-a.
+    """
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "")
+
     from app.config import Settings
     from app.knowledge.embeddings import make_embedding_provider
 

@@ -1,0 +1,24 @@
+[project]
+name = "wolf-cert"
+version = "0.1.0"
+description = "Self-signed CA + leaf cert primitives for Wolf (Phase 5.4)"
+requires-python = ">=3.13"
+dependencies = [
+    "cryptography>=42.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["wolf_cert"]
+# PEP 561: ship `py.typed` so downstream services see type information.
+# Without this, mypy treats the whole package as untyped and silently
+# drops every import — the Phase-0 blind spot fixed 2026-06-01.
+include = ["wolf_cert/py.typed"]
