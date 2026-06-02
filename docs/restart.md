@@ -14,7 +14,8 @@ re-derived from scratch every test cycle.
 
 ```bash
 # 1. Stop orchestrator + unload models
-pkill -f "uvicorn app.main:app" 2>/dev/null
+pkill -f "uvicorn app.main:app" 2>/dev/null   # legacy invocation
+pkill -f "python -m app" 2>/dev/null          # Phase 5.4-c launcher
 ollama stop qwen3:4b 2>/dev/null
 ollama stop qwen3:8b 2>/dev/null
 
@@ -23,13 +24,20 @@ ollama ps
 nvidia-smi --query-gpu=memory.used,memory.total --format=csv
 ss -tlnp 2>/dev/null | grep ":8000 " || echo "port 8000 free"
 
-# 3. Relaunch orchestrator (env from .env, detached, log to /tmp)
+# 3. Relaunch orchestrator via the Phase 5.4-c launcher.
+#    `python -m app` auto-detects TLS: HTTPS when both
+#    .local/certs/orchestrator/{cert,key}.pem exist, HTTP otherwise.
+#    The first log line tells you which scheme the launcher picked.
 cd services/orchestrator
 set -a && source ../../.env && set +a
-nohup uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 \
+nohup uv run python -m app \
   > /tmp/orchestrator.log 2>&1 & disown
 
-# 4. Verify with a login round-trip
+# 4. Verify with a login round-trip.
+#    If the orchestrator is running HTTPS (post-`wolf-cert init`),
+#    swap `http` → `https` AND add `--insecure` (self-signed CA isn't
+#    in curl's trust store; for browsers we install it via
+#    `wolf-cert export-ca` per ONBOARDING.md).
 curl -s --retry 40 --retry-delay 1 --retry-connrefused --max-time 60 \
   -o /dev/null -w "login HTTP %{http_code}\n" \
   -X POST http://localhost:8000/api/v1/auth/login \
@@ -38,8 +46,9 @@ curl -s --retry 40 --retry-delay 1 --retry-connrefused --max-time 60 \
 # expect: login HTTP 200
 ```
 
-If `login HTTP 200`, Wolf is live. Open `http://192.168.68.108:3000` in
-the browser. Frontend hot-reloads on its own; no Next.js restart needed
+If `login HTTP 200`, Wolf is live. Open `http://<lan-ip>:3000` (or
+`https://...` once Phase 5.4-d lands the frontend TLS wiring) in the
+browser. Frontend hot-reloads on its own; no Next.js restart needed
 unless `next.config.ts` changed.
 
 ---
@@ -48,9 +57,13 @@ unless `next.config.ts` changed.
 
 ### Stop orchestrator
 
-`pkill -f "uvicorn app.main:app"` — kills the running uvicorn worker by
-matching the exact command string. The orchestrator runs without
-`--reload`, so Python edits don't pick up until a manual restart.
+`pkill -f "uvicorn app.main:app"` (legacy) AND `pkill -f "python -m app"`
+(Phase 5.4-c launcher) — kills the running orchestrator process by
+matching the exact command string. Both patterns are listed because
+the work-in-progress will move from the first to the second; either
+pattern is safe to run when the corresponding process is absent.
+The orchestrator runs without `--reload`, so Python edits don't pick
+up until a manual restart.
 
 ### Unload Ollama models
 
@@ -82,10 +95,17 @@ and `kill <pid>`.
 ### Relaunch orchestrator
 
 `set -a && source ../../.env && set +a` exports all variables in `.env`
-into the shell. `uvicorn` then sees `DATABASE_URL`, `SECRET_KEY`,
-secrets-backend paths, the Ollama base URL, the grounding judge model
-ID, and the embedding model env vars — everything `app.config.Settings`
-expects.
+into the shell. The launcher (`app/__main__.py`) then reads
+`DATABASE_URL`, `SECRET_KEY`, secrets-backend paths, the Ollama base
+URL, the grounding judge model ID, the embedding model env vars, AND
+the new `BIND_HOST` / `BIND_PORT` / `TLS_CERT_PATH` / `TLS_KEY_PATH`
+fields — everything `app.config.Settings` expects.
+
+`python -m app` is the Phase 5.4-c launcher. It calls `uvicorn.run`
+under the hood, but ALSO inspects `TLS_CERT_PATH` and `TLS_KEY_PATH`
+at startup: when both files exist the orchestrator serves HTTPS,
+otherwise it falls back to plain HTTP. The first line of
+`/tmp/orchestrator.log` reports which scheme was picked and why.
 
 `nohup … & disown` detaches the process from the shell so closing the
 terminal does not kill the server. Stdout/stderr go to

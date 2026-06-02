@@ -5,8 +5,22 @@ must override SECRET_KEY and DATABASE_URL at minimum.
 """
 
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Anchor for path-shaped defaults that need to be CWD-independent.
+# `app/config.py` lives at `services/orchestrator/app/config.py`, so
+# parents[3] is the repo root. The wolf-cert CLI writes certs into
+# `<repo>/.local/certs/` by default, and the orchestrator launcher
+# needs to find them there regardless of which directory `python -m
+# app` was invoked from (in practice `services/orchestrator/`, per
+# docs/restart.md). The fallback to a relative path matters for a
+# future packaged install where the source tree shape changes.
+try:
+    _PROJECT_ROOT = Path(__file__).resolve().parents[3]
+except IndexError:  # pragma: no cover — defensive
+    _PROJECT_ROOT = Path.cwd()
 
 
 class Settings(BaseSettings):
@@ -64,6 +78,29 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_allow_origins.split(",") if o.strip()]
+
+    # ── Network bind + TLS (Phase 5.4-c) ───────────────────────────────────
+    # The orchestrator binds to 0.0.0.0 so it's reachable from any
+    # interface on the host (loopback, LAN, container network). This
+    # matches the dev pattern in docs/restart.md and the prod pattern
+    # for a Wolf instance accessed by browsers + relay daemons on the
+    # same LAN. Override via BIND_HOST=127.0.0.1 to restrict.
+    bind_host: str = "0.0.0.0"  # noqa: S104  intentional all-interfaces bind
+    bind_port: int = 8000
+
+    # Paths to the TLS cert + key issued by `wolf-cert init`. Defaults
+    # are anchored at the project root (see `_PROJECT_ROOT` above), so
+    # a fresh `wolf-cert init` followed by `python -m app` automatically
+    # flips the orchestrator to HTTPS — no env-edit dance, regardless
+    # of which directory `python -m app` was invoked from.
+    #
+    # The cert FILES themselves are the signal — when both exist the
+    # launcher in `app.__main__` passes uvicorn `--ssl-keyfile` and
+    # `--ssl-certfile`; when either is missing it falls back to plain
+    # HTTP (today's dev behaviour). Operators who keep their certs
+    # elsewhere override these via TLS_CERT_PATH / TLS_KEY_PATH in .env.
+    tls_cert_path: str = str(_PROJECT_ROOT / ".local/certs/orchestrator/cert.pem")
+    tls_key_path: str = str(_PROJECT_ROOT / ".local/certs/orchestrator/key.pem")
 
     # ── Model defaults (per-tenant overrides come in a later phase) ────────
     default_model_provider: str = "ollama"  # anthropic | openai | ollama
