@@ -1,6 +1,6 @@
 # 0016 — Wolf component architecture & packaging
 
-**Date:** 2026-06-03 (v1) · revised same day (v2)
+**Date:** 2026-06-03 (v1) · revised same day (v2, v3)
 **Status:** accepted
 **Decider:** human (project owner) with claude-code drafting
 **Related:** [`native-https-and-wolf-cert.md`](../../README.md) (cross-session memory),
@@ -210,66 +210,112 @@ Per-component systemd units shipping in Phase 5.8:
   wolf-gateway.service     (disabled by default)
 ```
 
-Each unit:
+**Each unit is fully independent.** No `Requires=`, no `Wants=`,
+no `After=` lines reference other Wolf components. A Wolf unit
+file makes no claim about other Wolf services existing on the
+same host; coordination between components happens entirely at
+the application layer (startup health-check polling — see
+below).
 
-* `User=wolf-<component>` + `Group=wolf-<component>` (per §4).
-* `SupplementaryGroups=wolf` so the shared CA cert is readable.
-* `EnvironmentFile=` points at `/etc/wolf-<component>/wolf-<component>.conf`.
-* `ProtectSystem=strict`, `ProtectHome=true`, `PrivateTmp=true`,
-  `NoNewPrivileges=true` — standard systemd sandboxing applied
-  uniformly across components.
-* Logs to journald (no `/var/log/wolf-*/` files — `journalctl -u wolf-<component>` is the supported tail).
-* Restart policy: `on-failure` with a 5 s back-off.
+This independence is the property that lets **the same unit
+file ship byte-identically in every topology** (all-in-one,
+distributed, mixed). It also matches what Wazuh actually
+ships — stock `wazuh-indexer.service`, `wazuh-manager.service`,
+`wazuh-dashboard.service` likewise carry no inter-component
+systemd directives.
 
-**Same-host dependency chain (all-in-one):**
+Representative unit file (every Wolf component follows this
+shape — only `User=`, `Group=`, `EnvironmentFile=`, and
+`ExecStart=` differ between them):
 
-systemd's `Requires=` is the right primitive here — it works
-within a single host. Boot-order constraints:
+```ini
+# /usr/lib/systemd/system/wolf-server.service
+[Unit]
+Description=Wolf server (orchestrator brain)
+Documentation=man:wolf-server(1)
+# No Requires=/Wants=/After= referencing other Wolf units.
+# Coordination is application-level (startup polling, §below).
 
+[Service]
+Type=notify
+User=wolf-server
+Group=wolf-server
+SupplementaryGroups=wolf
+EnvironmentFile=/etc/wolf-server/wolf-server.conf
+ExecStart=/usr/bin/wolf-server
+Restart=on-failure
+RestartSec=5s
+
+# Sandboxing — applied uniformly across all Wolf units.
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true
+ReadWritePaths=/var/lib/wolf-server
+LogsDirectory=                            # journald is the log target
+
+[Install]
+WantedBy=multi-user.target
 ```
-wolf-database.service       (no Requires)
-wolf-server.service         Requires=wolf-database.service
-                            After=wolf-database.service
-wolf-dashboard.service      Requires=wolf-server.service
-                            After=wolf-server.service
-wolf-gateway.service        Requires=wolf-server.service
-                            After=wolf-server.service
-                            (and: disabled by default;
-                             only enabled when Phase 6 is in use)
-```
 
-`Requires=` ensures the upstream unit is started; it does NOT
-wait for it to be *ready* (accepting connections). Each
-downstream unit therefore polls its upstream at startup before
-announcing systemd ready via `sd_notify(READY=1)`:
+`wolf-gateway.service` adds an `Install` directive that omits
+`WantedBy=` so the unit ships disabled by default; the operator
+enables it explicitly when Phase 6 is in use.
 
-* `wolf-server` opens a TLS socket to `wolf-database` on the
-  configured `DATABASE_URL`; if it can complete a handshake +
-  `SELECT 1` within 30 s it signals ready.
-* `wolf-dashboard` does an HTTPS GET against `wolf-server`'s
-  `/healthz` over mTLS until it returns 200; same 30 s
-  budget.
+**Startup health-check polling is the source of truth for
+readiness.** Each component is responsible for confirming its
+upstream is reachable before announcing systemd ready via
+`sd_notify(READY=1)`:
 
-This same readiness check is what makes **distributed** mode
-work. In distributed mode `Requires=` cannot reach across
-hosts — there's no equivalent of "systemd on host A waits for a
-service on host B." The boot order is enforced entirely by the
-client's own startup polling. On each host:
+* `wolf-server` opens a TLS connection to `wolf-database` on
+  the configured `DATABASE_URL`; if it can complete a handshake
+  + `SELECT 1` within 30 s it signals ready, otherwise the
+  process exits non-zero and systemd restarts it (subject to
+  `Restart=on-failure` + `RestartSec=5s`).
+* `wolf-dashboard` performs an HTTPS GET against `wolf-server`'s
+  `/healthz` over mTLS until it returns 200; same 30 s budget,
+  same restart cycle on failure.
+* `wolf-gateway` (Phase 6+) polls `wolf-server` the same way
+  `wolf-dashboard` does.
 
-* `wolf-server.service` on its own host starts; the same
-  startup polling reaches across the network to whichever host
-  is running `wolf-database`. If that host is down, `wolf-server`
-  exits non-zero after 30 s and systemd restarts it (subject to
-  `on-failure` back-off). When `wolf-database` comes back, the
-  next restart succeeds.
+This same polling logic works identically in both topologies:
 
-This makes the all-in-one and distributed startup semantics
-identical from the application's POV: every component is
-responsible for confirming its upstream is reachable, regardless
-of whether that upstream is on the loopback or across the LAN.
-**Operators should follow the same install order in both
-topologies — database first, then server, then dashboard** (see
-§7 for the operator command flow).
+* **All-in-one:** the upstream is on the loopback. Polling
+  succeeds within seconds of the upstream process starting.
+* **Distributed:** the upstream is across the LAN. Polling
+  reaches the remote host. If the remote host is down,
+  `wolf-server` exits non-zero, systemd restarts it after the
+  back-off, and the next attempt succeeds once the remote
+  upstream is up.
+
+The application code doesn't care which mode it's in. It just
+connects to wherever `DATABASE_URL` (or the analogous
+`WOLF_SERVER_URL`) points and retries until reachable.
+
+**Operator-coordinated startup order, not systemd-coordinated.**
+Operators are recommended to start units in dependency order
+(`wolf-database` → `wolf-server` → `wolf-dashboard`) — see §7
+for the explicit walk-through — because doing so avoids minutes
+of "polling, failing, restarting" churn in journald. But it is
+**not a hard requirement**: if the operator starts components
+out of order, each downstream component will keep restarting
+until its upstream is up. Eventually-consistent boot. The same
+recommendation applies in all-in-one and distributed because the
+underlying mechanism is the same.
+
+**No cascade restart between Wolf components.** If the operator
+runs `systemctl restart wolf-database`, only `wolf-database`
+restarts. `wolf-server`'s connection pool sees the database go
+away and reconnects when it comes back (SQLAlchemy's
+`pool_pre_ping` handles this transparently). No unnecessary
+`wolf-server` downtime, no cascading restart chain. Same
+behaviour in both modes.
+
+This is also why we don't ship `BindsTo=` directives anywhere —
+`BindsTo=wolf-database.service` would stop `wolf-server` when
+the database stops, which is the opposite of what we want.
+Connection-pool reconnect is the right story; systemd cascade
+is not.
 
 ### 6. FHS install layout
 
@@ -326,21 +372,30 @@ After Phase 5.8 lands, the operator interacts with Wolf entirely
 through `systemctl` + `/usr/bin/wolf-*` CLIs.
 
 **Recommended deploy order — database → server → dashboard.**
-This mirrors Wazuh's documented install order (indexer →
-manager → dashboard) and matches the dependency chain in §5.
-Wolf's docs (forthcoming installation-guide module) will frame
-this as the supported path:
+This is the *no-startup-churn* path: start each component only
+after its upstream is confirmed ready, and every component
+comes up clean on first try. Mirrors Wazuh's documented install
+order (indexer → manager → dashboard).
+
+It is **not** a systemd-enforced order — the unit files carry
+no inter-component dependencies (§5). The recommendation is
+purely about avoiding the "polling-retry-restart" loops the
+operator would otherwise see in `journalctl` while a downstream
+component waits for an upstream that hasn't been started yet.
+Same recommendation applies in **both** all-in-one and
+distributed topologies, because the application-level
+readiness polling behaves identically in both:
 
 ```bash
-# Step 1. Bring up the database first. It has no upstream
-# dependencies; everything else depends on it.
+# Step 1. Bring up the database first. No upstream to wait for.
 systemctl enable --now wolf-database
 systemctl status wolf-database
 # Wait for journald to log "wolf-database: ready to accept connections"
 
 # Step 2. Then the server. Its startup polls the database
-# until ready (see §5). If the database is down the server
-# unit will keep failing — that's the design.
+# (whichever host that database is on — loopback for all-in-one,
+# the remote host for distributed). If the database is down the
+# server unit will keep restarting until it isn't.
 systemctl enable --now wolf-server
 journalctl -u wolf-server -f
 # Wait for "wolf-server: ready (database reachable)"
@@ -352,6 +407,11 @@ systemctl enable --now wolf-dashboard
 # need the propose/execute action path.
 systemctl enable --now wolf-gateway
 ```
+
+In **distributed mode**, the same four `systemctl enable --now`
+commands run on different hosts — one host per component (or
+some operator-chosen split). The recommended order is the same
+because the polling logic is the same.
 
 Day-2 operations — same pattern in any order, just verbs:
 
@@ -471,6 +531,7 @@ MSSPs) already runs Wazuh and understands this shape:
 | `wazuh-certs-tool.sh` | `wolf-cert` |
 | Per-component users (`wazuh-indexer`, `wazuh`, `wazuh-dashboard`) | Per-component users (`wolf-database`, `wolf-server`, `wolf-dashboard`, `wolf-gateway`) plus a shared `wolf` group |
 | Recommended install order: indexer → manager → dashboard | Recommended install order: database → server → dashboard |
+| No inter-component systemd dependencies — each unit standalone, app-level coordination | Same: no `Requires=` / `Wants=` / `After=` between Wolf units, startup polling is the contract |
 | `/var/ossec/` | FHS-distributed across `/usr/lib/wolf-*`, `/etc/wolf-*`, `/var/lib/wolf-*` |
 | `systemctl <verb> wazuh-<component>` | `systemctl <verb> wolf-<component>` |
 | `.deb` / `.rpm` packages | `.deb` (5.9) / `.rpm` (5.10) — deferred to release phase |
