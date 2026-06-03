@@ -89,7 +89,7 @@ class Settings(BaseSettings):
     # BIND_HOST=127.0.0.1 since only the local wolf-dashboard
     # process needs to reach it.
     bind_host: str = "0.0.0.0"  # noqa: S104  intentional all-interfaces bind
-    bind_port: int = 8000
+    bind_port: int = 7860
 
     # Paths to the TLS cert + key issued by `wolf-cert init`. Defaults
     # are anchored at the project root (see `_PROJECT_ROOT` above), so

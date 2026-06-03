@@ -18,7 +18,7 @@ up: ## Start the full stack (Postgres, wolf-server, wolf-gateway)
 	docker compose up --build -d
 	@echo "Waiting for wolf-server to be healthy..."
 	@docker compose exec server python -m wolf_server.management.wait_ready || true
-	@echo "Stack is up. Visit http://localhost:8000/docs"
+	@echo "Stack is up. Visit http://localhost:7860/docs"
 
 down: ## Stop the stack
 	docker compose down

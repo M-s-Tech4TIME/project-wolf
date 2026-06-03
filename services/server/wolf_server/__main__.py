@@ -12,7 +12,7 @@ Two invocation forms supported:
     python -m wolf_server          # what docs/restart.md now recommends
     uv run python -m wolf_server   # same, via uv's venv resolution
 
-The historic `uvicorn wolf_server.main:app --host 0.0.0.0 --port 8000`
+The historic `uvicorn wolf_server.main:app --host 0.0.0.0 --port 7860`
 incantation still works for cases where uvicorn flags need
 hand-tuning — it just bypasses the auto-HTTPS detection.
 

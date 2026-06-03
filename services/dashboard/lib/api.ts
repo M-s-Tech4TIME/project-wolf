@@ -2,7 +2,7 @@
 //
 // All requests carry the session cookie (`credentials: "include"`).  The
 // cookie is set by wolf-server on login (HTTP-only, samesite=lax).
-// For dev (localhost:3000 ↔ localhost:8000), CORS is pre-configured on
+// For dev (localhost:3000 ↔ localhost:7860), CORS is pre-configured on
 // wolf-server with allow_credentials. Note: the cross-origin
 // NetworkError this setup produces under HTTPS is tracked as a known
 // issue in PROGRESS.md §6 — resolution is Phase 5.6 (edge-component
@@ -25,16 +25,16 @@ import type {
 
 // Resolve at call time, not module load: in the browser we use whichever
 // host the page was served from (so the LAN IP follows whatever the user
-// typed in the address bar), with port 8000. `NEXT_PUBLIC_SERVER_URL`
+// typed in the address bar), with port 7860. `NEXT_PUBLIC_SERVER_URL`
 // overrides for production / pinned deploys.
 function apiBase(): string {
   if (process.env.NEXT_PUBLIC_SERVER_URL) {
     return process.env.NEXT_PUBLIC_SERVER_URL;
   }
   if (typeof window !== "undefined") {
-    return `${window.location.protocol}//${window.location.hostname}:8000`;
+    return `${window.location.protocol}//${window.location.hostname}:7860`;
   }
-  return "http://localhost:8000";
+  return "http://localhost:7860";
 }
 
 export class ApiError extends Error {

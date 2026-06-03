@@ -16,7 +16,7 @@ Phase 5.4 (Native HTTPS + `wolf-cert` CLI) shipped a self-signed
 CA + leaf-cert lifecycle that flips both the orchestrator and the
 frontend dev server to TLS when cert files exist on disk. The
 orchestrator and frontend serve two **separate** browser-visible
-HTTPS origins (`:3000` and `:8000` today). The end-to-end
+HTTPS origins (`:3000` and `:7860` today). The end-to-end
 verification surfaced a real UX failure mode: after the user
 clicks through the "not secure" warning for the frontend, the
 frontend's JS does a cross-origin `fetch()` to the orchestrator,
@@ -94,7 +94,7 @@ units are running on each host.
 ```
 host-A:
   wolf-dashboard.service     :3000   (or :443 in prod)
-  wolf-server.service        :8000   bound 127.0.0.1
+  wolf-server.service        :7860   bound 127.0.0.1
   wolf-database.service      :5432   bound 127.0.0.1
   wolf-gateway.service       (disabled until Phase 6)
 ```
@@ -111,7 +111,7 @@ host-D (dashboard):
   cert: dashboard leaf (DUAL — serves browser AND client-auths to server)
 
 host-S (server):
-  wolf-server.service        :8000 bound 0.0.0.0 with mTLS REQUIRED
+  wolf-server.service        :7860 bound 0.0.0.0 with mTLS REQUIRED
   cert: server leaf (DUAL — serves dashboard/relay AND client-auths to database)
 
 host-DB (database):
@@ -474,7 +474,7 @@ Today (Phase 5.4 state — TWO browser-visible origins):
 ```
 Browser
   ├── GET  https://host:3000/  → wolf-frontend serves the UI (trust #1)
-  └── fetch https://host:8000/api/v1/auth/login
+  └── fetch https://host:7860/api/v1/auth/login
                               → blocked: cert signed by untrusted CA
                               → NetworkError
 ```
@@ -487,7 +487,7 @@ Browser
                                       → reaches wolf-dashboard's Next.js
                                         API route handler
                                           ↓ mTLS (Wolf CA)
-                                        wolf-server:8000  (bound 127.0.0.1)
+                                        wolf-server:7860  (bound 127.0.0.1)
                                           ↓ Postgres wire
                                         wolf-database:5432
 ```
@@ -655,7 +655,7 @@ will find Wolf operationally familiar.
 * **Phase 5.6** — the user-reported `NetworkError` reproduction
   (open `https://localhost:3000/` after `wolf-cert init`, try to
   log in) succeeds end-to-end with one trust decision (the
-  dashboard's cert). Direct `curl` to `wolf-server:8000` without
+  dashboard's cert). Direct `curl` to `wolf-server:7860` without
   a client cert is REFUSED at the TLS layer (not via 401 — via
   TLS handshake failure).
 * **Phase 5.7** — `systemctl restart wolf-database` brings

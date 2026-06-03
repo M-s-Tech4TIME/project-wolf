@@ -52,9 +52,9 @@ services:
       SECRETS_FILE_PATH: /run/secrets/wolf_secrets.enc
       SECRETS_FILE_KEY: dev-only-fernet-key-change-in-prod=
     ports:
-      - "8000:8000"
+      - "7860:7860"
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')\""]
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:7860/healthz')\""]
       interval: 10s
       timeout: 5s
       retries: 10

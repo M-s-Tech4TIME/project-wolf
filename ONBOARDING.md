@@ -112,7 +112,7 @@ them costs you more time than reading them.
 
 | Port | Component | Bound | Notes |
 |---|---|---|---|
-| 8000 | wolf-server (FastAPI) | 0.0.0.0 | LAN-reachable for browser access |
+| 7860 | wolf-server (FastAPI) | 0.0.0.0 | LAN-reachable for browser access |
 | 8001 | wolf-gateway (FastAPI) | 0.0.0.0 | Stub today; will be needed Phase 6+ |
 | 3000 | wolf-dashboard (Next.js dev) | 0.0.0.0 | LAN-reachable |
 | 5432 | wolf-database (Postgres 17 + pgvector; system Postgres pre-Phase 5.7) | 127.0.0.1 | System Postgres default (Docker alternative binds 0.0.0.0); becomes wolf-database in 5.7 |
@@ -346,17 +346,17 @@ at the right `.env` / config tree.
 
 ```bash
 # Health check
-curl -fsS http://localhost:8000/healthz
+curl -fsS http://localhost:7860/healthz
 
 # Login (saves cookie to /tmp/wolf-cookie.txt)
 curl -fsS -c /tmp/wolf-cookie.txt -H 'Content-Type: application/json' \
     -d '{"email":"admin@example.com","password":"choose-a-strong-password"}' \
-    http://localhost:8000/api/v1/auth/login
+    http://localhost:7860/api/v1/auth/login
 
 # Send a chat question
 curl -fsS -b /tmp/wolf-cookie.txt -H 'Content-Type: application/json' \
     -d '{"question":"how many alerts in the last 24 hours by severity?"}' \
-    http://localhost:8000/api/v1/chat
+    http://localhost:7860/api/v1/chat
 ```
 
 Or open wolf-dashboard at `http://localhost:3000` (or your LAN IP, e.g.
@@ -463,7 +463,7 @@ the padlock shows green.
 # Both should return HTTP 200 with the freshly-minted CA trusted.
 CA=.local/certs/ca/ca-cert.pem
 curl -s --cacert "$CA" -o /dev/null -w "wolf-dashboard: %{http_code}\n" https://localhost:3000/
-curl -s --cacert "$CA" -o /dev/null -w "wolf-server: %{http_code}\n" https://localhost:8000/healthz
+curl -s --cacert "$CA" -o /dev/null -w "wolf-server: %{http_code}\n" https://localhost:7860/healthz
 ```
 
 **To roll back to HTTP-only:** `wolf-cert revoke --yes` deletes

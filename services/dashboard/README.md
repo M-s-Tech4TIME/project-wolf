@@ -3,7 +3,7 @@
 Next.js 16 (App Router) + Tailwind 4 + shadcn/ui. The edge component
 per [ADR 0016](../../docs/decisions/0016-wolf-component-architecture-and-packaging.md)
 — the only Wolf process that browsers talk to directly. Talks to
-wolf-server on `http://localhost:8000` by default (overridable via
+wolf-server on `http://localhost:7860` by default (overridable via
 `NEXT_PUBLIC_SERVER_URL`).
 
 Phase 5.5 rename: this package was `frontend/` (package name
@@ -80,7 +80,7 @@ scripts/
 ## Notes on auth
 
 - wolf-server sets HTTP-only `wolf_access_token` and `wolf_refresh_token`
-  cookies with `samesite=lax`. In dev across ports (3000 ↔ 8000), the
+  cookies with `samesite=lax`. In dev across ports (3000 ↔ 7860), the
   cookies flow because both share the eTLD+1 `localhost`.
 - All `fetch` calls use `credentials: "include"` (see `lib/api.ts`).
 - The tenant switcher does not re-issue JWTs server-side (yet). Switching

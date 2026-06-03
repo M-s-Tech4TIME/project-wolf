@@ -22,7 +22,7 @@ ollama stop qwen3:8b 2>/dev/null
 # 2. Confirm GPU + port are clean
 ollama ps
 nvidia-smi --query-gpu=memory.used,memory.total --format=csv
-ss -tlnp 2>/dev/null | grep ":8000 " || echo "port 8000 free"
+ss -tlnp 2>/dev/null | grep ":7860 " || echo "port 7860 free"
 
 # 3. Relaunch wolf-server via the Phase 5.4-c launcher.
 #    `python -m wolf_server` auto-detects TLS: HTTPS when both
@@ -40,7 +40,7 @@ nohup uv run python -m wolf_server \
 #    `wolf-cert export-ca` per ONBOARDING.md).
 curl -s --retry 40 --retry-delay 1 --retry-connrefused --max-time 60 \
   -o /dev/null -w "login HTTP %{http_code}\n" \
-  -X POST http://localhost:8000/api/v1/auth/login \
+  -X POST http://localhost:7860/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"admin@example.com","password":"wolf_admin_dev_password"}'
 # expect: login HTTP 200
@@ -86,11 +86,11 @@ finishes the shutdown.
 
 `ollama ps` should print only the header (no rows). `nvidia-smi
 memory.used` should be ~15 MiB (essentially idle). `ss -tlnp | grep
-:8000` should find nothing.
+:7860` should find nothing.
 
 If GPU memory is still high after `ollama stop`, run `ollama stop`
-again for any model that appears in `ollama ps`. If port 8000 is still
-bound, find the PID with `lsof -i :8000` (or `ss -tlnp | grep :8000`)
+again for any model that appears in `ollama ps`. If port 7860 is still
+bound, find the PID with `lsof -i :7860` (or `ss -tlnp | grep :7860`)
 and `kill <pid>`.
 
 ### Relaunch wolf-server
@@ -160,7 +160,7 @@ If the LAN IP just changed, three files pin it and must be updated:
 | File | What to update |
 |---|---|
 | `.env` | `CORS_ALLOW_ORIGINS=` — append `http://<new-ip>:3000` |
-| `services/dashboard/.env.local` | `NEXT_PUBLIC_SERVER_URL=http://<new-ip>:8000` |
+| `services/dashboard/.env.local` | `NEXT_PUBLIC_SERVER_URL=http://<new-ip>:7860` |
 | `services/dashboard/next.config.ts` | `allowedDevOrigins: […]` — append `"<new-ip>"` |
 
 After editing, restart **both** wolf-server and `next dev` (next-dev
@@ -204,6 +204,6 @@ The full per-slice cycle (referenced from
 | `login HTTP 401` | DB user gone, password reset, or wrong creds | Verify `admin@example.com` exists in `users`; re-run `bootstrap_tenant` if needed. |
 | `login HTTP 500` | Backend exception | `tail -50 /tmp/wolf-server.log` — usually a DB or secrets-backend misconfiguration. |
 | `ollama ps` shows a model stuck `Stopping…` | Daemon mid-shutdown | Wait or `ollama stop <model>` again; if persistent, `systemctl restart ollama`. |
-| Port 8000 already bound after `pkill` | A child process survived | `lsof -i :8000` to find PID, `kill <pid>`. |
+| Port 7860 already bound after `pkill` | A child process survived | `lsof -i :7860` to find PID, `kill <pid>`. |
 | wolf-dashboard won't refresh | `next dev` got stuck or `next.config.ts` changed | `pkill -f "next dev"` then `cd services/dashboard && npm run dev`. |
 | Chat takes > 10 min | qwen3:8b cold load on a fragmented GPU | Normal on first call after a reset. Subsequent calls in the same session are faster. |

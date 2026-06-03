@@ -228,9 +228,9 @@ on older distros use the container channel.
   `ProtectHome=true`, `PrivateTmp=true`, `NoNewPrivileges=true`,
   `CapabilityBoundingSet=` (empty). Listed in full in the unit
   files when shipped.
-- **Network exposure** — orchestrator binds `0.0.0.0:8000` by
-  default (LAN-reachable), frontend binds `0.0.0.0:3000`. Gateway
-  binds `127.0.0.1:8001` only — never externally exposed (per
+- **Network exposure** — wolf-server binds `0.0.0.0:7860` by
+  default (LAN-reachable), wolf-dashboard binds `0.0.0.0:3000`.
+  wolf-gateway binds `127.0.0.1:8001` only — never externally exposed (per
   `docs/01` and `docs/07`). The install script prints a warning
   if the public-internet interface is detected; operator must
   explicitly opt in for an internet-facing install.

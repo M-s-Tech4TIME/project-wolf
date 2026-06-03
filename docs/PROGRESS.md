@@ -283,11 +283,11 @@ Status legend: ✅ working, 🟡 partial, ❌ broken/disabled, ⏳ planned only.
 - `inject_tenant_filter=False` (standalone Wazuh deployment, no per-doc tenant_id)
 
 **Service ports (dev, bound `0.0.0.0` for LAN access):**
-- Orchestrator: `8000` (running)
-- Frontend: `3000` (running, Next.js 16 dev server)
+- wolf-server: `7860` (running)
+- wolf-dashboard: `3000` (running, Next.js 16 dev server)
 - Ollama: `127.0.0.1:11434`
 - Postgres: `127.0.0.1:5432` (system Postgres per ADR 0008)
-- Gateway: `8001` (not yet running)
+- wolf-gateway: `8001` (not yet running)
 
 **Wazuh tenant 'acme' on this machine** — bootstrapped 2026-05-24:
 - Indexer: `https://192.168.245.128:9200`
@@ -419,7 +419,7 @@ to `CHANGELOG.md` as ADRs.
 - **Cross-origin `NetworkError` after `wolf-cert init`** (2026-06-03).
   When TLS is enabled (`wolf-cert init` run), the browser sees
   two Wolf origins: `https://<host>:3000` (dashboard) and
-  `https://<host>:8000` (server). Clicking through the warning on
+  `https://<host>:7860` (server). Clicking through the warning on
   the dashboard origin doesn't authorise cross-origin fetches to
   the server origin, so the dashboard's JS sees
   `NetworkError when attempting to fetch resource`. **Resolution
@@ -531,7 +531,7 @@ to `CHANGELOG.md` as ADRs.
 - `ONBOARDING.md` (repo root): single-entry onboarding doc — from
   `git clone` to first chat request — for a new contributor or a new
   Claude Code session on a different machine (added 2026-05-23).
-- API docs: FastAPI auto-generates at `http://localhost:8000/docs`.
+- API docs: FastAPI auto-generates at `http://localhost:7860/docs`.
 - README: in git as of commit `c05cdce`.
 
 ---
