@@ -81,10 +81,10 @@ class TenantScopedCache(Protocol):
 class InMemoryTenantCache:
     """Process-local in-memory implementation. No eviction beyond TTL.
 
-    Fine for single-orchestrator dev / small deployments. For multi-
-    process Wolf the operator would swap in a Redis-backed
-    implementation honoring the same protocol; this module's design
-    deliberately avoids assuming a backend.
+    Fine for single-process dev / small deployments. For multi-process
+    wolf-server the operator would swap in a Redis-backed implementation
+    honoring the same protocol; this module's design deliberately avoids
+    assuming a backend.
     """
 
     def __init__(self) -> None:

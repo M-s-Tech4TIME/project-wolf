@@ -30,7 +30,7 @@ class ToolRegistry:
     def model_tools(self) -> list[ToolSchema]:
         """Return only read and propose tools — safe to include in model schemas.
 
-        Execute tools are intentionally absent.  This is the list the orchestrator
+        Execute tools are intentionally absent.  This is the list wolf-server
         passes to the model; the model can never call what it cannot see.
         """
         return [t for t in self._tools.values() if t.tier != ToolTier.execute]

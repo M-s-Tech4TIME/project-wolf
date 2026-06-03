@@ -48,9 +48,9 @@ strict = true
 warn_return_any = true
 # warn_unused_configs intentionally disabled: this is a uv workspace
 # with multiple services that share one root mypy config, so an
-# override entry can be "unused" by one subtree (e.g. the gateway
-# doesn't import pgvector) while being load-bearing for another (the
-# orchestrator does). Enabling this would emit noise on every subtree
+# override entry can be "unused" by one subtree (e.g. wolf-gateway
+# doesn't import pgvector) while being load-bearing for another
+# (wolf-server does). Enabling this would emit noise on every subtree
 # check that isn't actionable per-subtree. We keep the override list
 # minimal and reviewed in code review instead.
 warn_unused_configs = false
@@ -61,7 +61,7 @@ warn_unused_configs = false
 # them as `Any` at the import boundary; values flowing into Wolf code
 # from these modules MUST be cast or validated at the call site so the
 # `Any` stops at the boundary instead of propagating into the rest of
-# the orchestrator (`warn_return_any` catches any leaks).
+# wolf-server (`warn_return_any` catches any leaks).
 #
 # Keep this list minimal — every entry here is a typing blind spot.
 # Drop modules as soon as the upstream library ships stubs OR we remove

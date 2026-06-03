@@ -1,6 +1,6 @@
 """Abstract interface for the Wolf secrets backend.
 
-Every secrets backend implements this protocol.  The orchestrator and gateway
+Every secrets backend implements this protocol.  wolf-server and wolf-gateway
 depend on this protocol, never on a concrete backend, so swapping backends
 (encrypted file → OpenBao) requires zero changes to service code.
 """

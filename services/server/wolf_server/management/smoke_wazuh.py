@@ -98,7 +98,7 @@ async def smoke_test(tenant_slug: str, *, hours: int = 24) -> None:
             tenant_id=tenant.id,
             tenant_slug=tenant.slug,
             user_id=uuid.UUID(int=0),
-            user_email="smoke-test@orchestrator.local",
+            user_email="smoke-test@wolf-server.local",
             role="admin",
             session_id=f"smoke-{uuid.uuid4().hex[:8]}",
         )
@@ -179,7 +179,7 @@ async def smoke_all_tools(
             raise SystemExit(f"No tenant with slug {tenant_slug!r}; run bootstrap_tenant first")
         ctx = TenantContext(
             tenant_id=tenant.id, tenant_slug=tenant.slug,
-            user_id=uuid.UUID(int=0), user_email="smoke-test@orchestrator.local",
+            user_id=uuid.UUID(int=0), user_email="smoke-test@wolf-server.local",
             role="admin", session_id=f"smoke-{uuid.uuid4().hex[:8]}",
         )
         secrets = get_secrets_backend(settings)

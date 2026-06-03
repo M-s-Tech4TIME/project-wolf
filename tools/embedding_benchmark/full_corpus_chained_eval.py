@@ -8,19 +8,11 @@ does when EMBEDDING_MODEL_AUX is set.
 Same 20-query battery with known-correct answers as full_corpus_v2_eval.
 """
 
-# ruff: noqa: T201, E402, B905
-
-import sys
-from pathlib import Path
-
-_ORCH = Path(__file__).resolve().parents[2] / "services" / "orchestrator"
-if _ORCH.is_dir():
-    _orch_str = str(_ORCH)
-    sys.path[:] = [p for p in sys.path if p != _orch_str]
-    sys.path.insert(0, _orch_str)
+# ruff: noqa: T201, B905
 
 import asyncio
 import statistics
+import sys
 import time
 import uuid
 

@@ -15,25 +15,15 @@ right choice when the source has materially changed (a new ATT&CK
 version, a new Wazuh release). Tenant-private chunks are never touched.
 """
 
-# This CLI imports from the orchestrator's app package. Same two-app/-packages
-# bootstrap as model_probe + embedding_benchmark — see ADR 0001 / ONBOARDING
-# Gotcha #1. Orchestrator's app/ must win the import race over gateway's.
-# ruff: noqa: T201, E402
-
-import sys
-from pathlib import Path
-
-_ORCH = Path(__file__).resolve().parents[2] / "services" / "orchestrator"
-if _ORCH.is_dir():
-    _orch_str = str(_ORCH)
-    sys.path[:] = [p for p in sys.path if p != _orch_str]
-    sys.path.insert(0, _orch_str)
+# ruff: noqa: T201
 
 import argparse
 import asyncio
 import hashlib
 import os
+import sys
 from collections.abc import Iterable
+from pathlib import Path
 
 from sqlalchemy import delete, select
 from wolf_server.config import get_settings

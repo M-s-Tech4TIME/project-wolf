@@ -3,8 +3,8 @@
 Phase 5.4-a — the pure-library layer of Wolf's HTTPS story. The
 `wolf-cert` CLI (Phase 5.4-b) is the stateful shell over these
 primitives. The future Wolf Knowledge Relay daemon also depends on
-this library to validate the orchestrator's server cert and consume
-its own client cert.
+this library to validate wolf-server's server cert and consume its
+own client cert.
 
 Design choices, all of them deliberate
 --------------------------------------
@@ -77,11 +77,11 @@ _KEY_FILE_MODE: Final[int] = 0o600
 class LeafKind(Enum):
     """Which Extended Key Usage(s) to stamp on the leaf cert.
 
-    SERVER  — `serverAuth` only. The default for orchestrator and
-              frontend leaves (browsers connecting to Wolf).
+    SERVER  — `serverAuth` only. The default for wolf-server and
+              wolf-dashboard leaves (browsers connecting to Wolf).
     CLIENT  — `clientAuth` only. For the future Wolf Knowledge
-              Relay daemons connecting *to* the orchestrator via
-              mTLS — they are clients of the orchestrator.
+              Relay daemons connecting *to* wolf-server via
+              mTLS — they are clients of wolf-server.
     DUAL    — both. Reserved for components that act as both
               server and client (e.g. a future Wolf-to-Wolf
               federation channel).
@@ -173,7 +173,7 @@ def sign_leaf(
     The function refuses to issue a leaf with an empty SAN set, since
     such a cert would be unusable.
 
-    `kind` controls the ExtendedKeyUsage stamp. The orchestrator's
+    `kind` controls the ExtendedKeyUsage stamp. wolf-server's
     server cert is `SERVER`; a future relay client cert is `CLIENT`.
     """
     if not san_dns and not san_ip:
@@ -302,8 +302,8 @@ def write_key_pem(key: rsa.RSAPrivateKey, path: Path) -> None:
     The 0600 permission is enforced regardless of the caller's umask.
     Creates parent directories if missing.
 
-    Unencrypted on purpose for now: the orchestrator's uvicorn launcher
-    in Phase 5.4-c will read this file directly at startup. Passphrase
+    Unencrypted on purpose for now: wolf-server's uvicorn launcher
+    (Phase 5.4-c) reads this file directly at startup. Passphrase
     support is a future hardening item (would require either operator
     interaction or a key-management service).
     """

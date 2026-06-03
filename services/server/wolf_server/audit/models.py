@@ -5,7 +5,7 @@ UPDATE or DELETE from it.  New information referencing an old event must
 be written as a new event with a `related_event_id` pointer.
 
 Design constraints (from doc 11, Rule 7):
-- Code in the orchestrator can write audit events.
+- Code in wolf-server can write audit events.
 - Nothing may delete or modify an existing event.
 - The write API accepts only appends.
 """

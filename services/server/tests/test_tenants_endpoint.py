@@ -1,4 +1,4 @@
-"""Tests for GET /api/v1/auth/me/tenants — the frontend tenant switcher."""
+"""Tests for GET /api/v1/auth/me/tenants — the wolf-dashboard tenant switcher."""
 
 import uuid
 from datetime import UTC, datetime

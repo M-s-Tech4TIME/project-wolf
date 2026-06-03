@@ -206,8 +206,8 @@ def cmd_init(args: argparse.Namespace) -> int:
     print(f"  CA cert: {store.ca_cert_path}")
     print(f"  CA key:  {store.ca_key_path}")
 
-    # Determine SANs once and apply to every leaf — the orchestrator
-    # and frontend should match the same hostname / IP set so the
+    # Determine SANs once and apply to every leaf — wolf-server and
+    # wolf-dashboard should match the same hostname / IP set so the
     # browser doesn't reject one and accept the other.
     san_dns, san_ip = _resolve_sans(args)
     if not san_dns and not san_ip:
@@ -480,7 +480,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_add.add_argument(
         "--leaf",
         default="all",
-        help="Which leaf to update ('all', 'orchestrator', 'frontend', etc.)",
+        help="Which leaf to update ('all', 'server', 'dashboard', etc.)",
     )
     p_add.set_defaults(func=cmd_add_host)
 
@@ -499,7 +499,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_renew.add_argument(
         "--leaf",
         default="all",
-        help="Which leaf to reissue ('all', 'orchestrator', 'frontend', etc.)",
+        help="Which leaf to reissue ('all', 'server', 'dashboard', etc.)",
     )
     p_renew.add_argument(
         "--ca",

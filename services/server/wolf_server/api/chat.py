@@ -52,9 +52,9 @@ logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
 _settings = get_settings()
 # Phase 4 Slice 3 — process-wide tenant-scoped cache.
-# Module-level singleton, shared across all requests in this orchestrator
+# Module-level singleton, shared across all requests in this wolf-server
 # process. Tenant-scoped at the key level so two tenants on the same
-# orchestrator cannot collide. Future multi-process Wolf would swap
+# wolf-server cannot collide. Future multi-process wolf-server would swap
 # InMemoryTenantCache for a Redis-backed implementation of the same
 # protocol; no other code needs to change.
 _TENANT_CACHE: TenantScopedCache = InMemoryTenantCache()
@@ -81,8 +81,8 @@ class ChatRequestBody(BaseModel):
 
     question: str = Field(min_length=1, max_length=4000)
     history: list[ConversationTurn] = Field(default_factory=list, max_length=40)
-    # Slice 5.0c-g: set by the frontend when the analyst clicked Retry on
-    # the previous Wolf answer. Causes the loop to append a "try again,
+    # Slice 5.0c-g: set by wolf-dashboard when the analyst clicked Retry
+    # on the previous Wolf answer. Causes the loop to append a "try again,
     # critique your previous attempt" hint to the user message. History
     # MUST include the previous Q→A pair so the model has the prior
     # attempt to compare against.
@@ -206,7 +206,7 @@ async def chat_stream(
 ) -> StreamingResponse:
     """Run the agent loop and stream events to the client over SSE.
 
-    The frontend consumes this with `fetch` + a ReadableStream reader (POST
+    wolf-dashboard consumes this with `fetch` + a ReadableStream reader (POST
     is needed because EventSource is GET-only).  Events emitted:
       - loop.started        — once, at the top
       - step.started        — per step

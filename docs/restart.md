@@ -47,8 +47,9 @@ curl -s --retry 40 --retry-delay 1 --retry-connrefused --max-time 60 \
 ```
 
 If `login HTTP 200`, Wolf is live. Open `http://<lan-ip>:3000` (or
-`https://...` once Phase 5.4-d lands the frontend TLS wiring) in the
-browser. Frontend hot-reloads on its own; no Next.js restart needed
+`https://<lan-ip>:3000` when `.local/certs/dashboard/{cert,key}.pem`
+exist — the Phase 5.4-d launcher auto-enables TLS) in the browser.
+wolf-dashboard hot-reloads on its own; no Next.js restart needed
 unless `next.config.ts` changed.
 
 ---
@@ -199,10 +200,10 @@ The full per-slice cycle (referenced from
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `login HTTP 502` / connection refused | Orchestrator hasn't finished starting | Wait 5 s and retry (the `--retry` flags in the curl command above handle this for the first 60 s). |
+| `login HTTP 502` / connection refused | wolf-server hasn't finished starting | Wait 5 s and retry (the `--retry` flags in the curl command above handle this for the first 60 s). |
 | `login HTTP 401` | DB user gone, password reset, or wrong creds | Verify `admin@example.com` exists in `users`; re-run `bootstrap_tenant` if needed. |
 | `login HTTP 500` | Backend exception | `tail -50 /tmp/wolf-server.log` — usually a DB or secrets-backend misconfiguration. |
 | `ollama ps` shows a model stuck `Stopping…` | Daemon mid-shutdown | Wait or `ollama stop <model>` again; if persistent, `systemctl restart ollama`. |
 | Port 8000 already bound after `pkill` | A child process survived | `lsof -i :8000` to find PID, `kill <pid>`. |
-| Frontend won't refresh | `next dev` got stuck or `next.config.ts` changed | `pkill -f "next dev"` then `cd services/dashboard && npm run dev`. |
+| wolf-dashboard won't refresh | `next dev` got stuck or `next.config.ts` changed | `pkill -f "next dev"` then `cd services/dashboard && npm run dev`. |
 | Chat takes > 10 min | qwen3:8b cold load on a fragmented GPU | Normal on first call after a reset. Subsequent calls in the same session are faster. |

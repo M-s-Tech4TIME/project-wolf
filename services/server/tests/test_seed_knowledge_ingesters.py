@@ -7,19 +7,12 @@ touch the network or DB.
 """
 
 import json
-import sys
 import zipfile
 from io import BytesIO
 from pathlib import Path
 
-# Same path bootstrap as the CLI — ensure the orchestrator's app is first
-# on sys.path (avoids the gateway app/ collision documented in ADR 0001).
-_ORCH = Path(__file__).resolve().parents[3] / "services" / "orchestrator"
-if str(_ORCH) not in sys.path:
-    sys.path.insert(0, str(_ORCH))
-
-from tools.seed_knowledge.attack import _chunks_from_bundle  # noqa: E402
-from tools.seed_knowledge.wazuh_rules import _chunks_from_file  # noqa: E402
+from tools.seed_knowledge.attack import _chunks_from_bundle
+from tools.seed_knowledge.wazuh_rules import _chunks_from_file
 
 # ─── ATT&CK STIX parser ─────────────────────────────────────────────────────
 

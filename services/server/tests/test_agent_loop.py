@@ -400,7 +400,7 @@ async def test_retry_nudge_appends_critique_hint_to_user_message(
     """Slice 5.0c-g: Retry-on-Wolf-response flips retry_nudge=True on the
     chat request. The loop must append the RETRY_NUDGE text to the
     fresh user message it sends to the model so the model knows to
-    critique its previous attempt (which the frontend put in history)."""
+    critique its previous attempt (which wolf-dashboard put in history)."""
     from wolf_server.agent.prompts import RETRY_NUDGE
 
     provider = MockProvider([_response("Improved answer.")])

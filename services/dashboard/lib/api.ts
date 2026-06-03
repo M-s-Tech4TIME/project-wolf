@@ -116,7 +116,7 @@ export function chat(body: ChatRequestBody): Promise<ChatResponseBody> {
 
 /**
  * Stream chat events via SSE.  Calls `onEvent` for every loop event.
- * Returns when the stream completes (the orchestrator sends `event: done`).
+ * Returns when the stream completes (wolf-server sends `event: done`).
  *
  * Throws ApiError on HTTP-level failures (401 before the stream starts,
  * 500 from the backend, etc.).  Network or parse errors during streaming

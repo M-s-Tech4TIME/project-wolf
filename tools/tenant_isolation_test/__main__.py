@@ -32,20 +32,12 @@ writes its own audit events with a "isolation-probe" event_type
 prefix, but never deletes or modifies existing data.
 """
 
-# ruff: noqa: T201, E402
-
-import sys
-from pathlib import Path
-
-_ORCH = Path(__file__).resolve().parents[2] / "services" / "orchestrator"
-if _ORCH.is_dir():
-    _orch_str = str(_ORCH)
-    sys.path[:] = [p for p in sys.path if p != _orch_str]
-    sys.path.insert(0, _orch_str)
+# ruff: noqa: T201
 
 import argparse
 import asyncio
 import os
+import sys
 import uuid
 from dataclasses import dataclass
 

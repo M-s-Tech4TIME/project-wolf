@@ -60,8 +60,8 @@ class Settings(BaseSettings):
 
     # ── CORS ──────────────────────────────────────────────────────────────
     # Comma-separated list of allowed origins for browser requests with
-    # credentials.  Add the URL the analyst's browser uses to reach the
-    # frontend.  Empty in production unless you explicitly configure it.
+    # credentials.  Add the URL the analyst's browser uses to reach
+    # wolf-dashboard.  Empty in production unless you explicitly configure it.
     cors_allow_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
     # Regex evaluated IN ADDITION to the exact list above. Default matches
     # any private-network IP (192.168/16, 10/8, 172.16/12) or loopback on
@@ -141,7 +141,7 @@ class Settings(BaseSettings):
 
     # ── Embedding stack (Phase 3 — knowledge layer) ────────────────────────
     # `ollama` (default) reuses the Ollama daemon already running for the LLM
-    # — no torch in the orchestrator's wheel set; recommended per ADR 0007.
+    # — no torch in wolf-server's wheel set; recommended per ADR 0007.
     # `sentence-transformers` runs in-process and requires the optional
     # `embeddings-local` extra (`uv sync --extra embeddings-local`).
     embedding_provider: str = "ollama"  # ollama | sentence-transformers

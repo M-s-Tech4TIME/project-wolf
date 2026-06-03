@@ -300,7 +300,7 @@ cd ../..
   *reference* the resolver looks up at request time.
 - Full flag reference: `uv run python -m wolf_server.management.bootstrap_tenant --help`,
   or read the docstring at the top of
-  [`services/server/app/management/bootstrap_tenant.py`](services/server/app/management/bootstrap_tenant.py).
+  [`services/server/wolf_server/management/bootstrap_tenant.py`](services/server/wolf_server/management/bootstrap_tenant.py).
 
 **If you don't have a Wazuh yet:** pass placeholder values that satisfy
 arg validation. The tenant + auth + agent loop will all work; only
@@ -504,7 +504,7 @@ This exercises every registered read tool against the live deployment.
 It is the canonical "does Wolf actually talk to Wazuh" check and the
 one you re-run after any Wazuh upgrade or tool change.
 
-### 4.4 Frontend build
+### 4.4 wolf-dashboard build
 
 ```bash
 cd services/dashboard
@@ -542,12 +542,13 @@ sudo systemctl status postgresql
 # 2. Ollama
 ollama serve &
 
-# 3. Orchestrator
+# 3. wolf-server
 cd services/server
-uv run uvicorn wolf_server.main:app --host 0.0.0.0 --port 8000 --reload &
+set -a && source ../../.env && set +a
+uv run python -m wolf_server &       # Phase 5.4-c launcher; auto-HTTPS when certs present
 cd ../..
 
-# 4. Frontend
+# 4. wolf-dashboard
 cd services/dashboard
 npm run dev -- --hostname 0.0.0.0 --port 3000 &
 cd ..
@@ -581,7 +582,7 @@ accept partial updates). It will:
 - Preserve the user↔tenant role binding.
 
 The docstring at the top of
-[`bootstrap_tenant.py`](services/server/app/management/bootstrap_tenant.py)
+[`bootstrap_tenant.py`](services/server/wolf_server/management/bootstrap_tenant.py)
 documents this contract. A smaller-surface "update only" CLI is a
 welcome future ergonomic improvement; today, re-running
 `bootstrap_tenant` is the supported path.
@@ -598,7 +599,7 @@ the new values on its next lookup (per-request, no caching).
 1. Pull the candidate model with Ollama.
 2. Run `tools.model_probe` against it.
 3. Write an ADR (`docs/decisions/0NNN-...md`) following the ADR 0004 pattern.
-4. Change `default_model_id` in [`services/server/app/config.py`](services/server/app/config.py).
+4. Change `default_model_id` in [`services/server/wolf_server/config.py`](services/server/wolf_server/config.py).
 5. Restart wolf-server. Verify with a chat curl.
 
 Full procedure in [`docs/14-model-recommendations.md`](docs/14-model-recommendations.md) §"Environment-change playbook".
@@ -706,14 +707,14 @@ rejects the connection on hostname mismatch.
 
 Small models sometimes emit explicit-null fields for optional
 parameters. The dispatcher strips them
-([`services/server/app/tools/dispatcher.py`](services/server/app/tools/dispatcher.py),
+([`services/server/wolf_server/tools/dispatcher.py`](services/server/wolf_server/tools/dispatcher.py),
 `strip_explicit_nulls`). If you add a new tool with optional fields,
 this protection is already in place — don't disable it.
 
 ### Gotcha #6 — Relative-time strings on alert tools
 
 Some models pass `time_from="now-24h"` instead of an ISO timestamp.
-[`services/server/app/tools/alerts.py`](services/server/app/tools/alerts.py)
+[`services/server/wolf_server/tools/alerts.py`](services/server/wolf_server/tools/alerts.py)
 has a Pydantic `field_validator` to parse this. If you add a tool that
 accepts time inputs, copy the validator pattern.
 
@@ -802,8 +803,9 @@ Wazuh in three strategies (frontier / guided / pipeline) on both a
 local Ollama model (`qwen3:4b`, the steady-state default per ADR 0004)
 and a hosted frontier-tier model (`nvidia/nemotron-3-super-120b-a12b:free`
 via OpenRouter). 9 of 9 read tools verified live. 128 backend tests
-passing. mypy strict clean on 33 safety-critical files. Frontend
-(Next.js 16) renders chat, citations, multi-turn, tenant switcher.
+passing. mypy strict clean on 33 safety-critical files. wolf-dashboard
+(Next.js 16; package was `frontend/` at this snapshot date) renders
+chat, citations, multi-turn, tenant switcher.
 
 **Next phase: Phase 3** — RAG + grounding validator per
 [`docs/06-knowledge-and-rag.md`](docs/06-knowledge-and-rag.md) and
@@ -823,16 +825,16 @@ available. See [`docs/15-supported-model-matrix.md`](docs/15-supported-model-mat
 
 | What | Where |
 |---|---|
-| App entrypoint (FastAPI) | [`services/server/app/main.py`](services/server/app/main.py) |
-| Config / env settings | [`services/server/app/config.py`](services/server/app/config.py) |
-| Agent loop (strategies) | [`services/server/app/agent/`](services/server/app/agent/) |
-| Model adapters + KNOWN_MODELS | [`services/server/app/models/`](services/server/app/models/) |
-| Tool definitions + dispatcher | [`services/server/app/tools/`](services/server/app/tools/) |
-| Wazuh clients (Indexer + API) | [`services/server/app/wazuh/`](services/server/app/wazuh/) |
-| Tenancy + auth | [`services/server/app/tenancy/`](services/server/app/tenancy/), [`services/server/app/auth/`](services/server/app/auth/) |
-| Audit log | [`services/server/app/audit/`](services/server/app/audit/) |
-| Guardrails | [`services/server/app/guardrails/`](services/server/app/guardrails/) |
-| Management CLIs | [`services/server/app/management/`](services/server/app/management/) |
+| App entrypoint (FastAPI) | [`services/server/wolf_server/main.py`](services/server/wolf_server/main.py) |
+| Config / env settings | [`services/server/wolf_server/config.py`](services/server/wolf_server/config.py) |
+| Agent loop (strategies) | [`services/server/wolf_server/agent/`](services/server/wolf_server/agent/) |
+| Model adapters + KNOWN_MODELS | [`services/server/wolf_server/models/`](services/server/wolf_server/models/) |
+| Tool definitions + dispatcher | [`services/server/wolf_server/tools/`](services/server/wolf_server/tools/) |
+| Wazuh clients (Indexer + API) | [`services/server/wolf_server/wazuh/`](services/server/wolf_server/wazuh/) |
+| Tenancy + auth | [`services/server/wolf_server/tenancy/`](services/server/wolf_server/tenancy/), [`services/server/wolf_server/auth/`](services/server/wolf_server/auth/) |
+| Audit log | [`services/server/wolf_server/audit/`](services/server/wolf_server/audit/) |
+| Guardrails | [`services/server/wolf_server/guardrails/`](services/server/wolf_server/guardrails/) |
+| Management CLIs | [`services/server/wolf_server/management/`](services/server/wolf_server/management/) |
 | Alembic migrations | [`services/server/migrations/versions/`](services/server/migrations/versions/) |
 | Backend tests | [`services/server/tests/`](services/server/tests/) |
 | Shared schema types | [`packages/schema/wolf_schema/`](packages/schema/wolf_schema/) |
@@ -860,7 +862,7 @@ In rough order of "what to try first":
 | Read tools return 0 results | `inject_tenant_filter=True` on a vanilla Wazuh | Gotcha #3; flip to False |
 | Hosted API returns 404 | `OPENAI_BASE_URL` includes `/v1` | Gotcha #2 |
 | LAN browser can't load wolf-dashboard | One of three things misconfigured | Gotcha #4 |
-| `loop_error` mid-conversation | Model adapter raised; check the audit table for the captured exception type + traceback (commit `e09b4e5`) | `services/server/app/agent/loop.py` |
+| `loop_error` mid-conversation | Model adapter raised; check the audit table for the captured exception type + traceback (commit `e09b4e5`) | `services/server/wolf_server/agent/loop.py` |
 | Tests fail on a clean checkout | First check Postgres is up and migrations are applied | `make test` after `docker compose up -d postgres` + `make migrate-local` |
 | mypy complains about a new file | The strict gate covers the safety-critical packages listed in the [`Makefile`](Makefile) `typecheck` target | Add explicit types or move it outside the gated set with justification |
 

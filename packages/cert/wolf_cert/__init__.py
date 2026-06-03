@@ -2,7 +2,7 @@
 and status parsing. Phase 5.4-a (the pure library); the `wolf-cert` CLI
 (Phase 5.4-b) is the stateful shell over these primitives. The future
 Wolf Knowledge Relay daemon also depends on this library to validate
-the orchestrator's server cert and consume its own client cert."""
+wolf-server's server cert and consume its own client cert."""
 
 from .authority import (
     DEFAULT_CA_KEY_SIZE,

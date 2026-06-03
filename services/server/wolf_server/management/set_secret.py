@@ -3,8 +3,7 @@
 Reads the value from stdin so the secret never appears on the command
 line or in shell history.  Useful for stashing model-provider API keys
 (Anthropic, OpenAI, OpenRouter, DeepSeek direct, etc.) under a chosen
-key name that the orchestrator then references via
-DEFAULT_MODEL_API_KEY_REF.
+key name that wolf-server then references via DEFAULT_MODEL_API_KEY_REF.
 
 Usage:
     echo -n "$KEY" | uv run python -m wolf_server.management.set_secret \\

@@ -237,7 +237,7 @@ async def my_tenants(
 ) -> list[TenantMembership]:
     """List all tenants the current user is a member of.
 
-    Used by the frontend's tenant switcher.  Only returns active tenants;
+    Used by wolf-dashboard's tenant switcher.  Only returns active tenants;
     the user's per-tenant role comes from the user_tenants binding.
     """
     session: dict[str, Any] = getattr(request.state, "session", {})

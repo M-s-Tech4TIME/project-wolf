@@ -64,7 +64,7 @@ class PipelineStrategy(Strategy):
     """Deterministic outer scaffolding; the model only summarizes.
 
     Phase 2B baseline: the model receives no tools and answers from the
-    context the orchestrator has assembled.  A future iteration will
+    context wolf-server has assembled.  A future iteration will
     classify the question shape and pre-fetch via dispatch before invoking
     the model — the "model fills slots" pattern from doc 02.
     """

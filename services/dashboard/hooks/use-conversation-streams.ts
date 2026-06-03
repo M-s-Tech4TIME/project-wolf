@@ -402,7 +402,7 @@ export function useConversationStreams(): UseConversationStreams {
                 const completed: StreamCompletion = {
                   // Slice 5.0c-l v4.1: node ids are always generated
                   // client-side and never reuse loop_id. Loop ids are
-                  // unique per orchestrator run today, but coupling
+                  // unique per wolf-server run today, but coupling
                   // node-identity to a backend-issued field made the
                   // tree's uniqueness guarantee depend on the
                   // backend's. A randomId() here means a future

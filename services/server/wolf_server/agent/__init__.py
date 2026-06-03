@@ -1,6 +1,6 @@
 """Agent loop, strategies, and model resolver.
 
-The agent loop is the top-level interface to the orchestrator's reasoning
+The agent loop is the top-level interface to wolf-server's reasoning
 capability.  It drives a ModelProvider in a plan-act-observe loop, with the
 strategy chosen by the model's capability descriptor.
 """

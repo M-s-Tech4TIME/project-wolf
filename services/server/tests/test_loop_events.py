@@ -1,7 +1,7 @@
 """Tests for AgentLoop event emission — what the SSE endpoint relays.
 
-Pins the order, types, and presence-of-key-fields for each event.  The
-frontend depends on this surface; changes here are deliberate.
+Pins the order, types, and presence-of-key-fields for each event.
+wolf-dashboard depends on this surface; changes here are deliberate.
 """
 
 import uuid

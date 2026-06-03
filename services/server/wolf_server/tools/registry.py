@@ -1,8 +1,8 @@
 """Runtime registry of tool implementations — single source of truth at execution.
 
-The wire-format `ToolRegistry` from `app/models/registry.py` holds `ToolSchema`
-objects (what the model is told about).  This module holds the runnable
-`ReadTool` instances (how the orchestrator executes them).  Registering a
+The wire-format `ToolRegistry` from `wolf_server/models/registry.py` holds
+`ToolSchema` objects (what the model is told about).  This module holds the
+runnable `ReadTool` instances (how wolf-server executes them).  Registering a
 tool here also registers its schema with the wire-format registry — so the
 two cannot drift.
 """

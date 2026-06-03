@@ -159,9 +159,9 @@ class AgentLoop:
             role = MessageRole.user if role_str == "user" else MessageRole.assistant
             messages.append(Message(role=role, content=content))
         # Slice 5.0c-g: the analyst-side Retry chip on a Wolf response
-        # re-submits the original question with retry_nudge=True. The
-        # frontend includes the previous Q→A pair in history, so the
-        # model has its previous attempt to compare against.
+        # re-submits the original question with retry_nudge=True.
+        # wolf-dashboard includes the previous Q→A pair in history, so
+        # the model has its previous attempt to compare against.
         effective_question = (
             f"{question}\n\n{RETRY_NUDGE}" if retry_nudge else question
         )
@@ -403,7 +403,7 @@ class AgentLoop:
         fallback otherwise (Slice 5.0c-d).
 
         For each token delta from the provider, emits a ``model.delta``
-        SSE event so the frontend can render the answer progressively
+        SSE event so wolf-dashboard can render the answer progressively
         instead of waiting for the whole response. The fully-assembled
         :class:`ChatResponse` is returned unchanged — every downstream
         consumer (tool-call dispatch, token accounting, _finalize_answer)

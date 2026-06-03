@@ -17,29 +17,14 @@ the management CLI) so results are reproducible.
 This is the empirical input for ADR 0012.
 """
 
-# File-level rule disables — this is a CLI whose job is to write to stdout
-# (T201 print() is intentional) and whose imports must follow the sys.path
-# bootstrap (E402 imports-not-at-top is unavoidable here).
-# ruff: noqa: T201, E402
-
-# Path bootstrap — match the model_probe CLI pattern so the two-app/-packages
-# collision documented in ADR 0001 / ONBOARDING Gotcha #1 doesn't bite here
-# either. Orchestrator's app/ must win the import race over gateway's; we
-# insert at position 0 AND drop any later occurrence so the ordering is
-# unambiguous.
-import sys
-from pathlib import Path
-
-_ORCH = Path(__file__).resolve().parents[2] / "services" / "orchestrator"
-if _ORCH.is_dir():
-    _orch_str = str(_ORCH)
-    sys.path[:] = [p for p in sys.path if p != _orch_str]
-    sys.path.insert(0, _orch_str)
+# File-level rule disable — this CLI writes to stdout by design.
+# ruff: noqa: T201
 
 import argparse
 import asyncio
 import json
 import statistics
+import sys
 import time
 from dataclasses import dataclass
 

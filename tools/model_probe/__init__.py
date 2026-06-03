@@ -7,5 +7,5 @@ Run from the repo root (inside the uv venv):
 
 Output: a ProbeReport with per-task pass/fail scores and a measured
 CapabilityDescriptor (reasoning_tier / recommended_strategy / etc.) that
-the orchestrator uses to select the correct agent strategy.
+wolf-server uses to select the correct agent strategy.
 """

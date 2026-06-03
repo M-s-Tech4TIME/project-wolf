@@ -51,7 +51,7 @@ class TlsResolution:
     """Pure-data result of `resolve_tls()` — what the launcher will
     actually pass to uvicorn. `cert_path` and `key_path` are non-None
     iff TLS is on; the reason string is for the startup log so the
-    operator sees WHY the orchestrator picked the scheme it did."""
+    operator sees WHY wolf-server picked the scheme it did."""
 
     cert_path: Path | None
     key_path: Path | None

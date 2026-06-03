@@ -1,4 +1,4 @@
-"""Shared pytest fixtures for orchestrator tests.
+"""Shared pytest fixtures for wolf-server tests.
 
 Uses an in-process SQLite database (via aiosqlite) so tests run without a
 real Postgres instance.  CI uses a real Postgres 17 + pgvector service

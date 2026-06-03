@@ -1,7 +1,7 @@
 """Anthropic adapter — calls the Claude Messages API via httpx.
 
-No Anthropic SDK dependency required; uses httpx which is already in the
-orchestrator's dependencies.  The adapter converts the canonical ChatRequest /
+No Anthropic SDK dependency required; uses httpx which is already in
+wolf-server's dependencies.  The adapter converts the canonical ChatRequest /
 ChatResponse to and from the Anthropic wire format.
 """
 

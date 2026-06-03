@@ -172,7 +172,7 @@ class OllamaAdapter:
         Uses Ollama's native ``stream: true`` mode. Each newline-delimited
         JSON chunk from the server contains a partial ``message.content``;
         we yield each delta verbatim so the agent loop can forward them as
-        SSE events to the frontend (Slice 5.0c-d). Once the server sends
+        SSE events to wolf-dashboard (Slice 5.0c-d). Once the server sends
         ``done: true``, we assemble the full :class:`ChatResponse` from the
         accumulated content + the final-chunk metadata and yield it as a
         single :class:`ChatStreamDone` so the loop's downstream logic

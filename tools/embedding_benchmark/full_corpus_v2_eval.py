@@ -14,20 +14,11 @@ Run from repo root:
     uv run python -m tools.embedding_benchmark.full_corpus_v2_eval
 """
 
-# Path bootstrap — same pattern as model_probe / __main__.py
-# ruff: noqa: T201, E402, N806, B905, E501
-
-import sys
-from pathlib import Path
-
-_ORCH = Path(__file__).resolve().parents[2] / "services" / "orchestrator"
-if _ORCH.is_dir():
-    _orch_str = str(_ORCH)
-    sys.path[:] = [p for p in sys.path if p != _orch_str]
-    sys.path.insert(0, _orch_str)
+# ruff: noqa: T201, N806, B905, E501
 
 import asyncio
 import statistics
+import sys
 import time
 
 from sqlalchemy import select

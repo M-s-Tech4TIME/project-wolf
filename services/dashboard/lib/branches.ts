@@ -88,7 +88,7 @@ export function siblingsOfNode(
 /**
  * Linear `ConversationTurn[]` history representing the active path
  * up to (but NOT including) the node identified by `exclusive_of_id`.
- * Passed to the orchestrator as the model's context window.
+ * Passed to wolf-server as the model's context window.
  *
  * If `exclusive_of_id` is null, the full active path is returned —
  * used for a fresh turn at the tip (no fork; the new turn extends

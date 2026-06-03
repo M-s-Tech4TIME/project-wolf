@@ -6,7 +6,7 @@ nothing downstream can change which tenant's data is being accessed.
 
 Rule from doc 05: The model never names, picks, or influences which tenant's
 data is touched.  This module enforces that by making the context a frozen
-dataclass that is set by the orchestrator from the session, never from any
+dataclass that is set by wolf-server from the session, never from any
 model output.
 
 Usage:

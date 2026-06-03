@@ -84,7 +84,7 @@ Phase 2 is closed (ADR 0005). The agent loop works end-to-end on both
 a local Ollama model (qwen3:4b, the steady-state default per ADR 0004)
 and a hosted frontier-tier model (Nemotron 120B via OpenRouter). 9 of
 9 read tools verified live. 128 backend tests passing. mypy strict
-clean. Next.js 16 frontend functional. ADR 0006 commits Wolf to
+clean. wolf-dashboard (Next.js 16) functional. ADR 0006 commits Wolf to
 natively supporting four model families locally (Qwen 3, Llama 3,
 Gemma 3, GLM 5.1 ~32B); four probe ADRs are pending the GPU hardware
 you are now running on. ADR 0007 + ADR 0008 commit Wolf to native
@@ -105,7 +105,7 @@ Your concrete next work, in priority order:
      alembic migrations; bootstrap a tenant (bootstrap_tenant
      requires Wazuh fields — use the "no Wazuh yet" placeholder
      pattern in §3.9 if you don't have a Wazuh handy); start
-     orchestrator and frontend. Verify with §4 (make check +
+     wolf-server and wolf-dashboard. Verify with §4 (make check +
      curl-driven chat).
 
   B. Confirm everything passes: `make check` (128 tests + lint +
@@ -202,7 +202,7 @@ Important constraints (do not skip):
   - Native is the primary delivery channel (ADR 0008). Do not add
     Docker-specific code paths during development. The code stays
     distro-agnostic (env-driven config, no hard-coded container
-    paths, management CLIs usable as plain `python -m`, frontend
+    paths, management CLIs usable as plain `python -m`, wolf-dashboard
     on Next.js `output: 'standalone'`). See doc 16 §"How current
     code should accommodate this commitment" for the full list.
   - End-of-session protocol per docs/11: update docs/PROGRESS.md,

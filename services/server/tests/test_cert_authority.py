@@ -197,7 +197,7 @@ def test_sign_leaf_server_kind_has_server_auth_eku():
 
 def test_sign_leaf_client_kind_has_client_auth_eku():
     """Future Wolf Knowledge Relay leaves use this kind — mTLS as a client
-    of the orchestrator."""
+    of wolf-server."""
     ca_key, ca_cert = _make_test_ca()
     _, leaf = sign_leaf(
         ca_key=ca_key,
@@ -316,8 +316,8 @@ def test_write_cert_pem_creates_parent_directories(tmp_path: Path):
 def test_read_key_pem_rejects_non_rsa(tmp_path: Path):
     """The library only mints RSA keys — a non-RSA file in our store
     is either corruption or a stray operator-supplied file. Fail
-    fast rather than carrying the wrong key type through the
-    orchestrator's startup."""
+    fast rather than carrying the wrong key type through wolf-server's
+    startup."""
     from cryptography.hazmat.primitives import serialization
     from cryptography.hazmat.primitives.asymmetric import ec
 

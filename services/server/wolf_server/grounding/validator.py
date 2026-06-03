@@ -51,7 +51,7 @@ logger = structlog.get_logger(__name__)
 # Imperfect but works on technical English declarative answers.
 _SENTENCE_SPLIT = re.compile(r"(?<=[a-zA-Z][.!?])\s+(?=[A-Z\d])")
 
-# Four inline markers, one per verdict (Slice 5.0c-a). The frontend
+# Four inline markers, one per verdict (Slice 5.0c-a). wolf-dashboard
 # renders each as a distinct chip so the analyst sees a signal for every
 # claim, not only the worrying ones.
 #   [verified]    — green: directly backed by tool result / knowledge chunk.
