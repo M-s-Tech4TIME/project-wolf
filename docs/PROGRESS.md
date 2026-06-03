@@ -424,6 +424,16 @@ to `CHANGELOG.md` as ADRs.
   the project's general DB-storage phase begins; do not flatten
   to the active path on serialise — that would silently drop
   every off-branch subtree.
+- **Planning bundle docs (`docs/00-vision-and-scope.md` →
+  `docs/16-distribution-and-packaging.md`) still describe the
+  pre-Phase-5.5 component names** (`services/orchestrator`,
+  `frontend`, `app/`, etc.) throughout. Operationally inert —
+  these are descriptive specs, not runtime configuration — but
+  confusing for a new reader. Flagged for a dedicated doc-sweep
+  slice after Phase 5.6 → 5.8 ship (likely alongside the
+  installation-guide module). Found during the post-Phase-5.5
+  exhaustive audit on 2026-06-03; deliberately deferred so the
+  rename slice doesn't sprawl into a doc rewrite.
 - **Inline security / efficiency gaps from Phase 5 prep.** The
   *quality-and-secure-coding-discipline* standing rule applies
   quality + secure coding inline at every slice but tracks

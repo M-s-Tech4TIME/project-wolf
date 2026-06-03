@@ -7,11 +7,11 @@ key name that the orchestrator then references via
 DEFAULT_MODEL_API_KEY_REF.
 
 Usage:
-    echo -n "$KEY" | uv run python -m app.management.set_secret \\
+    echo -n "$KEY" | uv run python -m wolf_server.management.set_secret \\
         --key model.openrouter.api_key
 
   # Or, if you have the key in a file:
-    uv run python -m app.management.set_secret \\
+    uv run python -m wolf_server.management.set_secret \\
         --key model.openrouter.api_key < ./path/to/key.txt
 
 The backend is whatever SECRETS_BACKEND is configured to in the
@@ -62,7 +62,7 @@ def main(argv: list[str] | None = None) -> int:
     if sys.stdin.isatty():
         sys.stderr.write(
             "Error: secret value must be supplied on stdin.\n"
-            "Usage: echo -n \"$KEY\" | uv run python -m app.management.set_secret "
+            "Usage: echo -n \"$KEY\" | uv run python -m wolf_server.management.set_secret "
             "--key <name>\n"
         )
         return 2

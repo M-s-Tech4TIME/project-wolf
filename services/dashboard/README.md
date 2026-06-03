@@ -1,7 +1,15 @@
-# Wolf frontend
+# wolf-dashboard
 
-Next.js 16 (App Router) + Tailwind 4 + shadcn/ui.  Talks to the orchestrator
-on `http://localhost:8000` by default.
+Next.js 16 (App Router) + Tailwind 4 + shadcn/ui. The edge component
+per [ADR 0016](../../docs/decisions/0016-wolf-component-architecture-and-packaging.md)
+— the only Wolf process that browsers talk to directly. Talks to
+wolf-server on `http://localhost:8000` by default (overridable via
+`NEXT_PUBLIC_SERVER_URL`).
+
+Phase 5.5 rename: this package was `frontend/` (package name
+`frontend`) pre-2026-06-03; now it's `services/dashboard/` (package
+name `wolf-dashboard`) to align with the Wazuh-style component
+naming.
 
 ## Quickstart
 
@@ -9,19 +17,23 @@ on `http://localhost:8000` by default.
 nvm use            # picks up Node 24 LTS from .nvmrc
 npm install
 cp .env.example .env.local
-npm run dev        # http://localhost:3000
+npm run dev        # auto-HTTPS when .local/certs/dashboard/{cert,key}.pem
+                   # exist (after `wolf-cert init`); HTTP fallback otherwise
+                   # — see scripts/dev.mjs
 ```
 
-Make sure the orchestrator is running too:
+Make sure wolf-server is running too:
 
 ```bash
 # From the repo root, in another shell:
-cd services/orchestrator && uv run uvicorn app.main:app --reload
+cd services/server
+set -a && source ../../.env && set +a
+uv run python -m wolf_server   # the Phase 5.4-c launcher; auto-HTTPS when certs present
 ```
 
 You will also need a bootstrapped tenant (`uv run python -m
-app.management.bootstrap_tenant ...` — see `services/orchestrator/app/
-management/bootstrap_tenant.py`).
+wolf_server.management.bootstrap_tenant ...` — see
+[`services/server/wolf_server/management/bootstrap_tenant.py`](../server/wolf_server/management/bootstrap_tenant.py)).
 
 ## Structure
 
@@ -38,36 +50,56 @@ components/
   auth-provider.tsx     /me + /me/tenants context
   chat-shell.tsx        header + sidebar + main + citations
   chat-header.tsx       app title + tenant switcher + user menu
-  chat-sidebar.tsx      history of past exchanges
-  chat-composer.tsx     question input + send
-  message-thread.tsx    user/assistant bubbles + streaming progress
+  chat-sidebar.tsx      history of past conversations (+ Starred section)
+  chat-composer.tsx     question input + send / stop button
+  chats-history-overlay.tsx  full-screen search across every branch
+  message-thread.tsx    user/assistant bubbles + tree branching navigator
   citations-panel.tsx   tool calls + citations (right panel)
+  markdown.tsx          markdown renderer + syntax highlighting + verdict chips
   tenant-switcher.tsx   dropdown that triggers re-login on switch
   login-form.tsx        email/password (+ optional tenant override)
+  confirm-dialog.tsx    in-app destructive-action confirmation
   ui/                   shadcn primitives
 
 hooks/
-  use-chat-stream.ts    SSE state machine; consumes /api/v1/chat/stream
+  use-conversation-streams.ts   per-conversation SSE state manager (Phase 5.0c-k)
 
 lib/
   api.ts                fetch wrapper + endpoint methods + SSE parser
-  types.ts              TypeScript types mirroring the orchestrator
+  branches.ts           conversation-tree helpers (Phase 5.0c-l)
+  types.ts              TypeScript types mirroring wolf-server's Pydantic schemas
+  clipboard.ts          secure-context API + execCommand fallback
+  format.ts             time/number formatting
+  uuid.ts               browser-safe UUID generation
   utils.ts              cn() class helper
+
+scripts/
+  dev.mjs               Phase 5.4-d launcher — auto-HTTPS based on cert presence
 ```
 
 ## Notes on auth
 
-- The orchestrator sets HTTP-only `wolf_access_token` and `wolf_refresh_token`
-  cookies with `samesite=lax`.  In dev across ports (3000 ↔ 8000), the
+- wolf-server sets HTTP-only `wolf_access_token` and `wolf_refresh_token`
+  cookies with `samesite=lax`. In dev across ports (3000 ↔ 8000), the
   cookies flow because both share the eTLD+1 `localhost`.
 - All `fetch` calls use `credentials: "include"` (see `lib/api.ts`).
-- The tenant switcher does not re-issue JWTs server-side (yet).  Switching
+- The tenant switcher does not re-issue JWTs server-side (yet). Switching
   tenants signs out and sends the user back to `/login?tenant=<id>` with
   the desired tenant prefilled.
 
 ## SSE streaming
 
-`useChatStream` posts to `/api/v1/chat/stream` and parses the event stream
-in `lib/api.ts:chatStream`.  The hook exposes `status`, `toolEvents`,
-`citations`, and the final `exchange`.  `MessageThread` shows the live
-progress; `CitationsPanel` shows tool calls and citations in the right rail.
+`useConversationStreams` posts to `/api/v1/chat/stream` and parses the
+event stream in `lib/api.ts:chatStream`. The hook keeps independent state
+per conversation (`StreamState` slice) so multiple conversations can
+stream in parallel. `MessageThread` shows the live progress;
+`CitationsPanel` shows tool calls and citations in the right rail.
+
+## Conversation tree branching (Phase 5.0c-l)
+
+Each user / assistant message is its own node in a tree. Edit on a
+user message creates a sibling user node; Retry on an assistant
+message creates a sibling assistant node. `lib/branches.ts` owns the
+tree primitives — `fork()`, `appendChildOf()`, `switchToSibling()`,
+`activePathNodes()` etc. — with runtime invariant assertions that
+make the v4-era "merged sibling set" bug impossible to reintroduce.

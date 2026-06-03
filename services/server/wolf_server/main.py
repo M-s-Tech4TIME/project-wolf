@@ -32,12 +32,12 @@ _settings = get_settings()
 async def lifespan(app: FastAPI) -> Any:  # noqa: ANN401
     configure_logging(_settings.log_level, _settings.environment)
     configure_tracing(
-        service_name="wolf-orchestrator",
+        service_name="wolf-server",
         otlp_endpoint=_settings.otel_exporter_otlp_endpoint,
         environment=_settings.environment,
     )
     logger.info(
-        "orchestrator_starting",
+        "wolf_server_starting",
         environment=_settings.environment,
         log_level=_settings.log_level,
     )
@@ -50,9 +50,9 @@ async def lifespan(app: FastAPI) -> Any:  # noqa: ANN401
 
     register_all_read_tools()
 
-    logger.info("orchestrator_ready")
+    logger.info("wolf_server_ready")
     yield
-    logger.info("orchestrator_stopping")
+    logger.info("wolf_server_stopping")
 
 
 async def _run_migrations() -> None:
@@ -76,8 +76,11 @@ async def _run_migrations() -> None:
 
 def create_app() -> FastAPI:
     app = FastAPI(
-        title="Wolf Orchestrator",
-        description="Agentic AI platform for Wazuh — orchestrator service",
+        title="wolf-server",
+        description=(
+            "Wolf Server — agentic AI platform for Wazuh, "
+            "the brain component (per ADR 0016)."
+        ),
         version="0.1.0",
         lifespan=lifespan,
         # Docs are served at /docs and /redoc; disable in production if desired.
@@ -119,7 +122,7 @@ def create_app() -> FastAPI:
 
     @app.get("/healthz", tags=["ops"], include_in_schema=False)
     async def healthz() -> dict[str, str]:
-        return {"status": "ok", "service": "wolf-orchestrator"}
+        return {"status": "ok", "service": "wolf-server"}
 
     return app
 

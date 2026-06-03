@@ -7,7 +7,7 @@ re-run for an existing tenant slug refuses unless `--update` is passed,
 making accidental overwrites of a validated tenant impossible.
 
 Usage (first-time bootstrap):
-  uv run python -m app.management.bootstrap_tenant \\
+  uv run python -m wolf_server.management.bootstrap_tenant \\
     --tenant-slug acme --tenant-name "Acme Corp" \\
     --admin-email admin@acme.example --admin-password '<...>' \\
     --opensearch-url https://wazuh.example:9200 \\
@@ -17,7 +17,7 @@ Usage (first-time bootstrap):
     --no-verify-tls
 
 To re-validate / rotate credentials for an existing tenant, pass `--update`:
-  uv run python -m app.management.bootstrap_tenant \\
+  uv run python -m wolf_server.management.bootstrap_tenant \\
     --tenant-slug acme --update ... <same args + new credentials>
 
 For the "no Wazuh yet" placeholder pattern (cf. ONBOARDING §3.9), pass

@@ -13,10 +13,10 @@ clean pass finds zero mismatches.
 Usage:
     cd services/server
     set -a && source ../../.env && set +a
-    uv run python -m app.management.reembed                 # report only
-    uv run python -m app.management.reembed --apply         # actually re-embed
-    uv run python -m app.management.reembed --apply --batch-size 16
-    uv run python -m app.management.reembed --tenant-slug acme --apply
+    uv run python -m wolf_server.management.reembed                 # report only
+    uv run python -m wolf_server.management.reembed --apply         # actually re-embed
+    uv run python -m wolf_server.management.reembed --apply --batch-size 16
+    uv run python -m wolf_server.management.reembed --tenant-slug acme --apply
 
 Safety:
     - Default is REPORT mode. `--apply` is required to write anything.

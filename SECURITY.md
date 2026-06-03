@@ -22,7 +22,7 @@ the issue will be fixed before public disclosure, and you will be credited.
 Wolf's safety story is architectural, not prompt-based. Key facts:
 
 - The model sees only `read` and `propose` tools; `execute` tools are absent from its schema.
-- The orchestrator's dispatch is an allowlist; unknown calls are rejected and logged.
+- wolf-server's dispatch is an allowlist; unknown calls are rejected and logged.
 - Credentials are scoped so the data layer would refuse a forbidden operation even if
   application logic failed.
 - The gateway demands a signed, hash-bound approval token before executing anything.

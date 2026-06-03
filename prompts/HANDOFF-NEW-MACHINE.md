@@ -1,5 +1,21 @@
 # Handoff prompt — new dev machine
 
+> **STATE SNAPSHOT — last edited 2026-05-29** (Phase 2 close-out).
+> The repo has moved through Phases 3 → 4 → 5-prep → 5.4 (Native
+> HTTPS + wolf-cert) → 5.5 (component renaming) since this was
+> written. The path strings inside this document were patched on
+> 2026-06-03 to reflect the post-Phase-5.5 component layout
+> (`services/dashboard/`, `services/server/`, `wolf-server`,
+> `wolf-dashboard`), but the narrative below still describes
+> Phase 2's state ("128 backend tests", etc.) which is
+> significantly outdated.
+>
+> **For current state always read `docs/PROGRESS.md` first** — it's
+> the only source of truth that's kept current per-slice. This
+> handoff doc is operationally usable for first-machine setup
+> (the path strings are right) but its "where we are" narrative
+> needs a fresh rewrite at some point.
+
 **Purpose.** When you (the project owner) sit down at a freshly-set-up
 dev machine, clone this repo, and open Claude Code in the directory,
 paste the prompt block below as your first message. It briefs the new
@@ -85,7 +101,7 @@ Your concrete next work, in priority order:
      supported alternative but not the recommended path; use system
      Postgres unless you have a specific reason not to. Install uv,
      Node 24, Ollama; uv sync --all-packages; npm install in
-     /frontend/; generate the two dev secrets and write .env; run
+     /services/dashboard/; generate the two dev secrets and write .env; run
      alembic migrations; bootstrap a tenant (bootstrap_tenant
      requires Wazuh fields — use the "no Wazuh yet" placeholder
      pattern in §3.9 if you don't have a Wazuh handy); start
@@ -173,7 +189,7 @@ Important constraints (do not skip):
 
   - Read ONBOARDING.md §6 (gotchas) before launching uvicorn. The
     two-app/-packages collision will bite you if you start uvicorn
-    from repo root. Always cd services/orchestrator first.
+    from repo root. Always cd services/server first.
   - System Postgres on this machine starts via systemd at boot;
     you do not need `docker compose up -d postgres`. Verify with
     `sudo systemctl status postgresql`.

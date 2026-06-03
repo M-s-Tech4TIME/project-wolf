@@ -15,9 +15,9 @@ Two modes:
     agent-and-rule-shaped tools have something to query.
 
 Usage:
-  uv run --package wolf-orchestrator python -m app.management.smoke_wazuh \\
+  uv run --package wolf-server python -m wolf_server.management.smoke_wazuh \\
     --tenant-slug acme
-  uv run --package wolf-orchestrator python -m app.management.smoke_wazuh \\
+  uv run --package wolf-server python -m wolf_server.management.smoke_wazuh \\
     --tenant-slug acme --all-tools --agent-id 000 --rule-id 5402
 """
 
