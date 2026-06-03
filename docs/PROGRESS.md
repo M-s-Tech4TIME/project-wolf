@@ -31,10 +31,27 @@ Pure refactor, zero functional change. The repo now matches ADR
 * `wolf-cert init` mints leaves named `server/` + `dashboard/` (was `orchestrator/` + `frontend/`)
 * Server-side env vars / config defaults aligned (`TLS_CERT_PATH` defaults to `.local/certs/server/`)
 * Dashboard env var renamed: `NEXT_PUBLIC_ORCHESTRATOR_URL` → `NEXT_PUBLIC_SERVER_URL`
-* Operator-facing docs (`ONBOARDING.md`, `docs/restart.md`, `.env.example`) updated; planning-bundle docs (`docs/01-architecture.md` etc.) will be refreshed in a focused doc sweep when the installation-guide module lands
 
-**Phase 5.4 — Native HTTPS + `wolf-cert` CLI — CLOSED 2026-06-03.**
-Five sub-slices shipped between 2026-06-02 and 2026-06-03:
+Five commits, in order: initial 184-file rename (`a3d18ec`),
+operator-tooling audit (`70d2d94`), exhaustive every-file audit
+(`ad4868c`), three trailing references caught on re-read
+(`0e428bc`), and the **total-rename closeout** sweep A→G
+(`08dee03`) closing every remaining stale reference, including
+one shipped CLI bug (`wolf-cert --leaf` help advertising leaf
+names that no longer existed), the `package-lock.json` name
+field, six dead `_ORCH = "services/orchestrator"` `sys.path`
+bootstrap blocks (`tools/embedding_benchmark/*`, `tools/
+seed_knowledge`, `tools/tenant_isolation_test`, `services/server/
+tests/test_seed_knowledge_ingesters.py`), 14 broken `services/
+server/app/…` markdown links in `ONBOARDING.md`, ~30 in-source
+comments narrating current behaviour with old names (including
+the LLM-visible system prompt's "the orchestrator stamps tenant
+scope" rule), and shipped-package docstrings in `wolf_cert`,
+`wolf_secrets`, `wolf_gateway`. Final gate: mypy 0 / ruff clean
+/ tsc 0 / eslint clean / 311 backend tests / 6/6 tenant-isolation.
+
+The planning bundle (`docs/00`–`docs/16`) deliberately retains
+its pre-rename language as descriptive specs — see §6 below.
 
 **Phase 5.4 — Native HTTPS + `wolf-cert` CLI — CLOSED 2026-06-03.**
 Five sub-slices shipped between 2026-06-02 and 2026-06-03:

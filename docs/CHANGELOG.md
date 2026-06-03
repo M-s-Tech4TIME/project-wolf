@@ -49,6 +49,133 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-03 — Phase 5.5 CLOSED: component rename + total-rename closeout (A→G)
+
+**Session type:** claude-code
+**Phase:** 5.5 (Component renaming refactor) — CLOSED
+**Branch / commit:** main @ `08dee03`
+
+### What we did
+- Shipped the **184-file Phase 5.5 rename** (`a3d18ec`):
+  `services/orchestrator/` → `services/server/`, `app/` → `wolf_server/`,
+  `services/gateway/app/` → `services/gateway/wolf_gateway/`,
+  `frontend/` → `services/dashboard/`. wolf-cert built-in leaves
+  renamed `orchestrator`/`frontend` → `server`/`dashboard`. Server-
+  side TLS path defaults aligned. Dashboard env var renamed
+  `NEXT_PUBLIC_ORCHESTRATOR_URL` → `NEXT_PUBLIC_SERVER_URL`.
+  Permanently kills Gotcha #1 (two-`app`-packages collision) since
+  the new package names cannot collide.
+- Ran a **first audit pass** (`70d2d94`) — caught operator-tooling
+  paths: CI workflow, Makefile, Dockerfiles, docker-compose
+  service names, dashboard `lib/types.ts` cross-link, six
+  management-module docstrings.
+- Ran an **exhaustive every-file audit** (`ad4868c`) after the
+  operator asked for a literally-every-file sweep. Caught LIVE
+  identifiers in `wolf_server/main.py` (OTel `service_name`,
+  `/healthz` JSON response, FastAPI app title, structlog event
+  keys); six management-module docstrings; orphan root
+  `PROGRESS.md` (3+ weeks stale); leftover `frontend/.next/`
+  cache dir; `prompts/HANDOFF-NEW-MACHINE.md` paths;
+  `services/dashboard/README.md` full rewrite; `SECURITY.md` +
+  `CONTRIBUTING.md` prose nits.
+- Caught **three trailing references** on re-read (`0e428bc`):
+  `wolf_server/main.py:1` module docstring, `:94` CORS comment,
+  and `wolf_server/__init__.py:1` package docstring still saying
+  "Wolf Orchestrator".
+- Operator asked a final "anything else?" — re-grepped with own
+  eyes, surfaced a **shipped CLI bug** + 6 dead bootstraps + 14
+  broken markdown links + ~30 in-source comments + multiple
+  shipped-package docstrings. Closed all of it in the
+  **total-rename closeout** (`08dee03`).
+
+### What changed in the closeout (`08dee03`) specifically
+- **A. Shipped CLI bug fixed.** `wolf-cert --leaf` help on both
+  `add-host` and `renew` advertised `'orchestrator', 'frontend'`
+  — leaves that no longer exist. Now: `'all', 'server',
+  'dashboard'`. A user reading the help and running
+  `--leaf orchestrator` would have gotten a hard error.
+- **B. `services/dashboard/package-lock.json` regenerated.** Was
+  `"name": "frontend"` × 2; now `"name": "wolf-dashboard"`.
+- **C. Six dead `_ORCH = "services/orchestrator"` sys.path
+  bootstrap blocks deleted** from `tools/embedding_benchmark/*`
+  (three files), `tools/seed_knowledge/__main__.py`,
+  `tools/tenant_isolation_test/__main__.py`, and
+  `services/server/tests/test_seed_knowledge_ingesters.py`. The
+  guard `if _ORCH.is_dir():` had made them silent no-ops; the
+  workspace install handled actual imports.
+- **D + E. Shipped-package + test/management docstrings.**
+  `wolf_cert/__init__.py`, `wolf_cert/authority.py` (module +
+  `LeafKind` + `sign_leaf` + `write_key_pem`),
+  `wolf_secrets/interface.py`, `wolf_gateway/__init__.py`, plus
+  `conftest.py`, `test_cert_authority.py`, `management/__init__.py`,
+  `set_secret.py`, and `smoke_wazuh.py`'s synthetic email
+  (`smoke-test@orchestrator.local` → `smoke-test@wolf-server.local`,
+  appears in every smoke-test run's audit event).
+- **F. Operator docs rewrite.** `ONBOARDING.md` §4.4 header +
+  §5 restart steps (`# 3. Orchestrator` / `# 4. Frontend` →
+  `# 3. wolf-server` / `# 4. wolf-dashboard`) + replaced direct
+  uvicorn invocation with the Phase 5.4-c launcher + **bulk-
+  fixed 14 broken `services/server/app/…` markdown links via
+  `sed` to `services/server/wolf_server/…`**. `docs/restart.md`:
+  troubleshooting table rows + the §"Why each step" paragraph
+  that spoke of 5.4-d as future tense. `prompts/HANDOFF-NEW-
+  MACHINE.md`: three prose touch-ups.
+- **G. ~30 in-source comments and one LLM-visible prompt.**
+  Backend: agent loop, prompts, strategies, models, tools
+  registry, config, caching, tenancy, audit, chat API, auth API,
+  grounding validator, Ollama streaming, Anthropic adapter, the
+  `__main__.py` launcher, `wolf_server/__init__.py`. Frontend:
+  `lib/api.ts` JSDoc, `lib/branches.ts` JSDoc, `lib/types.ts`,
+  `hooks/use-conversation-streams.ts`. Tests: three test
+  docstrings. Workspace `pyproject.toml`. `tools/model_probe/__init__.py`.
+  Notably, the **LLM-visible system prompt** (Rule 3) was
+  updated: "The orchestrator stamps tenant scope onto every
+  request" → "wolf-server stamps tenant scope onto every
+  request" — the model now sees consistent component naming.
+
+### Final integrity gate (all green)
+- mypy: **0 errors** across 6 Python projects (84 source files)
+- ruff: **clean**
+- tsc (services/dashboard): **0 errors**
+- eslint (services/dashboard): **clean**
+- backend pytest: **311 / 311** passed in 74.23s
+- live tenant-isolation probe: **6 / 6**
+- wolf-cert CLI smoke: `--leaf` help reads `'all', 'server',
+  'dashboard'` as designed
+
+### What we decided
+- The **planning bundle (`docs/00`–`docs/16`) is deliberately not
+  swept** as part of Phase 5.5. Those are descriptive specs that
+  predate the rename; a focused doc-sweep slice will refresh them
+  alongside the installation-guide module (post-5.6/5.7/5.8).
+  Tracked in PROGRESS.md §6.
+- Past ADRs (`0001`–`0015`), pre-5.5 CHANGELOG entries, and code
+  comments that describe *historical* context (e.g. "this used to
+  bite people because…") are left as **append-only archaeology**.
+  Greppers searching for "orchestrator" or "frontend" land on the
+  Phase-5.5-rename breadcrumb every time.
+
+### What's next
+**Phase 5.6 — Edge-component architecture + mTLS.** Will introduce
+the Next.js `/api/*` route handlers as a reverse proxy from
+wolf-dashboard to wolf-server, so the browser only ever sees the
+dashboard origin. Will also wire mTLS using the shared Wolf CA
+(`LeafKind.CLIENT` for the dashboard's client cert), so any
+distributed deployment requires component-to-component auth via
+the CA. This is the slice that **kills the cross-origin
+`NetworkError`** that surfaced in Phase 5.4.
+
+### Why this matters
+Phase 5.5 was a pure refactor with no operator-visible behaviour
+change — but it was the architectural prerequisite for everything
+that follows. The rename closes Gotcha #1 permanently, aligns the
+codebase with ADR 0016's component model, and makes the systemd /
+FHS / packaging story land cleanly in 5.7 / 5.8 / 5.9 / 5.10
+without having to drag the old names along. The closeout's CLI-
+bug fix (A) is the one piece that has user-visible impact today.
+
+---
+
 ## 2026-06-03 — Phase 5.4 close-out + Phase 5.5+ direction locked
 
 **Session type:** mixed (claude-code + human design conversation)
