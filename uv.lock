@@ -12,9 +12,9 @@ members = [
     "wolf-cert",
     "wolf-common",
     "wolf-gateway",
-    "wolf-orchestrator",
     "wolf-schema",
     "wolf-secrets",
+    "wolf-server",
 ]
 
 [manifest.dependency-groups]
@@ -2390,9 +2390,35 @@ requires-dist = [
 ]
 
 [[package]]
-name = "wolf-orchestrator"
+name = "wolf-schema"
 version = "0.1.0"
-source = { editable = "services/orchestrator" }
+source = { editable = "packages/schema" }
+dependencies = [
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "pydantic", specifier = ">=2.0" }]
+
+[[package]]
+name = "wolf-secrets"
+version = "0.1.0"
+source = { editable = "packages/secrets" }
+dependencies = [
+    { name = "cryptography" },
+    { name = "wolf-common" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "cryptography", specifier = ">=42.0" },
+    { name = "wolf-common", editable = "packages/common" },
+]
+
+[[package]]
+name = "wolf-server"
+version = "0.1.0"
+source = { editable = "services/server" }
 dependencies = [
     { name = "aiosqlite" },
     { name = "alembic" },
@@ -2446,32 +2472,6 @@ requires-dist = [
     { name = "wolf-secrets", editable = "packages/secrets" },
 ]
 provides-extras = ["embeddings-local"]
-
-[[package]]
-name = "wolf-schema"
-version = "0.1.0"
-source = { editable = "packages/schema" }
-dependencies = [
-    { name = "pydantic" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "pydantic", specifier = ">=2.0" }]
-
-[[package]]
-name = "wolf-secrets"
-version = "0.1.0"
-source = { editable = "packages/secrets" }
-dependencies = [
-    { name = "cryptography" },
-    { name = "wolf-common" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "cryptography", specifier = ">=42.0" },
-    { name = "wolf-common", editable = "packages/common" },
-]
 
 [[package]]
 name = "wrapt"

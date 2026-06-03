@@ -34,7 +34,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import structlog
-from app.knowledge.store import ChunkInput
+from wolf_server.knowledge.store import ChunkInput
 
 logger = structlog.get_logger(__name__)
 

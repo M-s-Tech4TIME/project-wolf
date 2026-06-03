@@ -24,15 +24,15 @@ import statistics
 import time
 import uuid
 
-from app.config import get_settings
-from app.database import db_session
-from app.knowledge.embeddings import (
+from sqlalchemy import select
+from wolf_server.config import get_settings
+from wolf_server.database import db_session
+from wolf_server.knowledge.embeddings import (
     make_embedding_provider,
     make_embedding_provider_aux,
 )
-from app.knowledge.store import PgvectorKnowledgeStore
-from app.tenancy.models import Tenant
-from sqlalchemy import select
+from wolf_server.knowledge.store import PgvectorKnowledgeStore
+from wolf_server.tenancy.models import Tenant
 
 # Same 20-query battery as full_corpus_v2_eval.py.
 KEYED_QUERIES: list[tuple[str, str, str]] = [

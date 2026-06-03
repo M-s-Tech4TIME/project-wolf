@@ -6,20 +6,35 @@
 >
 > For history of what changed when, see `CHANGELOG.md` (append-only).
 
-**Last updated:** 2026-06-03 by claude-code (Phase 5.4 CLOSED; ADR 0016 next)
+**Last updated:** 2026-06-03 by claude-code (Phase 5.5 CLOSED; Phase 5.6 next)
 
 ---
 
 ## 1. Where we are right now
 
-**Current phase:** Phase 5.5 — Wolf component architecture &
-packaging (per ADR 0016 — pending draft). The next code slice is
-the component-renaming refactor (`frontend → wolf-dashboard`,
-`orchestrator → wolf-server`, plus the new `wolf-database`
-component); the architectural fix (dashboard-as-edge-proxy + mTLS
-between dashboard ↔ server) lands as Phase 5.6 on top of the new
-naming. APT and DNF packaging are deferred to the final-release
-phase per the 2026-06-03 user direction.
+**Current phase:** Phase 5.6 — Edge-component architecture + mTLS
+(per ADR 0016). Will introduce dashboard-as-reverse-proxy via
+Next.js `/api/*` route handlers + mTLS between `wolf-dashboard` ↔
+`wolf-server` using the shared Wolf CA. This is the slice that
+kills the cross-origin `NetworkError` from Phase 5.4. APT / DNF
+packaging (Phases 5.9 / 5.10) remain deferred to the official-
+release phase per the 2026-06-03 operator direction.
+
+**Phase 5.5 — Component renaming refactor — CLOSED 2026-06-03.**
+Pure refactor, zero functional change. The repo now matches ADR
+0016's component naming end-to-end:
+
+* `frontend/` → `services/dashboard/` (Next.js — the wolf-dashboard component)
+* `services/orchestrator/` → `services/server/` (FastAPI — the wolf-server component)
+* `services/orchestrator/app/` → `services/server/wolf_server/` (Python package — fixes Gotcha #1's two-app collision permanently)
+* `services/gateway/app/` → `services/gateway/wolf_gateway/` (matches the wolf-gateway naming)
+* `wolf-cert init` mints leaves named `server/` + `dashboard/` (was `orchestrator/` + `frontend/`)
+* Server-side env vars / config defaults aligned (`TLS_CERT_PATH` defaults to `.local/certs/server/`)
+* Dashboard env var renamed: `NEXT_PUBLIC_ORCHESTRATOR_URL` → `NEXT_PUBLIC_SERVER_URL`
+* Operator-facing docs (`ONBOARDING.md`, `docs/restart.md`, `.env.example`) updated; planning-bundle docs (`docs/01-architecture.md` etc.) will be refreshed in a focused doc sweep when the installation-guide module lands
+
+**Phase 5.4 — Native HTTPS + `wolf-cert` CLI — CLOSED 2026-06-03.**
+Five sub-slices shipped between 2026-06-02 and 2026-06-03:
 
 **Phase 5.4 — Native HTTPS + `wolf-cert` CLI — CLOSED 2026-06-03.**
 Five sub-slices shipped between 2026-06-02 and 2026-06-03:

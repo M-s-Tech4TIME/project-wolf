@@ -13,9 +13,9 @@ re-derived from scratch every test cycle.
 ## Quick version (you know what you're doing)
 
 ```bash
-# 1. Stop orchestrator + unload models
-pkill -f "uvicorn app.main:app" 2>/dev/null   # legacy invocation
-pkill -f "python -m app" 2>/dev/null          # Phase 5.4-c launcher
+# 1. Stop wolf-server + unload models
+pkill -f "uvicorn wolf_server.main:app" 2>/dev/null   # legacy invocation
+pkill -f "python -m wolf_server" 2>/dev/null          # Phase 5.4-c launcher
 ollama stop qwen3:4b 2>/dev/null
 ollama stop qwen3:8b 2>/dev/null
 
@@ -24,17 +24,17 @@ ollama ps
 nvidia-smi --query-gpu=memory.used,memory.total --format=csv
 ss -tlnp 2>/dev/null | grep ":8000 " || echo "port 8000 free"
 
-# 3. Relaunch orchestrator via the Phase 5.4-c launcher.
-#    `python -m app` auto-detects TLS: HTTPS when both
-#    .local/certs/orchestrator/{cert,key}.pem exist, HTTP otherwise.
+# 3. Relaunch wolf-server via the Phase 5.4-c launcher.
+#    `python -m wolf_server` auto-detects TLS: HTTPS when both
+#    .local/certs/server/{cert,key}.pem exist, HTTP otherwise.
 #    The first log line tells you which scheme the launcher picked.
-cd services/orchestrator
+cd services/server
 set -a && source ../../.env && set +a
-nohup uv run python -m app \
-  > /tmp/orchestrator.log 2>&1 & disown
+nohup uv run python -m wolf_server \
+  > /tmp/wolf-server.log 2>&1 & disown
 
 # 4. Verify with a login round-trip.
-#    If the orchestrator is running HTTPS (post-`wolf-cert init`),
+#    If wolf-server is running HTTPS (post-`wolf-cert init`),
 #    swap `http` → `https` AND add `--insecure` (self-signed CA isn't
 #    in curl's trust store; for browsers we install it via
 #    `wolf-cert export-ca` per ONBOARDING.md).
@@ -55,14 +55,14 @@ unless `next.config.ts` changed.
 
 ## Why each step
 
-### Stop orchestrator
+### Stop wolf-server
 
-`pkill -f "uvicorn app.main:app"` (legacy) AND `pkill -f "python -m app"`
-(Phase 5.4-c launcher) — kills the running orchestrator process by
+`pkill -f "uvicorn wolf_server.main:app"` (legacy) AND `pkill -f "python -m wolf_server"`
+(Phase 5.4-c launcher) — kills the running wolf-server process by
 matching the exact command string. Both patterns are listed because
 the work-in-progress will move from the first to the second; either
 pattern is safe to run when the corresponding process is absent.
-The orchestrator runs without `--reload`, so Python edits don't pick
+wolf-server runs without `--reload`, so Python edits don't pick
 up until a manual restart.
 
 ### Unload Ollama models
@@ -92,24 +92,24 @@ again for any model that appears in `ollama ps`. If port 8000 is still
 bound, find the PID with `lsof -i :8000` (or `ss -tlnp | grep :8000`)
 and `kill <pid>`.
 
-### Relaunch orchestrator
+### Relaunch wolf-server
 
 `set -a && source ../../.env && set +a` exports all variables in `.env`
-into the shell. The launcher (`app/__main__.py`) then reads
+into the shell. The launcher (`wolf_server/__main__.py`) then reads
 `DATABASE_URL`, `SECRET_KEY`, secrets-backend paths, the Ollama base
 URL, the grounding judge model ID, the embedding model env vars, AND
 the new `BIND_HOST` / `BIND_PORT` / `TLS_CERT_PATH` / `TLS_KEY_PATH`
-fields — everything `app.config.Settings` expects.
+fields — everything `wolf_server.config.Settings` expects.
 
-`python -m app` is the Phase 5.4-c launcher. It calls `uvicorn.run`
+`python -m wolf_server` is the Phase 5.4-c launcher. It calls `uvicorn.run`
 under the hood, but ALSO inspects `TLS_CERT_PATH` and `TLS_KEY_PATH`
-at startup: when both files exist the orchestrator serves HTTPS,
+at startup: when both files exist wolf-server serves HTTPS,
 otherwise it falls back to plain HTTP. The first line of
-`/tmp/orchestrator.log` reports which scheme was picked and why.
+`/tmp/wolf-server.log` reports which scheme was picked and why.
 
 `nohup … & disown` detaches the process from the shell so closing the
 terminal does not kill the server. Stdout/stderr go to
-`/tmp/orchestrator.log`.
+`/tmp/wolf-server.log`.
 
 ### Verify login
 
@@ -117,7 +117,7 @@ The login round-trip exercises the FastAPI startup, the database, the
 secrets backend, the password hash, the JWT issuer, and the audit
 writer in one HTTP call. If it returns `200`, every load-bearing
 subsystem is healthy. If it returns anything else, read
-`/tmp/orchestrator.log` — that's the source of truth.
+`/tmp/wolf-server.log` — that's the source of truth.
 
 ---
 
@@ -129,7 +129,7 @@ These keep running and rarely need a reset:
 |---|---|---|
 | PostgreSQL | `5432` | System-managed. Restart only if the DB itself misbehaves. |
 | Ollama daemon | `11434` | The daemon keeps running; we only unload its models. Restart the daemon (`systemctl restart ollama`) only if it stops responding. |
-| Next.js dev server | `3000` | Hot-reloads file changes. Restart only after `next.config.ts` changes or if compilation gets stuck. To restart: `pkill -f "next dev"` (covers both `npm run dev` and `npm run dev:plain`) then `cd frontend && npm run dev`. Phase 5.4-d: `npm run dev` invokes `scripts/dev.mjs`, which serves HTTPS when both `.local/certs/frontend/{cert,key}.pem` exist and HTTP otherwise — the first stdout line reports the scheme. `npm run dev:plain` forces plain HTTP regardless of cert state if you need the old behaviour. |
+| Next.js dev server | `3000` | Hot-reloads file changes. Restart only after `next.config.ts` changes or if compilation gets stuck. To restart: `pkill -f "next dev"` (covers both `npm run dev` and `npm run dev:plain`) then `cd services/dashboard && npm run dev`. Phase 5.4-d: `npm run dev` invokes `scripts/dev.mjs`, which serves HTTPS when both `.local/certs/dashboard/{cert,key}.pem` exist and HTTP otherwise — the first stdout line reports the scheme. `npm run dev:plain` forces plain HTTP regardless of cert state if you need the old behaviour. |
 | Wazuh deployment | `192.168.245.128:9200` / `:55000` | Separate machine. Wolf never restarts it. |
 
 ---
@@ -144,7 +144,7 @@ provenance):
 | Acme SecOps | `admin@example.com` | `wolf_admin_dev_password` |
 | Beta InfoSec | `beta-admin@example.com` | `beta_admin_dev_password` |
 
-Frontend URL: `http://<this-machine's-LAN-IP>:3000` (LAN-accessible)
+wolf-dashboard URL: `http://<this-machine's-LAN-IP>:3000` (LAN-accessible)
 or `http://localhost:3000` (this machine only). Discover the current
 LAN IP with:
 
@@ -159,10 +159,10 @@ If the LAN IP just changed, three files pin it and must be updated:
 | File | What to update |
 |---|---|
 | `.env` | `CORS_ALLOW_ORIGINS=` — append `http://<new-ip>:3000` |
-| `frontend/.env.local` | `NEXT_PUBLIC_ORCHESTRATOR_URL=http://<new-ip>:8000` |
-| `frontend/next.config.ts` | `allowedDevOrigins: […]` — append `"<new-ip>"` |
+| `services/dashboard/.env.local` | `NEXT_PUBLIC_SERVER_URL=http://<new-ip>:8000` |
+| `services/dashboard/next.config.ts` | `allowedDevOrigins: […]` — append `"<new-ip>"` |
 
-After editing, restart **both** orchestrator and `next dev` (next-dev
+After editing, restart **both** wolf-server and `next dev` (next-dev
 captures `NEXT_PUBLIC_*` at build time and `allowedDevOrigins` at
 startup).
 
@@ -187,7 +187,7 @@ The full per-slice cycle (referenced from
 1. Implement the change (unit tests + lint + mypy + tsc/eslint clean).
 2. **Reset to a fresh state** using the Quick version above.
 3. **Claude self-validates** by hitting `/api/v1/auth/login` then
-   `/api/v1/chat` with representative prompts; tails `/tmp/orchestrator.log`
+   `/api/v1/chat` with representative prompts; tails `/tmp/wolf-server.log`
    for errors.
 4. Reset again so the user starts on a clean GPU.
 5. Hand over with exact prompts + expected outcomes + honest caveats.
@@ -201,8 +201,8 @@ The full per-slice cycle (referenced from
 |---|---|---|
 | `login HTTP 502` / connection refused | Orchestrator hasn't finished starting | Wait 5 s and retry (the `--retry` flags in the curl command above handle this for the first 60 s). |
 | `login HTTP 401` | DB user gone, password reset, or wrong creds | Verify `admin@example.com` exists in `users`; re-run `bootstrap_tenant` if needed. |
-| `login HTTP 500` | Backend exception | `tail -50 /tmp/orchestrator.log` — usually a DB or secrets-backend misconfiguration. |
+| `login HTTP 500` | Backend exception | `tail -50 /tmp/wolf-server.log` — usually a DB or secrets-backend misconfiguration. |
 | `ollama ps` shows a model stuck `Stopping…` | Daemon mid-shutdown | Wait or `ollama stop <model>` again; if persistent, `systemctl restart ollama`. |
 | Port 8000 already bound after `pkill` | A child process survived | `lsof -i :8000` to find PID, `kill <pid>`. |
-| Frontend won't refresh | `next dev` got stuck or `next.config.ts` changed | `pkill -f "next dev"` then `cd frontend && npm run dev`. |
+| Frontend won't refresh | `next dev` got stuck or `next.config.ts` changed | `pkill -f "next dev"` then `cd services/dashboard && npm run dev`. |
 | Chat takes > 10 min | qwen3:8b cold load on a fragmented GPU | Normal on first call after a reset. Subsequent calls in the same session are faster. |

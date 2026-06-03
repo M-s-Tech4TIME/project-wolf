@@ -30,10 +30,10 @@ import asyncio
 import statistics
 import time
 
-from app.database import db_session
-from app.knowledge.embeddings import OllamaEmbeddingAdapter
-from app.knowledge.models import KnowledgeChunk
 from sqlalchemy import select
+from wolf_server.database import db_session
+from wolf_server.knowledge.embeddings import OllamaEmbeddingAdapter
+from wolf_server.knowledge.models import KnowledgeChunk
 
 # Queries with a "known correct answer" — the correct chunk(s) are the
 # ones whose metadata matches the expected_rule_id or expected_technique.

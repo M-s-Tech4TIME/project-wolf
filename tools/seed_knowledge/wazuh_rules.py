@@ -42,7 +42,7 @@ from pathlib import Path
 from xml.etree import ElementTree as ET
 
 import structlog
-from app.knowledge.store import ChunkInput
+from wolf_server.knowledge.store import ChunkInput
 
 logger = structlog.get_logger(__name__)
 

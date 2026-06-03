@@ -11,26 +11,16 @@ Examples:
 import argparse
 import os
 import sys
-from pathlib import Path
 
-# The probe defers its provider-adapter imports (e.g. `from app.models.ollama
-# import OllamaAdapter`) until --provider is parsed.  Those adapters live in
-# the orchestrator service package at services/orchestrator/app/.
-#
-# Subtlety: both services/orchestrator and services/gateway expose a package
-# named `app` (each service's internal namespace).  uv's editable installs
-# put both on sys.path, and the gateway entry comes first by default — so
-# `import app` resolves to services/gateway/app/, which has no `models`.
-# We MUST insert the orchestrator dir at sys.path[0] (not just "if absent")
-# so it wins the ambiguous name.  This is local to the probe CLI; production
-# code never imports across services this way.
-_ORCHESTRATOR_DIR = Path(__file__).resolve().parents[2] / "services" / "orchestrator"
-if _ORCHESTRATOR_DIR.is_dir():
-    _path_str = str(_ORCHESTRATOR_DIR)
-    # Drop any later occurrence so position 0 wins unambiguously.
-    sys.path[:] = [p for p in sys.path if p != _path_str]
-    sys.path.insert(0, _path_str)
-
+# Phase 5.5 (component renaming) eliminated the Gotcha #1
+# two-app-collision: services/server/wolf_server/ and
+# services/gateway/wolf_gateway/ are now distinctly-named packages.
+# The probe imports `from wolf_server.models.ollama import OllamaAdapter`
+# etc. directly via uv's editable workspace install — no sys.path
+# shimming needed. The prior shim was removed in this slice; if a
+# future cross-service import comes up, design it through the
+# workspace's normal dependency declaration rather than path
+# manipulation.
 from tools.model_probe.probe import run_probe_sync  # noqa: E402
 
 
@@ -68,7 +58,7 @@ def main() -> int:
 
     provider_obj = None
     if args.provider == "anthropic":
-        from app.models.anthropic import AnthropicAdapter
+        from wolf_server.models.anthropic import AnthropicAdapter
 
         api_key = args.api_key or os.environ.get("ANTHROPIC_API_KEY", "")
         if not api_key:
@@ -80,7 +70,7 @@ def main() -> int:
         provider_obj = AnthropicAdapter(api_key=api_key, model_id=args.model, **kwargs)
 
     elif args.provider == "openai":
-        from app.models.openai import OpenAIAdapter
+        from wolf_server.models.openai import OpenAIAdapter
 
         api_key = args.api_key or os.environ.get("OPENAI_API_KEY", "")
         if not api_key and not args.base_url:
@@ -94,7 +84,7 @@ def main() -> int:
         )
 
     elif args.provider == "ollama":
-        from app.models.ollama import OllamaAdapter
+        from wolf_server.models.ollama import OllamaAdapter
 
         kwargs = {}
         if args.base_url:

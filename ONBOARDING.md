@@ -8,9 +8,11 @@
 > **Read this file end-to-end before doing anything else.** Then read
 > the documents it points you at, in the order it specifies.
 
-**Last verified:** 2026-05-23 against commit on `main` at the time this
-file was written. The repo is moving; if commands here drift from
-reality, trust the code, then fix this file in your first commit.
+**Last verified:** 2026-06-03 against `origin/main` after Phase 5.5
+(component-renaming refactor — frontend → wolf-dashboard,
+orchestrator → wolf-server, app/ → wolf_server/ + wolf_gateway/).
+The repo is moving; if commands here drift from reality, trust the
+code, then fix this file in your first commit.
 
 ---
 
@@ -23,19 +25,21 @@ proposes state-changing actions, and never executes them without an
 authenticated human approval. The full pitch is in
 [`README.md`](README.md) and [`docs/00-vision-and-scope.md`](docs/00-vision-and-scope.md).
 
-The codebase is divided into three deployable services plus shared
-packages and tooling:
+The codebase is divided into three deployable components per ADR
+0016 (`wolf-dashboard`, `wolf-server`, `wolf-database` — Phase 5.7;
+plus `wolf-gateway` for Phase 6) plus shared packages and tooling:
 
 ```
 project-wolf/
 ├── docs/                  # 16 numbered planning docs + decisions/ (ADRs) + PROGRESS.md + CHANGELOG.md
-├── packages/              # Shared Python libraries (common, secrets, schema)
+├── packages/              # Shared Python libraries (common, secrets, schema, cert)
 ├── services/
-│   ├── orchestrator/      # FastAPI service — the brain (agent loop, tools, auth, audit)
-│   └── gateway/           # FastAPI service — Phase 4+ propose/execute path (stub today)
-├── frontend/              # Next.js 16 app (login, chat, citations, tenant switcher)
-├── tools/                 # CLIs: model_probe, seed_knowledge, tenant_isolation_test
-├── deploy/                # Dockerfiles, Compose, k8s manifests
+│   ├── dashboard/         # wolf-dashboard — Next.js 16 edge component (the only one browsers talk to)
+│   ├── server/            # wolf-server — FastAPI brain (agent loop, tools, auth, audit)
+│   └── gateway/           # wolf-gateway — Phase 6 propose/execute path (stub today)
+├── bin/                   # Shipped operator CLIs (wolf-cert; future wolf-status, wolf-backup)
+├── tools/                 # Dev-internal CLIs (model_probe, seed_knowledge, tenant_isolation_test)
+├── deploy/                # Dockerfiles, Compose, future systemd units + packaging
 └── .github/workflows/     # CI (lint / typecheck / test / safety / local-model-check)
 ```
 
@@ -94,7 +98,7 @@ them costs you more time than reading them.
 - **Python 3.13** — pinned in [`.python-version`](.python-version), managed by `uv`.
 - **Node.js 24 LTS** — pinned in [`.nvmrc`](.nvmrc). Any 24.x works.
 - **`uv`** — Python project / dependency manager. Install: `curl -LsSf https://astral.sh/uv/install.sh | sh`.
-- **`npm`** (ships with Node 24) — used to install the frontend's dependencies in [`frontend/`](frontend/).
+- **`npm`** (ships with Node 24) — used to install the dashboard's dependencies in [`services/dashboard/`](services/dashboard/).
 - **PostgreSQL 17 + pgvector** — installed natively via your distro's package manager. Recommended dev path; matches the production install per [ADR 0008](docs/decisions/0008-native-primary-docker-supplementary.md). See §3.4 for install steps. (Docker Postgres is a supported alternative — also documented in §3.4.)
 - **Ollama** — local model runtime. Install: `curl -fsSL https://ollama.com/install.sh | sh`. https://ollama.com.
 
@@ -106,12 +110,12 @@ them costs you more time than reading them.
 
 ### Network ports used by the dev stack
 
-| Port | Service | Bound | Notes |
+| Port | Component | Bound | Notes |
 |---|---|---|---|
-| 8000 | Orchestrator (FastAPI) | 0.0.0.0 | LAN-reachable for browser access |
-| 8001 | Gateway (FastAPI) | 0.0.0.0 | Stub today; will be needed Phase 4+ |
-| 3000 | Frontend (Next.js dev) | 0.0.0.0 | LAN-reachable |
-| 5432 | Postgres | 127.0.0.1 | System Postgres default (Docker alternative binds 0.0.0.0) |
+| 8000 | wolf-server (FastAPI) | 0.0.0.0 | LAN-reachable for browser access |
+| 8001 | wolf-gateway (FastAPI) | 0.0.0.0 | Stub today; will be needed Phase 6+ |
+| 3000 | wolf-dashboard (Next.js dev) | 0.0.0.0 | LAN-reachable |
+| 5432 | wolf-database (Postgres 17 + pgvector; system Postgres pre-Phase 5.7) | 127.0.0.1 | System Postgres default (Docker alternative binds 0.0.0.0); becomes wolf-database in 5.7 |
 | 11434 | Ollama | 127.0.0.1 | Local only by default |
 
 ---
@@ -134,17 +138,17 @@ cd project-wolf
 # Install uv if you don't have it
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Sync all workspace packages (orchestrator, gateway, packages/*)
+# Sync all workspace packages (server, gateway, packages/*)
 uv sync --all-packages
 ```
 
 This creates `.venv/` at the repo root and installs everything in
 editable mode.
 
-### 3.3 Install frontend deps
+### 3.3 Install wolf-dashboard deps
 
 ```bash
-cd frontend
+cd services/dashboard
 npm install
 cd ..
 ```
@@ -204,7 +208,7 @@ Same `DATABASE_URL` works because the compose file binds Postgres to
 
 ### 3.5 Generate dev secrets
 
-The orchestrator needs two secrets in `.env`:
+wolf-server needs two secrets in `.env`:
 
 ```bash
 # SECRET_KEY — used for JWT signing. Must be >= 32 chars.
@@ -230,8 +234,8 @@ using Postgres + Ollama with the steady-state default model (`qwen3:4b`).
 ### 3.7 Run database migrations
 
 ```bash
-# Inside services/orchestrator so alembic finds its config.
-cd services/orchestrator
+# Inside services/server so alembic finds its config.
+cd services/server
 uv run alembic upgrade head
 cd ../..
 ```
@@ -265,8 +269,8 @@ CLI cannot create a tenant without them. If you don't have a Wazuh
 handy yet, see "If you don't have a Wazuh yet" below.
 
 ```bash
-cd services/orchestrator
-uv run python -m app.management.bootstrap_tenant \
+cd services/server
+uv run python -m wolf_server.management.bootstrap_tenant \
     --tenant-slug acme \
     --tenant-name "Acme SecOps" \
     --admin-email admin@example.com \
@@ -294,9 +298,9 @@ cd ../..
 - Wazuh credentials are written to the secrets backend; they are
   never persisted to the database. The DB stores only the secret-key
   *reference* the resolver looks up at request time.
-- Full flag reference: `uv run python -m app.management.bootstrap_tenant --help`,
+- Full flag reference: `uv run python -m wolf_server.management.bootstrap_tenant --help`,
   or read the docstring at the top of
-  [`services/orchestrator/app/management/bootstrap_tenant.py`](services/orchestrator/app/management/bootstrap_tenant.py).
+  [`services/server/app/management/bootstrap_tenant.py`](services/server/app/management/bootstrap_tenant.py).
 
 **If you don't have a Wazuh yet:** pass placeholder values that satisfy
 arg validation. The tenant + auth + agent loop will all work; only
@@ -316,25 +320,27 @@ tool calls that actually hit Wazuh will fail at request time:
 In two separate terminals (or use `nohup` / `tmux`):
 
 ```bash
-# Terminal 1 — orchestrator
-cd services/orchestrator
-uv run python -m app
+# Terminal 1 — wolf-server
+cd services/server
+uv run python -m wolf_server
 
-# Terminal 2 — frontend
-cd frontend
+# Terminal 2 — wolf-dashboard
+cd services/dashboard
 npm run dev
 ```
 
 Both launchers auto-detect TLS state (Phase 5.4-c / 5.4-d): when
-the cert pair exists under `<repo>/.local/certs/{orchestrator,
-frontend}/{cert,key}.pem` they serve HTTPS; otherwise they fall back
-to plain HTTP. The first line each prints reports which scheme was
-picked. Run `wolf-cert init` (see §3.12) when you want to turn on
-HTTPS; until then HTTP is the default.
+the cert pair exists under `<repo>/.local/certs/{server,
+dashboard}/{cert,key}.pem` they serve HTTPS; otherwise they fall
+back to plain HTTP. The first line each prints reports which scheme
+was picked. Run `wolf-cert init` (see §3.12) when you want to turn
+on HTTPS; until then HTTP is the default.
 
-**Important:** always `cd services/orchestrator` before launching
-the orchestrator. See Gotcha #1 — running it from repo root picks
-up the gateway's `app/` package instead of orchestrator's.
+**`cd` is still the cleanest invocation** — running the launchers
+from the repo root works post-Phase-5.5 (the rename eliminated the
+old "two `app/` packages collide" gotcha), but starting from
+each component's own directory keeps the working directory pointed
+at the right `.env` / config tree.
 
 ### 3.11 First request
 
@@ -353,7 +359,7 @@ curl -fsS -b /tmp/wolf-cookie.txt -H 'Content-Type: application/json' \
     http://localhost:8000/api/v1/chat
 ```
 
-Or open the frontend at `http://localhost:3000` (or your LAN IP, e.g.
+Or open wolf-dashboard at `http://localhost:3000` (or your LAN IP, e.g.
 `http://192.168.1.50:3000`), log in, and chat from the UI.
 
 ### 3.12 Enable HTTPS via `wolf-cert` (optional but recommended)
@@ -363,13 +369,13 @@ Plain HTTP works for everything functional, but browsers gate
 service workers) on a secure origin. Wolf ships a `wolf-cert` CLI
 (Phase 5.4) that mints a self-signed CA + leaf certs in a single
 command. Once installed in your OS / browser trust store, the
-browser shows the green padlock and the orchestrator + frontend
+browser shows the green padlock and wolf-server + wolf-dashboard
 both serve over HTTPS automatically.
 
 **The lifecycle:**
 
 ```bash
-# 1. Mint the CA + orchestrator + frontend leaves under
+# 1. Mint the CA + server + dashboard leaves under
 #    <repo>/.local/certs/. Default validity is 100 years — the
 #    "practical infinity" pattern (RFC 5280 forbids truly unlimited).
 wolf-cert init
@@ -390,7 +396,7 @@ wolf-cert renew --years 100
 wolf-cert revoke --yes      # deletes everything in .local/certs/
 ```
 
-After `wolf-cert init`, restart the orchestrator and frontend —
+After `wolf-cert init`, restart wolf-server and wolf-dashboard —
 their launchers see the cert pair and flip to HTTPS automatically.
 The Next.js dev server will print a "Self-signed certificates are
 currently an experimental feature, use with caution" notice on
@@ -456,8 +462,8 @@ the padlock shows green.
 ```bash
 # Both should return HTTP 200 with the freshly-minted CA trusted.
 CA=.local/certs/ca/ca-cert.pem
-curl -s --cacert "$CA" -o /dev/null -w "frontend: %{http_code}\n" https://localhost:3000/
-curl -s --cacert "$CA" -o /dev/null -w "orchestrator: %{http_code}\n" https://localhost:8000/healthz
+curl -s --cacert "$CA" -o /dev/null -w "wolf-dashboard: %{http_code}\n" https://localhost:3000/
+curl -s --cacert "$CA" -o /dev/null -w "wolf-server: %{http_code}\n" https://localhost:8000/healthz
 ```
 
 **To roll back to HTTP-only:** `wolf-cert revoke --yes` deletes
@@ -490,8 +496,8 @@ make check               # lint + typecheck + test
 ### 4.3 Live smoke against your real Wazuh (only if you wired one in 3.9)
 
 ```bash
-cd services/orchestrator
-uv run python -m app.management.smoke_wazuh --tenant-slug acme --all-tools
+cd services/server
+uv run python -m wolf_server.management.smoke_wazuh --tenant-slug acme --all-tools
 ```
 
 This exercises every registered read tool against the live deployment.
@@ -501,7 +507,7 @@ one you re-run after any Wazuh upgrade or tool change.
 ### 4.4 Frontend build
 
 ```bash
-cd frontend
+cd services/dashboard
 npm run build      # production build
 npm run lint       # eslint
 cd ..
@@ -537,12 +543,12 @@ sudo systemctl status postgresql
 ollama serve &
 
 # 3. Orchestrator
-cd services/orchestrator
-uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload &
+cd services/server
+uv run uvicorn wolf_server.main:app --host 0.0.0.0 --port 8000 --reload &
 cd ../..
 
 # 4. Frontend
-cd frontend
+cd services/dashboard
 npm run dev -- --hostname 0.0.0.0 --port 3000 &
 cd ..
 ```
@@ -553,8 +559,8 @@ Same command as §3.9 — `bootstrap_tenant` is the entry point.
 Substitute the new tenant's values:
 
 ```bash
-cd services/orchestrator
-uv run python -m app.management.bootstrap_tenant \
+cd services/server
+uv run python -m wolf_server.management.bootstrap_tenant \
     --tenant-slug <slug> --tenant-name "<Display Name>" \
     --admin-email <email> --admin-password <password> \
     --opensearch-url <url> --opensearch-username <user> --opensearch-password <pw> \
@@ -575,7 +581,7 @@ accept partial updates). It will:
 - Preserve the user↔tenant role binding.
 
 The docstring at the top of
-[`bootstrap_tenant.py`](services/orchestrator/app/management/bootstrap_tenant.py)
+[`bootstrap_tenant.py`](services/server/app/management/bootstrap_tenant.py)
 documents this contract. A smaller-surface "update only" CLI is a
 welcome future ergonomic improvement; today, re-running
 `bootstrap_tenant` is the supported path.
@@ -592,8 +598,8 @@ the new values on its next lookup (per-request, no caching).
 1. Pull the candidate model with Ollama.
 2. Run `tools.model_probe` against it.
 3. Write an ADR (`docs/decisions/0NNN-...md`) following the ADR 0004 pattern.
-4. Change `default_model_id` in [`services/orchestrator/app/config.py`](services/orchestrator/app/config.py).
-5. Restart orchestrator. Verify with a chat curl.
+4. Change `default_model_id` in [`services/server/app/config.py`](services/server/app/config.py).
+5. Restart wolf-server. Verify with a chat curl.
 
 Full procedure in [`docs/14-model-recommendations.md`](docs/14-model-recommendations.md) §"Environment-change playbook".
 
@@ -601,7 +607,7 @@ Full procedure in [`docs/14-model-recommendations.md`](docs/14-model-recommendat
 
 ```bash
 # Stash the key once, never share it again
-printf 'sk-...' | uv run python -m app.management.set_secret \
+printf 'sk-...' | uv run python -m wolf_server.management.set_secret \
     --key model.openrouter.api_key
 
 # Override the model envs (OpenAI-compatible adapter)
@@ -610,7 +616,7 @@ export DEFAULT_MODEL_ID=nvidia/nemotron-3-super-120b-a12b:free
 export OPENAI_BASE_URL=https://openrouter.ai/api    # NOT .../api/v1 — see Gotcha #2
 export DEFAULT_MODEL_API_KEY_REF=model.openrouter.api_key
 
-# Restart orchestrator with this env
+# Restart wolf-server with this env
 ```
 
 The full verification pattern is documented in ADR 0005.
@@ -622,7 +628,7 @@ The full verification pattern is documented in ADR 0005.
 ### Run a one-off Alembic migration
 
 ```bash
-cd services/orchestrator
+cd services/server
 uv run alembic revision --autogenerate -m "add column foo to tenants"
 $EDITOR migrations/versions/<new_file>.py     # review the autogen output
 uv run alembic upgrade head
@@ -633,22 +639,24 @@ cd ../..
 
 ## 6. Gotchas (real ones that bit us)
 
-### Gotcha #1 — Two `app/` packages collide
+### Gotcha #1 — Two `app/` packages collide (RESOLVED 2026-06-03 in Phase 5.5)
 
-Both `services/orchestrator/app/` and `services/gateway/app/` expose
-a top-level Python package named `app`. With the editable workspace
-install, whichever one Python finds first on `sys.path` wins.
+This used to bite people because both `services/orchestrator/app/`
+and `services/gateway/app/` exposed a top-level Python package
+named `app`, and whichever one Python found first on `sys.path` won.
+Recurring source of confusion.
 
-- **For the orchestrator launcher** (Phase 5.4-c): always `cd
-  services/orchestrator` before `python -m app` (or the legacy
-  `uvicorn app.main:app …`). Running from repo root picks the
-  gateway's `app/`, which has `/healthz` but none of the chat/auth
-  routes, and `/api/v1/auth/login` returns 404.
-- **For the model_probe CLI:** the CLI's `__main__.py` already has a
-  `sys.path` bootstrap to force orchestrator's `app/` to the front.
-  Don't remove it.
-- **The deeper fix** (rename one of the packages) is deferred. ADR
-  0005 §"Three real issues" documents this as recurring tech debt.
+**Fixed in Phase 5.5** (the component-renaming refactor — see
+CHANGELOG 2026-06-03 + ADR 0016): the packages are now
+`services/server/wolf_server/` and `services/gateway/wolf_gateway/`,
+two distinct names that cannot collide. The model_probe CLI's
+historical sys.path workaround was removed in the same slice; it
+now imports `from wolf_server.models.ollama import OllamaAdapter`
+directly via uv's editable workspace install.
+
+Kept as a section here for archaeological reference (commit
+history will surface this when greppers go looking for `app` /
+`orchestrator`).
 
 ### Gotcha #2 — `OPENAI_BASE_URL` must NOT include `/v1`
 
@@ -656,7 +664,7 @@ The OpenAI adapter appends `/v1/chat/completions` itself. Setting
 `OPENAI_BASE_URL=https://openrouter.ai/api/v1` produces a doubled `/v1`
 and a 404. Correct: `https://openrouter.ai/api`. Documented inline on
 the OpenRouter `KNOWN_MODELS` entries in
-[`services/orchestrator/app/models/interface.py`](services/orchestrator/app/models/interface.py).
+[`services/server/wolf_server/models/interface.py`](services/server/wolf_server/models/interface.py).
 
 ### Gotcha #3 — `inject_tenant_filter` is opt-in for a reason
 
@@ -672,9 +680,9 @@ indexing time. See [`docs/05-multi-tenancy.md`](docs/05-multi-tenancy.md).
 
 The `a3fdd73` IP-agnostic-dev change (2026-05-31) folded the
 three-file LAN-IP rotation paper-cut into one regex: the backend's
-`CORS_ALLOW_ORIGIN_REGEX` default and the frontend's
+`CORS_ALLOW_ORIGIN_REGEX` default and wolf-dashboard's
 `allowedDevOrigins` both match any private-network range
-(192.168/16, 10/8, 172.16/12) on any port. The orchestrator binds
+(192.168/16, 10/8, 172.16/12) on any port. wolf-server binds
 `0.0.0.0` by default (the `BIND_HOST` setting, see `.env.example`).
 So in dev, a fresh LAN IP usually requires zero edits.
 
@@ -686,7 +694,7 @@ networks), explicitly set:
    accept.
 3. `CORS_ALLOW_ORIGIN_REGEX` to `""` to disable the
    any-private-range wildcard.
-4. `allowedDevOrigins` in [`frontend/next.config.ts`](frontend/next.config.ts)
+4. `allowedDevOrigins` in [`services/dashboard/next.config.ts`](services/dashboard/next.config.ts)
    for the dev-server-side check.
 
 If you're running HTTPS via `wolf-cert` (Phase 5.4) and the LAN IP
@@ -698,14 +706,14 @@ rejects the connection on hostname mismatch.
 
 Small models sometimes emit explicit-null fields for optional
 parameters. The dispatcher strips them
-([`services/orchestrator/app/tools/dispatcher.py`](services/orchestrator/app/tools/dispatcher.py),
+([`services/server/app/tools/dispatcher.py`](services/server/app/tools/dispatcher.py),
 `strip_explicit_nulls`). If you add a new tool with optional fields,
 this protection is already in place — don't disable it.
 
 ### Gotcha #6 — Relative-time strings on alert tools
 
 Some models pass `time_from="now-24h"` instead of an ISO timestamp.
-[`services/orchestrator/app/tools/alerts.py`](services/orchestrator/app/tools/alerts.py)
+[`services/server/app/tools/alerts.py`](services/server/app/tools/alerts.py)
 has a Pydantic `field_validator` to parse this. If you add a tool that
 accepts time inputs, copy the validator pattern.
 
@@ -734,17 +742,17 @@ has nothing to leak against. The dev pattern:
 
 ```bash
 # 1. Bootstrap acme (the primary dev tenant)
-uv run python -m app.management.bootstrap_tenant --tenant-slug acme \
+uv run python -m wolf_server.management.bootstrap_tenant --tenant-slug acme \
     --tenant-name "Acme SecOps" ... --no-verify-tls
 
 # 2. Bootstrap beta against the SAME Wazuh (bridge model — application-
 #    layer isolation is what we test, not Wazuh-instance separation)
-uv run python -m app.management.bootstrap_tenant --tenant-slug beta \
+uv run python -m wolf_server.management.bootstrap_tenant --tenant-slug beta \
     --tenant-name "Beta InfoSec" ... --no-verify-tls
 
 # 3. Seed each tenant's private corpus
-uv run python -m app.management.seed_dev_knowledge --tenant-slug acme
-uv run python -m app.management.seed_dev_knowledge --tenant-slug beta
+uv run python -m wolf_server.management.seed_dev_knowledge --tenant-slug acme
+uv run python -m wolf_server.management.seed_dev_knowledge --tenant-slug beta
 
 # 4. Run the live isolation suite
 make test-isolation-live
@@ -815,25 +823,25 @@ available. See [`docs/15-supported-model-matrix.md`](docs/15-supported-model-mat
 
 | What | Where |
 |---|---|
-| App entrypoint (FastAPI) | [`services/orchestrator/app/main.py`](services/orchestrator/app/main.py) |
-| Config / env settings | [`services/orchestrator/app/config.py`](services/orchestrator/app/config.py) |
-| Agent loop (strategies) | [`services/orchestrator/app/agent/`](services/orchestrator/app/agent/) |
-| Model adapters + KNOWN_MODELS | [`services/orchestrator/app/models/`](services/orchestrator/app/models/) |
-| Tool definitions + dispatcher | [`services/orchestrator/app/tools/`](services/orchestrator/app/tools/) |
-| Wazuh clients (Indexer + API) | [`services/orchestrator/app/wazuh/`](services/orchestrator/app/wazuh/) |
-| Tenancy + auth | [`services/orchestrator/app/tenancy/`](services/orchestrator/app/tenancy/), [`services/orchestrator/app/auth/`](services/orchestrator/app/auth/) |
-| Audit log | [`services/orchestrator/app/audit/`](services/orchestrator/app/audit/) |
-| Guardrails | [`services/orchestrator/app/guardrails/`](services/orchestrator/app/guardrails/) |
-| Management CLIs | [`services/orchestrator/app/management/`](services/orchestrator/app/management/) |
-| Alembic migrations | [`services/orchestrator/migrations/versions/`](services/orchestrator/migrations/versions/) |
-| Backend tests | [`services/orchestrator/tests/`](services/orchestrator/tests/) |
+| App entrypoint (FastAPI) | [`services/server/app/main.py`](services/server/app/main.py) |
+| Config / env settings | [`services/server/app/config.py`](services/server/app/config.py) |
+| Agent loop (strategies) | [`services/server/app/agent/`](services/server/app/agent/) |
+| Model adapters + KNOWN_MODELS | [`services/server/app/models/`](services/server/app/models/) |
+| Tool definitions + dispatcher | [`services/server/app/tools/`](services/server/app/tools/) |
+| Wazuh clients (Indexer + API) | [`services/server/app/wazuh/`](services/server/app/wazuh/) |
+| Tenancy + auth | [`services/server/app/tenancy/`](services/server/app/tenancy/), [`services/server/app/auth/`](services/server/app/auth/) |
+| Audit log | [`services/server/app/audit/`](services/server/app/audit/) |
+| Guardrails | [`services/server/app/guardrails/`](services/server/app/guardrails/) |
+| Management CLIs | [`services/server/app/management/`](services/server/app/management/) |
+| Alembic migrations | [`services/server/migrations/versions/`](services/server/migrations/versions/) |
+| Backend tests | [`services/server/tests/`](services/server/tests/) |
 | Shared schema types | [`packages/schema/wolf_schema/`](packages/schema/wolf_schema/) |
 | Secrets backend | [`packages/secrets/wolf_secrets/`](packages/secrets/wolf_secrets/) |
 | Logging / tracing helpers | [`packages/common/wolf_common/`](packages/common/wolf_common/) |
-| Frontend app | [`frontend/`](frontend/) |
-| Frontend chat shell | [`frontend/components/chat-shell.tsx`](frontend/components/chat-shell.tsx) |
-| Frontend SSE hook | [`frontend/hooks/use-chat-stream.ts`](frontend/hooks/use-chat-stream.ts) |
-| Frontend Next config (CORS / origins) | [`frontend/next.config.ts`](frontend/next.config.ts) |
+| wolf-dashboard app | [`services/dashboard/`](services/dashboard/) |
+| wolf-dashboard chat shell | [`services/dashboard/components/chat-shell.tsx`](services/dashboard/components/chat-shell.tsx) |
+| wolf-dashboard stream hook | [`services/dashboard/hooks/use-conversation-streams.ts`](services/dashboard/hooks/use-conversation-streams.ts) |
+| wolf-dashboard Next config (CORS / origins) | [`services/dashboard/next.config.ts`](services/dashboard/next.config.ts) |
 | Capability probe CLI | [`tools/model_probe/`](tools/model_probe/) |
 | Compose (Postgres in dev) | [`docker-compose.yml`](docker-compose.yml), [`docker-compose.dev.yml`](docker-compose.dev.yml) |
 | Makefile (test / lint / typecheck / probe targets) | [`Makefile`](Makefile) |
@@ -847,12 +855,12 @@ In rough order of "what to try first":
 
 | Symptom | Likely cause | Where to look |
 |---|---|---|
-| `/api/v1/auth/login` returns 404 | uvicorn picked up gateway's `app/` | Gotcha #1; `cd services/orchestrator` first |
+| `/api/v1/auth/login` returns 404 | uvicorn picked up gateway's `app/` | Gotcha #1; `cd services/server` first |
 | Chat returns "no tools called" or empty answer | Model entry in `KNOWN_MODELS` says `recommended_strategy='pipeline'` for a model that can actually do native tool calls | Re-probe; amend entry; see commit `14cc727` for the pattern |
 | Read tools return 0 results | `inject_tenant_filter=True` on a vanilla Wazuh | Gotcha #3; flip to False |
 | Hosted API returns 404 | `OPENAI_BASE_URL` includes `/v1` | Gotcha #2 |
-| LAN browser can't load the frontend | One of three things misconfigured | Gotcha #4 |
-| `loop_error` mid-conversation | Model adapter raised; check the audit table for the captured exception type + traceback (commit `e09b4e5`) | `services/orchestrator/app/agent/loop.py` |
+| LAN browser can't load wolf-dashboard | One of three things misconfigured | Gotcha #4 |
+| `loop_error` mid-conversation | Model adapter raised; check the audit table for the captured exception type + traceback (commit `e09b4e5`) | `services/server/app/agent/loop.py` |
 | Tests fail on a clean checkout | First check Postgres is up and migrations are applied | `make test` after `docker compose up -d postgres` + `make migrate-local` |
 | mypy complains about a new file | The strict gate covers the safety-critical packages listed in the [`Makefile`](Makefile) `typecheck` target | Add explicit types or move it outside the gated set with justification |
 

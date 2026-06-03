@@ -1,5 +1,5 @@
 [tool.uv.workspace]
-members = ["packages/*", "services/orchestrator", "services/gateway"]
+members = ["packages/*", "services/server", "services/gateway"]
 
 [tool.ruff]
 target-version = "py313"
@@ -40,7 +40,7 @@ ignore = [
 # doesn't apply here.
 "packages/cert/wolf_cert/cli.py" = ["T20"]
 "packages/cert/wolf_cert/__main__.py" = ["T20"]
-"services/orchestrator/app/__main__.py" = ["T20"]
+"services/server/wolf_server/__main__.py" = ["T20"]
 
 [tool.mypy]
 python_version = "3.13"

@@ -8,30 +8,30 @@ only — no new deps.
 Layout
 ------
 By default the CLI manages this tree under `--cert-dir` (default
-`.local/certs/`):
+`.local/certs/`). Layout follows ADR 0016 (component-named leaves):
 
 ```
 <cert-dir>/
   ca/
     ca-cert.pem      0644
     ca-key.pem       0600
-  orchestrator/
+  server/
     cert.pem         0644
     key.pem          0600
-  frontend/
+  dashboard/
     cert.pem         0644
     key.pem          0600
 ```
 
 Future-relay extension (Phase: Wolf Knowledge Relay): per-tenant
-relay leaves under `<cert-dir>/relay-<tenant>/`. The `_LeafSpec`
-list passed to `_init_leaves` is the single place that decides
-which leaves exist; adding a relay subcommand later is purely
-additive.
+relay leaves under `<cert-dir>/relay-<tenant>/`. The `_BUILTIN_LEAVES`
+tuple below is the single place that decides which leaves get
+minted by `wolf-cert init`; adding a relay subcommand later is
+purely additive.
 
 Subcommands
 -----------
-* `init`        — generate CA + orchestrator + frontend leaves.
+* `init`        — generate CA + server + dashboard leaves.
                   Refuses if the CA already exists (use `renew`
                   or `revoke + init`).
 * `status`      — show subject / SANs / validity / fingerprint
@@ -159,9 +159,16 @@ class _LeafSpec:
 # here teaches every other subcommand about it for free — `status`
 # discovers it via the store, `add-host` / `renew` operate on it,
 # `revoke` cleans it up.
+# Phase 5.5 component rename: orchestrator → server, frontend → dashboard.
+# Per ADR 0016, these are the always-minted-on-init leaves for an
+# all-in-one Wolf install. Distributed deployments still benefit from
+# the same set on the operator's admin workstation; the operator
+# distributes each leaf to the host that runs the matching component.
+# A future `wolf-cert issue-relay <tenant>` subcommand will append
+# tenant-scoped CLIENT-kind leaves alongside these.
 _BUILTIN_LEAVES: tuple[_LeafSpec, ...] = (
-    _LeafSpec(name="orchestrator", common_name="wolf-orchestrator", kind=LeafKind.SERVER),
-    _LeafSpec(name="frontend", common_name="wolf-frontend", kind=LeafKind.SERVER),
+    _LeafSpec(name="server", common_name="wolf-server", kind=LeafKind.SERVER),
+    _LeafSpec(name="dashboard", common_name="wolf-dashboard", kind=LeafKind.SERVER),
 )
 
 

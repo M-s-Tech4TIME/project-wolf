@@ -43,12 +43,12 @@ import statistics
 import time
 from dataclasses import dataclass
 
-from app.knowledge.embeddings import (
+from wolf_server.knowledge.embeddings import (
     EmbeddingProvider,
     OllamaEmbeddingAdapter,
     SentenceTransformersEmbeddingAdapter,
 )
-from app.management.seed_dev_knowledge import (
+from wolf_server.management.seed_dev_knowledge import (
     SHARED_CHUNKS,
     runbook_chunks_for,
 )

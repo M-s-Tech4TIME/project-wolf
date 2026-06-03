@@ -49,20 +49,20 @@ import os
 import uuid
 from dataclasses import dataclass
 
-from app.audit.log import write_event
-from app.audit.models import AuditEvent
-from app.caching import InMemoryTenantCache, UnprefixedKeyError
-from app.caching.cache import _compose_storage_key
-from app.config import get_settings
-from app.database import db_session
-from app.knowledge.embeddings import (
+from sqlalchemy import select
+from wolf_server.audit.log import write_event
+from wolf_server.audit.models import AuditEvent
+from wolf_server.caching import InMemoryTenantCache, UnprefixedKeyError
+from wolf_server.caching.cache import _compose_storage_key
+from wolf_server.config import get_settings
+from wolf_server.database import db_session
+from wolf_server.knowledge.embeddings import (
     make_embedding_provider,
     make_embedding_provider_aux,
 )
-from app.knowledge.models import KnowledgeChunk
-from app.knowledge.store import PgvectorKnowledgeStore
-from app.tenancy.models import Tenant
-from sqlalchemy import select
+from wolf_server.knowledge.models import KnowledgeChunk
+from wolf_server.knowledge.store import PgvectorKnowledgeStore
+from wolf_server.tenancy.models import Tenant
 
 
 @dataclass
@@ -213,7 +213,7 @@ async def main() -> int:
     if missing:
         sys.stderr.write(
             f"ERROR: missing tenant(s): {missing}. Bootstrap them first via "
-            f"`uv run python -m app.management.bootstrap_tenant ...`.\n"
+            f"`uv run python -m wolf_server.management.bootstrap_tenant ...`.\n"
         )
         return 3
 
@@ -236,7 +236,7 @@ async def main() -> int:
     if a_private is None or b_private is None:
         sys.stderr.write(
             "ERROR: one or both tenants have no private chunks. Run "
-            "`uv run python -m app.management.seed_dev_knowledge "
+            "`uv run python -m wolf_server.management.seed_dev_knowledge "
             f"--tenant-slug {args.tenant_a}` (and again for the other) "
             "before this probe.\n"
         )

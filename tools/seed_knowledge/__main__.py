@@ -35,12 +35,12 @@ import hashlib
 import os
 from collections.abc import Iterable
 
-from app.config import get_settings
-from app.database import db_session
-from app.knowledge.embeddings import make_embedding_provider
-from app.knowledge.models import KnowledgeChunk
-from app.knowledge.store import ChunkInput, PgvectorKnowledgeStore
 from sqlalchemy import delete, select
+from wolf_server.config import get_settings
+from wolf_server.database import db_session
+from wolf_server.knowledge.embeddings import make_embedding_provider
+from wolf_server.knowledge.models import KnowledgeChunk
+from wolf_server.knowledge.store import ChunkInput, PgvectorKnowledgeStore
 
 from tools.seed_knowledge.attack import ingest_attack
 from tools.seed_knowledge.wazuh_rules import ingest_wazuh_rules

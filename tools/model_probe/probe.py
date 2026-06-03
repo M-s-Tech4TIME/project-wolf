@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from app.models.interface import ModelProvider
+    from wolf_server.models.interface import ModelProvider
 
 from wolf_schema.capability import (
     AgentStrategy,
