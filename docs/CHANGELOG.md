@@ -49,6 +49,120 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-04 — Slice 5.6-e: `make smoke-mtls` recurring integrity check + CI job (Phase 5.6 CLOSED)
+
+**Session type:** claude-code
+**Phase:** 5.6 — Edge-component architecture + mTLS — **CLOSED**
+**Branch / commit:** main @ (this commit)
+
+### What we did
+The last slice of Phase 5.6. Codifies the three-curl mTLS smoke
+from §3.12 as a one-command Makefile target + a dedicated CI
+job. Now every push (locally) and every PR (in CI) runs the
+same posture-check against a fresh wolf-server.
+
+Files changed:
+* **`Makefile`** — new `smoke-mtls` target. Runs the three
+  curls (no-cert → 401 mtls_required, with-cert → 401 Not
+  authenticated, /healthz from loopback → 200), greps the
+  response body for the expected substring on each, exits
+  with status 1 on test failure or 2 on prerequisite-missing
+  failure. Includes preflight checks: the CA cert + dashboard-
+  client cert + dashboard-client key must exist on disk
+  (`wolf-cert init` was run), AND wolf-server must be reachable
+  on `https://localhost:7860` (otherwise the curls would
+  produce a confusing TLS error instead of a clear "you forgot
+  to start wolf-server"). The error messages name the exact
+  fix command in each case. Also expanded the `.PHONY` list at
+  the top of the Makefile (it was stale — only six targets
+  listed; now it's the full set).
+* **`.github/workflows/ci.yml`** — new `smoke-mtls` job. Spins
+  up Postgres as a service container, installs deps, runs
+  migrations (the smoke doesn't need a tenant or user, but
+  wolf-server's startup runs `alembic upgrade head` and would
+  fail without a schema), mints all four cert pairs via
+  `wolf-cert init` with explicit `localhost` SANs, starts
+  wolf-server in the background, polls `/healthz` until it
+  responds (60s max — generous for cold CI runners), verifies
+  the banner says `mTLS: ENABLED` (catches the case where the
+  curls would still "pass" but the underlying posture is
+  silently wrong), then runs `make smoke-mtls`. On failure,
+  dumps `/tmp/wolf-server.log` so the operator can see why.
+
+### Live verification
+Locally, against a fresh wolf-server start:
+
+```
+$ make smoke-mtls
+=== smoke-mtls: wolf-server is up; running 3-check sequence ===
+--- 1/3: no client cert  → expect 401 mtls_required ---
+    response: {"error":"mtls_required",...}
+--- 2/3: dashboard-client cert → expect 401 Not authenticated ---
+    response: {"detail":"Not authenticated"}
+--- 3/3: /healthz loopback no-cert → expect status ok ---
+    response: {"status":"ok","service":"wolf-server"}
+=== smoke-mtls: PASS ===
+```
+
+Failure paths verified:
+* Server not running → `FAIL: wolf-server not reachable on
+  https://localhost:7860 (start it first)` + exit code 2.
+* Missing dashboard-client cert (simulated via rename) →
+  `FAIL: ...dashboard-client/cert.pem not found. Run
+  \`wolf-cert init\` first.` + exit code 2.
+
+### Phase 5.6 closeout
+Five slices shipped between 2026-06-03 and 2026-06-04:
+
+| Slice | Commit | What it shipped |
+|---|---|---|
+| 5.6-a | `ef6c6f5` + `41ba52b` | Next.js catch-all reverse proxy at `app/api/[...path]/route.ts`. Browser sees one Wolf origin. Multi-Set-Cookie preserved; SSE streaming preserved per-chunk. HTTPS follow-up wired undici Agent with Wolf CA trust. |
+| 5.6-b | `9923c65` | `wolf-cert init` now mints a third leaf, `dashboard-client` (LeafKind.CLIENT, CN=wolf-dashboard-client). 9 new tests. |
+| 5.6-c | `495af0b` | wolf-server's launcher passes `ssl_ca_certs` + `ssl_cert_reqs=CERT_OPTIONAL`; uvicorn peer-cert monkey-patch surfaces the cert into ASGI scope; `MtlsMiddleware` enforces the CN allowlist + bypasses GET /healthz from loopback. Dashboard proxy presents the dashboard-client cert via undici Agent. 9 new middleware tests. |
+| 5.6-d | `49be2d6` | Launcher banner polish (`mTLS: ENABLED/DISABLED`). ONBOARDING §3.12 rewritten + new §3.13 for distributed deployment + troubleshooting table. `docs/restart.md` mTLS section. |
+| 5.6-e | this | `make smoke-mtls` target + CI job. |
+
+End-state of Phase 5.6:
+* The browser only sees one Wolf origin (`wolf-dashboard:3000`).
+* wolf-server's `MtlsMiddleware` refuses any caller whose
+  Subject CN isn't in `MTLS_ALLOWED_CLIENT_CNS`. Today only
+  `wolf-dashboard-client` is on the allowlist.
+* /healthz from `127.0.0.1` / `::1` bypasses the mTLS check so
+  ops tooling stays simple.
+* Audit log records every accept/reject decision.
+* Distributed deployment works the same as all-in-one with one
+  env var edit (`WOLF_SERVER_URL` on the dashboard host) plus
+  per-host cert distribution.
+* The cross-origin NetworkError from Phase 5.4 is permanently
+  gone — there is no second origin for the browser to fail at.
+
+Integrity gate (across all five slices):
+* mypy: 0 errors across 6 Python projects (87 source files)
+* ruff: clean
+* tsc (services/dashboard): 0 errors
+* eslint (services/dashboard): clean
+* backend pytest: **321 / 321** (was 311 at Phase 5.6 start;
+  +10 across 5.6-b, 5.6-c)
+* live tenant-isolation probe: 6 / 6
+* `make smoke-mtls`: passes against a fresh wolf-server start
+* CI `smoke-mtls` job: configured to run on every PR
+
+### What's next
+**Phase 5.7 — wolf-database extraction.** Per ADR 0016, Postgres
+becomes the third deployable component (`wolf-database`) under
+a Wolf-managed systemd unit with data at
+`/var/lib/wolf-database/`. Today Postgres is system-managed
+(per ADR 0008's "system Postgres" guidance) or operator-
+installed — fine for dev, awkward for the "one apt install"
+release narrative. 5.7 moves Postgres under Wolf's lifecycle
+so the all-in-one install becomes a single package.
+
+Then **Phase 5.8** (systemd units + `/bin` + FHS install paths)
+and finally **Phases 5.9 / 5.10** (APT / DNF — still deferred
+to the official-release phase).
+
+---
+
 ## 2026-06-04 — Slice 5.6-d: launcher polish + operator-doc walkthrough for HTTPS + mTLS
 
 **Session type:** claude-code

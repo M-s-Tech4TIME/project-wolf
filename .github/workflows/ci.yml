@@ -129,3 +129,83 @@ jobs:
           test -f services/server/wolf_server/models/ollama.py && \
             echo "OK: Ollama adapter present." || \
             (echo "ERROR: Ollama adapter missing!" && exit 1)
+
+  # Phase 5.6-e: prove wolf-server's mTLS posture stays correct through
+  # the lifecycle (HTTPS + mTLS auto-detect + CN allowlist + /healthz
+  # loopback bypass). Mint certs, start wolf-server, run the 3-curl smoke,
+  # tear down. Catches regressions in the mTLS code path that the unit
+  # tests can't reach because they don't go through a real TLS handshake.
+  smoke-mtls:
+    name: mTLS smoke (Phase 5.6-e)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: wolf
+          POSTGRES_PASSWORD: wolf_test
+          POSTGRES_DB: wolf_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U wolf -d wolf_test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      DATABASE_URL: postgresql+asyncpg://wolf:wolf_test@localhost:5432/wolf_test
+      SECRET_KEY: test-secret-key-exactly-32-chars!!
+      ENVIRONMENT: test
+      SECRETS_BACKEND: file
+      SECRETS_FILE_PATH: /tmp/wolf_test_secrets.enc
+      SECRETS_FILE_KEY: test-fernet-key-change-in-prod====
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+      - name: Install dependencies
+        run: uv sync --all-packages
+      - name: Run migrations
+        run: uv run --package wolf-server alembic -c services/server/alembic.ini upgrade head
+      - name: Mint Wolf CA + leaves via wolf-cert init
+        # --san-dns localhost is implicit, but we add it explicitly so the
+        # CI runner doesn't have to expose a particular hostname.
+        run: |
+          uv run --package wolf-cert python -m wolf_cert init \
+            --san-dns localhost \
+            --san-ip 127.0.0.1
+          ls -la .local/certs/
+      - name: Start wolf-server in background (HTTPS + mTLS)
+        run: |
+          # Launcher auto-detects the certs we just minted. Output goes
+          # to /tmp/wolf-server.log so we can include it in the
+          # diagnostics if a step fails.
+          nohup uv run --package wolf-server python -m wolf_server \
+            > /tmp/wolf-server.log 2>&1 &
+          # Wait for /healthz to return 200 — confirms the launcher
+          # finished startup + bound the port + mTLS middleware is
+          # mounted. 60 retries × 1s = 60s max wait, generous for cold
+          # CI runners.
+          for i in $(seq 1 60); do
+            if curl -s --cacert .local/certs/ca/ca-cert.pem \
+                 --max-time 2 -o /dev/null \
+                 https://localhost:7860/healthz; then
+              echo "wolf-server ready after ${i}s"
+              break
+            fi
+            sleep 1
+          done
+          # Verify the banner reports mTLS ENABLED — if it doesn't, the
+          # smoke would still "pass" because the curls run but the
+          # underlying posture is wrong.
+          grep -q "mTLS: ENABLED" /tmp/wolf-server.log || \
+            (echo "FAIL: wolf-server didn't enable mTLS"; \
+             cat /tmp/wolf-server.log; exit 1)
+      - name: Run mTLS smoke
+        run: make smoke-mtls
+      - name: Dump wolf-server log on failure
+        if: failure()
+        run: |
+          echo "=== /tmp/wolf-server.log ==="
+          cat /tmp/wolf-server.log || true

@@ -1,4 +1,6 @@
-.PHONY: up down dev build test lint typecheck migrate seed fmt help
+.PHONY: up down dev build test test-isolation test-isolation-live test-cov \
+        lint typecheck fmt check migrate migrate-local revision probe install \
+        smoke-mtls help
 
 # Per ADR 0008 (docs/decisions/0008-native-primary-docker-supplementary.md):
 # native delivery is Wolf's PRIMARY channel; Docker is supplementary.
@@ -83,6 +85,52 @@ typecheck: ## Type-check safety-critical packages with mypy (strict)
 
 probe: ## Run the model probe (PROVIDER=ollama MODEL=llama3.2)
 	uv run python -m tools.model_probe --provider $(PROVIDER) --model $(MODEL)
+
+# ─── mTLS smoke (Phase 5.6-e) ─────────────────────────────────────────────────
+
+# Three-curl smoke that proves wolf-server's mTLS posture is correctly
+# enforced end-to-end. Use before every push to catch regressions in the
+# mTLS code path. Assumes wolf-server is ALREADY running on :7860 in
+# HTTPS + mTLS mode (i.e. `wolf-cert init` has been run and wolf-server
+# was started fresh after that). The target fails fast with a helpful
+# message when the prerequisites are absent rather than producing a
+# confusing curl error.
+smoke-mtls: ## mTLS smoke: no-cert → 401 mtls_required, with-cert → 401 auth, /healthz → 200 (Phase 5.6-e)
+	@bash -c '\
+		set -eu; \
+		CA=.local/certs/ca/ca-cert.pem; \
+		CC=.local/certs/dashboard-client/cert.pem; \
+		CK=.local/certs/dashboard-client/key.pem; \
+		\
+		[ -f "$$CA" ] || { echo "FAIL: $$CA not found. Run \`wolf-cert init\` first."; exit 2; }; \
+		[ -f "$$CC" ] || { echo "FAIL: $$CC not found. Run \`wolf-cert init\` first."; exit 2; }; \
+		[ -f "$$CK" ] || { echo "FAIL: $$CK not found. Run \`wolf-cert init\` first."; exit 2; }; \
+		\
+		curl -s --cacert "$$CA" --max-time 5 -o /dev/null https://localhost:7860/healthz || \
+		  { echo "FAIL: wolf-server not reachable on https://localhost:7860 (start it first)"; exit 2; }; \
+		\
+		echo "=== smoke-mtls: wolf-server is up; running 3-check sequence ==="; \
+		\
+		echo "--- 1/3: no client cert  → expect 401 mtls_required ---"; \
+		body=$$(curl -s --cacert "$$CA" https://localhost:7860/api/v1/auth/me); \
+		echo "    response: $$body"; \
+		echo "$$body" | grep -q "mtls_required" || \
+		  { echo "FAIL: expected mtls_required, got: $$body"; exit 1; }; \
+		\
+		echo "--- 2/3: dashboard-client cert → expect 401 Not authenticated ---"; \
+		body=$$(curl -s --cacert "$$CA" --cert "$$CC" --key "$$CK" https://localhost:7860/api/v1/auth/me); \
+		echo "    response: $$body"; \
+		echo "$$body" | grep -q "Not authenticated" || \
+		  { echo "FAIL: expected \"Not authenticated\", got: $$body"; exit 1; }; \
+		\
+		echo "--- 3/3: /healthz loopback no-cert → expect status ok ---"; \
+		body=$$(curl -s --cacert "$$CA" https://localhost:7860/healthz); \
+		echo "    response: $$body"; \
+		echo "$$body" | grep -q "\"status\":\"ok\"" || \
+		  { echo "FAIL: expected status ok, got: $$body"; exit 1; }; \
+		\
+		echo "=== smoke-mtls: PASS ==="; \
+	'
 
 # ─── One-shot quality gate ────────────────────────────────────────────────────
 

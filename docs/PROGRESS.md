@@ -6,66 +6,68 @@
 >
 > For history of what changed when, see `CHANGELOG.md` (append-only).
 
-**Last updated:** 2026-06-04 by claude-code (Phase 5.6-d SHIPPED; 5.6-e remaining)
+**Last updated:** 2026-06-04 by claude-code (Phase 5.6 CLOSED; Phase 5.7 next)
 
 ---
 
 ## 1. Where we are right now
 
-**Current phase:** Phase 5.6 — Edge-component architecture + mTLS
-(per ADR 0016).
+**Current phase:** Phase 5.7 — wolf-database extraction (Postgres 17 +
+pgvector under a Wolf-managed systemd unit). Per ADR 0016 this is
+the third deployable component; today Postgres is operator-managed
+(or system-installed per ADR 0008). The phase moves it into a
+Wolf-owned data dir at `/var/lib/wolf-database/` with its own
+systemd unit so the all-in-one install story becomes a single
+`apt install wolf` rather than a system-Postgres prerequisite.
 
-* **Slice 5.6-a — Reverse-proxy route handler** — SHIPPED
-  2026-06-03. wolf-dashboard's `app/api/[...path]/route.ts`
-  catch-all forwards every browser `/api/v1/...` request to
-  wolf-server. Browser only sees one origin (`:3000`). Cross-
-  origin NetworkError eliminated. Verified live: GET/POST/SSE
-  all pass through, multi-`Set-Cookie` preserved (both
-  `wolf_access_token` + `wolf_refresh_token` flow through),
-  token-by-token streaming flushes per chunk (no buffering).
-* **Slice 5.6-b — `dashboard-client` cert via wolf-cert** —
-  SHIPPED 2026-06-03. `wolf-cert init` now mints three leaves:
-  `server` (SERVER EKU), `dashboard` (SERVER EKU), and the new
-  `dashboard-client` (**CLIENT EKU**, CN = `wolf-dashboard-client`)
-  at `.local/certs/dashboard-client/{cert,key}.pem`. Phase 5.6-c
-  will require this cert at wolf-server's TLS boundary.
-* **Slice 5.6-c — mTLS middleware on wolf-server** — SHIPPED
-  2026-06-03. Three pieces shipped together:
-  (1) wolf-server launcher passes `ssl_ca_certs=<Wolf CA>` +
-  `ssl_cert_reqs=CERT_OPTIONAL` to uvicorn when the certs exist,
-  so the TLS layer accepts and verifies any presented client cert
-  against the Wolf CA; (2) a small monkey-patch on uvicorn's
-  `RequestResponseCycle.__init__` surfaces the verified peer cert
-  into `scope["state"]["wolf_peer_cert"]` (uvicorn 0.47 doesn't
-  expose it natively); (3) `MtlsMiddleware` enforces the
-  CN allowlist (default `["wolf-dashboard-client"]`), audit-logs
-  every accept/reject, returns JSON 401 on policy violations, and
-  bypasses GET /healthz from loopback so ops tools can probe
-  without distributing the client cert. The dashboard's reverse-
-  proxy Agent (5.6-a's `WOLF_DISPATCHER`) was extended to load
-  `.local/certs/dashboard-client/{cert,key}.pem` into `Agent({
-  connect: { ca, cert, key } })` — the proxy now presents the
-  client cert on every outbound call. Verified live: no-cert
-  → 401 mtls_required, with-cert → 200, /healthz from loopback
-  no-cert → 200; full dashboard login + chat-stream round-trip
-  works end-to-end with mTLS active.
-* **Slice 5.6-d — Launcher polish + operator-doc walkthrough** —
-  SHIPPED 2026-06-04. Both launcher banners now report mTLS
-  state explicitly (`mTLS: ENABLED — …` / `mTLS: DISABLED — …`)
-  so absence of the keyword is itself diagnostic. ONBOARDING §3.12
-  rewritten to cover the HTTPS + mTLS lifecycle as one story,
-  with a three-line live verification smoke (no-cert → 401, with-cert
-  → 200, /healthz from loopback → 200) and a troubleshooting
-  table for the common failure modes. New §3.13 walks through
-  distributed (multi-host) deployment: which cert file goes on
-  which host, what `WOLF_SERVER_URL` to set, why the CA private
-  key stays on the admin workstation. `docs/restart.md` got an
-  mTLS smoke section so the per-restart routine includes a
-  mTLS-is-up check.
-* **Slice 5.6-e — `make smoke-mtls` recurring integrity check** —
-  next. The three-curl smoke from §3.12 codified as a Makefile
-  target that runs before every push, plus a CI job. Closes
-  Phase 5.6.
+**Phase 5.6 — Edge-component architecture + mTLS — CLOSED 2026-06-04.**
+Five slices shipped between 2026-06-03 and 2026-06-04 that
+together kill the cross-origin NetworkError and put a mTLS
+trust substrate under every component-to-component call:
+
+* **5.6-a** (`ef6c6f5` + `41ba52b`) — Next.js catch-all reverse
+  proxy at `services/dashboard/app/api/[...path]/route.ts`.
+  Browser only sees one Wolf origin. SSE streaming preserved
+  per-chunk; multi-Set-Cookie preserved. HTTPS-mode follow-up
+  fix wired the proxy's outbound fetch through undici with a
+  Wolf-CA-trusting Dispatcher.
+* **5.6-b** (`9923c65`) — `wolf-cert init` now mints a third
+  leaf, `dashboard-client` (`LeafKind.CLIENT`, CN =
+  `wolf-dashboard-client`). 9 new tests; backend pytest 311 → 312.
+* **5.6-c** (`495af0b`) — wolf-server's launcher passes
+  `ssl_ca_certs=<Wolf CA>` + `ssl_cert_reqs=CERT_OPTIONAL`
+  to uvicorn; a monkey-patch surfaces the verified peer cert
+  into ASGI scope; `MtlsMiddleware` enforces the CN allowlist
+  + bypasses GET /healthz from loopback. Dashboard proxy now
+  presents the dashboard-client cert via undici Agent. 9 new
+  middleware tests; backend pytest 312 → 321.
+* **5.6-d** (`49be2d6`) — Launcher banner polish (`mTLS:
+  ENABLED/DISABLED` line on both servers). ONBOARDING §3.12
+  rewritten to cover HTTPS+mTLS as one lifecycle; new §3.13
+  for distributed deployment with the cert-distribution
+  table; new troubleshooting table for the common failure
+  modes. `docs/restart.md` got a mTLS smoke section.
+* **5.6-e** (`<this commit>`) — `make smoke-mtls` Makefile
+  target codifies the three-curl smoke as a one-command
+  integrity check, plus a new CI job (`smoke-mtls`) that
+  mints certs and runs the smoke against a freshly-started
+  wolf-server on every PR.
+
+Phase 5.6 closeout state:
+* Browser sees one Wolf origin (`wolf-dashboard:3000`); the
+  cross-origin NetworkError from Phase 5.4 is permanently
+  gone.
+* wolf-server refuses any caller that isn't on the
+  `MTLS_ALLOWED_CLIENT_CNS` allowlist; today only
+  `wolf-dashboard-client` is on it.
+* /healthz bypass on loopback keeps ops tooling working.
+* Distributed deployment works the same way as all-in-one —
+  one env-var edit (`WOLF_SERVER_URL`), copy the right cert
+  files to the right hosts, done.
+* Audit log records every mTLS accept/reject decision via
+  structlog (`grep mtls_` in the journal).
+* All quality gates green: 87 mypy files, 0 ruff, 0 tsc, 0
+  eslint, **321/321 backend tests**, 6/6 tenant-isolation.
 
 APT / DNF packaging (Phases 5.9 / 5.10) remain deferred to the
 official-release phase per the 2026-06-03 operator direction.
