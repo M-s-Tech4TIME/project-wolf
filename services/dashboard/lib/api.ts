@@ -1,17 +1,15 @@
 // Thin client for the wolf-server HTTP API.
 //
-// All requests carry the session cookie (`credentials: "include"`).  The
-// cookie is set by wolf-server on login (HTTP-only, samesite=lax).
-// For dev (localhost:3000 ↔ localhost:7860), CORS is pre-configured on
-// wolf-server with allow_credentials. Note: the cross-origin
-// NetworkError this setup produces under HTTPS is tracked as a known
-// issue in PROGRESS.md §6 — resolution is Phase 5.6 (edge-component
-// reverse proxy via Next.js API routes, removes the second origin).
+// Phase 5.6-a (per ADR 0016): every request goes to wolf-dashboard's
+// own origin under `/api/v1/...`, which is then reverse-proxied to
+// wolf-server by `app/api/[...path]/route.ts`. The browser never
+// sees a second origin. This eliminates the cross-origin NetworkError
+// that surfaced under HTTPS in Phase 5.4.
 //
-// Phase 5.5 rename: NEXT_PUBLIC_ORCHESTRATOR_URL → NEXT_PUBLIC_SERVER_URL
-// (the env var name follows the component rename from "orchestrator" to
-// "server"). Operators with the old name in their .env.local should
-// rename it; the old name is no longer honored.
+// The session cookie set by wolf-server on login (HTTP-only,
+// samesite=lax) round-trips through the proxy unchanged — the
+// browser sees it as a cookie scoped to the dashboard's origin,
+// which is now the only origin involved.
 
 import type {
   ChatRequestBody,
@@ -23,19 +21,10 @@ import type {
   TenantMembership,
 } from "./types";
 
-// Resolve at call time, not module load: in the browser we use whichever
-// host the page was served from (so the LAN IP follows whatever the user
-// typed in the address bar), with port 7860. `NEXT_PUBLIC_SERVER_URL`
-// overrides for production / pinned deploys.
-function apiBase(): string {
-  if (process.env.NEXT_PUBLIC_SERVER_URL) {
-    return process.env.NEXT_PUBLIC_SERVER_URL;
-  }
-  if (typeof window !== "undefined") {
-    return `${window.location.protocol}//${window.location.hostname}:7860`;
-  }
-  return "http://localhost:7860";
-}
+// All API calls are same-origin under `/api/v1/...`. No `apiBase()`
+// helper is needed for the browser side — relative paths bind to
+// whichever origin the page was served from.
+const API_PREFIX = "";
 
 export class ApiError extends Error {
   constructor(
@@ -52,7 +41,7 @@ async function apiFetch(
   path: string,
   init: RequestInit = {},
 ): Promise<Response> {
-  return fetch(`${apiBase()}${path}`, {
+  return fetch(`${API_PREFIX}${path}`, {
     ...init,
     credentials: "include",
     headers: {
@@ -127,7 +116,7 @@ export async function chatStream(
   onEvent: (event: LoopEvent) => void,
   signal?: AbortSignal,
 ): Promise<void> {
-  const resp = await fetch(`${apiBase()}/api/v1/chat/stream`, {
+  const resp = await fetch(`${API_PREFIX}/api/v1/chat/stream`, {
     method: "POST",
     credentials: "include",
     headers: {

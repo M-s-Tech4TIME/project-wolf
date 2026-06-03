@@ -60,8 +60,13 @@ class Settings(BaseSettings):
 
     # ── CORS ──────────────────────────────────────────────────────────────
     # Comma-separated list of allowed origins for browser requests with
-    # credentials.  Add the URL the analyst's browser uses to reach
-    # wolf-dashboard.  Empty in production unless you explicitly configure it.
+    # credentials. Post-Phase-5.6-a browsers always go through
+    # wolf-dashboard's reverse proxy, so wolf-server typically never
+    # sees a browser Origin header in normal operation. CORS is kept
+    # configured anyway for ops use (curl with -H "Origin:..." from a
+    # workstation, direct API testing) and as a defence-in-depth layer
+    # if someone bypasses the proxy. Empty in production unless you
+    # explicitly configure it.
     cors_allow_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
     # Regex evaluated IN ADDITION to the exact list above. Default matches
     # any private-network IP (192.168/16, 10/8, 172.16/12) or loopback on

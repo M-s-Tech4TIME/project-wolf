@@ -49,6 +49,93 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-03 — Slice 5.6-a: Next.js reverse-proxy route handler
+
+**Session type:** claude-code
+**Phase:** 5.6 — Edge-component architecture + mTLS (slice a of e)
+**Branch / commit:** main @ (this commit)
+
+### What we did
+Phase 5.6 opens. Slice 5.6-a introduces wolf-dashboard's
+catch-all reverse-proxy route handler, the slice that **kills the
+cross-origin NetworkError** that surfaced in Phase 5.4.
+
+Files added:
+* `services/dashboard/app/api/[...path]/route.ts` — the catch-all.
+  Receives every HTTP method (GET/POST/PUT/PATCH/DELETE/HEAD/OPTIONS),
+  forwards to wolf-server (from server-side `WOLF_SERVER_URL`
+  env var, default `http://localhost:7860`), and streams the
+  upstream response body back via `new Response(upstreamResp.body)`
+  — no buffering, so SSE token-by-token rendering works through
+  the proxy. Filters hop-by-hop headers per RFC 7230 §6.1; uses
+  `Headers.getSetCookie()` + `append("set-cookie", ...)` so
+  multiple `Set-Cookie` headers (which wolf-server emits — one
+  for the 1-hour access token, one for the 7-day refresh token)
+  aren't collapsed into a single comma-joined line. Runtime is
+  `nodejs` (not edge) because the streaming-fetch via undici
+  with `duplex: "half"` for streaming request bodies needs the
+  Node runtime. On wolf-server unreachable returns 502 with a
+  JSON error body; on client abort mid-flight returns 499
+  (nginx convention for client-closed-request).
+
+Files changed:
+* `services/dashboard/lib/api.ts` — removed the `apiBase()`
+  helper; the browser now uses relative `/api/v1/...` paths
+  exclusively. All requests are same-origin against the
+  dashboard's `:3000` (the proxy forwards them server-side).
+* `services/dashboard/.env.example` — replaced the previous
+  browser-side `NEXT_PUBLIC_SERVER_URL` env var with the
+  server-side `WOLF_SERVER_URL`. The browser doesn't see this
+  value — only the dashboard's Next.js server reads it.
+* `services/dashboard/.env.local` (gitignored) — same.
+* `services/dashboard/README.md` — rewrote the intro and the
+  auth-notes section to describe the new architecture: one
+  browser origin, reverse-proxy forwarding to wolf-server,
+  same-origin cookies (no eTLD+1 gymnastics needed).
+* `services/server/wolf_server/config.py` — refreshed the CORS
+  comment to note that post-5.6-a browsers don't make cross-
+  origin requests in normal operation; CORS is kept configured
+  for ops-tool use and defence-in-depth.
+* `docs/PROGRESS.md` — flipped §1 to "5.6-a SHIPPED"; §6 known-
+  issues entry for the cross-origin NetworkError marked
+  RESOLVED in 5.6-a.
+
+### Verification (live, end-to-end)
+1. tsc + eslint on `services/dashboard`: clean.
+2. Started wolf-server (`python -m wolf_server` on `:7860`)
+   and `next dev -H 0.0.0.0 -p 3000` against the new code.
+3. Curl tests through the proxy at `:3000`:
+   - `POST /api/v1/auth/login` → HTTP 200, JSON body identical
+     to direct wolf-server response. Set-Cookie headers for
+     BOTH `wolf_access_token` AND `wolf_refresh_token` arrived
+     intact (this caught a real bug in the first pass — the
+     initial `forEach(set)` collapsed multi-Set-Cookie; fixed
+     using `getSetCookie()` + `append()`).
+   - `GET /api/v1/auth/me` with the cookie jar from login →
+     HTTP 200, full user/tenant/role payload.
+   - `GET /api/v1/auth/me/tenants` → HTTP 200, tenant list.
+   - `POST /api/v1/chat/stream` (SSE) → token-by-token
+     streaming verified: `loop.started` arrives first, then
+     `step.started`, then per-token `model.delta` events
+     flush as they're emitted (no buffering — confirmed by
+     watching the output stream in real time, not by waiting
+     for the connection to close).
+4. Stopped both processes cleanly.
+
+### Why this matters
+This is the architectural fix the user has been pointing at
+since Phase 5.4-e shipped the trust-install walkthrough. The
+trust-portal UX they explicitly rejected ("forcing the user to
+install certs is a bad experience") is now bypassed entirely:
+the browser only sees ONE origin's cert, that origin is
+wolf-dashboard's, and wolf-server is invisible to the browser.
+The remaining slices (5.6-b through 5.6-e) layer mTLS on the
+proxy → server hop so a distributed deployment can require
+that wolf-dashboard present a valid client cert before
+wolf-server will answer.
+
+---
+
 ## 2026-06-03 — Phase 5.5 CLOSED: component rename + total-rename closeout (A→G)
 
 **Session type:** claude-code

@@ -2,9 +2,17 @@
 
 Next.js 16 (App Router) + Tailwind 4 + shadcn/ui. The edge component
 per [ADR 0016](../../docs/decisions/0016-wolf-component-architecture-and-packaging.md)
-— the only Wolf process that browsers talk to directly. Talks to
-wolf-server on `http://localhost:7860` by default (overridable via
-`NEXT_PUBLIC_SERVER_URL`).
+— the only Wolf process that browsers talk to directly.
+
+Phase 5.6-a (2026-06-03) made this the **only** origin the browser
+ever sees: every `/api/v1/...` request hits Next.js's catch-all
+route handler at [`app/api/[...path]/route.ts`](app/api/[...path]/route.ts),
+which reverse-proxies to wolf-server (resolved from the
+server-side `WOLF_SERVER_URL` env var, default
+`http://localhost:7860`). The browser never makes a cross-origin
+fetch, which is what killed the HTTPS-mode NetworkError from Phase
+5.4. Phase 5.6-c will layer mTLS on top so the proxy presents a
+client cert to wolf-server.
 
 Phase 5.5 rename: this package was `frontend/` (package name
 `frontend`) pre-2026-06-03; now it's `services/dashboard/` (package
@@ -80,8 +88,9 @@ scripts/
 ## Notes on auth
 
 - wolf-server sets HTTP-only `wolf_access_token` and `wolf_refresh_token`
-  cookies with `samesite=lax`. In dev across ports (3000 ↔ 7860), the
-  cookies flow because both share the eTLD+1 `localhost`.
+  cookies with `samesite=lax`. Post-5.6-a the browser only sees one
+  origin (the dashboard at :3000), so the cookies are scoped to that
+  single origin — no cross-port eTLD+1 gymnastics needed.
 - All `fetch` calls use `credentials: "include"` (see `lib/api.ts`).
 - The tenant switcher does not re-issue JWTs server-side (yet). Switching
   tenants signs out and sends the user back to `/login?tenant=<id>` with

@@ -6,19 +6,34 @@
 >
 > For history of what changed when, see `CHANGELOG.md` (append-only).
 
-**Last updated:** 2026-06-03 by claude-code (Phase 5.5 CLOSED; Phase 5.6 next)
+**Last updated:** 2026-06-03 by claude-code (Phase 5.6-a SHIPPED; 5.6-b–e remaining)
 
 ---
 
 ## 1. Where we are right now
 
 **Current phase:** Phase 5.6 — Edge-component architecture + mTLS
-(per ADR 0016). Will introduce dashboard-as-reverse-proxy via
-Next.js `/api/*` route handlers + mTLS between `wolf-dashboard` ↔
-`wolf-server` using the shared Wolf CA. This is the slice that
-kills the cross-origin `NetworkError` from Phase 5.4. APT / DNF
-packaging (Phases 5.9 / 5.10) remain deferred to the official-
-release phase per the 2026-06-03 operator direction.
+(per ADR 0016).
+
+* **Slice 5.6-a — Reverse-proxy route handler** — SHIPPED
+  2026-06-03. wolf-dashboard's `app/api/[...path]/route.ts`
+  catch-all forwards every browser `/api/v1/...` request to
+  wolf-server. Browser only sees one origin (`:3000`). Cross-
+  origin NetworkError eliminated. Verified live: GET/POST/SSE
+  all pass through, multi-`Set-Cookie` preserved (both
+  `wolf_access_token` + `wolf_refresh_token` flow through),
+  token-by-token streaming flushes per chunk (no buffering).
+* **Slice 5.6-b — `dashboard-client` cert via wolf-cert** — next.
+  Mint a `LeafKind.CLIENT` leaf at
+  `.local/certs/dashboard-client/{cert,key}.pem`.
+* **Slice 5.6-c — mTLS middleware on wolf-server** — wires
+  CERT_REQUIRED at the uvicorn boundary + an ASGI middleware
+  that audit-logs rejections.
+* **Slices 5.6-d / 5.6-e** — launcher wiring + operator-doc
+  walkthrough + 401-without-cert smoke test.
+
+APT / DNF packaging (Phases 5.9 / 5.10) remain deferred to the
+official-release phase per the 2026-06-03 operator direction.
 
 **Phase 5.5 — Component renaming refactor — CLOSED 2026-06-03.**
 Pure refactor, zero functional change. The repo now matches ADR
@@ -417,18 +432,14 @@ to `CHANGELOG.md` as ADRs.
 ## 6. Known issues and tech debt
 
 - **Cross-origin `NetworkError` after `wolf-cert init`** (2026-06-03).
-  When TLS is enabled (`wolf-cert init` run), the browser sees
-  two Wolf origins: `https://<host>:3000` (dashboard) and
-  `https://<host>:7860` (server). Clicking through the warning on
-  the dashboard origin doesn't authorise cross-origin fetches to
-  the server origin, so the dashboard's JS sees
-  `NetworkError when attempting to fetch resource`. **Resolution
-  scheduled in Phase 5.6** (edge-component architecture per the
-  pending ADR 0016): the dashboard's Next.js `/api/*` routes
-  reverse-proxy to the server over mTLS, so the browser only
-  ever talks to one Wolf origin. This is the Wazuh-style pattern
-  the user wants — see the design conversation in CHANGELOG
-  2026-06-03 for context.
+  **RESOLVED 2026-06-03 in Slice 5.6-a** by introducing the
+  wolf-dashboard reverse proxy: every `/api/v1/...` request now
+  hits Next.js's catch-all route handler at
+  `services/dashboard/app/api/[...path]/route.ts` and gets
+  forwarded server-side to wolf-server. The browser only ever
+  sees the dashboard origin, so there's no second origin's cert
+  to trust. Phase 5.6-c will add mTLS between the proxy and
+  wolf-server using the shared Wolf CA.
 - **Conversations are in-memory only** (frontend `useState`).
   A page refresh wipes them. Full persistence plan captured in
   cross-session memory `conversation-tree-persistence-plan.md`
