@@ -49,6 +49,104 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-03 — Slice 5.6-b: dashboard-client cert (LeafKind.CLIENT) added to wolf-cert init
+
+**Session type:** claude-code
+**Phase:** 5.6 — Edge-component architecture + mTLS (slice b of e)
+**Branch / commit:** main @ (this commit)
+
+### What we did
+Phase 5.6 step 2. wolf-cert now mints a third built-in leaf,
+`dashboard-client`, with `LeafKind.CLIENT` and CN
+`wolf-dashboard-client`. This is the cert the dashboard's
+reverse-proxy (5.6-a) will present to wolf-server in 5.6-c's
+mTLS path.
+
+Code changes:
+* `packages/cert/wolf_cert/cli.py` — added a third entry to
+  `_BUILTIN_LEAVES`. Updated `--leaf` help text on `add-host` and
+  `renew` to advertise the new leaf name as a valid choice. The
+  init-time SAN-application comment block now explains why
+  client-kind leaves still get the same SAN set (uniformity +
+  inspection ergonomics; servers don't validate a client cert's
+  SAN against the source address, so it's harmless).
+
+Tests:
+* `services/server/tests/test_cert_cli.py` — three existing
+  tests updated to expect the new leaf:
+    - `test_init_creates_ca_and_two_leaves` →
+      `test_init_creates_ca_and_all_builtin_leaves`, now
+      loops `("server", "dashboard", "dashboard-client")`.
+    - `test_init_leaves_have_strict_key_permissions` adds
+      the third key path to the mode-check list.
+    - `test_add_host_appends_dns_san_to_all_leaves` now
+      verifies the SAN propagates to dashboard-client too.
+    - `test_status_prints_ca_and_leaves` asserts
+      `"leaf 'dashboard-client'"` appears in `wolf-cert status`
+      output.
+* `test_init_leaves_are_server_kind` renamed to
+  `test_init_server_leaves_get_server_eku` and split: a new
+  `test_init_dashboard_client_leaf_gets_client_eku` test
+  verifies the new leaf's EKU is clientAuth + CN is
+  `wolf-dashboard-client`. The test_cert_cli suite count went
+  from 311 → 312 total backend tests.
+
+### Live verification
+After `wolf-cert revoke --yes && wolf-cert init`:
+
+```
+.local/certs/ca/{ca-cert,ca-key}.pem
+.local/certs/server/{cert,key}.pem
+.local/certs/dashboard/{cert,key}.pem
+.local/certs/dashboard-client/{cert,key}.pem  ← new
+```
+
+`openssl x509 -in .local/certs/dashboard-client/cert.pem -noout
+-subject -issuer -ext extendedKeyUsage` reports:
+* `subject=CN = wolf-dashboard-client` ✓
+* `issuer=CN = Wolf Root CA, O = Wolf` ✓
+* `X509v3 Extended Key Usage: TLS Web Client Authentication` ✓
+
+Key file mode is 0600, cert 0644.
+
+### Integrity gate (all green)
+* mypy: 0 errors across 6 Python projects (84 source files)
+* ruff: clean
+* tsc (services/dashboard): 0 errors
+* eslint (services/dashboard): clean
+* backend pytest: **312 / 312** in 125.53s
+* live tenant-isolation probe: 6 / 6
+
+### What's next
+**Slice 5.6-c — mTLS middleware on wolf-server.** Two changes:
+
+* wolf-server's launcher (`wolf_server/__main__.py`) will pass
+  uvicorn's `--ssl-ca-certs` + `--ssl-cert-reqs=2` (CERT_REQUIRED)
+  when both the Wolf CA and the server's leaf are present. A new
+  ASGI middleware inspects the peer certificate, audit-logs any
+  reject decision (cert missing, wrong CN, not signed by Wolf
+  CA), and (in dev with no certs) becomes a no-op so the
+  zero-setup new-contributor path still works.
+* The dashboard's reverse-proxy `Agent` (5.6-a's
+  `WOLF_DISPATCHER`) gets extended with `cert` + `key` so the
+  proxy actually presents the dashboard-client leaf when it
+  fetches from wolf-server.
+
+### Operator impact
+After this slice, operators who already had certs minted (from
+the 5.6-a or earlier verification cycle) will need to run:
+
+```
+uv run --project services/server python -m wolf_cert revoke --yes
+uv run --project services/server python -m wolf_cert init
+```
+
+to pick up the new dashboard-client leaf. (A future
+`wolf-cert init --only-missing` flag would let us avoid this; not
+worth building today.)
+
+---
+
 ## 2026-06-03 — Slice 5.6-a: Next.js reverse-proxy route handler
 
 **Session type:** claude-code

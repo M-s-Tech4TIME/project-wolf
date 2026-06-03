@@ -75,7 +75,7 @@ def _ns(**kwargs: object) -> argparse.Namespace:
 # ─── init ─────────────────────────────────────────────────────────────────
 
 
-def test_init_creates_ca_and_two_leaves(tmp_path: Path) -> None:
+def test_init_creates_ca_and_all_builtin_leaves(tmp_path: Path) -> None:
     rc = cmd_init(_ns(
         cert_dir=str(tmp_path),
         years=100,
@@ -88,10 +88,12 @@ def test_init_creates_ca_and_two_leaves(tmp_path: Path) -> None:
     store = CertStore(root=tmp_path)
     assert store.ca_cert_path.exists()
     assert store.ca_key_path.exists()
-    assert store.leaf_cert_path("server").exists()
-    assert store.leaf_key_path("server").exists()
-    assert store.leaf_cert_path("dashboard").exists()
-    assert store.leaf_key_path("dashboard").exists()
+    # `server` + `dashboard` are SERVER-kind leaves (terminate browser
+    # HTTPS). `dashboard-client` (Phase 5.6-b) is a CLIENT-kind leaf
+    # the dashboard's reverse proxy presents to wolf-server.
+    for leaf_name in ("server", "dashboard", "dashboard-client"):
+        assert store.leaf_cert_path(leaf_name).exists(), leaf_name
+        assert store.leaf_key_path(leaf_name).exists(), leaf_name
 
 
 def test_init_refuses_when_ca_exists(tmp_path: Path) -> None:
@@ -143,15 +145,16 @@ def test_init_leaves_have_strict_key_permissions(tmp_path: Path) -> None:
         store.ca_key_path,
         store.leaf_key_path("server"),
         store.leaf_key_path("dashboard"),
+        store.leaf_key_path("dashboard-client"),
     ]:
         mode = stat.S_IMODE(path.stat().st_mode)
         assert mode == 0o600, f"{path} mode is {oct(mode)}, expected 0o600"
 
 
-def test_init_leaves_are_server_kind(tmp_path: Path) -> None:
-    """Both built-in leaves are SERVER kind — they terminate browser
-    HTTPS, never act as clients. Verified by reading back the
-    ExtendedKeyUsage extension."""
+def test_init_server_leaves_get_server_eku(tmp_path: Path) -> None:
+    """`server` and `dashboard` are SERVER-kind — they terminate
+    browser HTTPS, never act as clients. Verified by reading back
+    the ExtendedKeyUsage extension."""
     cmd_init(_ns(
         cert_dir=str(tmp_path), years=100,
         ca_cn="CA", ca_org="Org", san_dns=[], san_ip=[],
@@ -160,6 +163,23 @@ def test_init_leaves_are_server_kind(tmp_path: Path) -> None:
     for name in ("server", "dashboard"):
         leaf = read_cert_pem(store.leaf_cert_path(name))
         assert _kind_from_eku(leaf) == LeafKind.SERVER
+
+
+def test_init_dashboard_client_leaf_gets_client_eku(tmp_path: Path) -> None:
+    """Phase 5.6-b: the `dashboard-client` leaf is CLIENT-kind. The
+    wolf-dashboard reverse proxy presents this cert to wolf-server in
+    Phase 5.6-c's mTLS path; an EKU=serverAuth cert would be rejected
+    by a strict TLS client. CN is "wolf-dashboard-client" so
+    wolf-server's mTLS middleware can recognise it in audit logs."""
+    cmd_init(_ns(
+        cert_dir=str(tmp_path), years=100,
+        ca_cn="CA", ca_org="Org", san_dns=[], san_ip=[],
+    ))
+    store = CertStore(root=tmp_path)
+    leaf = read_cert_pem(store.leaf_cert_path("dashboard-client"))
+    assert _kind_from_eku(leaf) == LeafKind.CLIENT
+    s = cert_status(leaf)
+    assert s.subject_cn == "wolf-dashboard-client"
 
 
 # ─── status ───────────────────────────────────────────────────────────────
@@ -186,6 +206,7 @@ def test_status_prints_ca_and_leaves(
     assert "CN=Test CA" in out
     assert "leaf 'server'" in out
     assert "leaf 'dashboard'" in out
+    assert "leaf 'dashboard-client'" in out
     # Each block should print SAN + fingerprint + relative-expiry.
     assert "SHA256:" in out
     assert re.search(r"in \d+ years?", out)
@@ -255,7 +276,7 @@ def test_add_host_classifies_ip_correctly(tmp_path: Path) -> None:
     ))
     assert rc == _ExitCode.OK
     store = CertStore(root=tmp_path)
-    for name in ("server", "dashboard"):
+    for name in ("server", "dashboard", "dashboard-client"):
         s = cert_status(read_cert_pem(store.leaf_cert_path(name)))
         assert "192.168.42.7" in s.san_ip
 

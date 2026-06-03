@@ -160,6 +160,11 @@ class _LeafSpec:
 # discovers it via the store, `add-host` / `renew` operate on it,
 # `revoke` cleans it up.
 # Phase 5.5 component rename: orchestrator → server, frontend → dashboard.
+# Phase 5.6-b: added the `dashboard-client` CLIENT-kind leaf so the
+# wolf-dashboard reverse-proxy (Phase 5.6-a) can present a Wolf-CA-
+# signed client cert to wolf-server. Wolf-server's mTLS middleware
+# in Phase 5.6-c keys on the CN ("wolf-dashboard-client") + the
+# clientAuth EKU to recognise legitimate proxy traffic.
 # Per ADR 0016, these are the always-minted-on-init leaves for an
 # all-in-one Wolf install. Distributed deployments still benefit from
 # the same set on the operator's admin workstation; the operator
@@ -169,6 +174,11 @@ class _LeafSpec:
 _BUILTIN_LEAVES: tuple[_LeafSpec, ...] = (
     _LeafSpec(name="server", common_name="wolf-server", kind=LeafKind.SERVER),
     _LeafSpec(name="dashboard", common_name="wolf-dashboard", kind=LeafKind.SERVER),
+    _LeafSpec(
+        name="dashboard-client",
+        common_name="wolf-dashboard-client",
+        kind=LeafKind.CLIENT,
+    ),
 )
 
 
@@ -206,9 +216,14 @@ def cmd_init(args: argparse.Namespace) -> int:
     print(f"  CA cert: {store.ca_cert_path}")
     print(f"  CA key:  {store.ca_key_path}")
 
-    # Determine SANs once and apply to every leaf — wolf-server and
-    # wolf-dashboard should match the same hostname / IP set so the
-    # browser doesn't reject one and accept the other.
+    # Determine SANs once and apply to every leaf. wolf-server and
+    # wolf-dashboard must match the same hostname / IP set so the
+    # browser doesn't reject one and accept the other. The
+    # dashboard-client leaf (Phase 5.6-b) doesn't strictly need SANs
+    # — a TLS server doesn't check a client cert's SAN against the
+    # client's source address — but giving it the same set keeps the
+    # init logic uniform and makes the cert inspectable in audit
+    # logs without surprises.
     san_dns, san_ip = _resolve_sans(args)
     if not san_dns and not san_ip:
         _eprint(
@@ -480,7 +495,10 @@ def _build_parser() -> argparse.ArgumentParser:
     p_add.add_argument(
         "--leaf",
         default="all",
-        help="Which leaf to update ('all', 'server', 'dashboard', etc.)",
+        help=(
+            "Which leaf to update — 'all', or a leaf name "
+            "('server', 'dashboard', 'dashboard-client')"
+        ),
     )
     p_add.set_defaults(func=cmd_add_host)
 
@@ -499,7 +517,10 @@ def _build_parser() -> argparse.ArgumentParser:
     p_renew.add_argument(
         "--leaf",
         default="all",
-        help="Which leaf to reissue ('all', 'server', 'dashboard', etc.)",
+        help=(
+            "Which leaf to reissue — 'all', or a leaf name "
+            "('server', 'dashboard', 'dashboard-client')"
+        ),
     )
     p_renew.add_argument(
         "--ca",

@@ -6,7 +6,7 @@
 >
 > For history of what changed when, see `CHANGELOG.md` (append-only).
 
-**Last updated:** 2026-06-03 by claude-code (Phase 5.6-a SHIPPED; 5.6-b–e remaining)
+**Last updated:** 2026-06-03 by claude-code (Phase 5.6-b SHIPPED; 5.6-c–e remaining)
 
 ---
 
@@ -23,12 +23,17 @@
   all pass through, multi-`Set-Cookie` preserved (both
   `wolf_access_token` + `wolf_refresh_token` flow through),
   token-by-token streaming flushes per chunk (no buffering).
-* **Slice 5.6-b — `dashboard-client` cert via wolf-cert** — next.
-  Mint a `LeafKind.CLIENT` leaf at
-  `.local/certs/dashboard-client/{cert,key}.pem`.
-* **Slice 5.6-c — mTLS middleware on wolf-server** — wires
+* **Slice 5.6-b — `dashboard-client` cert via wolf-cert** —
+  SHIPPED 2026-06-03. `wolf-cert init` now mints three leaves:
+  `server` (SERVER EKU), `dashboard` (SERVER EKU), and the new
+  `dashboard-client` (**CLIENT EKU**, CN = `wolf-dashboard-client`)
+  at `.local/certs/dashboard-client/{cert,key}.pem`. Phase 5.6-c
+  will require this cert at wolf-server's TLS boundary.
+* **Slice 5.6-c — mTLS middleware on wolf-server** — next. Wires
   CERT_REQUIRED at the uvicorn boundary + an ASGI middleware
-  that audit-logs rejections.
+  that audit-logs rejections. Also wires the dashboard's reverse-
+  proxy Agent (5.6-a's `WOLF_DISPATCHER`) to present the
+  dashboard-client leaf in `Agent({ connect: { cert, key, ca } })`.
 * **Slices 5.6-d / 5.6-e** — launcher wiring + operator-doc
   walkthrough + 401-without-cert smoke test.
 
