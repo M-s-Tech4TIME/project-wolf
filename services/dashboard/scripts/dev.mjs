@@ -37,6 +37,13 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, "..", "..", "..");
 const CERT_PATH = resolve(REPO_ROOT, ".local/certs/dashboard/cert.pem");
 const KEY_PATH = resolve(REPO_ROOT, ".local/certs/dashboard/key.pem");
+const CLIENT_CERT_PATH = resolve(
+  REPO_ROOT, ".local/certs/dashboard-client/cert.pem",
+);
+const CLIENT_KEY_PATH = resolve(
+  REPO_ROOT, ".local/certs/dashboard-client/key.pem",
+);
+const WOLF_CA_PATH = resolve(REPO_ROOT, ".local/certs/ca/ca-cert.pem");
 
 function isFile(p) {
   try {
@@ -48,6 +55,12 @@ function isFile(p) {
 
 const certPresent = isFile(CERT_PATH);
 const keyPresent = isFile(KEY_PATH);
+// Phase 5.6-c: the proxy in `app/api/[...path]/route.ts` reads
+// these files at module load and presents them via undici Agent.
+// The launcher just reports state here so the operator can grep one
+// place to see whether mTLS is wired everywhere.
+const proxyMtlsReady =
+  isFile(CLIENT_CERT_PATH) && isFile(CLIENT_KEY_PATH) && isFile(WOLF_CA_PATH);
 
 const extraArgs = [];
 if (certPresent && keyPresent) {
@@ -59,6 +72,17 @@ if (certPresent && keyPresent) {
   console.log(`wolf-dashboard: serving HTTPS via Next.js --experimental-https`);
   console.log(`  cert: ${CERT_PATH}`);
   console.log(`  key:  ${KEY_PATH}`);
+  if (proxyMtlsReady) {
+    console.log(
+      `  proxy mTLS: ENABLED — presenting ${CLIENT_CERT_PATH} ` +
+      `as the dashboard-client cert to wolf-server`,
+    );
+  } else {
+    console.log(
+      "  proxy mTLS: DISABLED — dashboard-client cert not on disk " +
+      "(run `wolf-cert init` to mint it)",
+    );
+  }
 } else if (certPresent !== keyPresent) {
   // Broken pair — surface it loudly and fall back to HTTP. A half-
   // loaded TLS config in Next.js produces obscure handshake failures

@@ -120,6 +120,41 @@ writer in one HTTP call. If it returns `200`, every load-bearing
 subsystem is healthy. If it returns anything else, read
 `/tmp/wolf-server.log` — that's the source of truth.
 
+### Verify mTLS came up (Phase 5.6-c)
+
+If you have `.local/certs/` on disk (i.e. you've run `wolf-cert init`),
+wolf-server's startup banner should say `mTLS: ENABLED`:
+
+```bash
+grep "mTLS:" /tmp/wolf-server.log
+# Expected:  mTLS: ENABLED — Wolf CA at ...; allowed client CNs: [wolf-dashboard-client]
+```
+
+A three-line smoke that confirms mTLS is actively enforcing
+(not just configured):
+
+```bash
+CA=.local/certs/ca/ca-cert.pem
+CLIENT_CERT=.local/certs/dashboard-client/cert.pem
+CLIENT_KEY=.local/certs/dashboard-client/key.pem
+
+# 1. No client cert → 401 mtls_required (mTLS rejected at app layer)
+curl -s --cacert "$CA" -w "\n" https://localhost:7860/api/v1/auth/me
+
+# 2. With dashboard-client cert → 401 Not authenticated (mTLS passed,
+#    auth-middleware then rejected because no login cookie — this is
+#    the correct hand-off between the two middlewares)
+curl -s --cacert "$CA" --cert "$CLIENT_CERT" --key "$CLIENT_KEY" -w "\n" \
+  https://localhost:7860/api/v1/auth/me
+
+# 3. /healthz from loopback (no cert) → 200 (the bypass is working)
+curl -s --cacert "$CA" -w "\n" https://localhost:7860/healthz
+```
+
+If wolf-server is on plain HTTP (no `wolf-cert init` yet), all three
+calls fail with TLS errors — that's expected, the mTLS smoke only
+applies to the HTTPS+mTLS path.
+
 ---
 
 ## What the restart does NOT touch

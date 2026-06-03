@@ -362,7 +362,7 @@ curl -fsS -b /tmp/wolf-cookie.txt -H 'Content-Type: application/json' \
 Or open wolf-dashboard at `http://localhost:3000` (or your LAN IP, e.g.
 `http://192.168.1.50:3000`), log in, and chat from the UI.
 
-### 3.12 Enable HTTPS via `wolf-cert` (optional but recommended)
+### 3.12 Enable HTTPS + mTLS via `wolf-cert` (optional but recommended)
 
 Plain HTTP works for everything functional, but browsers gate
 "secure-context" APIs (clipboard, notifications, Web Crypto,
@@ -372,15 +372,26 @@ command. Once installed in your OS / browser trust store, the
 browser shows the green padlock and wolf-server + wolf-dashboard
 both serve over HTTPS automatically.
 
+**Phase 5.6 layered mTLS on top.** `wolf-cert init` now also mints
+a `dashboard-client` leaf with `LeafKind.CLIENT`. After init,
+wolf-server requires every non-/healthz request to present a
+Wolf-CA-signed client cert whose Subject CN is in the configured
+allowlist (default `wolf-dashboard-client`). wolf-dashboard's
+reverse-proxy ([`app/api/[...path]/route.ts`](services/dashboard/app/api/[...path]/route.ts))
+automatically presents this client cert on every outbound call.
+End result: the browser sees one origin (the dashboard), and
+wolf-server refuses any caller that isn't wolf-dashboard.
+
 **The lifecycle:**
 
 ```bash
-# 1. Mint the CA + server + dashboard leaves under
-#    <repo>/.local/certs/. Default validity is 100 years — the
-#    "practical infinity" pattern (RFC 5280 forbids truly unlimited).
+# 1. Mint the CA + three leaves (server, dashboard, dashboard-client)
+#    under <repo>/.local/certs/. Default validity is 100 years —
+#    the "practical infinity" pattern (RFC 5280 forbids truly
+#    unlimited).
 wolf-cert init
 
-# 2. Inspect what was minted.
+# 2. Inspect what was minted (you should see all three leaves).
 wolf-cert status
 
 # 3. Export the CA cert so you can install it in your OS / browser
@@ -397,9 +408,29 @@ wolf-cert revoke --yes      # deletes everything in .local/certs/
 ```
 
 After `wolf-cert init`, restart wolf-server and wolf-dashboard —
-their launchers see the cert pair and flip to HTTPS automatically.
-The Next.js dev server will print a "Self-signed certificates are
-currently an experimental feature, use with caution" notice on
+their launchers see the cert pair and flip to HTTPS + mTLS
+automatically. The startup banners report the picked mode:
+
+```
+wolf-server: serving https://0.0.0.0:7860
+  TLS:  TLS cert+key present at .local/certs/server/{cert,key}.pem
+  mTLS: ENABLED — Wolf CA at .local/certs/ca/ca-cert.pem;
+        allowed client CNs: [wolf-dashboard-client]
+```
+
+```
+wolf-dashboard: serving HTTPS via Next.js --experimental-https
+  cert: .local/certs/dashboard/cert.pem
+  key:  .local/certs/dashboard/key.pem
+  proxy mTLS: ENABLED — presenting .local/certs/dashboard-client/cert.pem
+              as the dashboard-client cert to wolf-server
+```
+
+If either banner shows `DISABLED` after a fresh `wolf-cert init`,
+something is wrong — see §"Troubleshooting mTLS" below.
+
+The Next.js dev server will also print a "Self-signed certificates
+are currently an experimental feature, use with caution" notice on
 startup; that's Next.js's own warning about its experimental flag,
 not an indication of a problem with our certs.
 
@@ -457,7 +488,7 @@ NSS caches the trust store at startup; a tab reload isn't enough.
 Then revisit `https://localhost:3000` (or your LAN IP) and verify
 the padlock shows green.
 
-**Verify end-to-end from the command line:**
+**Verify HTTPS end-to-end from the command line:**
 
 ```bash
 # Both should return HTTP 200 with the freshly-minted CA trusted.
@@ -466,10 +497,120 @@ curl -s --cacert "$CA" -o /dev/null -w "wolf-dashboard: %{http_code}\n" https://
 curl -s --cacert "$CA" -o /dev/null -w "wolf-server: %{http_code}\n" https://localhost:7860/healthz
 ```
 
-**To roll back to HTTP-only:** `wolf-cert revoke --yes` deletes
-the cert directory; the next launcher start drops back to plain
-HTTP automatically. You can also remove the CA from your OS trust
-store via the inverse of the install commands above.
+**Verify mTLS is actively enforced** (Phase 5.6-c). Three round-trips
+that together prove every layer of the mTLS posture is correct:
+
+```bash
+CA=.local/certs/ca/ca-cert.pem
+CLIENT_CERT=.local/certs/dashboard-client/cert.pem
+CLIENT_KEY=.local/certs/dashboard-client/key.pem
+
+# 1. Direct curl WITHOUT a client cert. wolf-server rejects with 401.
+#    Body explains why; not a TLS handshake failure but an
+#    application-layer rejection from MtlsMiddleware.
+curl -s --cacert "$CA" https://localhost:7860/api/v1/auth/me
+# Expected:
+#   {"error":"mtls_required","detail":"wolf-server requires a Wolf-CA-signed
+#    client certificate..."}
+
+# 2. Same call WITH the dashboard-client cert. mTLS passes; the
+#    AuthMiddleware then rejects because there's no login cookie.
+#    The "Not authenticated" response means the mTLS hand-off
+#    worked correctly.
+curl -s --cacert "$CA" --cert "$CLIENT_CERT" --key "$CLIENT_KEY" \
+  https://localhost:7860/api/v1/auth/me
+# Expected:
+#   {"detail":"Not authenticated"}
+
+# 3. /healthz from loopback (no cert) bypasses mTLS for ops tooling.
+curl -s --cacert "$CA" https://localhost:7860/healthz
+# Expected:
+#   {"status":"ok","service":"wolf-server"}
+```
+
+If 1 returns anything other than `mtls_required`, wolf-server isn't
+enforcing mTLS — check its startup banner shows `mTLS: ENABLED`.
+If 2 returns `mtls_cn_rejected` instead of `Not authenticated`, the
+client cert's CN doesn't match the allowlist — see the
+troubleshooting section below. If 3 returns 401, the /healthz
+bypass isn't working — check you're hitting the loopback address
+and not the LAN IP.
+
+#### Troubleshooting mTLS
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| Browser shows `NetworkError` after login | dashboard's proxy can't reach wolf-server (wolf-server down or wrong URL) | Check `WOLF_SERVER_URL` env var; `curl https://localhost:7860/healthz` from the dashboard host. |
+| Dashboard banner says `proxy mTLS: DISABLED` | The `dashboard-client` cert files are missing | Run `wolf-cert revoke --yes && wolf-cert init` to mint a fresh set; pre-5.6 cert sets didn't include the client leaf. |
+| wolf-server banner says `mTLS: DISABLED` | The Wolf CA cert isn't at `.local/certs/ca/ca-cert.pem` | Run `wolf-cert init` (or copy the CA cert into place in a distributed deployment — see §3.13). |
+| Direct curl gets `mtls_cn_rejected` with CN `wolf-dashboard-client` | The allowlist on wolf-server has a typo or a stale value | `echo $MTLS_ALLOWED_CLIENT_CNS` (must contain `wolf-dashboard-client`); restart wolf-server. |
+| Direct curl gets a bare TLS error, no JSON | uvicorn isn't getting CERT_OPTIONAL; somehow the launcher think mTLS is off | Restart wolf-server; check the banner reports `mTLS: ENABLED`. |
+| Dashboard works but `make smoke-mtls` fails | A leftover wolf-server from before `wolf-cert init` is still listening | `pkill -f "python -m wolf_server"; ss -tlnp \| grep :7860` should be empty; then relaunch. |
+
+**Inspect the audit log** to see what wolf-server is doing with
+incoming connections. Every accept/reject decision is logged via
+structlog with one of these event names:
+
+```bash
+# In the journal of wolf-server.log:
+grep mtls_ /tmp/wolf-server.log
+# Each line includes the cert CN, the rejected reason (if any), and
+# the requesting client IP — useful for spotting an misconfigured
+# distributed deployment quickly.
+```
+
+**To roll back to HTTP + no mTLS:** `wolf-cert revoke --yes`
+deletes the cert directory; the next launcher start drops back to
+plain HTTP automatically (and mTLS turns off too — they share the
+cert-files-are-the-signal contract). You can also remove the CA
+from your OS trust store via the inverse of the install commands
+above.
+
+### 3.13 Distributed deployment (multi-host)
+
+The all-in-one path above puts every Wolf component on one host,
+all reachable via loopback. For real deployments where wolf-server
+runs on a different host than wolf-dashboard (e.g. a hardened
+"brain" machine on an internal network and an edge "dashboard"
+machine behind a corporate proxy), the cert + env story has a few
+extra steps.
+
+**Cert distribution:** the operator's admin workstation runs
+`wolf-cert init` once. The CA private key (`ca/ca-key.pem`) NEVER
+leaves the admin workstation — that's the security posture of a
+self-signed CA. The other files get copied:
+
+| File | Goes on | Why |
+|---|---|---|
+| `ca/ca-cert.pem` | both hosts | trust-chain anchor; needed to validate the other side's cert |
+| `server/cert.pem` + `server/key.pem` | wolf-server host only | wolf-server's TLS identity |
+| `dashboard/cert.pem` + `dashboard/key.pem` | wolf-dashboard host only | wolf-dashboard's TLS identity (terminates browser HTTPS) |
+| `dashboard-client/cert.pem` + `dashboard-client/key.pem` | wolf-dashboard host only | proxy's client identity for outbound mTLS to wolf-server |
+| `ca/ca-key.pem` | admin workstation only | NEVER copy this to any service host |
+
+**The one env-var edit:** on the wolf-dashboard host, set
+`WOLF_SERVER_URL` to the wolf-server host's URL. The default is
+`http://localhost:7860`; in distributed it needs to be e.g.
+`https://wolf-server.acme.internal:7860`.
+
+```bash
+# In services/dashboard/.env.local on the wolf-dashboard host:
+WOLF_SERVER_URL=https://wolf-server.acme.internal:7860
+```
+
+That's the only configuration difference between all-in-one and
+distributed. Everything else (cert auto-detection, mTLS
+enforcement, /healthz bypass) works identically on both
+topologies. The browser still only sees `wolf-dashboard`'s
+origin; wolf-server is never internet-exposed.
+
+**Future:** `wolf-gateway` (Phase 6) will run on its own host
+with a `wolf-gateway-client` leaf cert (parallel to
+`dashboard-client`), added to wolf-server's
+`MTLS_ALLOWED_CLIENT_CNS` allowlist. Same pattern, one more CN.
+The relay daemons (the planned "wolf-relay" component that ships
+events from Wazuh hosts to wolf-server) will follow the same
+pattern with one `wolf-relay-<tenant>` cert per relay.
 
 ---
 

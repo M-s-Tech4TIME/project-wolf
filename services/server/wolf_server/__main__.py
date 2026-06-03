@@ -115,13 +115,6 @@ def main() -> None:
     settings = get_settings()
     tls = resolve_tls(settings.tls_cert_path, settings.tls_key_path)
 
-    scheme = "https" if tls.use_https else "http"
-    print(
-        f"wolf-server: serving {scheme}://"
-        f"{settings.bind_host}:{settings.bind_port}",
-    )
-    print(f"  reason: {tls.reason}")
-
     # Phase 5.6-c: mTLS auto-detect. When the Wolf CA + server leaf
     # all exist, switch uvicorn's TLS layer to client-cert mode
     # (CERT_OPTIONAL — required-ness is enforced by the ASGI
@@ -131,9 +124,28 @@ def main() -> None:
     mtls_on = tls.use_https and settings.mtls_enabled
     if mtls_on:
         patch_uvicorn_for_peer_cert()
+
+    # Banner: three lines, one per mode dimension, so the operator
+    # can grep the first line for the scheme and the next for the
+    # full security posture without scanning prose. Phase 5.6-d:
+    # the mTLS line is always present (either ENABLED or DISABLED)
+    # so the absence of the keyword in the log is itself diagnostic.
+    scheme = "https" if tls.use_https else "http"
+    print(
+        f"wolf-server: serving {scheme}://"
+        f"{settings.bind_host}:{settings.bind_port}",
+    )
+    print(f"  TLS:  {tls.reason}")
+    if mtls_on:
+        cns = ", ".join(settings.mtls_allowed_client_cn_list)
         print(
-            f"  mTLS: Wolf CA at {settings.mtls_ca_path}; "
-            f"allowed client CNs: {settings.mtls_allowed_client_cn_list}",
+            f"  mTLS: ENABLED — Wolf CA at {settings.mtls_ca_path}; "
+            f"allowed client CNs: [{cns}]",
+        )
+    else:
+        print(
+            "  mTLS: DISABLED — no Wolf CA cert at "
+            f"{settings.mtls_ca_path} (run `wolf-cert init` to enable)",
         )
 
     uvicorn.run(

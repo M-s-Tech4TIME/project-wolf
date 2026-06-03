@@ -49,6 +49,119 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-04 — Slice 5.6-d: launcher polish + operator-doc walkthrough for HTTPS + mTLS
+
+**Session type:** claude-code
+**Phase:** 5.6 — Edge-component architecture + mTLS (slice d of e)
+**Branch / commit:** main @ (this commit)
+
+### What we did
+The functional mTLS stack landed in 5.6-c; this slice puts the
+operator-facing story around it. Three areas:
+
+**Launcher banner polish.** Both `wolf-server` and `wolf-dashboard`
+launchers now report their mTLS state on a line explicitly
+keyed `mTLS: ENABLED` or `mTLS: DISABLED`, with the rationale
+appended (the file paths it found / didn't find). Absence of
+the keyword in the log is itself diagnostic — an operator
+grepping `mTLS:` knows immediately whether the stack came up
+in the intended posture.
+
+* `services/server/wolf_server/__main__.py` — split the startup
+  output into three lines (`wolf-server: serving …` / `TLS: …`
+  / `mTLS: ENABLED/DISABLED …`), one per security dimension.
+* `services/dashboard/scripts/dev.mjs` — added the
+  `proxy mTLS: ENABLED/DISABLED` line. Auto-detects all three
+  cert files (`dashboard-client/cert.pem`, `dashboard-client/key.pem`,
+  `ca/ca-cert.pem`) and reports the result. The proxy in
+  `app/api/[...path]/route.ts` does the actual loading; the
+  launcher just gives the operator a single place to grep
+  whether mTLS is wired everywhere.
+
+**ONBOARDING.md rewrite of §3.12.** What was previously a
+"how to enable HTTPS" section is now a "how to enable HTTPS +
+mTLS" section, because in Phase 5.6 they're inseparable —
+`wolf-cert init` mints all three leaves in one shot and both
+servers auto-detect them together. New content:
+
+* Phase 5.6 mTLS posture explained up-front (browser sees one
+  origin; wolf-server refuses non-dashboard callers).
+* The lifecycle commands now mention "three leaves (server,
+  dashboard, dashboard-client)" — previously was "two leaves."
+* New "Verify mTLS is actively enforced" subsection with the
+  three-curl smoke from 5.6-c's verification matrix:
+    1. Direct curl WITHOUT cert → 401 mtls_required
+    2. Direct curl WITH dashboard-client cert → 401 Not authenticated
+       (correct hand-off: mTLS passes, AuthMiddleware then rejects)
+    3. /healthz from loopback without cert → 200 (the bypass)
+* New "Troubleshooting mTLS" table covering six common failure
+  modes: NetworkError after login, dashboard says proxy mTLS
+  DISABLED, wolf-server says mTLS DISABLED, mtls_cn_rejected
+  with the correct CN, bare TLS error without JSON, and
+  leftover-process port conflict.
+* Audit-log inspection note (`grep mtls_ /tmp/wolf-server.log`)
+  so operators can see what wolf-server thinks is happening.
+
+**New ONBOARDING.md §3.13 "Distributed deployment".** Walks
+the multi-host scenario where wolf-server runs on a different
+host than wolf-dashboard. Includes:
+
+* A cert-distribution table (which file goes where, and which
+  files NEVER leave the admin workstation — specifically the
+  CA private key).
+* The single env-var edit needed: `WOLF_SERVER_URL` on the
+  wolf-dashboard host.
+* Forward-looking note about how `wolf-gateway` (Phase 6) and
+  the relay daemons (future) plug into the same pattern with
+  additional CNs in `MTLS_ALLOWED_CLIENT_CNS`.
+
+**docs/restart.md addition.** New §"Verify mTLS came up" between
+the "Verify login" section and the "What the restart does NOT
+touch" section. Same three-curl smoke as ONBOARDING, plus an
+`grep "mTLS:" /tmp/wolf-server.log` hint for the operator's
+first sanity check.
+
+### Live banner verification (after the polish)
+Restarted wolf-server with the new banner format:
+
+```
+wolf-server: serving https://0.0.0.0:7860
+  TLS:  TLS cert+key present at .local/certs/server/{cert,key}.pem
+  mTLS: ENABLED — Wolf CA at .local/certs/ca/ca-cert.pem;
+        allowed client CNs: [wolf-dashboard-client]
+```
+
+Restarted dashboard:
+
+```
+wolf-dashboard: serving HTTPS via Next.js --experimental-https
+  cert: .local/certs/dashboard/cert.pem
+  key:  .local/certs/dashboard/key.pem
+  proxy mTLS: ENABLED — presenting .local/certs/dashboard-client/cert.pem
+              as the dashboard-client cert to wolf-server
+```
+
+Both banners clear, three-line structure, mTLS state visible
+without scanning prose.
+
+### Integrity gate (all green)
+* mypy: 0 errors across 6 Python projects (87 source files)
+* ruff: clean
+* tsc (services/dashboard): 0 errors
+* eslint (services/dashboard): clean
+* backend pytest: 321 / 321 in 89.36s
+* live tenant-isolation probe: 6 / 6
+
+### What's next
+**Slice 5.6-e — `make smoke-mtls` recurring integrity check.**
+Codifies the three-curl smoke from §3.12 as a Makefile target
+that runs against a freshly-restarted wolf-server. Becomes the
+canonical "did we break mTLS" check that runs before every push.
+Also adds a CI job so the same smoke runs against every PR.
+Closes Phase 5.6.
+
+---
+
 ## 2026-06-03 — Slice 5.6-c: mTLS enforcement (wolf-server middleware + dashboard proxy client cert)
 
 **Session type:** claude-code

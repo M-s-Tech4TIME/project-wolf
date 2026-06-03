@@ -6,7 +6,7 @@
 >
 > For history of what changed when, see `CHANGELOG.md` (append-only).
 
-**Last updated:** 2026-06-03 by claude-code (Phase 5.6-c SHIPPED; 5.6-d–e remaining)
+**Last updated:** 2026-06-04 by claude-code (Phase 5.6-d SHIPPED; 5.6-e remaining)
 
 ---
 
@@ -49,9 +49,23 @@
   → 401 mtls_required, with-cert → 200, /healthz from loopback
   no-cert → 200; full dashboard login + chat-stream round-trip
   works end-to-end with mTLS active.
-* **Slices 5.6-d / 5.6-e** — launcher wiring polish + operator-doc
-  walkthrough + 401-without-cert smoke test as a recurring
-  integrity check.
+* **Slice 5.6-d — Launcher polish + operator-doc walkthrough** —
+  SHIPPED 2026-06-04. Both launcher banners now report mTLS
+  state explicitly (`mTLS: ENABLED — …` / `mTLS: DISABLED — …`)
+  so absence of the keyword is itself diagnostic. ONBOARDING §3.12
+  rewritten to cover the HTTPS + mTLS lifecycle as one story,
+  with a three-line live verification smoke (no-cert → 401, with-cert
+  → 200, /healthz from loopback → 200) and a troubleshooting
+  table for the common failure modes. New §3.13 walks through
+  distributed (multi-host) deployment: which cert file goes on
+  which host, what `WOLF_SERVER_URL` to set, why the CA private
+  key stays on the admin workstation. `docs/restart.md` got an
+  mTLS smoke section so the per-restart routine includes a
+  mTLS-is-up check.
+* **Slice 5.6-e — `make smoke-mtls` recurring integrity check** —
+  next. The three-curl smoke from §3.12 codified as a Makefile
+  target that runs before every push, plus a CI job. Closes
+  Phase 5.6.
 
 APT / DNF packaging (Phases 5.9 / 5.10) remain deferred to the
 official-release phase per the 2026-06-03 operator direction.
