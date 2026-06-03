@@ -11,7 +11,7 @@ whose `embedding_model` differs from the currently-configured provider's
 clean pass finds zero mismatches.
 
 Usage:
-    cd services/orchestrator
+    cd services/server
     set -a && source ../../.env && set +a
     uv run python -m app.management.reembed                 # report only
     uv run python -m app.management.reembed --apply         # actually re-embed

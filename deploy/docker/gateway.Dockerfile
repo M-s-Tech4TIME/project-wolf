@@ -15,4 +15,4 @@ WORKDIR /workspace/services/gateway
 
 RUN uv sync --no-dev
 
-CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001"]
+CMD ["uv", "run", "uvicorn", "wolf_gateway.main:app", "--host", "0.0.0.0", "--port", "8001"]

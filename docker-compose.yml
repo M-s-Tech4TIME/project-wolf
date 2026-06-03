@@ -33,11 +33,11 @@ services:
 
   # ─── Services ───────────────────────────────────────────────────────────────
 
-  orchestrator:
+  server:
     build:
       context: .
-      dockerfile: deploy/docker/orchestrator.Dockerfile
-    container_name: wolf-orchestrator
+      dockerfile: deploy/docker/server.Dockerfile  # was orchestrator.Dockerfile pre-Phase-5.5
+    container_name: wolf-server
     restart: unless-stopped
     depends_on:
       postgres:

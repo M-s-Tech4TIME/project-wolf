@@ -1,7 +1,7 @@
 """Driver CLI for the real-corpus seed ingest.
 
 Usage:
-    cd services/orchestrator
+    cd services/server
     set -a && source ../../.env && set +a
     uv run python -m tools.seed_knowledge --source attack
     uv run python -m tools.seed_knowledge --source wazuh_rules

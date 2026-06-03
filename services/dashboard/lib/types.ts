@@ -1,5 +1,5 @@
-// TypeScript types mirroring the Wolf orchestrator's Pydantic schemas.
-// Keep in sync with services/orchestrator/app/api/{auth,chat}.py and
+// TypeScript types mirroring wolf-server's Pydantic schemas.
+// Keep in sync with services/server/wolf_server/api/{auth,chat}.py and
 // packages/schema/wolf_schema/*.
 
 export type LoginRequest = {

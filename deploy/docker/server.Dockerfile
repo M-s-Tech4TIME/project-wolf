@@ -17,12 +17,13 @@ COPY .python-version /workspace/.python-version
 
 # Copy package sources
 COPY packages/ /workspace/packages/
-COPY services/orchestrator/ /workspace/services/orchestrator/
+COPY services/server/ /workspace/services/server/
 
-WORKDIR /workspace/services/orchestrator
+WORKDIR /workspace/services/server
 
 # Install all deps for this service (including workspace packages)
 RUN uv sync --no-dev
 
-# Default command — production server
-CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Default command — production wolf-server (Phase 5.4-c launcher;
+# auto-HTTPS when /etc/wolf-server/certs/{cert,key}.pem exist).
+CMD ["uv", "run", "python", "-m", "wolf_server"]

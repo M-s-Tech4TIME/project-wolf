@@ -8,7 +8,7 @@ known-correct answers (rule IDs + technique IDs) and a qualitative
 side-by-side for conceptual queries.
 
 Run from repo root:
-    cd services/orchestrator
+    cd services/server
     set -a && source ../../.env && set +a
     cd ../..
     uv run python -m tools.embedding_benchmark.full_corpus_v2_eval

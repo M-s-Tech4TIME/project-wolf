@@ -5,7 +5,7 @@ retrieval-ordering correctness on the seeded dev corpus for the Ollama
 and sentence-transformers adapters.
 
 Run:
-    cd services/orchestrator
+    cd services/server
     set -a && source ../../.env && set +a
     uv run python -m tools.embedding_benchmark
 """

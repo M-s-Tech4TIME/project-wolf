@@ -21,7 +21,7 @@ caller — CI workflow or production-probe cron — reads this as a
 binary green/red signal).
 
 Run:
-    cd services/orchestrator
+    cd services/server
     set -a && source ../../.env && set +a
     cd ../..
     uv run python -m tools.tenant_isolation_test

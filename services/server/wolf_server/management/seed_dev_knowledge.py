@@ -10,7 +10,7 @@ Slice-3 replaces this with real scrapers in tools/seed_knowledge.
 
 Usage:
     set -a && source .env && set +a
-    cd services/orchestrator
+    cd services/server
     uv run python -m app.management.seed_dev_knowledge --tenant-slug acme
 
 Idempotent only in the trivial sense: re-running inserts a fresh copy of
