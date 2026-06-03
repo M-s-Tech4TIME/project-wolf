@@ -1,4 +1,4 @@
-"""Wolf Orchestrator — FastAPI application entrypoint.
+"""wolf-server — FastAPI application entrypoint.
 
 Startup order:
   1. Configure logging and tracing.
@@ -91,7 +91,7 @@ def create_app() -> FastAPI:
     # ── Middleware ──────────────────────────────────────────────────────────
     # Dev: any origin (regex) so a LAN-IP rotation isn't a paper-cut.
     # Production: set CORS_ALLOW_ORIGIN_REGEX="" and CORS_ALLOW_ORIGINS to
-    # the exact frontend URL(s) — see app.config.
+    # the exact wolf-dashboard URL(s) — see wolf_server.config.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=_settings.cors_origin_list,
