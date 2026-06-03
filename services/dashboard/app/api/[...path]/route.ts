@@ -19,10 +19,58 @@
 // or token-by-token rendering would degrade to "wait for the whole
 // answer." We hand `response.body` straight back to the browser.
 
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
+// Use undici's fetch directly: Node 24's global `fetch` is a wrapper
+// that strips the undici-specific `dispatcher` option we need to
+// pass the Wolf CA trust into the outbound TLS handshake (see
+// `loadDispatcher()` below). Verified empirically: global `fetch`
+// + `dispatcher` fails with "invalid onRequestStart method"; undici's
+// `fetch` accepts it.
+import { Agent, fetch as undiciFetch } from "undici";
 import { NextRequest } from "next/server";
 
-const WOLF_SERVER_URL =
-  process.env.WOLF_SERVER_URL ?? "http://localhost:7860";
+// Resolve wolf-server's URL once at module load.
+//
+// Precedence:
+//   1. `WOLF_SERVER_URL` env var — operator override, distributed
+//      deployments will set this explicitly (e.g.
+//      `https://wolf-server.acme.internal:7860`).
+//   2. Cert-presence auto-detect — if
+//      `<repo>/.local/certs/server/cert.pem` exists, wolf-server's
+//      Phase 5.4-c launcher has flipped it to HTTPS, so we point at
+//      `https://localhost:7860` instead of HTTP. Mirrors the
+//      cert-files-are-the-signal pattern from the launcher itself.
+//   3. Plain HTTP fallback for the no-certs dev path.
+function resolveServerUrl(repoRoot: string): string {
+  if (process.env.WOLF_SERVER_URL) return process.env.WOLF_SERVER_URL;
+  const serverCert = resolve(repoRoot, ".local/certs/server/cert.pem");
+  if (existsSync(serverCert)) return "https://localhost:7860";
+  return "http://localhost:7860";
+}
+
+// cwd is the dashboard package root when next-dev runs; the repo
+// root is two levels up. Match scripts/dev.mjs's anchoring.
+const REPO_ROOT = resolve(process.cwd(), "..", "..");
+const WOLF_SERVER_URL = resolveServerUrl(REPO_ROOT);
+
+// Trust the Wolf CA for the proxy's outbound fetch.
+//
+// Next.js spawns its `next-server` worker with a sanitized env that
+// strips `NODE_EXTRA_CA_CERTS` (the parent `next dev` process has
+// it, the worker doesn't), so we can't rely on Node's global CA
+// trust mechanism for the proxy fetch. Build an undici Dispatcher
+// with the CA loaded explicitly and pass it via the `dispatcher`
+// option on each fetch() call. Phase 5.6-c will extend this same
+// Agent with the proxy's client cert + key for mTLS — adding the
+// trust mechanism now keeps the upcoming change small.
+function loadDispatcher(): Agent | undefined {
+  const caPath = resolve(REPO_ROOT, ".local/certs/ca/ca-cert.pem");
+  if (!existsSync(caPath)) return undefined;
+  return new Agent({ connect: { ca: readFileSync(caPath, "utf-8") } });
+}
+
+const WOLF_DISPATCHER = loadDispatcher();
 
 // Hop-by-hop headers per RFC 7230 §6.1 — these must NOT be forwarded
 // because they describe the single transport-layer hop, not the
@@ -75,16 +123,27 @@ async function proxy(
 
   let upstreamResp: Response;
   try {
-    upstreamResp = await fetch(upstream, {
+    // undici's `body` type doesn't include `ReadableStream` in its
+    // public types, but it accepts one at runtime (that's what
+    // `duplex: "half"` is for — streaming the request body up to
+    // the upstream). Cast through `unknown` to satisfy TS.
+    const init = {
       method: req.method,
       headers: filterHeaders(req.headers),
       body: hasBody ? req.body : undefined,
-      // @ts-expect-error — `duplex` is required by undici when streaming
-      // a request body, but isn't yet in the standard RequestInit typing.
       duplex: hasBody ? "half" : undefined,
-      redirect: "manual",
+      dispatcher: WOLF_DISPATCHER,
+      redirect: "manual" as const,
       signal: req.signal,
-    });
+    };
+    const undiciResp = await undiciFetch(
+      upstream,
+      init as unknown as Parameters<typeof undiciFetch>[1],
+    );
+    // undici's Response is Web-spec-compatible; cast to the global
+    // Response type so the rest of the handler can construct
+    // `new Response(upstreamResp.body, …)` against the standard API.
+    upstreamResp = undiciResp as unknown as Response;
   } catch (err) {
     // wolf-server unreachable, DNS failure, mid-flight abort, etc.
     if (req.signal.aborted) {
