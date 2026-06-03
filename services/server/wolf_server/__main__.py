@@ -38,12 +38,14 @@ HTTPS doesn't require a CORS edit.
 
 from __future__ import annotations
 
+import ssl
 from dataclasses import dataclass
 from pathlib import Path
 
 import uvicorn
 
 from wolf_server.config import get_settings
+from wolf_server.runtime.peer_cert_patch import patch_uvicorn_for_peer_cert
 
 
 @dataclass(frozen=True)
@@ -120,12 +122,28 @@ def main() -> None:
     )
     print(f"  reason: {tls.reason}")
 
+    # Phase 5.6-c: mTLS auto-detect. When the Wolf CA + server leaf
+    # all exist, switch uvicorn's TLS layer to client-cert mode
+    # (CERT_OPTIONAL — required-ness is enforced by the ASGI
+    # MtlsMiddleware so we can return useful 401s + bypass /healthz
+    # from loopback). The peer-cert patch surfaces the verified cert
+    # into ASGI scope so the middleware can read its Subject CN.
+    mtls_on = tls.use_https and settings.mtls_enabled
+    if mtls_on:
+        patch_uvicorn_for_peer_cert()
+        print(
+            f"  mTLS: Wolf CA at {settings.mtls_ca_path}; "
+            f"allowed client CNs: {settings.mtls_allowed_client_cn_list}",
+        )
+
     uvicorn.run(
         "wolf_server.main:app",
         host=settings.bind_host,
         port=settings.bind_port,
         ssl_certfile=str(tls.cert_path) if tls.cert_path else None,
         ssl_keyfile=str(tls.key_path) if tls.key_path else None,
+        ssl_ca_certs=settings.mtls_ca_path if mtls_on else None,
+        ssl_cert_reqs=ssl.CERT_OPTIONAL if mtls_on else ssl.CERT_NONE,
     )
 
 

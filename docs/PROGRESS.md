@@ -6,7 +6,7 @@
 >
 > For history of what changed when, see `CHANGELOG.md` (append-only).
 
-**Last updated:** 2026-06-03 by claude-code (Phase 5.6-b SHIPPED; 5.6-c–e remaining)
+**Last updated:** 2026-06-03 by claude-code (Phase 5.6-c SHIPPED; 5.6-d–e remaining)
 
 ---
 
@@ -29,13 +29,29 @@
   `dashboard-client` (**CLIENT EKU**, CN = `wolf-dashboard-client`)
   at `.local/certs/dashboard-client/{cert,key}.pem`. Phase 5.6-c
   will require this cert at wolf-server's TLS boundary.
-* **Slice 5.6-c — mTLS middleware on wolf-server** — next. Wires
-  CERT_REQUIRED at the uvicorn boundary + an ASGI middleware
-  that audit-logs rejections. Also wires the dashboard's reverse-
-  proxy Agent (5.6-a's `WOLF_DISPATCHER`) to present the
-  dashboard-client leaf in `Agent({ connect: { cert, key, ca } })`.
-* **Slices 5.6-d / 5.6-e** — launcher wiring + operator-doc
-  walkthrough + 401-without-cert smoke test.
+* **Slice 5.6-c — mTLS middleware on wolf-server** — SHIPPED
+  2026-06-03. Three pieces shipped together:
+  (1) wolf-server launcher passes `ssl_ca_certs=<Wolf CA>` +
+  `ssl_cert_reqs=CERT_OPTIONAL` to uvicorn when the certs exist,
+  so the TLS layer accepts and verifies any presented client cert
+  against the Wolf CA; (2) a small monkey-patch on uvicorn's
+  `RequestResponseCycle.__init__` surfaces the verified peer cert
+  into `scope["state"]["wolf_peer_cert"]` (uvicorn 0.47 doesn't
+  expose it natively); (3) `MtlsMiddleware` enforces the
+  CN allowlist (default `["wolf-dashboard-client"]`), audit-logs
+  every accept/reject, returns JSON 401 on policy violations, and
+  bypasses GET /healthz from loopback so ops tools can probe
+  without distributing the client cert. The dashboard's reverse-
+  proxy Agent (5.6-a's `WOLF_DISPATCHER`) was extended to load
+  `.local/certs/dashboard-client/{cert,key}.pem` into `Agent({
+  connect: { ca, cert, key } })` — the proxy now presents the
+  client cert on every outbound call. Verified live: no-cert
+  → 401 mtls_required, with-cert → 200, /healthz from loopback
+  no-cert → 200; full dashboard login + chat-stream round-trip
+  works end-to-end with mTLS active.
+* **Slices 5.6-d / 5.6-e** — launcher wiring polish + operator-doc
+  walkthrough + 401-without-cert smoke test as a recurring
+  integrity check.
 
 APT / DNF packaging (Phases 5.9 / 5.10) remain deferred to the
 official-release phase per the 2026-06-03 operator direction.

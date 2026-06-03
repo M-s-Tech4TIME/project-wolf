@@ -38,6 +38,15 @@ os.environ.setdefault("SECRETS_FILE_PATH", "/tmp/wolf_test_secrets.enc")  # noqa
 os.environ.setdefault(
     "SECRETS_FILE_KEY", "_KRS3GialojQA05LCxS3-JwSds9RBrZ1htT-BDO-I6U="
 )
+# Phase 5.6-c: pin the mTLS settings to paths that will never exist in
+# the test environment, so MtlsMiddleware does NOT get mounted on the
+# test app. The middleware unit-tests in test_mtls_middleware.py build
+# their own app + middleware directly; that's the layer where its
+# behaviour is verified. The other tests (auth flow, chat endpoints,
+# tenant endpoints) hit the real app via TestClient/AsyncClient, which
+# can't present a peer cert — without this override they would all
+# get 401'd by MtlsMiddleware once `.local/certs/` exist on disk.
+os.environ.setdefault("MTLS_CA_PATH", "/nonexistent/wolf-test-no-mtls/ca.pem")
 
 
 @pytest.fixture(scope="session")

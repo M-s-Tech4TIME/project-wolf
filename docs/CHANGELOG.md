@@ -49,6 +49,178 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-03 — Slice 5.6-c: mTLS enforcement (wolf-server middleware + dashboard proxy client cert)
+
+**Session type:** claude-code
+**Phase:** 5.6 — Edge-component architecture + mTLS (slice c of e)
+**Branch / commit:** main @ (this commit)
+
+### What we did
+Phase 5.6 step 3. wolf-server now requires the dashboard's
+client cert for any non-/healthz endpoint, and the dashboard's
+reverse-proxy presents that cert on every outbound call. Together
+with 5.6-a (browser sees one origin) and 5.6-b (the cert exists),
+this completes the mTLS substrate for ADR 0016's component
+architecture — wolf-server actively refuses anyone who isn't
+wolf-dashboard.
+
+Design choices (operator-confirmed up-front)
+--------------------------------------------
+* **CN allowlist, strict.** Only certs whose Subject CN matches
+  `MTLS_ALLOWED_CLIENT_CNS` (default `["wolf-dashboard-client"]`)
+  pass. Future relay daemons get their own CN added via env var;
+  the middleware iterates a frozenset for the check.
+* **GET /healthz from loopback bypasses the cert check.** Lets
+  Kubernetes liveness probes / systemd watchdog scripts / same-
+  host curl liveness-poll wolf-server without needing the client
+  cert. The bypass is loopback-only (`127.0.0.1`/`::1`) and
+  GET-only, so it can't be exploited from the LAN.
+* **Enforcement is split between TLS and application layers.**
+  uvicorn uses `ssl_cert_reqs=CERT_OPTIONAL` so it accepts the
+  TCP+TLS connection regardless, then verifies any presented
+  cert against the Wolf CA at the TLS layer. The ASGI
+  MtlsMiddleware does the CN allowlist check + audit logging.
+  Lets us return JSON 401 responses + implement the /healthz
+  bypass cleanly + audit-log decisions specifically.
+
+Files added
+-----------
+* `services/server/wolf_server/runtime/__init__.py` — new package
+  for runtime helpers that sit next to uvicorn (vs. application
+  code under wolf_server.*).
+* `services/server/wolf_server/runtime/peer_cert_patch.py` —
+  monkey-patch on uvicorn's `RequestResponseCycle.__init__` (both
+  h11 + httptools backends). Reads `transport.get_extra_info(
+  "ssl_object").getpeercert()` once per request and stashes the
+  parsed-cert dict under `scope["state"]["wolf_peer_cert"]`.
+  uvicorn 0.47 does NOT surface peer cert info to ASGI by
+  default, so without this patch the middleware has no way to
+  read the cert's Subject CN. No-op when there's no SSL context
+  (plain HTTP dev path) — idempotent via a module-level guard.
+* `services/server/wolf_server/auth/mtls_middleware.py` — the
+  ASGI middleware. ~150 LOC including comments. Reads the peer
+  cert from scope, extracts CN, compares against the allowlist,
+  returns JSON 401 with a specific `error` code on reject
+  (`mtls_required` for no cert, `mtls_cn_rejected` for bad CN).
+  Audit-logs every reject decision via structlog. Stashes the
+  successful CN on `request.state.mtls_cert_cn` so downstream
+  code can include "which component made this call" in its own
+  audit events.
+* `services/server/tests/test_mtls_middleware.py` — 9 unit
+  tests covering: no cert → 401, disallowed CN → 401, cert
+  without CN → 401, allowed CN → 200, multi-CN allowlist works,
+  /healthz from 127.0.0.1 → 200, /healthz from ::1 → 200,
+  /healthz from non-loopback → 401, POST /healthz from loopback
+  → 401 (bypass is GET-only).
+
+Files changed
+-------------
+* `services/server/wolf_server/config.py` — three new fields:
+  `mtls_ca_path` (default `.local/certs/ca/ca-cert.pem`),
+  `mtls_allowed_client_cns` (default `"wolf-dashboard-client"`),
+  and two properties: `mtls_enabled` (True iff CA + server cert
+  + server key all exist on disk — same cert-files-are-the-
+  signal pattern as Phase 5.4-c's HTTPS auto-detect) and
+  `mtls_allowed_client_cn_list` (parses the comma-separated env
+  value into a list). The CORS comment was refreshed to note
+  CORS is now defence-in-depth, not the primary trust boundary.
+* `services/server/wolf_server/main.py` — mounts MtlsMiddleware
+  AFTER AuthMiddleware (Starlette's LAST-added runs OUTERMOST),
+  so mTLS rejects requests before any auth code runs. Only
+  mounted when `Settings.mtls_enabled` is True.
+* `services/server/wolf_server/__main__.py` — when both HTTPS
+  and mTLS conditions are met, calls
+  `patch_uvicorn_for_peer_cert()` to install the scope patch
+  + passes `ssl_ca_certs=<Wolf CA>` + `ssl_cert_reqs=
+  ssl.CERT_OPTIONAL` to uvicorn. Startup banner now reports
+  "mTLS: Wolf CA at …; allowed client CNs: […]" so the operator
+  sees mTLS is active from the launcher's first log line.
+* `services/dashboard/app/api/[...path]/route.ts` —
+  `loadDispatcher()` now also loads
+  `.local/certs/dashboard-client/{cert,key}.pem` if they exist
+  and passes them via `Agent({ connect: { ca, cert, key } })`.
+  When the client leaf is absent (e.g. half-configured state)
+  the proxy still trusts the CA but doesn't present a cert —
+  wolf-server's middleware then rejects with 401.
+* `services/server/tests/conftest.py` — pinned `MTLS_CA_PATH` to
+  a nonexistent path so the test suite's TestClient-based tests
+  (which can't present a peer cert) don't get 401'd by
+  MtlsMiddleware once `.local/certs/` exists on disk. The
+  middleware's own unit tests in `test_mtls_middleware.py`
+  build their own app and inject synthetic peer certs at the
+  scope layer, so they're unaffected.
+
+Live verification (end-to-end, post-implementation)
+---------------------------------------------------
+With `wolf-cert init` minted certs, wolf-server on HTTPS+mTLS,
+dashboard on HTTPS:
+
+1. `curl https://localhost:7860/api/v1/auth/me` (NO client cert)
+   → **HTTP 401** body
+   `{"error":"mtls_required","detail":"wolf-server requires a
+   Wolf-CA-signed client certificate…"}`
+2. `curl --cert dashboard-client/cert.pem --key dashboard-client/key.pem
+   https://localhost:7860/api/v1/auth/me`
+   → **HTTP 401** body `{"detail":"Not authenticated"}` — mTLS
+   passed (correct CN); auth middleware then rejected because no
+   login cookie. Exactly the expected handoff between the two
+   middlewares.
+3. `curl https://localhost:7860/healthz` (loopback, no cert)
+   → **HTTP 200** `{"status":"ok","service":"wolf-server"}` —
+   /healthz bypass works.
+4. Full dashboard round-trip via `https://localhost:3000`:
+   POST /api/v1/auth/login → 200 (cookies set), GET /me → 200
+   (full user payload), POST /chat/stream → token-by-token SSE.
+   Browser only sees the dashboard origin; the dashboard's
+   reverse-proxy presents the dashboard-client cert to
+   wolf-server which accepts it.
+
+Integrity gate (all green)
+--------------------------
+* mypy: 0 errors across 6 Python projects (87 source files)
+* ruff: clean
+* tsc (services/dashboard): 0 errors
+* eslint (services/dashboard): clean
+* backend pytest: **321 / 321** in 89.63s (was 312; +9 new mTLS
+  middleware tests)
+* live tenant-isolation probe: 6 / 6
+
+### What's next
+**Slice 5.6-d — Launcher wiring polish + operator-doc walkthrough.**
+* Tighten the launcher's startup banner so the mTLS state is
+  prominent, not buried in a sub-line.
+* Walk through the operator-facing flow in `ONBOARDING.md`:
+  `wolf-cert init` → restart wolf-server → restart dashboard
+  → mTLS is active everywhere; what happens to direct curl
+  attempts; how to debug a CN mismatch.
+* Refresh `docs/restart.md` with the new "did mTLS come up?"
+  smoke check.
+
+**Slice 5.6-e — 401-without-cert smoke test as a recurring
+integrity check.** Add a tiny `make smoke-mtls` target that
+spins up wolf-server with certs and verifies (a) direct
+no-cert curl → 401 mtls_required, (b) direct with-cert curl
+→ 401 Not authenticated (i.e. mTLS passes), (c) /healthz
+from loopback → 200. Becomes the canonical "did we break
+mTLS" check that runs before every push.
+
+### Operator impact
+This is the slice where wolf-server **actively refuses** non-
+dashboard callers. Two consequences for operators:
+* Direct `curl https://wolf-server:7860/api/...` from any
+  workstation that doesn't present the dashboard-client cert
+  now fails with 401 mtls_required. The migration path is to
+  go through `https://dashboard:3000/api/...` (which proxies)
+  instead.
+* The `dashboard-client` cert can be copied to other hosts to
+  authorize them as alternate edge components (e.g. a
+  load-balancer terminating TLS), but it should NOT be copied
+  casually — any holder of the cert can talk to wolf-server
+  unauthenticated-at-the-mTLS-layer. The key file is 0600 by
+  default; keep it that way.
+
+---
+
 ## 2026-06-03 — Slice 5.6-b: dashboard-client cert (LeafKind.CLIENT) added to wolf-cert init
 
 **Session type:** claude-code

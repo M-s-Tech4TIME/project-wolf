@@ -54,20 +54,47 @@ function resolveServerUrl(repoRoot: string): string {
 const REPO_ROOT = resolve(process.cwd(), "..", "..");
 const WOLF_SERVER_URL = resolveServerUrl(REPO_ROOT);
 
-// Trust the Wolf CA for the proxy's outbound fetch.
+// Trust the Wolf CA + (Phase 5.6-c) present the dashboard's client
+// leaf to wolf-server.
 //
 // Next.js spawns its `next-server` worker with a sanitized env that
 // strips `NODE_EXTRA_CA_CERTS` (the parent `next dev` process has
 // it, the worker doesn't), so we can't rely on Node's global CA
 // trust mechanism for the proxy fetch. Build an undici Dispatcher
 // with the CA loaded explicitly and pass it via the `dispatcher`
-// option on each fetch() call. Phase 5.6-c will extend this same
-// Agent with the proxy's client cert + key for mTLS — adding the
-// trust mechanism now keeps the upcoming change small.
+// option on each fetch() call.
+//
+// Phase 5.6-c: when the dashboard-client leaf
+// (`.local/certs/dashboard-client/{cert,key}.pem`, minted by
+// `wolf-cert init` per slice 5.6-b) is present, we also load it
+// into the Agent's `connect` block. undici then presents this cert
+// during the outbound TLS handshake to wolf-server, satisfying
+// wolf-server's CERT_OPTIONAL + MtlsMiddleware policy. If the
+// client leaf is absent, we still trust the CA but don't present a
+// cert; wolf-server's middleware will reject the request with 401
+// (the dev-no-mTLS path requires no certs anywhere, so this only
+// happens in a half-configured state).
 function loadDispatcher(): Agent | undefined {
   const caPath = resolve(REPO_ROOT, ".local/certs/ca/ca-cert.pem");
   if (!existsSync(caPath)) return undefined;
-  return new Agent({ connect: { ca: readFileSync(caPath, "utf-8") } });
+  const connect: {
+    ca: string;
+    cert?: string;
+    key?: string;
+  } = { ca: readFileSync(caPath, "utf-8") };
+  const clientCertPath = resolve(
+    REPO_ROOT,
+    ".local/certs/dashboard-client/cert.pem",
+  );
+  const clientKeyPath = resolve(
+    REPO_ROOT,
+    ".local/certs/dashboard-client/key.pem",
+  );
+  if (existsSync(clientCertPath) && existsSync(clientKeyPath)) {
+    connect.cert = readFileSync(clientCertPath, "utf-8");
+    connect.key = readFileSync(clientKeyPath, "utf-8");
+  }
+  return new Agent({ connect });
 }
 
 const WOLF_DISPATCHER = loadDispatcher();

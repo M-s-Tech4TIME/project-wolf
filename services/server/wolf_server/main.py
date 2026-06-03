@@ -19,6 +19,7 @@ from wolf_common.logging import configure_logging
 from wolf_common.tracing import configure_tracing
 
 from wolf_server.auth.middleware import AuthMiddleware
+from wolf_server.auth.mtls_middleware import MtlsMiddleware
 from wolf_server.config import get_settings
 
 logger = structlog.get_logger(__name__)
@@ -101,6 +102,21 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.add_middleware(AuthMiddleware)
+    # Starlette runs the LAST-added middleware OUTERMOST, so adding
+    # mTLS last puts it ahead of AuthMiddleware in the request path —
+    # an unauthorized caller is rejected before any auth code runs.
+    # Only mounted when the operator has run `wolf-cert init` (the CA
+    # + server leaf exist); otherwise we leave it off so the dev
+    # no-certs path is unaffected.
+    if _settings.mtls_enabled:
+        app.add_middleware(
+            MtlsMiddleware,
+            allowed_cns=_settings.mtls_allowed_client_cn_list,
+        )
+        logger.info(
+            "mtls_middleware_mounted",
+            allowed_cns=_settings.mtls_allowed_client_cn_list,
+        )
 
     # ── Routers ─────────────────────────────────────────────────────────────
     from wolf_server.api.auth import router as auth_router  # noqa: PLC0415

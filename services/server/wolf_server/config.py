@@ -114,6 +114,44 @@ class Settings(BaseSettings):
     tls_cert_path: str = str(_PROJECT_ROOT / ".local/certs/server/cert.pem")
     tls_key_path: str = str(_PROJECT_ROOT / ".local/certs/server/key.pem")
 
+    # ── mTLS (Phase 5.6-c) ─────────────────────────────────────────────────
+    # Path to the Wolf CA cert. When this file exists (alongside the server
+    # cert + key above), the launcher passes uvicorn `ssl_ca_certs=<this>`
+    # + `ssl_cert_reqs=1` (ssl.CERT_OPTIONAL), enabling client-cert
+    # presentation at the TLS layer. The ASGI MtlsMiddleware then enforces
+    # the CN allowlist + audit-logs decisions. When the file is missing
+    # (dev no-certs path), mTLS is off and any client can connect.
+    mtls_ca_path: str = str(_PROJECT_ROOT / ".local/certs/ca/ca-cert.pem")
+    # Comma-separated list of accepted client-cert Subject CNs. Default is
+    # the dashboard's reverse-proxy identity (Phase 5.6-b). Future relay
+    # daemons get their own CN added here, e.g.
+    # "wolf-dashboard-client,wolf-relay-acme,wolf-relay-beta".
+    mtls_allowed_client_cns: str = "wolf-dashboard-client"
+
+    @property
+    def mtls_enabled(self) -> bool:
+        """mTLS is on iff the CA + server cert/key all exist on disk.
+
+        This mirrors the cert-files-are-the-signal contract that
+        Phase 5.4-c established for HTTPS itself: the operator runs
+        `wolf-cert init` and the next launcher start picks up mTLS
+        automatically, no env flag.
+        """
+        from pathlib import Path
+        return (
+            Path(self.mtls_ca_path).is_file()
+            and Path(self.tls_cert_path).is_file()
+            and Path(self.tls_key_path).is_file()
+        )
+
+    @property
+    def mtls_allowed_client_cn_list(self) -> list[str]:
+        return [
+            cn.strip()
+            for cn in self.mtls_allowed_client_cns.split(",")
+            if cn.strip()
+        ]
+
     # ── Model defaults (per-tenant overrides come in a later phase) ────────
     default_model_provider: str = "ollama"  # anthropic | openai | ollama
     # Default model: qwen3:4b (Apache 2.0).  Switched from llama3.2 on
