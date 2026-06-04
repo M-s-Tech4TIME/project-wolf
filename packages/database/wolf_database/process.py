@@ -225,19 +225,29 @@ def run_psql_command(
     sql: str,
     dbname: str = "postgres",
     user: str | None = None,
+    port: int = 5432,
 ) -> None:
     """Run a single SQL command via psql against the running cluster.
 
-    Connects via the Unix socket in `layout.socket_dir` (no password
-    needed — local socket connections from the same OS user are
-    `peer` auth by Postgres default, which initdb honors). The
-    `dbname` defaults to `postgres` (the bootstrap DB initdb
-    creates) so `cmd_init` can use this to CREATE DATABASE wolf
-    before connecting to it.
+    Connects via the Unix socket in `layout.socket_dir`. Postgres
+    names its socket file `.s.PGSQL.<port>`, so we MUST pass `-p`
+    matching what Postgres is listening on — otherwise psql looks
+    for `.s.PGSQL.5432` (its compiled-in default) and a port-
+    overridden cluster appears non-existent. This bug bit the
+    5.7-d smoke once.
+
+    No password needed for local socket connections from the same
+    OS user — that's `peer` auth, which initdb's `--auth-local peer`
+    + our pg_hba's `local all all peer` rule cover.
+
+    `dbname` defaults to `postgres` (the bootstrap DB initdb creates)
+    so `cmd_init` can use this to CREATE DATABASE wolf before
+    connecting to it.
     """
     cmd = [
         str(binaries.psql),
         "-h", str(layout.socket_dir),
+        "-p", str(port),
         "-d", dbname,
         "-v", "ON_ERROR_STOP=1",
         "-c", sql,
@@ -254,16 +264,21 @@ def run_psql_command(
 def is_pgvector_installed(
     binaries: PostgresBinaries,
     layout: DatabaseLayout,
+    *,
+    port: int = 5432,
 ) -> bool:
     """Check whether the postgresql-17-pgvector package is available.
 
     Queries `pg_available_extensions` for 'vector'. The cluster must
     be running for this to work — typically called between `start`
-    and the `CREATE EXTENSION vector` step in `init`.
+    and the `CREATE EXTENSION vector` step in `init`. `port` must
+    match the cluster's configured port; the socket filename embeds
+    the port so a mismatched value silently fails.
     """
     cmd = [
         str(binaries.psql),
         "-h", str(layout.socket_dir),
+        "-p", str(port),
         "-d", "postgres",
         "-tA",  # tuples-only, unaligned — clean output for parsing
         "-c", "SELECT 1 FROM pg_available_extensions WHERE name = 'vector';",

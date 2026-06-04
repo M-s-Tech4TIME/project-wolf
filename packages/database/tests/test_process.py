@@ -320,6 +320,48 @@ def test_run_psql_command_targets_named_db(
     assert "wolf" in captured
 
 
+def test_run_psql_command_passes_port_to_psql(
+    monkeypatch: pytest.MonkeyPatch,
+    layout: DatabaseLayout,
+    fake_binaries: PostgresBinaries,
+) -> None:
+    """Regression: `-p <port>` must be passed to psql or it defaults to
+    5432 and fails to find a port-overridden cluster's socket file. The
+    Phase 5.7-d smoke caught this when pgvector-installed was being
+    reported as missing on a port-17860 init."""
+    captured: list[str] = []
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda cmd, **_: captured.extend(cmd) or _mock_completed(0),
+    )
+    run_psql_command(fake_binaries, layout, sql="SELECT 1;", port=17860)
+    assert "-p" in captured
+    assert "17860" in captured
+
+
+def test_is_pgvector_installed_passes_port_to_psql(
+    monkeypatch: pytest.MonkeyPatch,
+    layout: DatabaseLayout,
+    fake_binaries: PostgresBinaries,
+) -> None:
+    """Same regression as test_run_psql_command_passes_port_to_psql but
+    for the pg_available_extensions check path. The pgvector probe
+    fails the connection, returns False, and the CLI then prints
+    "pgvector not installed" misleadingly. Caught on live smoke."""
+    captured: list[str] = []
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda cmd, **_: captured.extend(cmd) or subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1\n", stderr="",
+        ),
+    )
+    assert is_pgvector_installed(fake_binaries, layout, port=17860) is True
+    assert "-p" in captured
+    assert "17860" in captured
+
+
 # ─── is_pgvector_installed ──────────────────────────────────────────────
 
 

@@ -122,7 +122,7 @@ def cmd_init(args: argparse.Namespace) -> int:
         # responding to psql; one retry to be safe. The `finally`
         # block below handles the stop on this error path too —
         # don't call stop here or we double-stop.
-        if not _await_pgvector(binaries, layout, attempts=5):
+        if not _await_pgvector(binaries, layout, port=args.port, attempts=5):
             _eprint(
                 "wolf-database requires the pgvector extension. The "
                 f"running Postgres at {layout.socket_dir} reports it is "
@@ -142,7 +142,7 @@ def cmd_init(args: argparse.Namespace) -> int:
         # Belt-and-braces: scram-sha-256 means the password isn't
         # stored in plaintext server-side either.
         run_psql_command(
-            binaries, layout,
+            binaries, layout, port=args.port,
             sql=(
                 f"CREATE ROLE {DB_USER_DEFAULT} WITH LOGIN PASSWORD "
                 f"'{password}';"
@@ -151,7 +151,7 @@ def cmd_init(args: argparse.Namespace) -> int:
 
         print(f"→ creating database '{DB_NAME_DEFAULT}'")  # noqa: T201
         run_psql_command(
-            binaries, layout,
+            binaries, layout, port=args.port,
             sql=(
                 f"CREATE DATABASE {DB_NAME_DEFAULT} OWNER {DB_USER_DEFAULT};"
             ),
@@ -159,7 +159,7 @@ def cmd_init(args: argparse.Namespace) -> int:
 
         print(f"→ installing pgvector in '{DB_NAME_DEFAULT}'")  # noqa: T201
         run_psql_command(
-            binaries, layout,
+            binaries, layout, port=args.port,
             dbname=DB_NAME_DEFAULT,
             sql="CREATE EXTENSION vector;",
         )
@@ -189,6 +189,7 @@ def _await_pgvector(
     binaries: object,
     layout: object,
     *,
+    port: int,
     attempts: int = 5,
     delay_s: float = 0.5,
 ) -> bool:
@@ -198,10 +199,11 @@ def _await_pgvector(
     connections," but in practice the postmaster's shared memory
     isn't fully populated for a moment — pg_available_extensions
     can return zero rows on the first call. A handful of retries
-    covers it.
+    covers it. `port` MUST match the running cluster's port; the
+    Unix socket file embeds the port in its name.
     """
     for _ in range(attempts):
-        if is_pgvector_installed(binaries, layout):  # type: ignore[arg-type]
+        if is_pgvector_installed(binaries, layout, port=port):  # type: ignore[arg-type]
             return True
         time.sleep(delay_s)
     return False
