@@ -1,0 +1,41 @@
+#!/bin/sh
+# /usr/bin/wolf-dashboard — shipped CLI shim. Phase 5.8-c.
+#
+# Operator-facing entry point for the wolf-dashboard production
+# server. Execs Next.js's standalone server build (produced by
+# `npm run build` at packaging time — Phase 5.9 / 5.10 .deb
+# post-install). The systemd unit at
+# /lib/systemd/system/wolf-dashboard.service (Phase 5.8-b) invokes
+# this shim for ExecStart=.
+#
+# Why Next.js standalone:
+#   `next build` with `output: "standalone"` in next.config.ts
+#   produces a self-contained Node.js server at
+#   <root>/.next/standalone/server.js with only the runtime deps
+#   it actually needs. That's what production runs; saves disk +
+#   speeds startup vs `npm run start`.
+
+set -eu
+
+INSTALL_DIR="/usr/lib/wolf-dashboard"
+SERVER_JS="${INSTALL_DIR}/.next/standalone/server.js"
+NODE_BIN="${WOLF_DASHBOARD_NODE:-/usr/bin/node}"
+
+if [ ! -f "${SERVER_JS}" ]; then
+    echo "FAIL: wolf-dashboard standalone build not found at ${SERVER_JS}." >&2
+    echo "  Install the wolf-dashboard package (apt install wolf-dashboard)" >&2
+    echo "  or run from a dev workspace via:" >&2
+    echo "    cd services/dashboard && npm run dev" >&2
+    exit 2
+fi
+
+if [ ! -x "${NODE_BIN}" ]; then
+    echo "FAIL: node not executable at ${NODE_BIN}." >&2
+    echo "  Set WOLF_DASHBOARD_NODE=/path/to/node or install nodejs." >&2
+    exit 2
+fi
+
+# Next.js's standalone server.js expects to run from the
+# .next/standalone dir so it can find adjacent .next/static.
+cd "${INSTALL_DIR}/.next/standalone"
+exec "${NODE_BIN}" server.js

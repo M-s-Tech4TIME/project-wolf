@@ -1,0 +1,29 @@
+#!/bin/sh
+# /usr/bin/wolf-server — shipped CLI shim. Phase 5.8-c.
+#
+# Operator-facing entry point for wolf-server. Execs the
+# wolf-server module inside the wolf-server venv. The systemd
+# unit at /lib/systemd/system/wolf-server.service (Phase 5.8-b)
+# invokes this shim for ExecStart=.
+#
+# `python -m wolf_server` runs the Phase 5.4-c launcher, which
+# auto-detects HTTPS + mTLS from the cert files on disk and
+# delegates to uvicorn.
+
+set -eu
+
+VENV="/usr/lib/wolf-server/.venv"
+PYTHON="${VENV}/bin/python"
+
+if [ ! -x "${PYTHON}" ]; then
+    echo "FAIL: wolf-server not installed at ${VENV}." >&2
+    echo "  Install the wolf-server package (apt install wolf-server)" >&2
+    echo "  or run from a dev workspace via:" >&2
+    echo "    cd services/server && uv run python -m wolf_server" >&2
+    exit 2
+fi
+
+# WorkingDirectory in the systemd unit is /usr/lib/wolf-server,
+# so alembic.ini and migrations/ are findable relative to cwd.
+cd "/usr/lib/wolf-server"
+exec "${PYTHON}" -m wolf_server "$@"

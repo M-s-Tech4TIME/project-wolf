@@ -1,0 +1,22 @@
+#!/bin/sh
+# /usr/bin/wolf-database — shipped CLI shim. Phase 5.8-c.
+#
+# Operator-facing entry point for the wolf-database CLI. Execs
+# the wolf-database console script inside the wolf-database
+# venv. The systemd unit at /lib/systemd/system/wolf-database.service
+# (Phase 5.8-b) invokes this shim for ExecStart= + ExecStop=.
+
+set -eu
+
+VENV="/usr/lib/wolf-database/.venv"
+BIN="${VENV}/bin/wolf-database"
+
+if [ ! -x "${BIN}" ]; then
+    echo "FAIL: wolf-database not installed at ${BIN}." >&2
+    echo "  Install the wolf-database package (apt install wolf-database)" >&2
+    echo "  or run from a dev workspace via:" >&2
+    echo "    uv run --project services/server python -m wolf_database \"\$@\"" >&2
+    exit 2
+fi
+
+exec "${BIN}" "$@"

@@ -1,0 +1,27 @@
+#!/bin/sh
+# /usr/bin/wolf-cert — shipped CLI shim. Phase 5.8-c.
+#
+# Operator-facing entry point for the wolf-cert CLI. Execs the
+# wolf-cert console script inside the wolf-server venv (wolf-cert
+# is shipped as part of the wolf-server package; one venv, both
+# tools available).
+#
+# The .deb / .rpm post-install in Phase 5.9 / 5.10 will create
+# the venv at the path below. Until then, this shim prints a
+# clear error so operators know what's missing instead of seeing
+# a cryptic ENOENT from the kernel.
+
+set -eu
+
+VENV="/usr/lib/wolf-server/.venv"
+BIN="${VENV}/bin/wolf-cert"
+
+if [ ! -x "${BIN}" ]; then
+    echo "FAIL: wolf-cert not installed at ${BIN}." >&2
+    echo "  Install the wolf-server package (apt install wolf-server)" >&2
+    echo "  or run from a dev workspace via:" >&2
+    echo "    uv run --project services/server python -m wolf_cert \"\$@\"" >&2
+    exit 2
+fi
+
+exec "${BIN}" "$@"
