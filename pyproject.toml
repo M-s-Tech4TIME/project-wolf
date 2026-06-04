@@ -43,6 +43,8 @@ ignore = [
 # doesn't apply here.
 "packages/cert/wolf_cert/cli.py" = ["T20"]
 "packages/cert/wolf_cert/__main__.py" = ["T20"]
+"packages/database/wolf_database/cli.py" = ["T20"]
+"packages/database/wolf_database/__main__.py" = ["T20"]
 "services/server/wolf_server/__main__.py" = ["T20"]
 
 [tool.mypy]

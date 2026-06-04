@@ -12,9 +12,10 @@ test = [
 
 # Phase 5.7-b: the CLI is shipped as a console script so an operator
 # can run `wolf-database init` directly after a workspace `uv sync`.
-# Mirrors wolf-cert's invocation shape.
-# [project.scripts]
-# wolf-database = "wolf_database.cli:main"
+# Mirrors wolf-cert's invocation shape. `python -m wolf_database` is
+# the equivalent module-level invocation.
+[project.scripts]
+wolf-database = "wolf_database.cli:main"
 
 [build-system]
 requires = ["hatchling"]

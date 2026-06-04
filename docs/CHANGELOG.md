@@ -49,6 +49,170 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-04 — Slice 5.7-b: wolf-database CLI (init/start/stop/status/reconfigure)
+
+**Session type:** claude-code
+**Phase:** 5.7 — wolf-database extraction (slice b of d)
+**Branch / commit:** main @ (this commit)
+
+### What we did
+The CLI built on top of 5.7-a's substrate. Five subcommands,
+parallel to wolf-cert's shape. Verified live against a real
+Postgres 17 on the dev host.
+
+Files added:
+* `packages/database/wolf_database/process.py` — subprocess
+  wrappers for `initdb`, `pg_ctl start/stop/status`, `psql -c`.
+  Each helper takes resolved `PostgresBinaries` +
+  `DatabaseLayout` so no re-discovery cost. `pg_ctl` always
+  carries `-o "--config-file=<our conf>"` so Postgres reads our
+  wolf-database-owned `postgresql.conf` instead of the one
+  initdb wrote inside the data dir. Status-query special-cases
+  pg_ctl's exit codes (0=running, 3=stopped, 4=data-dir-bad)
+  into a `PgCtlStatus` dataclass — "stopped" isn't an error
+  condition for `wolf-database status`. `data_dir_is_initialized`
+  checks for `PG_VERSION` in the data dir (the canonical
+  initdb-was-here marker). `is_pgvector_installed` queries
+  `pg_available_extensions` so init can fail fast with a clear
+  install hint when the postgresql-17-pgvector package isn't on
+  the host.
+* `packages/database/wolf_database/cli.py` — argparse dispatcher
+  + five subcommands.
+    - `init`: precheck binaries + version + empty data dir,
+      then run initdb → write_config → start Postgres
+      (waiting for ready) → check pgvector → CREATE ROLE wolf
+      with random password → CREATE DATABASE wolf OWNER wolf
+      → CREATE EXTENSION vector in wolf db → stop Postgres
+      → print the DATABASE_URL operator should paste into
+      wolf-server's .env. Exit codes: 0 / 2 (user error) /
+      3 (refused — already-initialized) / 4 (binary missing).
+      Refuses to clobber an existing data dir. `--port` arg
+      to avoid the system-Postgres-on-5432 collision common
+      on dev hosts.
+    - `start` / `stop`: thin wrappers around pg_ctl.
+      `start` refuses when not initialized. `stop --mode`
+      defaults to fast (SIGINT-style); smart / immediate
+      available for the rare case.
+    - `status`: prints data dir + config dir + socket dir +
+      state (RUNNING with PID / STOPPED / DATA DIR MISSING).
+      Falls back to BINARY_MISSING exit when the host doesn't
+      have Postgres 17.
+    - `reconfigure`: rewrites postgresql.conf + pg_hba.conf
+      in place from the current env vars without re-initdb,
+      then tells the operator to restart Postgres to apply.
+* `packages/database/wolf_database/__main__.py` — entry-point
+  shim so `python -m wolf_database ...` works.
+* `packages/database/pyproject.toml` — uncommented the
+  `[project.scripts]` block so `wolf-database` is on PATH
+  after a workspace `uv sync`.
+
+Config alignment (caught during the live smoke):
+* `process.run_initdb` switched from `--auth-local scram-sha-256`
+  (which requires a superuser password) to `--auth-local peer`
+  (OS-user identity is the auth). The corresponding rule in
+  `config.PgHbaOptions` flipped to `local all all peer` so
+  the running cluster's pg_hba matches initdb's choice. TCP
+  loopback rules stay scram-sha-256 — wolf-server connects via
+  TCP and needs the password from DATABASE_URL.
+
+Bug caught during live smoke (and fixed):
+* `cmd_init`'s pgvector-missing branch called
+  `run_pg_ctl_stop` once explicitly, and the `finally` block
+  called it again — second call hit "PID file does not exist"
+  because the first stop had already happened. Removed the
+  explicit call; let the finally do the cleanup.
+
+Tests added (33 across two files):
+* `tests/test_process.py` (18) — `data_dir_is_initialized`
+  (empty / PG_VERSION present / data-dir missing); `_parse_pid`
+  parsing pg_ctl's "PID: X" output; `run_initdb` invokes
+  subprocess + creates data dir + raises on non-zero;
+  `run_pg_ctl_start` passes `--config-file=`, the `-w` wait
+  flag for synchronous, `-W` for async; `run_pg_ctl_stop`
+  passes `-m <mode>` and raises on failure;
+  `run_pg_ctl_status` returns RUNNING+PID on exit 0,
+  STOPPED on exit 3, DATA-DIR-BAD on exit 4, and
+  short-circuits when the data dir is absent;
+  `run_psql_command` uses the socket-dir host +
+  ON_ERROR_STOP=1 + raises on psql error + targets the named
+  db; `is_pgvector_installed` returns true on output "1\n",
+  false on empty stdout, false on non-zero exit.
+* `tests/test_cli.py` (15) — argparse requires a subcommand
+  + accepts all five; stop --mode defaults + override;
+  status reports DATA DIR MISSING / RUNNING+PID / STOPPED /
+  BINARY_MISSING; init refuses already-initialized data dir
+  (exit 3) + returns BINARY_MISSING when no postgresql-17
+  installed; start refuses when not initialized;
+  reconfigure writes both config files without touching
+  pg_ctl. All tests use an `autouse` fixture that monkeypatches
+  the `WOLF_DATABASE_*_DIR` env vars to tmp_path so they can't
+  pollute each other or the real .local/wolf-database.
+
+### Live verification
+Against the host's real Postgres 17 with port 17860 (because
+5432 has a system Postgres running) and tmp paths:
+
+```
+$ rm -rf /tmp/wd-smoke && \
+  WOLF_DATABASE_DATA_DIR=/tmp/wd-smoke/data \
+  WOLF_DATABASE_CONFIG_DIR=/tmp/wd-smoke/cfg \
+  WOLF_DATABASE_SOCKET_DIR=/tmp/wd-smoke/sock \
+  python -m wolf_database init --port 17860
+
+→ initdb on /tmp/wd-smoke/data
+   (Postgres 17.10 initdb output … "Success.")
+→ writing config to /tmp/wd-smoke/cfg
+→ starting Postgres (waiting for ready)
+   LOG:  listening on IPv4 address "127.0.0.1", port 17860
+   LOG:  listening on Unix socket "/tmp/wd-smoke/sock/.s.PGSQL.17860"
+   LOG:  database system is ready to accept connections
+wolf-database requires the pgvector extension. The running
+  Postgres at /tmp/wd-smoke/sock reports it is NOT available.
+  Install: `apt install postgresql-17-pgvector` …
+→ stopping Postgres
+   LOG:  received fast shutdown request
+   LOG:  database system is shut down
+server stopped
+```
+
+Every code path on the way to the pgvector check verified:
+initdb → write_config → pg_ctl start with the correct
+`--config-file` → ready signal → pgvector check fires
+the clear-error path → clean fast shutdown. The pgvector-
+missing branch is a REAL environmental dependency wolf-
+database surfaces with a useful hint; slice 5.7-c documents
+the apt install as part of the dev workflow.
+
+Also verified the simpler subcommands:
+* `wolf-database status` (no data dir): prints layout + "DATA
+  DIR MISSING — run `wolf-database init`."
+* `wolf-database --help`: subcommand summary as designed.
+
+### Integrity gate (all green)
+* mypy: 0 errors across 7 Python projects (94 source files;
+  was 91 — +3 new files in wolf_database)
+* ruff: clean (after auto-fix of import order + f-string-no-
+  placeholder fixes)
+* tsc (services/dashboard): 0 errors (untouched)
+* eslint (services/dashboard): clean (untouched)
+* backend pytest: **388 / 388** (was 355; +33 wolf-database
+  tests)
+* live tenant-isolation probe: 6 / 6
+* live `wolf-database init` smoke: every path verified up to
+  the pgvector check; correct error + exit code; clean
+  shutdown
+
+### What's next
+**Slice 5.7-c — Dev-workflow integration.** Makefile targets
+(`make wolf-database-init`, `make wolf-database-up`,
+`make wolf-database-down`), `.env.example` defaults pointing
+at wolf-database's socket, ONBOARDING §3.4 rewrite walking the
+operator from `apt install postgresql-17 postgresql-17-pgvector`
+to `wolf-database init` to wolf-server connecting against the
+wolf-managed cluster.
+
+---
+
 ## 2026-06-04 — Slice 5.7-a: wolf-database substrate (layout + binary discovery + config templates)
 
 **Session type:** claude-code

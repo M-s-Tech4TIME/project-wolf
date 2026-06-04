@@ -6,7 +6,7 @@
 >
 > For history of what changed when, see `CHANGELOG.md` (append-only).
 
-**Last updated:** 2026-06-04 by claude-code (Phase 5.7-a SHIPPED; 5.7-b–d remaining)
+**Last updated:** 2026-06-04 by claude-code (Phase 5.7-b SHIPPED; 5.7-c–d remaining)
 
 ---
 
@@ -35,10 +35,18 @@ systemd unit so the all-in-one install story becomes a single
   (pgvector preloaded, loopback-only listen, scram-sha-256 auth);
   `connection_url()` helper for wolf-server's DATABASE_URL.
   34 tests; total backend pytest 321 → 355.
-* **Slice 5.7-b — `wolf-database` CLI** — next. `wolf-database
-  init` + `start` / `stop` / `status` / `reconfigure`
-  subcommands, parallel to `wolf-cert`. Operator-facing
-  lifecycle for the all-in-one dev path.
+* **Slice 5.7-b — `wolf-database` CLI** — SHIPPED 2026-06-04.
+  Five subcommands parallel to `wolf-cert`: `init` (one-shot
+  initdb + config + role + db + pgvector), `start`, `stop`,
+  `status`, `reconfigure`. `init --port` to avoid collision
+  with a system Postgres on 5432. Generates a random password
+  on init and prints the DATABASE_URL the operator pastes
+  into wolf-server's .env. Live smoke against the dev host
+  verified initdb / write_config / pg_ctl start + stop on a
+  non-default port; pgvector-missing path correctly surfaces
+  `apt install postgresql-17-pgvector` hint (real-world
+  environmental check, working as designed). 33 new tests
+  (process.py + cli.py); total backend pytest 355 → 388.
 * **Slice 5.7-c — Dev-workflow integration** — Makefile targets
   (`make wolf-database-up`), migration story from system
   Postgres, `.env` defaults pointing at wolf-database's socket.

@@ -123,13 +123,22 @@ class PgHbaOptions:
 
     def render(self) -> str:
         rules = [
+            # Local socket: peer auth matches initdb's --auth-local peer.
+            # OS-user identity is the auth. wolf-server running as the
+            # `wolf-database` OS user connects this way in production;
+            # in dev the operator's OS user is superuser so the local
+            # socket is the convenient admin channel.
             PgHbaRule(
                 connection_type="local",
-                database=self.db,
-                user=self.user,
+                database="all",
+                user="all",
                 address=None,
-                method="scram-sha-256",
+                method="peer",
             ),
+            # TCP loopback: scram-sha-256 with a password. This is how
+            # wolf-server actually connects (via DATABASE_URL with
+            # asyncpg over TCP — asyncpg doesn't support Unix sockets
+            # cleanly across all distros).
             PgHbaRule(
                 connection_type="host",
                 database=self.db,

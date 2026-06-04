@@ -80,9 +80,13 @@ def test_postgresql_conf_default_port_is_5432(layout: DatabaseLayout) -> None:
 
 
 def test_pg_hba_default_allows_loopback_only() -> None:
-    """No LAN-host rules in the default; loopback IPv4 + IPv6 + local socket only."""
+    """Defaults: local socket peer-auth (OS user identity is the auth),
+    loopback IPv4 + IPv6 scram-sha-256. No LAN-host rules."""
     body = PgHbaOptions().render()
-    assert "local wolf wolf scram-sha-256" in body
+    # `local all all peer` — matches initdb's --auth-local peer; OS
+    # user identity is the auth channel for the local socket.
+    assert "local all all peer" in body
+    # Loopback over TCP requires a password.
     assert "host wolf wolf 127.0.0.1/32 scram-sha-256" in body
     assert "host wolf wolf ::1/128 scram-sha-256" in body
     # No 0.0.0.0/0 or LAN ranges by default.
