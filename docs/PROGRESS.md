@@ -6,7 +6,7 @@
 >
 > For history of what changed when, see `CHANGELOG.md` (append-only).
 
-**Last updated:** 2026-06-04 by claude-code (Phase 5.7 CLOSED; Phase 5.8 next)
+**Last updated:** 2026-06-04 by claude-code (Phase 5.8-a SHIPPED; 5.8-b–d remaining)
 
 ---
 
@@ -20,6 +20,35 @@ unit files at `/lib/systemd/system/`, packaged CLIs under
 locations. Sets up the substrate that Phase 5.9 / 5.10 (APT /
 DNF packaging — still deferred per the 2026-06-03 operator
 direction) builds on.
+
+* **Slice 5.8-a — User-level systemd units + DB-retry loop** —
+  SHIPPED 2026-06-04. Three user-level unit templates at
+  `deploy/systemd/dev/{wolf-database,wolf-server,wolf-dashboard}.service`,
+  installed via `make install-user-systemd` which substitutes
+  `@REPO_ROOT@` at install time. Per ADR 0016 v3, no
+  `After=`/`Requires=`/`Wants=` between Wolf units — fully
+  independent. wolf-server's lifespan hook got a
+  `_wait_for_database()` retry loop (backoff cycle, 120-second
+  timeout) so a fresh boot where wolf-database is still coming
+  up doesn't degenerate into a systemd restart flap. 4 new
+  tests covering the retry semantics; total backend pytest
+  393 → 397.
+* **Slice 5.8-b — System-level units + service users + FHS paths** —
+  next. `/lib/systemd/system/wolf-*.service` with `User=` +
+  `Group=`. Per-component system users (`wolf-database`,
+  `wolf-server`, `wolf-dashboard`, `wolf-gateway`) in a shared
+  `wolf` group, all `nologin`. Data dirs at `/var/lib/wolf-*/`
+  (0750), config at `/etc/wolf-*/` (0750), socket at
+  `/var/run/wolf-*/` (0775). Hardening: `ProtectSystem=strict`,
+  `PrivateTmp=true`, `NoNewPrivileges=true`.
+* **Slice 5.8-c — `/usr/bin/wolf-*` shims** — packaged-CLI
+  wrappers for `wolf-cert` + `wolf-database`. After install,
+  operators run `wolf-database init` directly instead of
+  `python -m wolf_database`.
+* **Slice 5.8-d — Operator docs + smoke + close-out** —
+  ONBOARDING §3.4 Path A rewrite (now genuinely production-
+  parity), new `make smoke-systemd` integrity check, Phase
+  5.8 close-out marking the whole phase done.
 
 **Phase 5.7 — wolf-database extraction — CLOSED 2026-06-04.**
 Four slices shipped in a single day that gave Wolf a bundled

@@ -1,0 +1,28 @@
+[Unit]
+Description=Wolf bundled Postgres component (dev, user-level)
+Documentation=file://@REPO_ROOT@/docs/decisions/0016-wolf-component-architecture-and-packaging.md
+# Per ADR 0016 v3: fully independent — no After=/Requires=/Wants= between Wolf units.
+
+[Service]
+# pg_ctl forks the postgres process and writes postmaster.pid in
+# the data dir; we point systemd at that PID file so it can track
+# the actual postgres process, not the pg_ctl wrapper that exited.
+Type=forking
+PIDFile=@REPO_ROOT@/.local/wolf-database/data/postmaster.pid
+
+WorkingDirectory=@REPO_ROOT@
+ExecStart=@REPO_ROOT@/.venv/bin/python -m wolf_database start
+ExecStop=@REPO_ROOT@/.venv/bin/python -m wolf_database stop
+
+# If postgres falls over (OOM, crash, signal), bring it back.
+# 5-second delay so a wedge-loop is recognisable and we don't burn
+# CPU on a permanent failure.
+Restart=on-failure
+RestartSec=5s
+
+# Don't conflate "user pressed Ctrl-C" with "wolf-database failed."
+# 143 = SIGTERM exit, which pg_ctl uses for clean stops.
+SuccessExitStatus=143
+
+[Install]
+WantedBy=default.target

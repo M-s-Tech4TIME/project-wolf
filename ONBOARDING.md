@@ -166,16 +166,14 @@ provides the Postgres + pgvector binaries; wolf-database owns the
 config, data dir, socket, and start/stop. This is the path that
 becomes a single `apt install wolf` once Phase 5.9/5.10 lands.
 
-> **Pre-Phase-5.8 caveat:** Phase 5.7 ships the wolf-database CLI
-> but NOT a systemd unit (that's Phase 5.8). So if you disable
-> `postgresql.service` and switch to wolf-database today, **wolf-
-> database will not auto-restart on boot** — you'd have to run
-> `make wolf-database-up` manually after every reboot. For daily
-> dev use, **Path B (system Postgres) is the right choice until
-> Phase 5.8 lands the systemd unit.** Use Path A right now only
-> if you specifically want to validate wolf-database end-to-end
-> (the integration test path), or if you're OK with the manual-
-> restart cost.
+> **Phase 5.8-a update:** user-level systemd units now exist at
+> `deploy/systemd/dev/`. Install them with `make install-user-systemd`
+> and `systemctl --user enable --now wolf-database` to auto-restart
+> wolf-database across reboots (after `loginctl enable-linger $USER`
+> for headless boxes). System-level units with proper service users
+> + FHS paths land in Phase 5.8-b — that's still the "production"
+> path. Path B (system Postgres) remains a fine choice for daily
+> dev if you'd rather not invite a new systemd unit yet.
 
 ```bash
 # 1. Install the binaries from the official PostgreSQL APT repo

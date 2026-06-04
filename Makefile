@@ -1,6 +1,6 @@
 .PHONY: up down dev build test test-isolation test-isolation-live test-cov \
         lint typecheck fmt check migrate migrate-local revision probe install \
-        smoke-mtls smoke-database help \
+        smoke-mtls smoke-database install-user-systemd help \
         wolf-database-init wolf-database-up wolf-database-down \
         wolf-database-status wolf-database-reconfigure
 
@@ -87,6 +87,35 @@ typecheck: ## Type-check safety-critical packages with mypy (strict)
 
 probe: ## Run the model probe (PROVIDER=ollama MODEL=llama3.2)
 	uv run python -m tools.model_probe --provider $(PROVIDER) --model $(MODEL)
+
+# ─── systemd dev units (Phase 5.8-a) ──────────────────────────────────────────
+
+# Install user-level systemd units for the three Wolf components.
+# Templates live under deploy/systemd/dev/; this target substitutes
+# @REPO_ROOT@ with the current $PWD and drops the materialised files
+# into ~/.config/systemd/user/. After install, enable persistent
+# operation with `systemctl --user enable --now wolf-<component>`.
+#
+# Per ADR 0016 v3, no inter-component After=/Requires=. wolf-server
+# has its own DB-reachability retry loop (see wolf_server/main.py's
+# `_wait_for_database`) so a fresh boot where wolf-database is still
+# coming up doesn't break wolf-server's startup.
+install-user-systemd: ## Install user-level systemd units to ~/.config/systemd/user/ (Phase 5.8-a)
+	@mkdir -p $${HOME}/.config/systemd/user
+	@for svc in wolf-database wolf-server wolf-dashboard; do \
+	  sed "s|@REPO_ROOT@|$(PWD)|g" deploy/systemd/dev/$$svc.service \
+	    > $${HOME}/.config/systemd/user/$$svc.service; \
+	  echo "  installed: ~/.config/systemd/user/$$svc.service"; \
+	done
+	@systemctl --user daemon-reload
+	@echo ""
+	@echo "Installed. To enable + start one of them:"
+	@echo "  systemctl --user enable --now wolf-database"
+	@echo ""
+	@echo "For persistent operation across logout/SSH disconnect:"
+	@echo "  loginctl enable-linger \$$USER"
+	@echo ""
+	@echo "See deploy/systemd/dev/README.md for the full workflow."
 
 # ─── wolf-database (Phase 5.7) ────────────────────────────────────────────────
 

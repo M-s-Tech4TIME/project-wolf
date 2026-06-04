@@ -43,7 +43,13 @@ async def lifespan(app: FastAPI) -> Any:  # noqa: ANN401
         log_level=_settings.log_level,
     )
 
-    # Run migrations on startup so `make up` → ready with no manual step.
+    # Phase 5.8-a: tolerate wolf-database still coming up. Per ADR
+    # 0016 v3 every Wolf systemd unit is fully independent (no
+    # After=/Requires=/Wants= between them), so a fresh boot may
+    # start wolf-server before wolf-database is accepting
+    # connections. Block until it is, with backoff, then run
+    # migrations.
+    await _wait_for_database()
     await _run_migrations()
 
     # Register all Phase 2A read tools with the runtime + schema registries.
@@ -56,13 +62,76 @@ async def lifespan(app: FastAPI) -> Any:  # noqa: ANN401
     logger.info("wolf_server_stopping")
 
 
+# Backoff schedule used by `_wait_for_database`. Sums to ~120s
+# across the first 12 attempts; we cycle the last value
+# indefinitely until the overall timeout is hit. Exposed here as a
+# module constant so tests can substitute a faster version.
+_DB_BACKOFF_SECONDS: tuple[float, ...] = (0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 30.0)
+_DB_WAIT_TIMEOUT_SECONDS: float = 120.0
+
+
+async def _wait_for_database(
+    *,
+    backoff: tuple[float, ...] = _DB_BACKOFF_SECONDS,
+    timeout: float = _DB_WAIT_TIMEOUT_SECONDS,
+) -> None:
+    """Poll DATABASE_URL with a simple `SELECT 1` until it responds.
+
+    Wolf-server can't usefully do anything before its DB is up — at
+    minimum, alembic needs to run on startup. Rather than crashing
+    on the first ConnectionRefused, we retry on a backoff schedule
+    so a freshly-rebooted host where wolf-database is still coming
+    up doesn't degenerate into a `Restart=on-failure` flap loop.
+
+    Logs `database_unreachable_retrying` at warning level on each
+    miss so the operator can grep for it. On success, returns.
+    On total timeout, raises — at that point wolf-server can't
+    start no matter how patient we are.
+    """
+    import asyncio  # noqa: PLC0415  defer the import; only needed at startup
+    import itertools  # noqa: PLC0415
+
+    from sqlalchemy import text  # noqa: PLC0415
+    from sqlalchemy.ext.asyncio import create_async_engine  # noqa: PLC0415
+
+    elapsed = 0.0
+    backoff_iter = itertools.cycle(backoff)
+    while True:
+        engine = create_async_engine(_settings.database_url)
+        try:
+            async with engine.connect() as conn:
+                await conn.execute(text("SELECT 1"))
+            await engine.dispose()
+            logger.info("database_reachable", elapsed_s=round(elapsed, 1))
+            return
+        except Exception as exc:
+            await engine.dispose()
+            if elapsed >= timeout:
+                logger.error(
+                    "database_unreachable_giving_up",
+                    elapsed_s=round(elapsed, 1),
+                    timeout_s=timeout,
+                    error=str(exc),
+                )
+                raise
+            delay = next(backoff_iter)
+            logger.warning(
+                "database_unreachable_retrying",
+                elapsed_s=round(elapsed, 1),
+                next_attempt_in_s=delay,
+                error=str(exc),
+            )
+            await asyncio.sleep(delay)
+            elapsed += delay
+
+
 async def _run_migrations() -> None:
     """Run Alembic migrations programmatically on startup."""
-    import asyncio
-    from concurrent.futures import ThreadPoolExecutor
+    import asyncio  # noqa: PLC0415
+    from concurrent.futures import ThreadPoolExecutor  # noqa: PLC0415
 
-    from alembic import command
-    from alembic.config import Config
+    from alembic import command  # noqa: PLC0415
+    from alembic.config import Config  # noqa: PLC0415
 
     cfg = Config("alembic.ini")
 

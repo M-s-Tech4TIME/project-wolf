@@ -1,0 +1,27 @@
+[Unit]
+Description=Wolf server — the agent loop / API service (dev, user-level)
+Documentation=file://@REPO_ROOT@/docs/decisions/0016-wolf-component-architecture-and-packaging.md
+# Per ADR 0016 v3: fully independent — no After=/Requires=/Wants= between Wolf units.
+# wolf-server's lifespan hook polls the configured DATABASE_URL with
+# backoff so wolf-database not being ready yet isn't a fatal startup
+# failure — see services/server/wolf_server/main.py.
+
+[Service]
+# uvicorn (via `python -m wolf_server`) runs in the foreground. We
+# don't need PIDFile because systemd manages the process directly.
+Type=simple
+
+WorkingDirectory=@REPO_ROOT@/services/server
+# Load .env into the process environment so DATABASE_URL,
+# SECRET_KEY, etc. reach uvicorn. systemd's EnvironmentFile=
+# directive parses key=value lines without the `export` prefix
+# — match the .env format we already use.
+EnvironmentFile=@REPO_ROOT@/.env
+
+ExecStart=@REPO_ROOT@/.venv/bin/python -m wolf_server
+
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=default.target

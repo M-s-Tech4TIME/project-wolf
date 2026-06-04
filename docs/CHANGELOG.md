@@ -49,6 +49,106 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-04 — Slice 5.8-a: user-level systemd units + wolf-server DB-retry loop
+
+**Session type:** claude-code
+**Phase:** 5.8 — systemd units + FHS install paths (slice a of d)
+**Branch / commit:** main @ (this commit)
+
+### What we did
+First slice of Phase 5.8. Three pieces:
+
+1. **Three user-level systemd unit templates** at
+   `deploy/systemd/dev/`. Installed via the new
+   `make install-user-systemd` target which substitutes
+   `@REPO_ROOT@` for the current `$PWD` and drops the files into
+   `~/.config/systemd/user/`. Operator then runs
+   `systemctl --user enable --now wolf-database` (plus
+   `loginctl enable-linger $USER` for headless boxes) and the
+   component auto-restarts on every boot. System-level units
+   with proper service users + FHS paths land in 5.8-b.
+
+2. **Fully-independent units per ADR 0016 v3.** No `After=`,
+   no `Requires=`, no `Wants=` between Wolf services. Each
+   starts on its own. Same units work on an all-in-one host AND
+   on distributed deployments where wolf-database lives on a
+   different host than wolf-server. The independence has one
+   consequence: wolf-server may start before wolf-database is
+   ready, which slice (3) handles.
+
+3. **wolf-server lifespan hook DB-reachability retry loop**
+   (`services/server/wolf_server/main.py`). Added
+   `_wait_for_database()`: polls DATABASE_URL with a `SELECT 1`
+   on a backoff schedule (0.5s, 1s, 2s, 5s, 10s, 20s, 30s
+   cycling) until the DB responds or a 120-second timeout
+   elapses. Logs `database_unreachable_retrying` at warning
+   level on each miss so operators can grep journald to see
+   what's happening. Called BEFORE `_run_migrations` so a
+   fresh-boot race doesn't crash wolf-server's lifespan
+   coroutine. On total timeout, re-raises — at that point
+   something is genuinely broken.
+
+   Architectural reasoning: we explicitly chose this over a
+   systemd `After=wolf-database.service` because the latter
+   couples the two units, which only makes sense when both are
+   on the same host. The app-level retry works identically in
+   all-in-one and distributed deployments. ADR 0016 v3 codifies
+   this independence; this slice operationalises it.
+
+Files added:
+* `deploy/systemd/dev/README.md` — operator-facing doc
+* `deploy/systemd/dev/wolf-database.service` — Type=forking;
+  ExecStart uses `python -m wolf_database start`; PIDFile
+  points at the data dir's `postmaster.pid`; SuccessExitStatus=143
+  so a clean pg_ctl stop isn't logged as a failure.
+* `deploy/systemd/dev/wolf-server.service` — Type=simple;
+  EnvironmentFile=@REPO_ROOT@/.env so DATABASE_URL +
+  SECRET_KEY + secrets-backend env reach the uvicorn process.
+* `deploy/systemd/dev/wolf-dashboard.service` — Type=simple;
+  ExecStart=/usr/bin/npm run dev.
+
+Files changed:
+* `services/server/wolf_server/main.py` — `_wait_for_database()`
+  helper + lifespan-hook integration. Adds ~50 lines.
+* `Makefile` — new `install-user-systemd` target. Iterates the
+  three components, sed-substitutes `@REPO_ROOT@` with `$(PWD)`,
+  drops into `~/.config/systemd/user/`, runs `daemon-reload`,
+  prints follow-up instructions.
+* `ONBOARDING.md` §3.4 — the pre-5.8 caveat from slice 5.7-d
+  was rewritten to mention the new Phase 5.8-a user-level unit
+  path. Path B (system Postgres) still recommended for daily
+  dev until 5.8-b lands the system-level units.
+
+Tests added (4 in `services/server/tests/test_lifespan_db_retry.py`):
+* `test_db_reachable_on_first_try_returns_immediately` — happy
+  path; verifies one engine constructed, zero sleeps.
+* `test_retries_until_db_becomes_reachable` — three failures
+  then success; verifies four engines + three sleeps.
+* `test_raises_after_timeout` — DB never comes back; verifies
+  the underlying ConnectionRefusedError surfaces.
+* `test_backoff_schedule_cycles_when_exhausted` — explicit test
+  that the backoff tuple cycles via `itertools.cycle`. Asserts
+  exact sleep sequence.
+
+### Integrity gate (all green)
+* mypy: 0 errors across 7 Python projects (94 source files)
+* ruff: clean (after auto-fix)
+* tsc (services/dashboard): 0 errors (untouched)
+* eslint (services/dashboard): clean (untouched)
+* backend pytest: 397 / 397 (was 393; +4 retry-loop tests)
+
+### What's next
+**Slice 5.8-b — System-level units + service users + FHS paths.**
+Three `/lib/systemd/system/wolf-*.service` files with `User=`,
+`Group=`, hardening directives. Creation of the
+`wolf-{database,server,dashboard,gateway}` system users (all in
+shared `wolf` group, all `nologin`). FHS-aware paths:
+`/var/lib/wolf-*/` data, `/etc/wolf-*/` config,
+`/var/run/wolf-*/` sockets. This is the production-parity
+variant of slice 5.8-a's dev units.
+
+---
+
 ## 2026-06-04 — Slice 5.7-d: `make smoke-database` + CI job (Phase 5.7 CLOSED)
 
 **Session type:** claude-code
