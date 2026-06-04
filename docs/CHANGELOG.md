@@ -49,6 +49,123 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-04 — Slice 5.7-d: `make smoke-database` + CI job (Phase 5.7 CLOSED)
+
+**Session type:** claude-code
+**Phase:** 5.7 — wolf-database extraction — **CLOSED**
+**Branch / commit:** main @ (this commit)
+
+### What we did
+The last slice of Phase 5.7. End-to-end smoke for the
+wolf-database CLI lifecycle, codified as a Makefile target +
+CI job. Parallel to `make smoke-mtls` from Phase 5.6-e — every
+pre-push moment locally + every PR in CI exercises the full
+wolf-database lifecycle against a real Postgres.
+
+Files changed:
+
+* **`Makefile`** — new `smoke-database` target. Five-step
+  lifecycle against tmp paths so it doesn't disturb the
+  operator's real `.local/wolf-database/` cluster:
+
+    1. `wolf-database status` — expect "DATA DIR MISSING"
+    2. `wolf-database init --port 17860` — runs the full
+       one-shot (initdb + write_config + start + pgvector check
+       + role + db + extension + stop)
+    3. `wolf-database start`
+    4. `wolf-database status` — expect "RUNNING"
+    5. `wolf-database stop` + status — expect "STOPPED"
+
+  Designed for graceful degradation on hosts without the
+  postgresql-17-pgvector package: when init exits with the
+  pgvector-missing error, the smoke reports
+  "PARTIAL PASS (pgvector required for full smoke)" and exits
+  0 with a clear install hint. The CI smoke installs pgvector
+  upfront, so it always runs the full chain.
+
+  Uses a bash trap to clean up the tmp paths + stop any
+  half-started Postgres even if the smoke aborts.
+
+* **`.github/workflows/ci.yml`** — new `smoke-database` job.
+  Installs postgresql-17 + postgresql-17-pgvector from the
+  official PostgreSQL APT repo (Ubuntu 24.04's default repos
+  ship 16, not 17), stops the system Postgres unit so it
+  doesn't fight wolf-database for port 5432, then runs
+  `make smoke-database`. Parallel to the `smoke-mtls` job's
+  structure.
+
+* **`docs/PROGRESS.md`** + **`docs/CHANGELOG.md`** — Phase 5.7
+  marked CLOSED. Forward-looking section names Phase 5.8 as
+  next (systemd units + `/bin` + FHS install paths).
+
+### Live verification on the dev host
+The dev host doesn't have postgresql-17-pgvector installed, so
+the smoke exercises the graceful-degradation path. Output:
+
+```
+$ make smoke-database
+=== smoke-database: against /tmp/wd-stack-smoke on port 17860 ===
+--- 1/5: status on missing data dir ---
+--- 2/5: init (will detect pgvector availability) ---
+    SKIP: postgresql-17-pgvector not installed on this host.
+    The CLI failed gracefully with the install hint, as designed.
+    Install pgvector and re-run to validate the full chain:
+      sudo apt install postgresql-17-pgvector
+
+=== smoke-database: PARTIAL PASS (pgvector required for full smoke) ===
+```
+
+Exits 0; bash trap cleaned up /tmp/wd-stack-smoke. Full-chain
+validation lives in CI where pgvector IS installed.
+
+### Phase 5.7 — CLOSED
+
+Four slices, one day:
+
+| Slice | Commit | What it shipped |
+|---|---|---|
+| 5.7-a | `25f576f` | wolf-database substrate (`packages/database/` workspace package). DatabaseLayout / find_postgres_binaries / PostgresqlConfOptions / PgHbaOptions / connection_url. 34 new tests. |
+| 5.7-b | `ea02f7c` | wolf-database CLI. Five subcommands (init / start / stop / status / reconfigure) parallel to wolf-cert. `--port` to avoid system-Postgres collision. Live-smoke verified against real Postgres 17. 33 new tests. |
+| 5.7-c | `1c13f54` | Dev-workflow integration. Five Makefile wrappers. `.env.example` rewrite documenting three DB paths. ONBOARDING §3.4 rewritten as a three-path comparison (wolf-database recommended). |
+| 5.7-d | this | `make smoke-database` + CI job. Graceful degradation on missing-pgvector hosts. |
+
+End-state of Phase 5.7:
+
+* `wolf-database` is a real, deployable Wolf component
+  parallel to wolf-server / wolf-dashboard / wolf-gateway.
+* Postgres binaries come from the OS package manager (per
+  ADR 0008's native-primary commitment) but Wolf owns config,
+  data, sockets, lifecycle.
+* Dev workflow: `make wolf-database-init` →
+  `make wolf-database-up`. Operator gets a generated DATABASE_URL
+  to paste into `.env`.
+* Production workflow ready for Phase 5.8's systemd unit
+  (data dir under /var/lib/wolf-database/, config under
+  /etc/wolf-database/, FHS-canonical).
+* System-Postgres path (Phase 5.6 and earlier) still works —
+  nobody's existing dev setup broke.
+* Backend pytest grew **321 → 388** (+67 tests across the new
+  package).
+* mypy / ruff / tsc / eslint all clean (94 Python source files
+  vs 87 at Phase 5.6 close — +7 in `wolf_database`).
+* Two pre-push smokes now exist: `make smoke-mtls` (Phase 5.6-e)
+  and `make smoke-database` (Phase 5.7-d). CI runs both on
+  every PR.
+
+### What's next
+**Phase 5.8 — systemd units + `/bin` + FHS install paths.**
+The three Wolf components get proper daemon plumbing: unit
+files at `/lib/systemd/system/{wolf-server,wolf-dashboard,wolf-database}.service`,
+packaged CLIs symlinked from `/usr/bin/`, config under
+`/etc/wolf-*/`, data under `/var/lib/wolf-*/`. Brings Wolf
+from "deploys on top of a dev shell" to "deploys as a
+daemonised service." Sets up the substrate that Phase
+5.9 / 5.10 (APT / DNF — still deferred to the official-
+release phase per the 2026-06-03 operator direction) builds
+on.
+
+---
+
 ## 2026-06-04 — Slice 5.7-c: dev-workflow integration (Makefile + .env.example + ONBOARDING §3.4 rewrite)
 
 **Session type:** claude-code

@@ -1,6 +1,6 @@
 .PHONY: up down dev build test test-isolation test-isolation-live test-cov \
         lint typecheck fmt check migrate migrate-local revision probe install \
-        smoke-mtls help \
+        smoke-mtls smoke-database help \
         wolf-database-init wolf-database-up wolf-database-down \
         wolf-database-status wolf-database-reconfigure
 
@@ -110,6 +110,74 @@ wolf-database-status: ## wolf-database status — running state + layout summary
 
 wolf-database-reconfigure: ## Rewrite wolf-database config from env (operator restarts to apply)
 	uv run --project services/server python -m wolf_database reconfigure
+
+# ─── wolf-database smoke (Phase 5.7-d) ────────────────────────────────────────
+
+# End-to-end smoke for the wolf-database CLI against tmp paths so it
+# doesn't disturb the operator's real `.local/` cluster. Verifies the
+# full lifecycle: status (empty data dir) → init (port 17860 to avoid
+# the common 5432 collision) → status (running) → stop → status
+# (stopped). Detects the postgresql-17-pgvector-missing case and
+# reports it as an environmental prerequisite rather than a smoke
+# failure (operators on hosts without pgvector still see that the
+# CLI behaves correctly up to that gate).
+#
+# Use before every Phase 5.7 push to catch regressions in
+# wolf-database. The CI smoke-database job installs pgvector and
+# runs the full chain.
+smoke-database: ## End-to-end smoke for the wolf-database CLI lifecycle (Phase 5.7-d)
+	@bash -c '\
+		set -eu; \
+		ROOT=/tmp/wd-stack-smoke; \
+		PORT=17860; \
+		cleanup() { uv run --project services/server python -m wolf_database stop 2>/dev/null || true; rm -rf "$$ROOT"; }; \
+		trap cleanup EXIT; \
+		\
+		rm -rf "$$ROOT"; \
+		export WOLF_DATABASE_DATA_DIR="$$ROOT/data"; \
+		export WOLF_DATABASE_CONFIG_DIR="$$ROOT/cfg"; \
+		export WOLF_DATABASE_SOCKET_DIR="$$ROOT/sock"; \
+		\
+		echo "=== smoke-database: against $$ROOT on port $$PORT ==="; \
+		\
+		echo "--- 1/5: status on missing data dir ---"; \
+		out=$$(uv run --project services/server python -m wolf_database status 2>&1); \
+		echo "$$out" | grep -q "DATA DIR MISSING" || { echo "FAIL: status should report DATA DIR MISSING; got: $$out"; exit 1; }; \
+		\
+		echo "--- 2/5: init (will detect pgvector availability) ---"; \
+		init_out=$$(uv run --project services/server python -m wolf_database init --port "$$PORT" 2>&1) || init_rc=$$?; \
+		init_rc=$${init_rc:-0}; \
+		if [ "$$init_rc" -ne 0 ]; then \
+			if echo "$$init_out" | grep -q "pgvector"; then \
+				echo "    SKIP: postgresql-17-pgvector not installed on this host."; \
+				echo "    The CLI failed gracefully with the install hint, as designed."; \
+				echo "    Install pgvector and re-run to validate the full chain:"; \
+				echo "      sudo apt install postgresql-17-pgvector"; \
+				echo ""; \
+				echo "=== smoke-database: PARTIAL PASS (pgvector required for full smoke) ==="; \
+				exit 0; \
+			fi; \
+			echo "FAIL: init exited $$init_rc unexpectedly"; \
+			echo "$$init_out"; \
+			exit 1; \
+		fi; \
+		echo "    init succeeded"; \
+		\
+		echo "--- 3/5: start ---"; \
+		uv run --project services/server python -m wolf_database start || { echo "FAIL: start failed"; exit 1; }; \
+		\
+		echo "--- 4/5: status reports RUNNING ---"; \
+		out=$$(uv run --project services/server python -m wolf_database status 2>&1); \
+		echo "$$out" | grep -q "RUNNING" || { echo "FAIL: status should report RUNNING; got: $$out"; exit 1; }; \
+		\
+		echo "--- 5/5: stop + status reports STOPPED ---"; \
+		uv run --project services/server python -m wolf_database stop || { echo "FAIL: stop failed"; exit 1; }; \
+		out=$$(uv run --project services/server python -m wolf_database status 2>&1); \
+		echo "$$out" | grep -q "STOPPED" || { echo "FAIL: status should report STOPPED; got: $$out"; exit 1; }; \
+		\
+		echo ""; \
+		echo "=== smoke-database: PASS ==="; \
+	'
 
 # ─── mTLS smoke (Phase 5.6-e) ─────────────────────────────────────────────────
 

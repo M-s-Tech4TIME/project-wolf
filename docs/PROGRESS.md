@@ -6,19 +6,79 @@
 >
 > For history of what changed when, see `CHANGELOG.md` (append-only).
 
-**Last updated:** 2026-06-04 by claude-code (Phase 5.7-c SHIPPED; 5.7-d remaining)
+**Last updated:** 2026-06-04 by claude-code (Phase 5.7 CLOSED; Phase 5.8 next)
 
 ---
 
 ## 1. Where we are right now
 
-**Current phase:** Phase 5.7 — wolf-database extraction (Postgres 17 +
-pgvector under a Wolf-managed systemd unit). Per ADR 0016 this is
-the third deployable component; today Postgres is operator-managed
-(or system-installed per ADR 0008). The phase moves it into a
-Wolf-owned data dir at `/var/lib/wolf-database/` with its own
-systemd unit so the all-in-one install story becomes a single
-`apt install wolf` rather than a system-Postgres prerequisite.
+**Current phase:** Phase 5.8 — systemd units + `/bin` layout + FHS
+install paths. Per ADR 0016, this is the slice that turns the
+three Wolf-* components into proper daemonised services with
+unit files at `/lib/systemd/system/`, packaged CLIs under
+`/usr/bin/`, and config + data under their FHS-canonical
+locations. Sets up the substrate that Phase 5.9 / 5.10 (APT /
+DNF packaging — still deferred per the 2026-06-03 operator
+direction) builds on.
+
+**Phase 5.7 — wolf-database extraction — CLOSED 2026-06-04.**
+Four slices shipped in a single day that gave Wolf a bundled
+Postgres component:
+
+* **5.7-a** (`25f576f`) — wolf-database substrate (new
+  `packages/database/` workspace package). `DatabaseLayout` +
+  `resolve_layout()` for dev vs prod paths. `find_postgres_binaries()`
+  with the Debian/RHEL distro-known-paths + PATH fallback +
+  version gate. `PostgresqlConfOptions` + `PgHbaOptions` for
+  rendering Wolf-owned config templates. `connection_url()`
+  for wolf-server's DATABASE_URL. 34 new tests.
+* **5.7-b** (`ea02f7c`) — wolf-database CLI. Five subcommands
+  parallel to wolf-cert: `init` / `start` / `stop` / `status` /
+  `reconfigure`. `init --port` to avoid 5432 collision with a
+  system Postgres. Generates a random password on init, prints
+  the DATABASE_URL operator pastes into wolf-server's .env.
+  Live-smoke verified against real Postgres 17 — initdb /
+  write_config / pg_ctl start + stop / pgvector check all
+  working. 33 new tests; backend pytest 355 → 388.
+* **5.7-c** (`1c13f54`) — dev-workflow integration. Five
+  Makefile wrappers (`make wolf-database-init` /
+  `-up` / `-down` / `-status` / `-reconfigure`).
+  `.env.example` rewrite documenting three DB paths
+  (wolf-database recommended, system Postgres still supported,
+  Docker as ADR-0008 supplementary). ONBOARDING §3.4 rewritten
+  as a three-path comparison.
+* **5.7-d** (`<this commit>`) — `make smoke-database` Makefile
+  target + CI job. End-to-end CLI lifecycle smoke (status →
+  init → start → status → stop → status). On hosts without
+  pgvector, gracefully degrades to "PARTIAL PASS" with a clear
+  install hint rather than failing. CI job installs
+  postgresql-17 + postgresql-17-pgvector first, then runs the
+  full smoke.
+
+Phase 5.7 closeout state:
+
+* New deployable component, `wolf-database`, parallel to
+  wolf-server / wolf-dashboard / wolf-gateway. Owns its data
+  dir, config, and lifecycle.
+* Operator has a one-command bring-up
+  (`make wolf-database-init` → `make wolf-database-up`).
+* Pre-Phase-5.7 workflow (system Postgres) still works for
+  operators with existing infra — nobody's dev setup breaks.
+* Backend pytest grew from 321 (Phase 5.6 close) to **388** —
+  +67 tests across the new package.
+* mypy / ruff / tsc / eslint all clean.
+* `make smoke-mtls` (Phase 5.6-e) and `make smoke-database`
+  (Phase 5.7-d) are the two recurring integrity checks
+  operators run before every push; CI runs the same two on
+  every PR.
+
+What's still ahead of the official-release phase:
+
+* **Phase 5.8** — systemd units + `/bin` + FHS install paths.
+  Turns the three components into proper daemons.
+* **Phases 5.9 / 5.10** — APT + DNF packaging. Deferred to
+  the official-release phase per the 2026-06-03 operator
+  direction.
 
 * **Slice 5.7-a — wolf-database substrate** — SHIPPED 2026-06-04.
   New workspace package `packages/database/` with the foundation

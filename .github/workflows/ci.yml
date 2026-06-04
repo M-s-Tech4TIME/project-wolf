@@ -209,3 +209,39 @@ jobs:
         run: |
           echo "=== /tmp/wolf-server.log ==="
           cat /tmp/wolf-server.log || true
+
+  # Phase 5.7-d: end-to-end smoke for wolf-database (the bundled
+  # Postgres component). Installs postgresql-17 + postgresql-17-pgvector
+  # via apt, then runs `make smoke-database` which exercises the full
+  # CLI lifecycle: status (empty) → init → start → status (running) →
+  # stop → status (stopped). Catches regressions in the CLI's
+  # interaction with real Postgres binaries that the unit tests with
+  # mocked subprocess can't reach.
+  smoke-database:
+    name: wolf-database smoke (Phase 5.7-d)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+      - name: Add PostgreSQL APT repo + install postgresql-17 + pgvector
+        # Ubuntu 24.04's default repos ship Postgres 16; we need 17
+        # to match the version wolf-database enforces.
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+              -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] \
+              https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | \
+              sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt update
+          sudo apt install -y postgresql-17 postgresql-17-pgvector
+          # Stop the system Postgres unit Debian/Ubuntu auto-starts
+          # post-install; we don't want it fighting wolf-database for
+          # port 5432 (though the smoke uses 17860 anyway).
+          sudo systemctl stop postgresql || true
+      - name: Install Python deps
+        run: uv sync --all-packages
+      - name: Run wolf-database lifecycle smoke
+        run: make smoke-database
