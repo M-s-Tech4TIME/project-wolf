@@ -1,0 +1,127 @@
+#!/bin/sh
+# debian/wolf-server.postinst — runs after wolf-server.deb installs.
+#
+# Phase 5.9-c. Idempotent. Four jobs:
+#
+#   1. Create the wolf group + wolf-server system user if missing.
+#   2. Create FHS dirs at /var/lib/wolf-server/ + /etc/wolf-server/.
+#   3. Build the Python venv at /usr/lib/wolf-server/.venv/ by
+#      pip-installing wolf-server + wolf-cert from the bundled
+#      wheels at /usr/lib/wolf-server/wheels/.
+#   4. Print operator-facing next steps (don't auto-start; the
+#      operator needs to provision /etc/wolf-server/env first).
+
+set -e
+
+WOLF_GROUP="wolf"
+WOLF_SERVER_USER="wolf-server"
+LIB_DIR="/usr/lib/wolf-server"
+VENV_DIR="${LIB_DIR}/.venv"
+WHEEL_DIR="${LIB_DIR}/wheels"
+
+case "$1" in
+    configure)
+        # ── Group ─────────────────────────────────────────────────
+        if ! getent group "${WOLF_GROUP}" >/dev/null; then
+            addgroup --system "${WOLF_GROUP}"
+        fi
+
+        # ── User ──────────────────────────────────────────────────
+        if ! getent passwd "${WOLF_SERVER_USER}" >/dev/null; then
+            adduser \
+                --system \
+                --ingroup "${WOLF_GROUP}" \
+                --home /nonexistent \
+                --no-create-home \
+                --shell /usr/sbin/nologin \
+                --gecos "Wolf agent loop / API service" \
+                "${WOLF_SERVER_USER}"
+        fi
+
+        # ── FHS dirs ──────────────────────────────────────────────
+        # /var/lib/wolf-server holds the secrets backend file + any
+        # future per-component state. /etc/wolf-server holds the
+        # operator's env file + any /etc/wolf/certs/ links the
+        # operator wires up.
+        for dir in /var/lib/wolf-server \
+                   /etc/wolf-server; do
+            install -d -m 0750 -o "${WOLF_SERVER_USER}" -g "${WOLF_GROUP}" "${dir}"
+        done
+
+        # ── Python venv ───────────────────────────────────────────
+        # Rebuild from scratch on every (re)install so an upgraded
+        # wheel set actually takes effect.
+        rm -rf "${VENV_DIR}"
+        python3 -m venv "${VENV_DIR}"
+
+        # Sanity: at least one wolf-server wheel must be present.
+        if ! ls "${WHEEL_DIR}"/wolf_server-*-py3-none-any.whl >/dev/null 2>&1; then
+            echo "ERROR: no wolf_server wheel found under ${WHEEL_DIR}/" >&2
+            echo "  Reinstall the wolf-server package." >&2
+            exit 1
+        fi
+
+        # pip-install wolf-server using the bundled wheels only.
+        # --no-index disables PyPI fetch; --find-links points pip at
+        # our bundle. The full dep graph (fastapi, sqlalchemy,
+        # asyncpg, pydantic, the workspace wolf_common/secrets/schema,
+        # everything) is resolved from the bundled wheels — no
+        # network needed at install time, so air-gapped installs
+        # work the same as connected ones.
+        "${VENV_DIR}/bin/pip" install --quiet \
+            --no-index \
+            --find-links "${WHEEL_DIR}" \
+            wolf-server
+
+        # wolf-cert is shipped in the same .deb (the /usr/bin/wolf-
+        # cert shim looks for it in wolf-server's venv per slice
+        # 5.8-c). Install it separately.
+        "${VENV_DIR}/bin/pip" install --quiet \
+            --no-index \
+            --find-links "${WHEEL_DIR}" \
+            wolf-cert
+
+        # ── systemd ───────────────────────────────────────────────
+        # dh_installsystemd's daemon-reload + enable-on-fresh-install
+        # snippets land at #DEBHELPER# below.
+        cat <<EOF
+
+  wolf-server installed.
+
+  Before starting:
+    1. Provision /etc/wolf-server/env (mode 0640 wolf-server:wolf)
+       with at minimum:
+         DATABASE_URL=postgresql+asyncpg://wolf:<password>@localhost:5432/wolf
+         SECRET_KEY=<at least 32 random chars>
+         ENVIRONMENT=production
+         SECRETS_BACKEND=file
+         SECRETS_FILE_PATH=/var/lib/wolf-server/secrets.enc
+         SECRETS_FILE_KEY=<generate with python3 -c 'from cryptography.fernet
+                                                    import Fernet; print(Fernet.generate_key().decode())'>
+       (Paste the DATABASE_URL printed by \`wolf-database init\` if you
+        installed wolf-database from the same source.)
+
+    2. (Optional) Run \`/usr/bin/wolf-cert init\` to mint the
+       Wolf CA + leaf certs at .local/certs/. Production
+       installs use /etc/wolf/certs/ instead — see
+       /usr/share/doc/wolf-server/ for the operator walkthrough.
+
+    3. Start the service:
+
+         sudo systemctl enable --now wolf-server
+
+EOF
+        ;;
+
+    abort-upgrade|abort-remove|abort-deconfigure)
+        ;;
+
+    *)
+        echo "postinst called with unknown argument \`$1'" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

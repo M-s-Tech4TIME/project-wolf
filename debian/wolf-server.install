@@ -1,0 +1,31 @@
+# debian/wolf-server.install — Phase 5.9-c.
+#
+# What ends up inside wolf-server.deb. debhelper's dh_install reads
+# this file and copies the listed files into
+# debian/wolf-server/<dest>/ during the build.
+
+# Two CLI shims. wolf-cert is bundled with wolf-server because they
+# share the venv (wolf-cert is a CLI tool not used by wolf-server's
+# runtime code, but the /usr/bin/wolf-cert shim looks for it in
+# wolf-server's venv — see deploy/bin/wolf-cert for the rationale).
+deploy/bin/wolf-server  usr/bin/
+deploy/bin/wolf-cert    usr/bin/
+
+# Bundle of wheels — the workspace packages (wolf_server,
+# wolf_cert, wolf_common, wolf_secrets, wolf_schema) plus every
+# transitive production dependency (fastapi, sqlalchemy, asyncpg,
+# alembic, pgvector, bcrypt, python-jose[cryptography], httpx,
+# authlib, pydantic, pydantic-settings, uvicorn[standard], and the
+# wheels each of those pull in transitively).
+#
+# Postinst creates the venv at /usr/lib/wolf-server/.venv/ and
+# `pip install --no-index --find-links wheels/ wolf-server` resolves
+# the whole graph from this bundle alone — no PyPI fetch needed,
+# so the install works air-gapped.
+packaging/build/wolf-server-wheels/*.whl  usr/lib/wolf-server/wheels/
+
+# alembic.ini + migrations directory — wolf-server's lifespan hook
+# runs `alembic upgrade head` at startup, so the cfg file and the
+# migrations/ tree must be in WorkingDirectory.
+services/server/alembic.ini                              usr/lib/wolf-server/
+services/server/migrations                               usr/lib/wolf-server/

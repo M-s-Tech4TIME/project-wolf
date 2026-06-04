@@ -1,0 +1,26 @@
+#!/bin/sh
+# debian/wolf-server.postrm — Phase 5.9-c.
+#
+# Same conservative-preserve-user-data convention as
+# wolf-database.postrm: remove the venv on uninstall (we built it
+# in postinst; dpkg doesn't track files inside .venv), but
+# preserve /var/lib/wolf-server (operator's secrets-backend file)
+# and the wolf-server user even on purge.
+
+set -e
+
+VENV_DIR="/usr/lib/wolf-server/.venv"
+
+case "$1" in
+    remove|upgrade|failed-upgrade|abort-install|abort-upgrade|disappear|purge)
+        rm -rf "${VENV_DIR}"
+        ;;
+    *)
+        echo "postrm called with unknown argument \`$1'" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

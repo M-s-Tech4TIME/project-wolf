@@ -1,0 +1,47 @@
+[Unit]
+Description=Wolf server — agent loop / API service
+Documentation=https://github.com/M-s-Tech4TIME/project-wolf/blob/main/docs/decisions/0016-wolf-component-architecture-and-packaging.md
+# Per ADR 0016 v3: fully independent — no After=/Requires=/Wants= between Wolf units.
+# `_wait_for_database()` in the lifespan hook handles a wolf-database
+# that's still coming up.
+
+[Service]
+Type=simple
+
+User=wolf-server
+Group=wolf
+
+# wolf-server reads config from /etc/wolf-server/env (the production
+# .env). Keys match the dev .env format. Lives owned wolf-server:wolf,
+# mode 0640 — root + wolf-server + anyone-in-wolf can read it but
+# operators editing it need sudo.
+EnvironmentFile=/etc/wolf-server/env
+
+# Shipped CLI shim runs `python -m wolf_server` (which calls
+# the Phase 5.4-c launcher with auto-HTTPS detect).
+ExecStart=/usr/bin/wolf-server
+
+Restart=on-failure
+# Generous restart delay so the DB-reachability retry loop has time
+# to give a real answer before systemd flaps the unit.
+RestartSec=10s
+
+# Systemd-managed runtime dir at /run/wolf-server/ if we ever need
+# it. Empty for now; sockets live under wolf-database's runtime dir.
+RuntimeDirectory=wolf-server
+RuntimeDirectoryMode=0750
+
+# ── Hardening ─────────────────────────────────────────────────────
+ProtectSystem=strict
+# /var/lib/wolf-server holds the secrets backend file + any future
+# per-component state. /etc/wolf-server is read-only (just env +
+# certs); only its mode matters, not RW.
+ReadWritePaths=/var/lib/wolf-server
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

@@ -28,8 +28,8 @@
 #   to debian/wolf-dashboard/usr/lib/wolf-dashboard/.
 
 override_dh_auto_build:
-	# Build the wolf-database wheel (Phase 5.9-b). debian/wolf-
-	# database.install picks up the resulting whl from
+	# ── wolf-database wheel (Phase 5.9-b) ────────────────────────
+	# debian/wolf-database.install picks up the resulting whl from
 	# packaging/build/ and ships it inside the .deb at
 	# /usr/lib/wolf-database/. The postinst then creates the
 	# venv at /usr/lib/wolf-database/.venv/ and pip-installs the
@@ -43,7 +43,45 @@ override_dh_auto_build:
 		--wheel-dir packaging/build \
 		packages/database/
 	@echo "wolf-database wheel built: $$(ls packaging/build/wolf_database-*.whl)"
-	# 5.9-c will add the wolf-server wheel build here.
+
+	# ── wolf-server wheel bundle (Phase 5.9-c) ───────────────────
+	# Builds wolf-server + wolf-cert + the four workspace deps
+	# (wolf-common, wolf-secrets, wolf-schema) AND every
+	# transitive production dep (fastapi, sqlalchemy, asyncpg, ...).
+	# All wheels land in packaging/build/wolf-server-wheels/;
+	# debian/wolf-server.install ships them at
+	# /usr/lib/wolf-server/wheels/. Postinst then runs
+	# `pip install --no-index --find-links wheels/ wolf-server`
+	# to resolve the entire graph from the bundle alone.
+	mkdir -p packaging/build/wolf-server-wheels
+	rm -rf packaging/build/wolf-server-wheels/*
+
+	# Step 1 — build the workspace wheels separately (each
+	# --no-deps to avoid pip trying to resolve wolf-common etc.
+	# from PyPI where they don't exist). Order: leaf packages
+	# first, then dependents.
+	for pkg in packages/common packages/secrets packages/schema packages/cert ; do \
+		python3 -m pip wheel \
+			--no-deps \
+			--no-cache-dir \
+			--wheel-dir packaging/build/wolf-server-wheels \
+			$$pkg ; \
+	done
+
+	# Step 2 — pip wheel for services/server with the workspace
+	# wheels now on --find-links so pip can resolve wolf-common /
+	# wolf-secrets / wolf-schema locally. This also downloads
+	# every transitive production dep (fastapi + its deps,
+	# sqlalchemy + asyncpg + greenlet, alembic + mako, etc.) into
+	# the same dir.
+	python3 -m pip wheel \
+		--no-cache-dir \
+		--find-links packaging/build/wolf-server-wheels \
+		--wheel-dir packaging/build/wolf-server-wheels \
+		services/server/
+
+	@echo "wolf-server wheel bundle built: $$(ls packaging/build/wolf-server-wheels/*.whl | wc -l) wheels"
+
 	# 5.9-d will add the Next.js standalone build for wolf-dashboard.
 
 # Strip the upstream test suite from the built packages — Wolf's
