@@ -1,0 +1,87 @@
+Source: wolf
+Section: admin
+Priority: optional
+Maintainer: Wolf Maintainers <abid.syed.golam@gmail.com>
+Build-Depends:
+ debhelper-compat (= 13),
+ python3 (>= 3.13),
+ python3-venv,
+ nodejs,
+ npm,
+Standards-Version: 4.6.2
+Homepage: https://github.com/M-s-Tech4TIME/project-wolf
+Vcs-Browser: https://github.com/M-s-Tech4TIME/project-wolf
+Vcs-Git: https://github.com/M-s-Tech4TIME/project-wolf.git
+Rules-Requires-Root: binary-targets
+
+Package: wolf-database
+Architecture: any
+Depends:
+ ${shlibs:Depends},
+ ${misc:Depends},
+ postgresql-17,
+ postgresql-17-pgvector,
+ python3 (>= 3.13),
+ adduser,
+Description: Wolf bundled-Postgres component
+ wolf-database wraps system-installed PostgreSQL 17 + pgvector with
+ Wolf-owned config, data dir, socket, and systemd lifecycle. The
+ Postgres binaries come from postgresql-17; this package adds the
+ wolf-database CLI + the systemd unit + the dedicated service user
+ + FHS-canonical paths under /var/lib/wolf-database/.
+ .
+ One of three deployable Wolf components per ADR 0016, parallel to
+ wolf-server and wolf-dashboard.
+
+Package: wolf-server
+Architecture: any
+Depends:
+ ${shlibs:Depends},
+ ${misc:Depends},
+ python3 (>= 3.13),
+ python3-venv,
+ adduser,
+Description: Wolf agent loop and API service
+ wolf-server is the brain component: FastAPI app running the agent
+ loop, tool dispatch, tenant context enforcement, audit log,
+ grounding validator, and the read tools that drive Wazuh queries.
+ .
+ Connects to wolf-database via DATABASE_URL (asyncpg over TCP). In
+ all-in-one installs that's loopback; in distributed deployments
+ it's mTLS to wolf-database on a different host.
+ .
+ Includes the wolf-cert CLI for self-signed CA + leaf certificate
+ lifecycle (mTLS substrate per Phase 5.6).
+
+Package: wolf-dashboard
+Architecture: any
+Depends:
+ ${shlibs:Depends},
+ ${misc:Depends},
+ nodejs (>= 20),
+ adduser,
+Description: Wolf edge component (Next.js)
+ wolf-dashboard is the only Wolf process browsers talk to directly.
+ Terminates browser HTTPS, serves the chat UI, reverse-proxies
+ /api/v1/* requests to wolf-server over mTLS using the
+ dashboard-client cert minted by wolf-cert.
+ .
+ Built from Next.js 16 with output: "standalone" so production
+ doesn't need npm at runtime — just node.
+
+Package: wolf
+Architecture: all
+Depends:
+ ${misc:Depends},
+ wolf-database (= ${binary:Version}),
+ wolf-server (= ${binary:Version}),
+ wolf-dashboard (= ${binary:Version}),
+Description: Wolf — agentic AI for Wazuh (all-in-one meta-package)
+ Installs all three Wolf components on a single host. Convenience
+ meta-package for the common all-in-one deployment; distributed
+ deployments install the individual component packages on each
+ host instead.
+ .
+ After installation, see /usr/share/doc/wolf/README for the
+ one-command bring-up: wolf-database init + wolf-cert init +
+ systemctl enable --now wolf-database wolf-server wolf-dashboard.

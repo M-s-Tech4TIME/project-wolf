@@ -1,0 +1,43 @@
+#!/usr/bin/make -f
+# debian/rules — Wolf package build orchestration.
+#
+# Uses debhelper's `dh` sequencer. Each binary package (wolf-database,
+# wolf-server, wolf-dashboard, wolf meta) gets its files via the
+# debian/<package>.install + .postinst + .service conventions that
+# slices 5.9-b/c/d will fill in.
+#
+# Current state (5.9-a): scaffold only. `dpkg-buildpackage -b`
+# completes but produces empty .debs (no .install files yet).
+# That's intentional — 5.9-a verifies the build infrastructure
+# parses + dh runs without errors before per-component slices
+# add their files.
+
+%:
+	dh $@ --with python3,systemd
+
+# Build hooks (placeholders — filled in by 5.9-b/c/d).
+#
+# 5.9-b will add an override_dh_auto_build for wolf-database
+#   to create /usr/lib/wolf-database/.venv with the wolf-database
+#   workspace package installed.
+#
+# 5.9-c will add similar for wolf-server (+ wolf-cert + wolf-common).
+#
+# 5.9-d will add an override that runs `npm run build` for
+#   wolf-dashboard with output: "standalone" and copies the result
+#   to debian/wolf-dashboard/usr/lib/wolf-dashboard/.
+
+override_dh_auto_build:
+	# 5.9-a placeholder. Slices 5.9-b/c/d will add per-component
+	# build logic here. For now, dh's default behaviour is fine
+	# (it's a no-op when there's nothing to do).
+	@echo "wolf packaging build: 5.9-a scaffold (per-component logic lands in 5.9-b/c/d)"
+
+# Strip the upstream test suite from the built packages — Wolf's
+# pytest suite shouldn't ship in /usr/lib/. dh_install rules in
+# the per-component slices will list only the runtime files.
+override_dh_auto_test:
+	# We don't run the upstream pytest suite at build time. It's
+	# already run in CI before any commit reaches main. Re-running
+	# here would slow the build for no added safety.
+	@echo "wolf packaging: skipping test phase (already gated by CI)"

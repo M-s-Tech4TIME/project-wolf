@@ -1,0 +1,10 @@
+wolf (0.1.0) unstable; urgency=low
+
+  * Initial Debian packaging scaffold (Phase 5.9-a).
+  * Four binary packages: wolf-database, wolf-server, wolf-dashboard,
+    and a `wolf` meta-package that depends on all three for the
+    common all-in-one installation case.
+  * Per-component venv build + Next.js standalone build land in
+    slices 5.9-b/c/d.
+
+ -- Wolf Maintainers <abid.syed.golam@gmail.com>  Wed, 04 Jun 2026 22:00:00 +0000
