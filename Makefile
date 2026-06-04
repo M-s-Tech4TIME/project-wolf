@@ -102,11 +102,22 @@ probe: ## Run the model probe (PROVIDER=ollama MODEL=llama3.2)
 # coming up doesn't break wolf-server's startup.
 install-user-systemd: ## Install user-level systemd units to ~/.config/systemd/user/ (Phase 5.8-a)
 	@mkdir -p $${HOME}/.config/systemd/user
+	@# Resolve the operator's actual `npm` location at install time
+	@# so the dashboard unit works on nvm boxes (npm not in /usr/bin)
+	@# as well as system-Node installs. Refuse to install if npm
+	@# isn't on PATH — better to fail loudly than to ship a broken
+	@# unit the operator only discovers months later.
+	@command -v npm >/dev/null || \
+	  { echo "FAIL: npm not on PATH. Install Node (e.g. via nvm) first."; exit 2; }
+	$(eval NODE_BIN := $(shell dirname $$(command -v npm)))
 	@for svc in wolf-database wolf-server wolf-dashboard; do \
-	  sed "s|@REPO_ROOT@|$(PWD)|g" deploy/systemd/dev/$$svc.service \
+	  sed -e "s|@REPO_ROOT@|$(PWD)|g" \
+	      -e "s|@NODE_BIN@|$(NODE_BIN)|g" \
+	      deploy/systemd/dev/$$svc.service \
 	    > $${HOME}/.config/systemd/user/$$svc.service; \
 	  echo "  installed: ~/.config/systemd/user/$$svc.service"; \
 	done
+	@echo "  (substituted @REPO_ROOT@=$(PWD)  @NODE_BIN@=$(NODE_BIN))"
 	@systemctl --user daemon-reload
 	@echo ""
 	@echo "Installed. To enable + start one of them:"

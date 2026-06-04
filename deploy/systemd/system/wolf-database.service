@@ -1,0 +1,50 @@
+[Unit]
+Description=Wolf bundled Postgres component
+Documentation=https://github.com/M-s-Tech4TIME/project-wolf/blob/main/docs/decisions/0016-wolf-component-architecture-and-packaging.md
+# Per ADR 0016 v3: fully independent — no After=/Requires=/Wants= between Wolf units.
+# wolf-server has its own DB-reachability retry loop (Phase 5.8-a) so the
+# unordered case isn't a startup failure.
+
+[Service]
+# pg_ctl forks postgres and writes postmaster.pid in the data dir;
+# systemd tracks the actual postgres process via PIDFile.
+Type=forking
+PIDFile=/var/lib/wolf-database/data/postmaster.pid
+
+# Run as the dedicated wolf-database system user. Created by
+# install-users.sh during install; member of the shared `wolf`
+# group so siblings can read the CA cert under /etc/wolf/certs/.
+User=wolf-database
+Group=wolf
+
+# Production env signals to the CLI: data at /var/lib/wolf-database,
+# config at /etc/wolf-database, socket at /var/run/wolf-database.
+Environment=WOLF_DATABASE_PRODUCTION=1
+
+# Shipped CLI shim (Phase 5.8-c).
+ExecStart=/usr/bin/wolf-database start
+ExecStop=/usr/bin/wolf-database stop
+
+Restart=on-failure
+RestartSec=5s
+SuccessExitStatus=143
+
+# systemd-managed runtime dir at /run/wolf-database/ — created 0775
+# wolf-database:wolf on start, removed on stop. No manual mkdir needed.
+RuntimeDirectory=wolf-database
+RuntimeDirectoryMode=0775
+
+# ── Hardening (per ADR 0016 §4) ───────────────────────────────────
+# Read-only system; explicit ReadWritePaths for the two dirs wolf-
+# database actually writes to.
+ProtectSystem=strict
+ReadWritePaths=/var/lib/wolf-database /var/run/wolf-database
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true
+# No capabilities needed; postgres runs unprivileged.
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

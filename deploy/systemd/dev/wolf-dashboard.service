@@ -11,9 +11,12 @@ WorkingDirectory=@REPO_ROOT@/services/dashboard
 
 # Dev mode uses `npm run dev`, which invokes scripts/dev.mjs and
 # picks up the HTTPS + mTLS auto-detect logic from Phase 5.4-d /
-# 5.6-c. The full PATH is needed for `npm` and `node` to resolve.
-Environment=PATH=/usr/bin:/usr/local/bin:/bin
-ExecStart=/usr/bin/npm run dev
+# 5.6-c. The install-user-systemd Makefile target substitutes
+# @NODE_BIN@ with the directory containing the operator's `npm`
+# (typically nvm: `~/.nvm/versions/node/<v>/bin`); we extend PATH
+# so npm + node + npx + every other Node tool resolves cleanly.
+Environment=PATH=@NODE_BIN@:/usr/bin:/usr/local/bin:/bin
+ExecStart=@NODE_BIN@/npm run dev
 
 Restart=on-failure
 RestartSec=5s
