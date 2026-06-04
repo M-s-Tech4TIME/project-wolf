@@ -159,12 +159,23 @@ Three supported paths. All three end in a working `wolf` database
 with the `vector` extension installed; `DATABASE_URL` in `.env` is
 the only contract wolf-server cares about.
 
-#### Path A — wolf-database (recommended, Phase 5.7+)
+#### Path A — wolf-database (Phase 5.7+; recommended once Phase 5.8 ships)
 
 Wolf manages the Postgres lifecycle itself. The OS package manager
 provides the Postgres + pgvector binaries; wolf-database owns the
 config, data dir, socket, and start/stop. This is the path that
 becomes a single `apt install wolf` once Phase 5.9/5.10 lands.
+
+> **Pre-Phase-5.8 caveat:** Phase 5.7 ships the wolf-database CLI
+> but NOT a systemd unit (that's Phase 5.8). So if you disable
+> `postgresql.service` and switch to wolf-database today, **wolf-
+> database will not auto-restart on boot** — you'd have to run
+> `make wolf-database-up` manually after every reboot. For daily
+> dev use, **Path B (system Postgres) is the right choice until
+> Phase 5.8 lands the systemd unit.** Use Path A right now only
+> if you specifically want to validate wolf-database end-to-end
+> (the integration test path), or if you're OK with the manual-
+> restart cost.
 
 ```bash
 # 1. Install the binaries from the official PostgreSQL APT repo
