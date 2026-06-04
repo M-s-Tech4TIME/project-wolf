@@ -271,15 +271,46 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 
 def cmd_reconfigure(args: argparse.Namespace) -> int:
-    """Rewrite postgresql.conf + pg_hba.conf in place. Doesn't restart Postgres."""
+    """Rewrite postgresql.conf + pg_hba.conf in place. Doesn't restart Postgres.
+
+    Port handling: if `--port` is passed explicitly, that wins.
+    Otherwise we read the existing postgresql.conf and preserve
+    whatever port it currently has. This prevents the latent bug
+    where a cluster init'd with `--port 17860` would silently get
+    rewritten to port=5432 on the next reconfigure.
+    """
     layout = resolve_layout(production=args.production)
-    write_config(layout)
+
+    port = args.port
+    if port is None:
+        port = _read_current_port(layout) or DEFAULT_PORT
+
+    write_config(layout, pg_options=PostgresqlConfOptions(port=port))
     print(  # noqa: T201
-        f"✓ config rewritten at {layout.config_dir}\n"
+        f"✓ config rewritten at {layout.config_dir} (port={port})\n"
         "  Restart Postgres to apply: "
         "`wolf-database stop && wolf-database start`",
     )
     return _ExitCode.OK
+
+
+def _read_current_port(layout: object) -> int | None:
+    """Parse the running postgresql.conf for its `port = N` line.
+
+    Returns None if the file doesn't exist or has no port line (so
+    the caller can fall back to a default). Used by `reconfigure`
+    to preserve the operator's port choice across regenerations.
+    """
+    import re  # noqa: PLC0415
+
+    conf_path = layout.postgresql_conf_path  # type: ignore[attr-defined]
+    if not conf_path.is_file():
+        return None
+    for line in conf_path.read_text().splitlines():
+        m = re.match(r"^\s*port\s*=\s*(\d+)", line)
+        if m:
+            return int(m.group(1))
+    return None
 
 
 # ─── argparse dispatch ───────────────────────────────────────────────────
@@ -347,6 +378,17 @@ def _build_parser() -> argparse.ArgumentParser:
     p_reconfigure = sub.add_parser(
         "reconfigure",
         help="Rewrite the config templates from env (doesn't restart Postgres)",
+    )
+    p_reconfigure.add_argument(
+        "--port",
+        type=int,
+        default=None,
+        help=(
+            "TCP port for the cluster. If omitted, preserves whatever port "
+            "the existing postgresql.conf has (or falls back to "
+            f"{DEFAULT_PORT} when there's no existing conf). Explicitly "
+            "passing --port overrides."
+        ),
     )
     p_reconfigure.set_defaults(func=cmd_reconfigure)
 

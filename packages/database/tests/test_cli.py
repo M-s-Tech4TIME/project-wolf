@@ -219,3 +219,56 @@ def test_reconfigure_writes_config_without_starting_postgres(
     # The actual files exist.
     assert (_isolated_layout / "cfg" / "postgresql.conf").exists()
     assert (_isolated_layout / "cfg" / "pg_hba.conf").exists()
+
+
+def test_reconfigure_preserves_existing_port_when_no_flag(
+    _isolated_layout: Path,
+) -> None:
+    """Regression: a cluster init'd with --port 17860 must NOT have its
+    postgresql.conf silently rewritten to port=5432 by a later
+    reconfigure. The reconfigure command reads the existing
+    postgresql.conf and preserves the port unless --port overrides."""
+    # Lay down a pretend "init'd" config with a non-default port.
+    cfg = _isolated_layout / "cfg"
+    cfg.mkdir(parents=True)
+    (cfg / "postgresql.conf").write_text(
+        "data_directory = '/tmp/x'\n"
+        "port = 17860\n"
+        "listen_addresses = 'localhost'\n",
+    )
+
+    rc = main(["reconfigure"])
+    assert rc == _ExitCode.OK
+
+    # The rewritten conf still has port = 17860 (not 5432).
+    new_conf = (cfg / "postgresql.conf").read_text()
+    assert "port = 17860" in new_conf
+    assert "port = 5432" not in new_conf
+
+
+def test_reconfigure_explicit_port_overrides_existing(
+    _isolated_layout: Path,
+) -> None:
+    """Passing --port to reconfigure overrides whatever the existing
+    conf had — operator-driven port change."""
+    cfg = _isolated_layout / "cfg"
+    cfg.mkdir(parents=True)
+    (cfg / "postgresql.conf").write_text("port = 17860\n")
+
+    rc = main(["reconfigure", "--port", "25432"])
+    assert rc == _ExitCode.OK
+
+    new_conf = (cfg / "postgresql.conf").read_text()
+    assert "port = 25432" in new_conf
+    assert "port = 17860" not in new_conf
+
+
+def test_reconfigure_defaults_to_5432_when_no_existing_conf(
+    _isolated_layout: Path,
+) -> None:
+    """First-time reconfigure (no existing postgresql.conf) falls back
+    to the documented default port."""
+    rc = main(["reconfigure"])
+    assert rc == _ExitCode.OK
+    new_conf = (_isolated_layout / "cfg" / "postgresql.conf").read_text()
+    assert "port = 5432" in new_conf
