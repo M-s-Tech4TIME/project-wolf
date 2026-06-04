@@ -31,11 +31,6 @@
 
 set -euo pipefail
 
-if [[ "${EUID}" -ne 0 ]]; then
-    echo "FAIL: install.sh must run as root (sudo)." >&2
-    exit 2
-fi
-
 # Resolve the repo root from this script's location, so the script
 # works whether the operator invokes it from the repo root or via
 # `sudo bash deploy/bin/install.sh` from anywhere.
@@ -45,8 +40,57 @@ LIB_DIRS=("wolf-database" "wolf-server" "wolf-dashboard")
 
 # Where the shims go (operator-facing — these paths show up in
 # systemd unit ExecStart=, in shell completions, in --help text).
-TARGET_BIN_DIR="${TARGET_BIN_DIR:-/usr/bin}"
-TARGET_LIB_DIR="${TARGET_LIB_DIR:-/usr/lib}"
+#
+# Override via CLI args, NOT env vars — `sudo` strips most env by
+# default, which silently nullified env-var overrides in the
+# first cut of this script. CLI args survive sudo.
+TARGET_BIN_DIR="/usr/bin"
+TARGET_LIB_DIR="/usr/lib"
+
+# Parse args BEFORE the root check so `--help` works without sudo
+# (operators should be able to read usage without escalating).
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --bin-dir=*)
+            TARGET_BIN_DIR="${1#--bin-dir=}"
+            shift
+            ;;
+        --lib-dir=*)
+            TARGET_LIB_DIR="${1#--lib-dir=}"
+            shift
+            ;;
+        --help|-h)
+            cat <<USAGE
+install.sh — install Wolf CLI shims to /usr/bin/ + create /usr/lib/wolf-*/.
+
+Usage:
+    sudo bash install.sh [--bin-dir=PATH] [--lib-dir=PATH]
+
+Options:
+    --bin-dir=PATH    Where shims go (default: /usr/bin).
+    --lib-dir=PATH    Where wolf-*/ dirs are created (default: /usr/lib).
+                      Phase 5.9/5.10 .deb post-install populates these.
+
+For testing without touching /usr/, redirect both:
+    mkdir -p /tmp/wolf-smoke/{bin,lib}
+    sudo bash install.sh \\
+        --bin-dir=/tmp/wolf-smoke/bin \\
+        --lib-dir=/tmp/wolf-smoke/lib
+USAGE
+            exit 0
+            ;;
+        *)
+            echo "FAIL: unknown argument: $1" >&2
+            echo "  Run \`bash install.sh --help\` for usage." >&2
+            exit 2
+            ;;
+    esac
+done
+
+if [[ "${EUID}" -ne 0 ]]; then
+    echo "FAIL: install.sh must run as root (sudo)." >&2
+    exit 2
+fi
 
 # ─── Install shims ──────────────────────────────────────────────────────────
 

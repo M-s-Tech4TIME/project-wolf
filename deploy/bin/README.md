@@ -73,6 +73,27 @@ ls -la /usr/bin/wolf-*
 This last step verifies the shim is syntactically valid + on
 PATH + the fail-loud branch fires when the venv doesn't exist.
 
+### Smoke-test against a temp prefix (no /usr/ pollution)
+
+`install.sh` takes `--bin-dir=` and `--lib-dir=` CLI args (NOT
+env vars — `sudo` strips most env by default, which silently
+nullified env-var overrides in the first cut of this script):
+
+```bash
+mkdir -p /tmp/wolf-smoke/{bin,lib}
+sudo bash deploy/bin/install.sh \
+    --bin-dir=/tmp/wolf-smoke/bin \
+    --lib-dir=/tmp/wolf-smoke/lib
+ls -la /tmp/wolf-smoke/bin/ /tmp/wolf-smoke/lib/
+# expect: 4 shims in bin/, 3 empty dirs in lib/
+
+# Verify the fail-loud branch works on the relocated shim:
+/tmp/wolf-smoke/bin/wolf-database --help
+
+# Clean up:
+sudo rm -rf /tmp/wolf-smoke
+```
+
 ## Pair with install-users.sh
 
 `deploy/systemd/system/install-users.sh` (Phase 5.8-b) creates
