@@ -6,7 +6,7 @@
 >
 > For history of what changed when, see `CHANGELOG.md` (append-only).
 
-**Last updated:** 2026-06-04 by claude-code (Phase 5.6 CLOSED; Phase 5.7 next)
+**Last updated:** 2026-06-04 by claude-code (Phase 5.7-a SHIPPED; 5.7-b–d remaining)
 
 ---
 
@@ -19,6 +19,33 @@ the third deployable component; today Postgres is operator-managed
 Wolf-owned data dir at `/var/lib/wolf-database/` with its own
 systemd unit so the all-in-one install story becomes a single
 `apt install wolf` rather than a system-Postgres prerequisite.
+
+* **Slice 5.7-a — wolf-database substrate** — SHIPPED 2026-06-04.
+  New workspace package `packages/database/` with the foundation
+  for everything later in the phase: `DatabaseLayout` (dev path
+  under `<repo>/.local/wolf-database/`, prod path under
+  `/var/lib/wolf-database/` + `/etc/wolf-database/` + `/var/run/
+  wolf-database/`, env-var overrides on every path);
+  `find_postgres_binaries()` for locating system `pg_ctl` /
+  `initdb` / `psql` / `postgres` (Debian + RHEL known paths +
+  PATH fallback + clear "install postgresql-17" error message);
+  `postgres_major_version()` + `verify_postgres_supported()` for
+  the 17+ version gate; `PostgresqlConfOptions` +
+  `PgHbaOptions` for rendering Wolf-owned config templates
+  (pgvector preloaded, loopback-only listen, scram-sha-256 auth);
+  `connection_url()` helper for wolf-server's DATABASE_URL.
+  34 tests; total backend pytest 321 → 355.
+* **Slice 5.7-b — `wolf-database` CLI** — next. `wolf-database
+  init` + `start` / `stop` / `status` / `reconfigure`
+  subcommands, parallel to `wolf-cert`. Operator-facing
+  lifecycle for the all-in-one dev path.
+* **Slice 5.7-c — Dev-workflow integration** — Makefile targets
+  (`make wolf-database-up`), migration story from system
+  Postgres, `.env` defaults pointing at wolf-database's socket.
+* **Slice 5.7-d — Operator docs + verification gate** —
+  ONBOARDING walkthrough for the new dev flow, `restart.md`
+  refresh, smoke test for the full wolf-cert + wolf-database
+  + wolf-server + wolf-dashboard chain.
 
 **Phase 5.6 — Edge-component architecture + mTLS — CLOSED 2026-06-04.**
 Five slices shipped between 2026-06-03 and 2026-06-04 that

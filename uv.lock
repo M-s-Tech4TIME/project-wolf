@@ -11,6 +11,7 @@ resolution-markers = [
 members = [
     "wolf-cert",
     "wolf-common",
+    "wolf-database",
     "wolf-gateway",
     "wolf-schema",
     "wolf-secrets",
@@ -2367,6 +2368,20 @@ requires-dist = [
     { name = "opentelemetry-sdk", specifier = ">=1.26" },
     { name = "structlog", specifier = ">=24.0" },
 ]
+
+[[package]]
+name = "wolf-database"
+version = "0.1.0"
+source = { editable = "packages/database" }
+
+[package.optional-dependencies]
+test = [
+    { name = "pytest" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "pytest", marker = "extra == 'test'", specifier = ">=8.0" }]
+provides-extras = ["test"]
 
 [[package]]
 name = "wolf-gateway"

@@ -1,5 +1,8 @@
 [tool.uv.workspace]
 members = ["packages/*", "services/server", "services/gateway"]
+# `packages/*` already covers `packages/database` (the wolf-database
+# component, Phase 5.7-a) via the glob; new packages drop in here
+# without an explicit add.
 
 [tool.ruff]
 target-version = "py313"
@@ -33,7 +36,7 @@ ignore = [
 # top-level tests/**, ...). The prior `tests/**` glob only matched
 # top-level paths, so nested test suites silently inherited the
 # stricter ruleset.
-"**/tests/**" = ["S", "T20"]
+"**/tests/**" = ["S", "T20", "TC003"]
 "**/migrations/**" = ["N999"]
 # CLI / launcher modules — `print` is the whole point. T20
 # (flake8-print) is the correct rule for application code but

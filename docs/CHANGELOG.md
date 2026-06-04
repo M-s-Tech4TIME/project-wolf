@@ -49,6 +49,147 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-04 — Slice 5.7-a: wolf-database substrate (layout + binary discovery + config templates)
+
+**Session type:** claude-code
+**Phase:** 5.7 — wolf-database extraction (slice a of d)
+**Branch / commit:** main @ (this commit)
+
+### What we did
+Phase 5.7 opens. The first slice ships the wolf-database
+substrate — a new workspace package, `packages/database/`, that
+lays the foundations everything later in the phase builds on. No
+behaviour change yet; `wolf-server` still connects to whatever
+Postgres the operator has running. But every primitive the
+Phase 5.7-b CLI will need now exists with tests behind it.
+
+Architecture decisions (locked via user direction 2026-06-04):
+1. **Use system-installed Postgres binaries with Wolf-controlled
+   config.** Operator still `apt install postgresql-17
+   postgresql-17-pgvector` (same as today per ADR 0008).
+   wolf-database adds its own config templates, data dir,
+   socket dir, dedicated service user. Mirrors how Wazuh's
+   indexer/manager use OpenSearch/Elasticsearch from their own
+   packages but with Wazuh-controlled config + data. Lets the
+   security-update path stay apt/dnf.
+2. **wolf-database has a dev CLI that works without systemd.**
+   Parallel to `wolf-cert`. Dev runs it foreground; production
+   wraps it in a systemd unit. Same data dir + config in both
+   modes.
+3. **Four-slice sequence**: a (scaffolding) → b (CLI) → c (dev
+   workflow) → d (docs). Iterative; each slice has a working
+   integration point.
+
+Files added (new `packages/database/` package):
+* `packages/database/pyproject.toml` — workspace package
+  metadata. No dependencies (the Postgres binaries come from
+  the OS package manager, not pip).
+* `packages/database/wolf_database/__init__.py` — public re-
+  exports.
+* `packages/database/wolf_database/py.typed` — PEP 561 marker
+  so downstream sees the package's types.
+* `packages/database/wolf_database/layout.py` —
+  `DatabaseLayout` dataclass + `resolve_layout()`. Dev paths
+  under `<repo>/.local/wolf-database/{data,config,socket}/`;
+  production paths under `/var/lib/wolf-database/data`,
+  `/etc/wolf-database`, `/var/run/wolf-database`. Every dir
+  overridable via env (`WOLF_DATABASE_DATA_DIR` /
+  `WOLF_DATABASE_CONFIG_DIR` / `WOLF_DATABASE_SOCKET_DIR`).
+  `WOLF_DATABASE_PRODUCTION=1` flips the defaults without
+  needing an explicit kwarg.
+* `packages/database/wolf_database/binaries.py` — locate the
+  four Postgres tools (pg_ctl, initdb, psql, postgres) wolf-
+  database wraps. Search order: env override
+  (`WOLF_DATABASE_<TOOL>`), then distro-known paths
+  (Debian's `/usr/lib/postgresql/17/bin`, RHEL's
+  `/usr/pgsql-17/bin`), then PATH. Raises
+  `PostgresBinaryNotFoundError` with the searched paths in
+  the message — operators see exactly where wolf-database
+  looked and a clear "install postgresql-17" hint.
+  `postgres_major_version()` runs `postgres --version` and
+  parses the output. `verify_postgres_supported()` enforces
+  the 17+ floor (Wolf depends on Postgres 17 features per
+  ADR 0008; running against 15 would silently produce a
+  divergent schema).
+* `packages/database/wolf_database/config.py` —
+  `PostgresqlConfOptions` + `PgHbaOptions` for rendering
+  postgresql.conf + pg_hba.conf bodies. Hard-coded hot wires:
+  `shared_preload_libraries = 'vector'` (pgvector ext can't
+  be CREATE EXTENSIONed without preload), `listen_addresses
+  = localhost` (security default; distributed deploys
+  override), `unix_socket_directories` pointing at the Wolf-
+  owned socket dir (no collision with system Postgres's
+  `/var/run/postgresql`). Default pg_hba is loopback + Unix
+  socket only with scram-sha-256; distributed deploys add a
+  `hostssl` rule via `extra_rules=(...)`. `write_config()`
+  writes both files at mode 0640. `connection_url()` builds
+  the asyncpg URL wolf-server consumes via DATABASE_URL —
+  works in both socket and TCP modes, URL-encodes
+  passwords/socket-paths correctly.
+
+Tests added (34 in three files):
+* `tests/test_layout.py` — 8 tests. DB name + user constants
+  match wolf-server's existing .env; dev layout under .local;
+  production layout under /var/lib (canonical form, since
+  `/var/run` is a symlink to `/run` on Linux); each env var
+  overrides independently; `WOLF_DATABASE_PRODUCTION=1` flips
+  defaults; `DatabaseLayout` is a frozen dataclass; conf
+  paths and PID file paths are inside their respective dirs.
+* `tests/test_binaries.py` — 10 tests. Env override; PATH
+  fallback; missing-tool error; stale-env-override doesn't
+  short-circuit; version parser handles `(PostgreSQL) X.Y`
+  and `(PostgreSQL) X.Y (extra)`; version-gate accepts 17,
+  rejects 15; `find_postgres_binaries()` returns all four.
+  Uses an `autouse` fixture that monkeypatches
+  `_KNOWN_BIN_DIRS` to `()` so the host's real Postgres
+  install (if any) doesn't short-circuit the discovery
+  before the test's PATH fixture takes effect — a real
+  trap caught during the first test run.
+* `tests/test_config.py` — 16 tests. pgvector preload hard
+  requirement; localhost-only default listen; socket dir
+  matches layout; port override; loopback-only default
+  pg_hba (no 0.0.0.0); extra_rules append; local rules
+  omit address; write_config produces 0640 files; creates
+  config dir if missing; is idempotent; connection_url in
+  socket + TCP modes; URL-encoded password; custom DB name.
+
+Workspace wiring:
+* `pyproject.toml` — added a one-line clarification comment
+  under `[tool.uv.workspace]` noting that `packages/*` already
+  covers the new dir via the glob; no member-list edit needed.
+  Added `TC003` to the test per-file-ignores so tests don't
+  need TYPE_CHECKING ceremony for Path imports they use only
+  in annotations.
+* `uv sync --all-packages` picks up the new package; wolf-
+  database 0.1.0 installs as an editable workspace dep.
+
+### Integrity gate (all green)
+* mypy: 0 errors across 7 Python projects (91 source files;
+  was 87 — +4 new files in wolf_database)
+* ruff: clean (after auto-fix of import order)
+* tsc (services/dashboard): 0 errors (untouched)
+* eslint (services/dashboard): clean (untouched)
+* backend pytest: **355 / 355** (was 321; +34 wolf-database
+  tests)
+* live tenant-isolation probe: 6 / 6
+
+### What's next
+**Slice 5.7-b — `wolf-database` CLI.** Parallel to `wolf-cert`'s
+shape: `wolf-database init` runs `initdb`, lays down the
+templates `wolf_database.config` renders, creates the wolf user
++ db, installs pgvector extension. `start` / `stop` / `status`
+wrap `pg_ctl`. `reconfigure` regenerates the config templates
+in place (without re-initdb). All operate on a `DatabaseLayout`
+resolved via the same env-var dance the substrate uses.
+
+### Why this matters
+Phase 5.7 is the architectural move that takes Wolf from "deploys
+on top of a system Postgres" to "ships its own Postgres
+component." The substrate has to be in place before the CLI can
+exist; this slice makes the rest of the phase mechanical.
+
+---
+
 ## 2026-06-04 — Slice 5.6-e: `make smoke-mtls` recurring integrity check + CI job (Phase 5.6 CLOSED)
 
 **Session type:** claude-code
