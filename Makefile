@@ -1,6 +1,8 @@
 .PHONY: up down dev build test test-isolation test-isolation-live test-cov \
         lint typecheck fmt check migrate migrate-local revision probe install \
-        smoke-mtls help
+        smoke-mtls help \
+        wolf-database-init wolf-database-up wolf-database-down \
+        wolf-database-status wolf-database-reconfigure
 
 # Per ADR 0008 (docs/decisions/0008-native-primary-docker-supplementary.md):
 # native delivery is Wolf's PRIMARY channel; Docker is supplementary.
@@ -85,6 +87,29 @@ typecheck: ## Type-check safety-critical packages with mypy (strict)
 
 probe: ## Run the model probe (PROVIDER=ollama MODEL=llama3.2)
 	uv run python -m tools.model_probe --provider $(PROVIDER) --model $(MODEL)
+
+# ─── wolf-database (Phase 5.7) ────────────────────────────────────────────────
+
+# Operator-facing wrappers around the `wolf-database` CLI. Each target
+# is a thin shell around `python -m wolf_database <sub>` so the
+# Makefile is the single source of truth for the dev workflow. Pass
+# args via the MAKEFLAGS `--` separator or via `WOLF_DATABASE_*` env
+# vars per the CLI's own docs.
+
+wolf-database-init: ## wolf-database init — initdb + config + role + db + pgvector (Phase 5.7)
+	uv run --project services/server python -m wolf_database init $(if $(PORT),--port $(PORT))
+
+wolf-database-up: ## wolf-database start — bring the cluster up
+	uv run --project services/server python -m wolf_database start
+
+wolf-database-down: ## wolf-database stop — bring the cluster down (mode=fast)
+	uv run --project services/server python -m wolf_database stop
+
+wolf-database-status: ## wolf-database status — running state + layout summary
+	uv run --project services/server python -m wolf_database status
+
+wolf-database-reconfigure: ## Rewrite wolf-database config from env (operator restarts to apply)
+	uv run --project services/server python -m wolf_database reconfigure
 
 # ─── mTLS smoke (Phase 5.6-e) ─────────────────────────────────────────────────
 

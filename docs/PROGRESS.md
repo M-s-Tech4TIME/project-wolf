@@ -6,7 +6,7 @@
 >
 > For history of what changed when, see `CHANGELOG.md` (append-only).
 
-**Last updated:** 2026-06-04 by claude-code (Phase 5.7-b SHIPPED; 5.7-c–d remaining)
+**Last updated:** 2026-06-04 by claude-code (Phase 5.7-c SHIPPED; 5.7-d remaining)
 
 ---
 
@@ -47,13 +47,25 @@ systemd unit so the all-in-one install story becomes a single
   `apt install postgresql-17-pgvector` hint (real-world
   environmental check, working as designed). 33 new tests
   (process.py + cli.py); total backend pytest 355 → 388.
-* **Slice 5.7-c — Dev-workflow integration** — Makefile targets
-  (`make wolf-database-up`), migration story from system
-  Postgres, `.env` defaults pointing at wolf-database's socket.
-* **Slice 5.7-d — Operator docs + verification gate** —
-  ONBOARDING walkthrough for the new dev flow, `restart.md`
-  refresh, smoke test for the full wolf-cert + wolf-database
-  + wolf-server + wolf-dashboard chain.
+* **Slice 5.7-c — Dev-workflow integration** — SHIPPED
+  2026-06-04. Five Makefile targets (`make wolf-database-init`
+  with optional `PORT=` override, `-up`, `-down`, `-status`,
+  `-reconfigure`). `.env.example` rewritten to document two
+  supported paths (wolf-database recommended; system Postgres
+  still works for operators with existing infra). ONBOARDING
+  §3.4 rewritten as a three-path table (wolf-database / system
+  Postgres / Docker) with the wolf-database path stepped out:
+  install postgresql-17 + postgresql-17-pgvector via apt/dnf,
+  disable the system postgresql.service so it doesn't fight
+  port 5432, then `make wolf-database-init` →
+  `make wolf-database-up`. docs/restart.md's
+  "what restart doesn't touch" table row for Postgres now
+  branches by which path the operator picked.
+* **Slice 5.7-d — Operator docs polish + verification gate** —
+  next. End-to-end smoke (wolf-cert init → wolf-database init →
+  wolf-server starts against wolf-database → dashboard login
+  works) codified as a Makefile target + CI job, closing
+  Phase 5.7.
 
 **Phase 5.6 — Edge-component architecture + mTLS — CLOSED 2026-06-04.**
 Five slices shipped between 2026-06-03 and 2026-06-04 that

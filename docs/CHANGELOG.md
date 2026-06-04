@@ -49,6 +49,88 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-04 — Slice 5.7-c: dev-workflow integration (Makefile + .env.example + ONBOARDING §3.4 rewrite)
+
+**Session type:** claude-code
+**Phase:** 5.7 — wolf-database extraction (slice c of d)
+**Branch / commit:** main @ (this commit)
+
+### What we did
+Operator-facing wiring for the wolf-database CLI built in 5.7-b.
+Same code; same tests. The change is purely the operator's
+day-one experience: Makefile targets so the CLI is invokable
+with one short command, `.env.example` documenting both the
+wolf-database path and the system-Postgres path, and ONBOARDING
+§3.4 rewritten as a three-path comparison with wolf-database
+flagged as the recommended one.
+
+Files changed:
+* **`Makefile`** — five new targets, all thin wrappers around
+  `python -m wolf_database <sub>`:
+    - `make wolf-database-init` (with optional `PORT=` override
+      for hosts where 5432 is taken by a system Postgres)
+    - `make wolf-database-up`
+    - `make wolf-database-down`
+    - `make wolf-database-status`
+    - `make wolf-database-reconfigure`
+  `.PHONY` list updated. Each target has its `## …` help line
+  so `make help` lists all five in the same place as the other
+  ops targets.
+* **`.env.example`** — DATABASE_URL section rewritten to
+  document three paths (wolf-database / system Postgres /
+  SQLite-for-tests). The wolf-database line is the recommended
+  default with a `GENERATED` placeholder reminding the operator
+  to paste the password `wolf-database init` prints. The
+  system-Postgres line (the previous default) is still active —
+  not breaking anyone's current dev setup.
+* **`ONBOARDING.md` §3.4** — full rewrite. Was a single
+  "system Postgres" recipe with a Docker alternative. Now a
+  three-path section:
+    - **Path A — wolf-database (recommended).** Install
+      postgresql-17 + postgresql-17-pgvector via apt/dnf,
+      DISABLE the system postgresql.service so it doesn't
+      fight wolf-database for 5432, then
+      `make wolf-database-init` → `make wolf-database-up`.
+      Data dir under `<repo>/.local/wolf-database/` for dev,
+      `/var/lib/wolf-database/` for prod via
+      `WOLF_DATABASE_PRODUCTION=1`.
+    - **Path B — System Postgres.** The previous recipe
+      verbatim. Operators with existing Postgres infra keep
+      using it.
+    - **Path C — Docker Postgres.** Same as before; per
+      ADR 0008 it's the supplementary channel.
+* **`docs/restart.md`** — the "What the restart does NOT touch"
+  Postgres row now branches: wolf-database operators restart
+  with `make wolf-database-down && make wolf-database-up`;
+  system-Postgres operators stay on `sudo systemctl restart
+  postgresql`.
+
+### Live verification
+* `make help` shows all five new targets with their help text.
+* `make wolf-database-status` (against a host that has no
+  `.local/wolf-database/` yet) correctly reports
+  "DATA DIR MISSING — run `wolf-database init`." The
+  Makefile target dispatches cleanly to the CLI.
+
+### Integrity gate (all green)
+* mypy: 0 errors across 7 Python projects (94 source files)
+* ruff: clean
+* tsc (services/dashboard): 0 errors (untouched)
+* eslint (services/dashboard): clean (untouched)
+* backend pytest: 388 / 388 (unchanged — this slice is docs +
+  Makefile only)
+* live tenant-isolation probe: 6 / 6
+* live `make wolf-database-status`: dispatches correctly
+
+### What's next
+**Slice 5.7-d — End-to-end smoke + Phase 5.7 close-out.**
+Codify the full operator chain (wolf-cert init → wolf-database
+init → wolf-server starts against wolf-database → dashboard
+login works) as a `make smoke-stack` target + CI job. Closes
+Phase 5.7.
+
+---
+
 ## 2026-06-04 — Slice 5.7-b: wolf-database CLI (init/start/stop/status/reconfigure)
 
 **Session type:** claude-code

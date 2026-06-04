@@ -155,28 +155,76 @@ cd ..
 
 ### 3.4 Install and start Postgres 17 + pgvector
 
-**Recommended path — system Postgres** (matches the production install
-per [ADR 0008](docs/decisions/0008-native-primary-docker-supplementary.md)):
+Three supported paths. All three end in a working `wolf` database
+with the `vector` extension installed; `DATABASE_URL` in `.env` is
+the only contract wolf-server cares about.
 
-On Ubuntu 24.04 / Debian 12 (adapt for other distros):
+#### Path A — wolf-database (recommended, Phase 5.7+)
+
+Wolf manages the Postgres lifecycle itself. The OS package manager
+provides the Postgres + pgvector binaries; wolf-database owns the
+config, data dir, socket, and start/stop. This is the path that
+becomes a single `apt install wolf` once Phase 5.9/5.10 lands.
 
 ```bash
-# Add the official PostgreSQL APT repo (Ubuntu ships 16, not 17)
+# 1. Install the binaries from the official PostgreSQL APT repo
+#    (Ubuntu ships 16, not 17).
 sudo install -d /usr/share/postgresql-common/pgdg
 sudo curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
     -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
 echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] \
     https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | \
     sudo tee /etc/apt/sources.list.d/pgdg.list
-
-# Install Postgres 17 + pgvector
 sudo apt update
 sudo apt install -y postgresql-17 postgresql-17-pgvector
 
-# Service starts automatically; verify it's up
-sudo systemctl status postgresql
+# 2. (One-time) STOP and DISABLE the system Postgres unit so it
+#    doesn't fight wolf-database for port 5432. Debian/Ubuntu's
+#    postgresql.service auto-starts at install; we want Wolf to
+#    own the cluster.
+sudo systemctl stop postgresql
+sudo systemctl disable postgresql
 
-# Create the wolf role and DB
+# 3. Run wolf-database init — one-shot setup. Lays down a fresh
+#    cluster under <repo>/.local/wolf-database/ (dev), creates the
+#    wolf role + db, installs pgvector, prints a DATABASE_URL.
+make wolf-database-init
+
+# 4. Copy the printed DATABASE_URL line into your .env (replaces
+#    the GENERATED placeholder).
+
+# 5. Bring it up:
+make wolf-database-up
+
+# Lifecycle from here on:
+make wolf-database-status     # is it running?
+make wolf-database-down       # stop
+make wolf-database-up         # start again
+```
+
+The data dir lives under `<repo>/.local/wolf-database/data/` for
+dev. Production deploys use FHS paths
+(`/var/lib/wolf-database/data` etc) via
+`WOLF_DATABASE_PRODUCTION=1` or explicit env-var overrides
+(`WOLF_DATABASE_DATA_DIR=...`).
+
+On RHEL/Fedora replace `apt install postgresql-17
+postgresql-17-pgvector` with `dnf install postgresql17 pgvector_17`
+from the PostgreSQL YUM repo; everything after step 1 is
+distro-independent (wolf-database wraps the binaries, not the
+distro's lifecycle).
+
+#### Path B — System Postgres (pre-5.7 path, still supported)
+
+Operators with existing Postgres infrastructure, or anyone who
+prefers their OS distro's systemd-managed cluster, can keep using
+it. Wolf-server connects via DATABASE_URL exactly the same way.
+
+```bash
+# Same install as Path A step 1 (postgresql-17 +
+# postgresql-17-pgvector). DON'T disable postgresql.service.
+
+# Create the wolf role and DB by hand
 sudo -u postgres psql <<EOF
 CREATE ROLE wolf WITH LOGIN PASSWORD 'wolf_dev_password';
 CREATE DATABASE wolf OWNER wolf;
@@ -185,26 +233,23 @@ CREATE EXTENSION IF NOT EXISTS vector;
 EOF
 ```
 
-On RHEL 9 / Rocky 9, replace `apt` with `dnf` and use the
-[PostgreSQL YUM repository](https://www.postgresql.org/download/linux/redhat/)
-instead of the APT one. The package names and `psql` bootstrap commands
-are the same.
+The `DATABASE_URL` default in [`.env.example`](.env.example) covers
+this exact case (`wolf:wolf_dev_password@localhost:5432/wolf`) —
+no edit needed.
 
-The `DATABASE_URL` default in [`.env.example`](.env.example) already
-points at `postgresql+asyncpg://wolf:wolf_dev_password@localhost:5432/wolf`
-— no change needed for the system-Postgres path.
+#### Path C — Docker Postgres (alternative, per ADR 0008)
 
-**Alternative path — Docker Postgres:** If you prefer Docker (macOS
-contributors, anyone running multiple Postgres-using projects, anyone
-wanting fast reset via `docker compose down -v`):
+Useful for macOS contributors, anyone running multiple
+Postgres-using projects, anyone wanting fast reset via
+`docker compose down -v`:
 
 ```bash
 docker compose up -d postgres
 ```
 
-Same `DATABASE_URL` works because the compose file binds Postgres to
-`localhost:5432`. The codebase doesn't care which path you choose;
-`DATABASE_URL` is the only contract.
+Same `DATABASE_URL` works because the compose file binds Postgres
+to `localhost:5432`. The codebase doesn't care which path you
+choose; `DATABASE_URL` is the only contract.
 
 ### 3.5 Generate dev secrets
 
