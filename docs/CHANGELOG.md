@@ -49,6 +49,158 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-04 — Slice 5.8-d: ONBOARDING Path A rewrite + `make smoke-systemd` + CI (Phase 5.8 CLOSED)
+
+**Session type:** claude-code
+**Phase:** 5.8 — systemd units + FHS install paths — **CLOSED**
+**Branch / commit:** main @ (this commit)
+
+### What we did
+Phase 5.8 close-out. Three pieces:
+
+1. **ONBOARDING §3.4 Path A rewrite.** The section previously
+   had a "pre-Phase-5.8 caveat" callout saying Path A required
+   manual `make wolf-database-up` after every reboot (because no
+   systemd unit). Phase 5.8-a + 5.8-b made that obsolete: both
+   user-level (`make install-user-systemd`) and system-level
+   (`install-users.sh` + `install.sh`) workflows now exist with
+   proper auto-restart. The caveat is gone; Path A is now the
+   recommended workflow. Path B (system Postgres) demoted to
+   "still supported as a fallback for operators with existing
+   infrastructure or who don't want to introduce a new systemd
+   unit."
+
+   New Path A subsections:
+   * **Dev — user-level systemd**: install Postgres binaries
+     → stop+disable system postgresql → `make wolf-database-init`
+     → paste DATABASE_URL → `make install-user-systemd` →
+     `systemctl --user enable --now wolf-database` →
+     `loginctl enable-linger $USER` for headless boxes.
+   * **Production — system-level systemd**: same binary install
+     → `install-users.sh` → `install.sh` → copy unit files →
+     `sudo -u wolf-database wolf-database init` → paste
+     DATABASE_URL into `/etc/wolf-server/env` →
+     `systemctl enable --now wolf-database wolf-server wolf-dashboard`.
+
+2. **`make smoke-systemd` Makefile target.** Five-check sequence:
+   * install-user-systemd materialises the three dev unit
+     templates into `~/.config/systemd/user/` with the
+     `@REPO_ROOT@` + `@NODE_BIN@` substitutions resolved.
+   * `systemd-analyze verify --user` passes on each installed
+     dev unit (catches typos in directives, bad post-substitution
+     paths).
+   * `systemd-analyze verify` passes on each system-level unit
+     template (filtering the expected `/usr/bin/wolf-* is not
+     executable` complaints — those go away once Phase 5.9/5.10
+     ships the .deb).
+   * Every shim in `deploy/bin/` exits 2 with a "FAIL:" prefix
+     when its production venv is missing (the pre-5.9 state,
+     which is also CI's state).
+   * `install.sh --help` works without sudo.
+
+   Catches regressions across the systemd + shim surface that
+   the unit tests can't reach (no real systemd in pytest;
+   shell-level fail-loud behaviour is shell-shaped, not Python-
+   shaped). Found one real bug during authoring: bare
+   `out=$(shim --help)` plus `set -e` doesn't survive the shim's
+   exit 2; the script aborts before `rc=$?` runs. Fixed with
+   explicit `set +e` around the capture.
+
+3. **CI smoke-systemd job.** Parallel to `smoke-mtls` (5.6-e)
+   and `smoke-database` (5.7-d). Runs on every PR. No real
+   services start; purely syntactic + presence-of-fail-loud
+   validation. GHA ubuntu-latest has systemd + node preinstalled
+   so the smoke runs in <10 seconds with no extra setup.
+
+Live verification on the dev host
+---------------------------------
+```
+$ make smoke-systemd
+=== smoke-systemd: 5-check sequence ===
+--- 1/5: install-user-systemd installs all three units ---
+    OK: all three units present in ~/.config/systemd/user/
+--- 2/5: systemd-analyze --user passes on installed dev units ---
+    OK: all three installed user units are clean
+--- 3/5: systemd-analyze passes on system-level unit templates ---
+    (filtering expected "/usr/bin/wolf-* is not executable"; that lands with the .deb)
+    OK: all three system unit templates have clean directives
+--- 4/5: every shim fails loud with exit 2 when its venv is missing ---
+    OK: all four shims fail-loud as designed
+--- 5/5: install.sh --help works without sudo ---
+    OK: install.sh --help reachable without root
+
+=== smoke-systemd: PASS ===
+```
+
+### Phase 5.8 — CLOSED
+
+Four slices over a few hours:
+
+| Slice | Commit(s) | Key deliverables |
+|---|---|---|
+| 5.8-a | `90a56b6` | User-level systemd unit templates + `make install-user-systemd`. `_wait_for_database()` retry loop in wolf-server's lifespan (no After= coupling needed). +4 retry-loop tests. |
+| 5.8-b | `da542db` | System-level unit templates with per-component users + hardening directives. `install-users.sh` creates users + group + FHS dirs. Fixed the hardcoded `/usr/bin/npm` bug in the dev wolf-dashboard unit (caught by systemd-analyze). |
+| 5.8-c | `bb4f128` + `b4beee9` + `8e01813` | `/usr/bin/wolf-*` shipped CLI shims (wolf-cert, wolf-database, wolf-server, wolf-dashboard). `install.sh` drops them into /usr/bin/ + creates /usr/lib/wolf-*/ empty dirs. CLI-args migration (sudo strips env) + footer-message polish (reflects --bin-dir / --lib-dir overrides). |
+| 5.8-d | this commit | ONBOARDING §3.4 Path A rewrite (production-recommended); `make smoke-systemd` Makefile target; CI smoke-systemd job. Phase close-out. |
+
+End-state of Phase 5.8:
+
+* Three Wolf components have both dev + prod systemd units;
+  per ADR 0016 v3 they're fully independent (no After=/Requires=/
+  Wants= between Wolf services).
+* wolf-server gracefully handles wolf-database not being ready
+  via app-level retry (`_wait_for_database()` with backoff
+  cycle). Same code works for all-in-one + distributed deploys.
+* `/usr/bin/wolf-*` shims point at `/usr/lib/wolf-*/.venv/`.
+  Until 5.9 / 5.10 ship the .deb, each shim fails-loud with a
+  clear install hint + dev-workspace fallback.
+* Two idempotent root scripts (`install-users.sh` +
+  `install.sh`) prepare a host for production systemd.
+  Disjoint paths — order doesn't matter.
+* Three pre-push smokes: `make smoke-mtls` (5.6-e),
+  `make smoke-database` (5.7-d), `make smoke-systemd` (5.8-d).
+  CI runs all three on every PR.
+
+Integrity gate (whole-phase, all green)
+---------------------------------------
+* mypy: 0 errors across 7 Python projects (94 source files;
+  +0 vs Phase 5.7 close — 5.8 is shell + docs + systemd)
+* ruff: clean
+* tsc + eslint (services/dashboard): untouched, both clean
+* backend pytest: 397 / 397 (was 393 at Phase 5.7 close; +4
+  retry-loop tests in 5.8-a)
+* live tenant-isolation probe: 6 / 6
+* All three pre-push smokes pass live + in CI: `smoke-mtls`,
+  `smoke-database`, `smoke-systemd`
+
+### What's left for the official-release phase
+**Phase 5.9 — APT packaging.** `.deb` post-install hook invokes
+`install-users.sh` + `install.sh` + creates the
+`/usr/lib/wolf-*/.venv/` directories via Python venv + pip +
+runs `npm run build` for wolf-dashboard's Next.js standalone.
+After 5.9, the operator command is `apt install wolf` and
+nothing else.
+
+**Phase 5.10 — DNF packaging.** RPM equivalent. Same install-
+time work, different packaging tooling.
+
+Both deferred to the official-release phase per the 2026-06-03
+operator direction.
+
+### What's next today
+Nothing in this phase. The next phase to open is one of:
+* Phase 5.5's deferred planning-bundle doc sweep (descriptive
+  specs in docs/00–16 still reference pre-rename component
+  names from before Phase 5.5).
+* Phase 6 (approval gateway + wolf-gateway service).
+* Phase 5.9 / 5.10 packaging, if the operator chooses to open
+  it earlier than the official-release phase originally
+  scoped.
+
+Operator's call.
+
+---
+
 ## 2026-06-04 — Slice 5.8-a: user-level systemd units + wolf-server DB-retry loop
 
 **Session type:** claude-code

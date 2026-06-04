@@ -6,20 +6,101 @@
 >
 > For history of what changed when, see `CHANGELOG.md` (append-only).
 
-**Last updated:** 2026-06-04 by claude-code (Phase 5.8-a SHIPPED; 5.8-b–d remaining)
+**Last updated:** 2026-06-04 by claude-code (Phase 5.8 CLOSED; Phase 5.9/5.10 deferred to official-release phase)
 
 ---
 
 ## 1. Where we are right now
 
-**Current phase:** Phase 5.8 — systemd units + `/bin` layout + FHS
-install paths. Per ADR 0016, this is the slice that turns the
-three Wolf-* components into proper daemonised services with
-unit files at `/lib/systemd/system/`, packaged CLIs under
-`/usr/bin/`, and config + data under their FHS-canonical
-locations. Sets up the substrate that Phase 5.9 / 5.10 (APT /
-DNF packaging — still deferred per the 2026-06-03 operator
-direction) builds on.
+**Current phase:** No active phase — Phase 5.8 CLOSED 2026-06-04.
+Phase 5.9 (APT packaging) and Phase 5.10 (DNF packaging) remain
+deferred to the official-release phase per the 2026-06-03
+operator direction. Everything from "you have a working dev box"
+to "Wolf runs as proper daemonised services with hardening" is
+complete.
+
+**Phase 5.8 — systemd units + `/bin` layout + FHS install paths —
+CLOSED 2026-06-04.** Four slices shipped over a few hours that
+together turn Wolf from "deploys on a dev shell" to "deploys as
+daemonised services":
+
+* **5.8-a** (`90a56b6`) — User-level systemd unit templates at
+  `deploy/systemd/dev/`. `make install-user-systemd`
+  substitutes `@REPO_ROOT@` + `@NODE_BIN@` at install time and
+  drops them into `~/.config/systemd/user/`. Per ADR 0016 v3,
+  no `After=` / `Requires=` / `Wants=` between Wolf units —
+  fully independent. wolf-server got a `_wait_for_database()`
+  retry loop in its lifespan hook (backoff cycle, 120s
+  timeout) so a fresh boot where wolf-database is still
+  coming up doesn't crash startup. +4 retry-loop tests
+  (393 → 397).
+* **5.8-b** (`da542db`) — System-level units at
+  `deploy/systemd/system/` with per-component service users
+  (wolf-database, wolf-server, wolf-dashboard, wolf-gateway —
+  all in a shared `wolf` group, all `nologin`). Hardening:
+  `ProtectSystem=strict`, `ProtectHome=true`, `PrivateTmp=true`,
+  `NoNewPrivileges=true`, empty `CapabilityBoundingSet`,
+  restricted `AddressFamilies`. `install-users.sh` idempotently
+  creates the users, group, and FHS data + config dirs.
+  Also caught + fixed a real bug in 5.8-a: hardcoded
+  `/usr/bin/npm` in the dev wolf-dashboard unit broke nvm boxes;
+  now uses `@NODE_BIN@` substitution.
+* **5.8-c** (`bb4f128` + `b4beee9` + `8e01813`) — Shipped CLI
+  shims at `deploy/bin/` (`wolf-cert`, `wolf-database`,
+  `wolf-server`, `wolf-dashboard`). Each is a thin shell
+  wrapper that execs the venv's CLI or fails loud with a
+  helpful install hint when the venv is missing (exit 2 +
+  named install path). `install.sh` drops the shims into
+  `/usr/bin/` + creates the empty `/usr/lib/wolf-*/` dirs the
+  .deb post-install will populate. Initial version had a
+  `sudo`-strips-env footgun; CLI args (`--bin-dir=`,
+  `--lib-dir=`) replaced env vars. Footer message also got the
+  dynamic-path-reflection polish.
+* **5.8-d** (`<this commit>`) — Phase close-out. ONBOARDING
+  §3.4 Path A rewritten as the production-recommended path
+  (was previously caveat-gated as "wait for Phase 5.8");
+  Path B (system Postgres) demoted to fallback. New
+  `make smoke-systemd` Makefile target validates the full
+  Phase 5.8 surface in 5 checks: install-user-systemd
+  materialises the templates, systemd-analyze --user passes
+  on the installed dev units, systemd-analyze passes on the
+  system-level unit templates (with expected `/usr/bin/wolf-*
+  is not executable` complaints filtered — they land with
+  5.9/5.10's .deb), every shim fails-loud with exit 2 when
+  its venv is missing, install.sh --help works without sudo.
+  New CI job `smoke-systemd`.
+
+Phase 5.8 closeout state:
+
+* Three Wolf components have both user-level (dev) and
+  system-level (prod) systemd units that auto-restart on
+  reboot. Per ADR 0016 v3 they're fully independent.
+* wolf-server gracefully handles wolf-database not being
+  ready at startup via app-level retry — no `After=` coupling.
+* `/usr/bin/wolf-*` shims point at `/usr/lib/wolf-*/.venv/`
+  where the .deb will install the production venvs. Until
+  the .deb ships, each shim fails-loud with a clear install
+  hint + dev-workspace fallback.
+* `install-users.sh` (5.8-b) + `install.sh` (5.8-c) are the
+  two idempotent root scripts that prepare a host for the
+  systemd units. They touch disjoint paths so order doesn't
+  matter.
+* Three pre-push smokes (`smoke-mtls`, `smoke-database`,
+  `smoke-systemd`); all three run on every CI PR.
+* Backend pytest 393 → 397 (+4 retry-loop tests in 5.8-a).
+* mypy / ruff / tsc / eslint all clean (94 Python source files).
+* Operator-facing docs (ONBOARDING §3.4) now describes the
+  production-recommended path end-to-end.
+
+What's left for the official-release phase:
+
+* **Phase 5.9** — APT packaging. `.deb` post-install hook
+  invokes install-users.sh + install.sh + creates the
+  /usr/lib/wolf-*/.venv/ via Python venv + pip + npm run
+  build for the Next.js standalone. After 5.9, the operator
+  command is `apt install wolf` + nothing else.
+* **Phase 5.10** — DNF packaging. RPM equivalent. Same
+  install-time work, different packaging tooling.
 
 * **Slice 5.8-a — User-level systemd units + DB-retry loop** —
   SHIPPED 2026-06-04. Three user-level unit templates at

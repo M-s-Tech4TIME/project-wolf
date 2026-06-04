@@ -210,6 +210,29 @@ jobs:
           echo "=== /tmp/wolf-server.log ==="
           cat /tmp/wolf-server.log || true
 
+# Phase 5.8-d: validation gate for the systemd unit files + shim
+  # scripts + install.sh. No real services start; this is purely
+  # syntactic + presence-of-fail-loud-branches validation. Catches
+  # regressions in unit-file syntax, shim shell logic, and the
+  # install.sh CLI surface.
+  smoke-systemd:
+    name: systemd + shims smoke (Phase 5.8-d)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+      - name: Install dependencies (for the workspace + npm path)
+        # `make install-user-systemd` needs `npm` on PATH to
+        # substitute @NODE_BIN@. GHA ubuntu-latest preinstalls
+        # node + npm; this step's `command -v npm` smoke confirms.
+        run: |
+          uv sync --all-packages
+          command -v npm
+      - name: Run smoke-systemd
+        run: make smoke-systemd
+
   # Phase 5.7-d: end-to-end smoke for wolf-database (the bundled
   # Postgres component). Installs postgresql-17 + postgresql-17-pgvector
   # via apt, then runs `make smoke-database` which exercises the full

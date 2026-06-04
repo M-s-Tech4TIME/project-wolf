@@ -1,6 +1,6 @@
 .PHONY: up down dev build test test-isolation test-isolation-live test-cov \
         lint typecheck fmt check migrate migrate-local revision probe install \
-        smoke-mtls smoke-database install-user-systemd help \
+        smoke-mtls smoke-database smoke-systemd install-user-systemd help \
         wolf-database-init wolf-database-up wolf-database-down \
         wolf-database-status wolf-database-reconfigure
 
@@ -150,6 +150,90 @@ wolf-database-status: ## wolf-database status — running state + layout summary
 
 wolf-database-reconfigure: ## Rewrite wolf-database config from env (operator restarts to apply)
 	uv run --project services/server python -m wolf_database reconfigure
+
+# ─── systemd smoke (Phase 5.8-d) ─────────────────────────────────────────────
+
+# End-to-end validation of Phase 5.8's systemd + shim artifacts.
+# Catches regressions in unit syntax + shim correctness without
+# actually starting any service. Five checks:
+#
+#   1. `make install-user-systemd` materialises the templates
+#      with the right substitutions (@REPO_ROOT@, @NODE_BIN@).
+#   2. systemd-analyze verifies each installed user-level unit
+#      (catches typos in directives, bad paths post-substitution).
+#   3. systemd-analyze verifies each system-level unit template
+#      (the only expected complaints are about /usr/bin/wolf-*
+#      not being executable until Phase 5.9/5.10 ships the .deb).
+#   4. Every shim in deploy/bin/ fires its fail-loud branch with
+#      exit 2 when the production venv is missing (the pre-5.9
+#      state, which is always the state in CI).
+#   5. install.sh --help works without sudo.
+#
+# Use before every Phase 5.8 push to catch regressions in
+# systemd + packaging plumbing. CI runs the same target on PRs.
+smoke-systemd: ## End-to-end systemd + shim smoke (Phase 5.8-d)
+	@bash -c '\
+		set -eu; \
+		\
+		echo "=== smoke-systemd: 5-check sequence ==="; \
+		\
+		echo "--- 1/5: install-user-systemd installs all three units ---"; \
+		make install-user-systemd > /tmp/smoke-systemd-install.log 2>&1 || \
+		  { echo "FAIL: install-user-systemd errored"; cat /tmp/smoke-systemd-install.log; exit 1; }; \
+		for svc in wolf-database wolf-server wolf-dashboard; do \
+		  [ -f $${HOME}/.config/systemd/user/$$svc.service ] || \
+		    { echo "FAIL: $$svc.service not installed"; exit 1; }; \
+		done; \
+		echo "    OK: all three units present in ~/.config/systemd/user/"; \
+		\
+		echo "--- 2/5: systemd-analyze --user passes on installed dev units ---"; \
+		for svc in wolf-database wolf-server wolf-dashboard; do \
+		  out=$$(systemd-analyze verify --user --man=no \
+		    $${HOME}/.config/systemd/user/$$svc.service 2>&1 || true); \
+		  if [ -n "$$out" ]; then \
+		    echo "FAIL: ~/.config/systemd/user/$$svc.service has issues:"; \
+		    echo "$$out"; exit 1; \
+		  fi; \
+		done; \
+		echo "    OK: all three installed user units are clean"; \
+		\
+		echo "--- 3/5: systemd-analyze passes on system-level unit templates ---"; \
+		echo "    (filtering expected \"/usr/bin/wolf-* is not executable\"; that lands with the .deb)"; \
+		for u in deploy/systemd/system/wolf-database.service \
+		         deploy/systemd/system/wolf-server.service \
+		         deploy/systemd/system/wolf-dashboard.service; do \
+		  out=$$(systemd-analyze verify --man=no "$$u" 2>&1 | \
+		    grep -v "is not executable" || true); \
+		  if [ -n "$$out" ]; then \
+		    echo "FAIL: $$u has unexpected issues:"; \
+		    echo "$$out"; exit 1; \
+		  fi; \
+		done; \
+		echo "    OK: all three system unit templates have clean directives"; \
+		\
+		echo "--- 4/5: every shim fails loud with exit 2 when its venv is missing ---"; \
+		for shim in deploy/bin/wolf-cert deploy/bin/wolf-database \
+		            deploy/bin/wolf-server deploy/bin/wolf-dashboard; do \
+		  set +e; \
+		  out=$$("$$shim" --help 2>&1); rc=$$?; \
+		  set -e; \
+		  if [ "$$rc" -ne 2 ]; then \
+		    echo "FAIL: $$shim exited $$rc, expected 2"; \
+		    echo "$$out"; exit 1; \
+		  fi; \
+		  echo "$$out" | grep -q "FAIL:" || \
+		    { echo "FAIL: $$shim did not print FAIL: prefix"; exit 1; }; \
+		done; \
+		echo "    OK: all four shims fail-loud as designed"; \
+		\
+		echo "--- 5/5: install.sh --help works without sudo ---"; \
+		bash deploy/bin/install.sh --help > /dev/null 2>&1 || \
+		  { echo "FAIL: install.sh --help failed"; exit 1; }; \
+		echo "    OK: install.sh --help reachable without root"; \
+		\
+		echo ""; \
+		echo "=== smoke-systemd: PASS ==="; \
+	'
 
 # ─── wolf-database smoke (Phase 5.7-d) ────────────────────────────────────────
 

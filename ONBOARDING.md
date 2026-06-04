@@ -159,25 +159,21 @@ Three supported paths. All three end in a working `wolf` database
 with the `vector` extension installed; `DATABASE_URL` in `.env` is
 the only contract wolf-server cares about.
 
-#### Path A — wolf-database (Phase 5.7+; recommended once Phase 5.8 ships)
+#### Path A — wolf-database (recommended)
 
 Wolf manages the Postgres lifecycle itself. The OS package manager
 provides the Postgres + pgvector binaries; wolf-database owns the
-config, data dir, socket, and start/stop. This is the path that
-becomes a single `apt install wolf` once Phase 5.9/5.10 lands.
+config, data dir, socket, and start/stop. The chain wolf-cert →
+wolf-database → wolf-server has been verified end-to-end as of
+Phase 5.7-d's integration test. Phase 5.8 added systemd units so
+the cluster auto-restarts on boot, closing the last UX gap
+between Path A and "just works."
 
-> **Phase 5.8-a update:** user-level systemd units now exist at
-> `deploy/systemd/dev/`. Install them with `make install-user-systemd`
-> and `systemctl --user enable --now wolf-database` to auto-restart
-> wolf-database across reboots (after `loginctl enable-linger $USER`
-> for headless boxes). System-level units with proper service users
-> + FHS paths land in Phase 5.8-b — that's still the "production"
-> path. Path B (system Postgres) remains a fine choice for daily
-> dev if you'd rather not invite a new systemd unit yet.
+##### Dev — user-level systemd (no root needed for daily ops)
 
 ```bash
-# 1. Install the binaries from the official PostgreSQL APT repo
-#    (Ubuntu ships 16, not 17).
+# 1. Install the Postgres binaries from the official PostgreSQL
+#    APT repo (Ubuntu ships 16, not 17).
 sudo install -d /usr/share/postgresql-common/pgdg
 sudo curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
     -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
@@ -194,40 +190,89 @@ sudo apt install -y postgresql-17 postgresql-17-pgvector
 sudo systemctl stop postgresql
 sudo systemctl disable postgresql
 
-# 3. Run wolf-database init — one-shot setup. Lays down a fresh
-#    cluster under <repo>/.local/wolf-database/ (dev), creates the
-#    wolf role + db, installs pgvector, prints a DATABASE_URL.
+# 3. Initialize the wolf-database cluster — one-shot setup. Lays
+#    down a fresh cluster under <repo>/.local/wolf-database/,
+#    creates the wolf role + db, installs pgvector, prints a
+#    DATABASE_URL. Use --port 17860 if you want to keep the system
+#    Postgres available on 5432 (don't disable it in step 2).
 make wolf-database-init
 
 # 4. Copy the printed DATABASE_URL line into your .env (replaces
-#    the GENERATED placeholder).
+#    the GENERATED placeholder in .env.example).
 
-# 5. Bring it up:
-make wolf-database-up
+# 5. Install + enable the user-level systemd unit. After this,
+#    wolf-database auto-starts whenever your user session does.
+make install-user-systemd
+systemctl --user enable --now wolf-database
+
+# 6. For headless boxes — keep the user session alive across
+#    logout / SSH disconnect, so wolf-database keeps running:
+loginctl enable-linger $USER
 
 # Lifecycle from here on:
-make wolf-database-status     # is it running?
-make wolf-database-down       # stop
-make wolf-database-up         # start again
+systemctl --user status wolf-database      # is it running?
+systemctl --user stop wolf-database        # stop
+systemctl --user start wolf-database       # start
+journalctl --user -u wolf-database --follow  # live log
 ```
-
-The data dir lives under `<repo>/.local/wolf-database/data/` for
-dev. Production deploys use FHS paths
-(`/var/lib/wolf-database/data` etc) via
-`WOLF_DATABASE_PRODUCTION=1` or explicit env-var overrides
-(`WOLF_DATABASE_DATA_DIR=...`).
 
 On RHEL/Fedora replace `apt install postgresql-17
 postgresql-17-pgvector` with `dnf install postgresql17 pgvector_17`
 from the PostgreSQL YUM repo; everything after step 1 is
-distro-independent (wolf-database wraps the binaries, not the
-distro's lifecycle).
+distro-independent.
 
-#### Path B — System Postgres (pre-5.7 path, still supported)
+##### Production — system-level systemd (root install)
 
-Operators with existing Postgres infrastructure, or anyone who
-prefers their OS distro's systemd-managed cluster, can keep using
-it. Wolf-server connects via DATABASE_URL exactly the same way.
+When you're ready to deploy wolf-database on a real server (vs
+your dev box), the production parity path is:
+
+```bash
+# 1. Same binary install as step 1 above (postgresql-17 +
+#    postgresql-17-pgvector). Then stop + disable system Postgres
+#    as in step 2.
+
+# 2. Create system users + group + FHS dirs. Idempotent.
+sudo bash deploy/systemd/system/install-users.sh
+
+# 3. Install the shipped CLI shims + /usr/lib/wolf-*/ dirs.
+sudo bash deploy/bin/install.sh
+
+# 4. Drop the system-level unit files into place.
+sudo cp deploy/systemd/system/wolf-*.service /lib/systemd/system/
+sudo systemctl daemon-reload
+
+# 5. Initialize wolf-database as the dedicated wolf-database user.
+sudo -u wolf-database \
+    WOLF_DATABASE_PRODUCTION=1 \
+    /usr/bin/wolf-database init
+
+# 6. Capture the printed DATABASE_URL from step 5; paste it into
+#    /etc/wolf-server/env (mode 0640 wolf-server:wolf).
+
+# 7. Enable + start all three services.
+sudo systemctl enable --now wolf-database wolf-server wolf-dashboard
+```
+
+After step 7, journald captures all three components' output —
+`journalctl -u wolf-database -f` etc. for live tailing. Auto-
+restart on reboot is automatic via systemd. Phase 5.9 / 5.10 will
+wrap steps 2-7 in a `.deb` / `.rpm` post-install hook so the
+operator command becomes `apt install wolf` and nothing else.
+
+The data dir lives under `/var/lib/wolf-database/data/` in
+production (vs `<repo>/.local/...` in dev). All FHS paths
+(`/var/lib/wolf-*/` data, `/etc/wolf-*/` config, `/var/run/wolf-*/`
+sockets) follow the Wolf-owned + group-readable pattern from
+ADR 0016.
+
+#### Path B — System Postgres (still supported as a fallback)
+
+Operators with existing Postgres infrastructure, or who'd rather
+not introduce a new systemd unit on their dev box, can keep using
+the distro's systemd-managed cluster. Wolf-server connects via
+DATABASE_URL exactly the same way. Path A is the recommended
+approach for new installs; Path B is here so existing setups
+keep working.
 
 ```bash
 # Same install as Path A step 1 (postgresql-17 +
