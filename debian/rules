@@ -28,10 +28,23 @@
 #   to debian/wolf-dashboard/usr/lib/wolf-dashboard/.
 
 override_dh_auto_build:
-	# 5.9-a placeholder. Slices 5.9-b/c/d will add per-component
-	# build logic here. For now, dh's default behaviour is fine
-	# (it's a no-op when there's nothing to do).
-	@echo "wolf packaging build: 5.9-a scaffold (per-component logic lands in 5.9-b/c/d)"
+	# Build the wolf-database wheel (Phase 5.9-b). debian/wolf-
+	# database.install picks up the resulting whl from
+	# packaging/build/ and ships it inside the .deb at
+	# /usr/lib/wolf-database/. The postinst then creates the
+	# venv at /usr/lib/wolf-database/.venv/ and pip-installs the
+	# wheel into it — keeps the venv's absolute paths correct
+	# regardless of where the .deb was built.
+	mkdir -p packaging/build
+	rm -f packaging/build/wolf_database-*.whl
+	python3 -m pip wheel \
+		--no-deps \
+		--no-cache-dir \
+		--wheel-dir packaging/build \
+		packages/database/
+	@echo "wolf-database wheel built: $$(ls packaging/build/wolf_database-*.whl)"
+	# 5.9-c will add the wolf-server wheel build here.
+	# 5.9-d will add the Next.js standalone build for wolf-dashboard.
 
 # Strip the upstream test suite from the built packages — Wolf's
 # pytest suite shouldn't ship in /usr/lib/. dh_install rules in

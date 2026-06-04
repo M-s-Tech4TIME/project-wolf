@@ -1,0 +1,18 @@
+# debian/wolf-database.install — what ends up inside wolf-database.deb.
+#
+# Format: <source path relative to repo>  <install dir under debian/wolf-database/>
+#
+# debhelper's dh_install reads this file and copies the listed files
+# into debian/wolf-database/<dest>/ during the build. dpkg then ships
+# everything under debian/wolf-database/ as the .deb's payload.
+
+# The CLI shim. Same script as the manual install.sh from slice 5.8-c
+# drops at /usr/bin/wolf-database; we ship it from the .deb directly.
+deploy/bin/wolf-database  usr/bin/
+
+# The wolf-database Python wheel, built at package-build time by
+# debian/rules's override_dh_auto_build. Path is relative to the
+# source tree's top because debhelper runs from there. The wheel
+# lands in /usr/lib/wolf-database/ — the postinst installs it into
+# /usr/lib/wolf-database/.venv at install time.
+packaging/build/wolf_database-*-py3-none-any.whl  usr/lib/wolf-database/

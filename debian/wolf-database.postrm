@@ -1,0 +1,50 @@
+#!/bin/sh
+# debian/wolf-database.postrm — runs AFTER wolf-database.deb is removed.
+#
+# Phase 5.9-b. Two responsibilities:
+#
+#   1. Remove the venv at /usr/lib/wolf-database/.venv/ (we created
+#      it from the wheel in postinst; dpkg doesn't know about it).
+#   2. On `purge` (vs simple `remove`), clean up the FHS dirs we
+#      created in postinst.
+#
+# We deliberately do NOT remove the wolf-database user/group on
+# purge — those may be referenced by file ownership in user-data
+# locations the operator chose, and removing a system user breaks
+# `ls -la` on those files. Operator removes the user manually via
+# `sudo deluser wolf-database` if they really want it gone.
+#
+# The wolf-database init data dir is at /var/lib/wolf-database/data
+# and contains the operator's actual database. On `purge` we leave
+# it intact — operators who actually want it gone use
+# `sudo rm -rf /var/lib/wolf-database` themselves. dpkg's purge
+# semantics elsewhere (e.g. postgresql) follow the same
+# conservative-preserve-user-data convention.
+
+set -e
+
+VENV_DIR="/usr/lib/wolf-database/.venv"
+
+case "$1" in
+    remove|upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
+        # Remove the venv we built in postinst. dpkg doesn't track
+        # files inside .venv since it's runtime-created.
+        rm -rf "${VENV_DIR}"
+        ;;
+    purge)
+        # Same venv cleanup.
+        rm -rf "${VENV_DIR}"
+        # Note: we INTENTIONALLY don't `rm -rf /var/lib/wolf-database`
+        # here even on purge — that contains the operator's data
+        # cluster. Operator removes manually if they actually want
+        # it gone. /etc/wolf-database is similarly preserved.
+        ;;
+    *)
+        echo "postrm called with unknown argument \`$1'" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

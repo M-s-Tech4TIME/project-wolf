@@ -1,0 +1,24 @@
+#!/bin/sh
+# debian/wolf-database.prerm — runs BEFORE wolf-database.deb is removed.
+#
+# Phase 5.9-b. Stops + disables the systemd unit before the unit
+# file is removed. dh_installsystemd auto-generates the stop logic
+# at #DEBHELPER# below; we add nothing of our own here today.
+
+set -e
+
+case "$1" in
+    remove|upgrade|deconfigure)
+        # No-op; dh_installsystemd's snippet handles the stop.
+        ;;
+    failed-upgrade)
+        ;;
+    *)
+        echo "prerm called with unknown argument \`$1'" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

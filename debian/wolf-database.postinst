@@ -1,0 +1,112 @@
+#!/bin/sh
+# debian/wolf-database.postinst — runs after wolf-database.deb installs.
+#
+# Phase 5.9-b. Idempotent. Three jobs:
+#
+#   1. Create the wolf group + wolf-database system user if missing.
+#   2. Create FHS dirs at /var/lib/wolf-database/ + /etc/wolf-database/.
+#   3. Build the Python venv at /usr/lib/wolf-database/.venv/ by
+#      installing the wheel we shipped at
+#      /usr/lib/wolf-database/wolf_database-*.whl.
+#
+# We deliberately do NOT run `wolf-database init` from postinst —
+# init generates a random password and prints DATABASE_URL for the
+# operator to paste into wolf-server's env. That handoff requires
+# an operator-in-the-loop step we can't automate without a
+# meta-package coordinating across all three .debs (slice 5.9-e).
+
+set -e
+
+WOLF_GROUP="wolf"
+WOLF_DB_USER="wolf-database"
+LIB_DIR="/usr/lib/wolf-database"
+VENV_DIR="${LIB_DIR}/.venv"
+
+case "$1" in
+    configure)
+        # ── Group ─────────────────────────────────────────────────
+        if ! getent group "${WOLF_GROUP}" >/dev/null; then
+            addgroup --system "${WOLF_GROUP}"
+        fi
+
+        # ── User ──────────────────────────────────────────────────
+        if ! getent passwd "${WOLF_DB_USER}" >/dev/null; then
+            adduser \
+                --system \
+                --ingroup "${WOLF_GROUP}" \
+                --home /nonexistent \
+                --no-create-home \
+                --shell /usr/sbin/nologin \
+                --gecos "Wolf bundled Postgres" \
+                "${WOLF_DB_USER}"
+        fi
+
+        # ── FHS dirs (data + config) ──────────────────────────────
+        # Created with 0750 wolf-database:wolf so the wolf-database
+        # daemon can read+write but only members of the wolf group
+        # can read. Matches the ownership pattern install-users.sh
+        # produces for the manual install path.
+        for dir in /var/lib/wolf-database/data \
+                   /var/lib/wolf-database/config \
+                   /etc/wolf-database; do
+            install -d -m 0750 -o "${WOLF_DB_USER}" -g "${WOLF_GROUP}" "${dir}"
+        done
+
+        # ── Python venv ───────────────────────────────────────────
+        # Rebuild from scratch on every (re)install so an upgraded
+        # wheel actually takes effect. The venv lives entirely under
+        # /usr/lib/wolf-database/.venv/ — owned root:root because
+        # wolf-database doesn't need to modify its own runtime.
+        rm -rf "${VENV_DIR}"
+        python3 -m venv "${VENV_DIR}"
+
+        # Find the wheel we shipped at the install path. There
+        # should be exactly one matching glob result.
+        WHEEL=$(ls "${LIB_DIR}"/wolf_database-*-py3-none-any.whl 2>/dev/null | head -n1)
+        if [ -z "${WHEEL}" ]; then
+            echo "ERROR: no wolf_database wheel found under ${LIB_DIR}/" >&2
+            echo "  Reinstall the wolf-database package." >&2
+            exit 1
+        fi
+
+        "${VENV_DIR}/bin/pip" install --quiet --no-index --no-deps "${WHEEL}"
+
+        # ── systemd ───────────────────────────────────────────────
+        # `dh_installsystemd` (via dh in debian/rules) adds the
+        # systemctl daemon-reload + enable-on-fresh-install
+        # snippets automatically below #DEBHELPER#. We just print
+        # the operator-facing follow-up message.
+        cat <<EOF
+
+  wolf-database installed.
+
+  Next steps:
+    1. Run wolf-database init (operator-driven; not automatic) to
+       lay down the cluster + create the wolf role/db/pgvector
+       extension. The CLI prints a DATABASE_URL — copy it into
+       /etc/wolf-server/env after installing wolf-server:
+
+         sudo -u ${WOLF_DB_USER} \\
+             WOLF_DATABASE_PRODUCTION=1 \\
+             /usr/bin/wolf-database init
+
+    2. Start the service:
+
+         sudo systemctl enable --now wolf-database
+
+EOF
+        ;;
+
+    abort-upgrade|abort-remove|abort-deconfigure)
+        # No-op; the configure path handles all setup.
+        ;;
+
+    *)
+        echo "postinst called with unknown argument \`$1'" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

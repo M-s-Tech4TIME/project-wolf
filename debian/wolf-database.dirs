@@ -1,0 +1,10 @@
+# Empty directories the package ships. dpkg creates these at install
+# time with mode 0755 root:root by default; postinst chowns the ones
+# that need wolf-database:wolf ownership.
+#
+# /var/lib/* + /etc/* + /var/run/* are NOT listed here because
+# install-users.sh (invoked from postinst) is the canonical owner
+# of those FHS paths — having debhelper also try to create them
+# would be a coordination footgun.
+
+usr/lib/wolf-database
