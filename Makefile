@@ -1,6 +1,6 @@
 .PHONY: up down dev build test test-isolation test-isolation-live test-cov \
         lint typecheck fmt check migrate migrate-local revision probe install \
-        smoke-mtls smoke-database smoke-systemd install-user-systemd help \
+        smoke-mtls smoke-database smoke-systemd smoke-deb install-user-systemd help \
         wolf-database-init wolf-database-up wolf-database-down \
         wolf-database-status wolf-database-reconfigure
 
@@ -87,6 +87,54 @@ typecheck: ## Type-check safety-critical packages with mypy (strict)
 
 probe: ## Run the model probe (PROVIDER=ollama MODEL=llama3.2)
 	uv run python -m tools.model_probe --provider $(PROVIDER) --model $(MODEL)
+
+# ─── .deb packaging smoke (Phase 5.9-e) ───────────────────────────────────────
+
+# End-to-end .deb build smoke. Spins up a clean debian:trixie
+# container, installs the Build-Depends from debian/control, runs
+# dpkg-buildpackage, verifies the four .debs are produced. Output
+# .debs land in packaging/build/debs/ on the host (bind-mount).
+#
+# Takes ~5-10 minutes because of apt-get update + the install of
+# debhelper + python3-pip + nodejs in the fresh container. Use
+# before any push that touches debian/. CI runs the equivalent
+# job natively on ubuntu-latest (faster, no Docker-in-Docker).
+#
+# Requires Docker installed locally. If you don't have it, the CI
+# job is the canonical gate — push and let CI verify.
+smoke-deb: ## Build all four wolf-*.deb in a clean debian container (Phase 5.9-e)
+	@command -v docker >/dev/null || \
+	  { echo "FAIL: docker not installed. CI is the canonical gate; push to let it run."; exit 2; }
+	@mkdir -p packaging/build/debs
+	@echo "=== smoke-deb: building wolf-*.deb in debian:trixie ==="
+	@docker run --rm \
+	    --volume "$(PWD):/src:ro" \
+	    --volume "$(PWD)/packaging/build/debs:/out" \
+	    debian:trixie \
+	    bash -c "set -eu; \
+	      apt-get update >/dev/null; \
+	      apt-get install -y --no-install-recommends \
+	        debhelper devscripts dh-python \
+	        python3 python3-pip python3-venv python3-build \
+	        nodejs npm \
+	        ca-certificates \
+	        >/dev/null; \
+	      cp -r /src /tmp/wolf; \
+	      cd /tmp/wolf; \
+	      dpkg-buildpackage -b -us -uc 2>&1 | tail -50; \
+	      cp /tmp/wolf-*.deb /tmp/wolf*.deb /out/ 2>/dev/null || true; \
+	      ls -la /out/"
+	@echo ""
+	@echo "=== smoke-deb: results ==="
+	@ls -la packaging/build/debs/
+	@count=$$(ls packaging/build/debs/wolf*.deb 2>/dev/null | wc -l); \
+	  if [ "$$count" -lt 4 ]; then \
+	    echo "FAIL: expected 4 .debs (wolf-database, wolf-server, wolf-dashboard, wolf), got $$count"; \
+	    exit 1; \
+	  fi; \
+	  echo "OK: all four .debs produced"
+	@echo ""
+	@echo "=== smoke-deb: PASS ==="
 
 # ─── systemd dev units (Phase 5.8-a) ──────────────────────────────────────────
 

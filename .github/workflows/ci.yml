@@ -215,6 +215,70 @@ jobs:
   # syntactic + presence-of-fail-loud-branches validation. Catches
   # regressions in unit-file syntax, shim shell logic, and the
   # install.sh CLI surface.
+  # Phase 5.9-e: build all four wolf-*.deb on a clean ubuntu-latest
+  # runner. Catches build-time issues across the per-component
+  # debian/ artifacts authored in 5.9-a/b/c/d that the per-slice
+  # static checks (bash -n, syntax-only validation) can't reach.
+  # Runs natively on the runner (vs Docker-in-Docker) — faster, no
+  # nested-container quirks.
+  smoke-deb:
+    name: .deb packaging smoke (Phase 5.9-e)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Add PostgreSQL APT repo
+        # Wolf's wheel build doesn't itself need Postgres, but the
+        # .deb's Depends references postgresql-17 + pgvector
+        # availability. Adding the repo here makes the .debs
+        # apt-installable end-to-end (and is harmless if not used).
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+              -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] \
+              https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | \
+              sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+      - name: Install build-deps from debian/control
+        # The Build-Depends list lives in debian/control; we install
+        # an explicit subset here. If you add a Build-Dep there,
+        # add it here too (or use mk-build-deps from devscripts —
+        # heavier but auto-extracts from control).
+        run: |
+          sudo apt-get install -y --no-install-recommends \
+            debhelper devscripts dh-python \
+            python3 python3-pip python3-venv python3-build \
+            nodejs npm \
+            ca-certificates
+      - name: Build all four .debs
+        run: dpkg-buildpackage -b -us -uc
+      - name: Confirm all four .debs landed in the parent dir
+        run: |
+          ls -la ../wolf*.deb
+          count=$(ls ../wolf*.deb 2>/dev/null | wc -l)
+          if [ "$count" -lt 4 ]; then
+            echo "FAIL: expected 4 .debs, got $count"
+            exit 1
+          fi
+          echo "OK: $count .debs produced"
+      - name: Upload .debs as workflow artifact
+        # So a maintainer reviewing a PR can download the actual
+        # .debs and `apt install ./wolf-*.deb` locally to spot-
+        # check. Not signed; for release ship via the .deb repo
+        # signing flow (Phase 5.10+ official-release work).
+        uses: actions/upload-artifact@v4
+        with:
+          name: wolf-debs
+          path: ../wolf*.deb
+          retention-days: 14
+      - name: Dump build log on failure
+        if: failure()
+        run: |
+          echo "=== ls ../ ==="
+          ls -la ../
+          echo "=== debian/files (if exists) ==="
+          cat debian/files 2>/dev/null || echo "(no debian/files — build didn't reach package stage)"
+
   smoke-systemd:
     name: systemd + shims smoke (Phase 5.8-d)
     runs-on: ubuntu-latest

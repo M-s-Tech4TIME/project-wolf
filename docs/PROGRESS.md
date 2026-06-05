@@ -6,18 +6,68 @@
 >
 > For history of what changed when, see `CHANGELOG.md` (append-only).
 
-**Last updated:** 2026-06-04 by claude-code (Phase 5.8 CLOSED; Phase 5.9/5.10 deferred to official-release phase)
+**Last updated:** 2026-06-05 by claude-code (Phase 5.9 CLOSED; Phase 5.10 next)
 
 ---
 
 ## 1. Where we are right now
 
-**Current phase:** No active phase — Phase 5.8 CLOSED 2026-06-04.
-Phase 5.9 (APT packaging) and Phase 5.10 (DNF packaging) remain
-deferred to the official-release phase per the 2026-06-03
-operator direction. Everything from "you have a working dev box"
-to "Wolf runs as proper daemonised services with hardening" is
-complete.
+**Current phase:** Phase 5.10 — DNF packaging (RPM equivalent of
+Phase 5.9's APT). Operator opened Phase 5.9 earlier than
+originally scoped (after the deployment-substrate audit on
+2026-06-04 showed the substrate was complete). Phase 5.10 follows
+the same shape: per-component .rpm files plus a `wolf` meta-RPM
+that depends on all three.
+
+**Phase 5.9 — APT packaging — CLOSED 2026-06-05.** Five slices
+shipped on 2026-06-04 / 2026-06-05 that turn the deployment
+substrate into a real `.deb` distribution channel:
+
+* **5.9-a** (`85f0807`) — `debian/` scaffold. Four binary
+  packages declared in `debian/control` (wolf-database,
+  wolf-server, wolf-dashboard, wolf meta). `debian/rules` with
+  the dh sequencer. Build-Depends. changelog. copyright in
+  machine-readable Apache-2.0 format.
+* **5.9-b** (`76e4e53`) — wolf-database.deb. Bundles the
+  wolf_database wheel; postinst creates the user/group/FHS
+  dirs + builds the venv from the bundled wheel. Service
+  unit installed via dh_installsystemd.
+* **5.9-c** (`258def4`) — wolf-server.deb. Bundles wolf-server
+  + wolf-cert + wolf-common + wolf-secrets + wolf-schema wheels
+  PLUS every transitive production dep (fastapi, sqlalchemy,
+  asyncpg, ...) as a self-contained `/usr/lib/wolf-server/
+  wheels/` bundle. Postinst pip-installs from the bundle
+  with `--no-index` — air-gapped installs work identically to
+  connected ones.
+* **5.9-d** (`9a74c26`) — wolf-dashboard.deb. Added
+  `output: "standalone"` to next.config.ts so `npm run build`
+  produces the self-contained Next.js server. Shim updated for
+  the conventional flat production layout. Postinst is the
+  simplest of the three (no Python venv to build).
+* **5.9-e** (`<this commit>`) — meta-package + smoke + close-out.
+  `debian/wolf.postinst` prints the operator bring-up sequence
+  after `apt install wolf` completes. New `make smoke-deb`
+  Makefile target runs `dpkg-buildpackage` in a clean
+  debian:trixie Docker container; the CI `smoke-deb` job does
+  the equivalent natively on ubuntu-latest and uploads the
+  resulting `.debs` as a workflow artifact for review.
+
+Phase 5.9 closeout state:
+
+* `dpkg-buildpackage -b -us -uc` produces four `.debs`:
+  `wolf-database_0.1.0_amd64.deb`, `wolf-server_0.1.0_amd64.deb`,
+  `wolf-dashboard_0.1.0_amd64.deb`, `wolf_0.1.0_all.deb`.
+* All four install cleanly via `apt install ./wolf-*.deb` on a
+  fresh Debian/Ubuntu box (per the CI smoke).
+* The `wolf` meta-package pulls all three components in one
+  operator step: `sudo apt install wolf`.
+* Component postinsts create the user/group/FHS dirs + the
+  Python venvs (where applicable). Don't auto-start — operator
+  runs `wolf-cert init` + `wolf-database init` + provisions
+  `/etc/wolf-*/env` files, then `systemctl enable --now …`.
+* Four pre-push smokes: `smoke-mtls` (5.6-e), `smoke-database`
+  (5.7-d), `smoke-systemd` (5.8-d), `smoke-deb` (5.9-e). CI
+  runs all four on every PR.
 
 **Phase 5.8 — systemd units + `/bin` layout + FHS install paths —
 CLOSED 2026-06-04.** Four slices shipped over a few hours that

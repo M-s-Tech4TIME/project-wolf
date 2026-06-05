@@ -49,6 +49,102 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-05 — Slice 5.9-e: wolf meta-package + `make smoke-deb` + CI (Phase 5.9 CLOSED)
+
+**Session type:** claude-code
+**Phase:** 5.9 — APT packaging — **CLOSED**
+**Branch / commit:** main @ (this commit)
+
+### What we did
+Phase 5.9 close-out. Three artifacts ship:
+
+1. **`debian/wolf.postinst`** — the meta-package's only payload.
+   When `apt install wolf` finishes (after the three component
+   .debs have configured themselves in dependency order), this
+   prints a 6-step operator bring-up sequence: `wolf-cert init`
+   → `wolf-database init` → provision `/etc/wolf-server/env` +
+   `/etc/wolf-dashboard/env` → `systemctl enable --now …` →
+   browser at `https://<host>:3000/`. Doesn't auto-start any
+   service.
+2. **`make smoke-deb`** — Docker-based build smoke. Runs
+   `dpkg-buildpackage` inside a clean `debian:trixie` container
+   with debhelper + python3-pip + nodejs + npm preinstalled.
+   Output .debs land in `packaging/build/debs/` on the host.
+   Takes ~5–10 min (fresh apt-get update + 100+ wheels for
+   wolf-server's bundle); use before any push that touches
+   `debian/`. Refuses if Docker isn't installed and points the
+   operator at the CI job as the canonical gate instead.
+3. **CI `smoke-deb` job** — equivalent build done natively on
+   ubuntu-latest (no nested Docker; faster + simpler). Uploads
+   the four `.debs` as a workflow artifact (`wolf-debs`) with
+   14-day retention so a maintainer reviewing a PR can download
+   + spot-check via `apt install ./wolf-*.deb`. On failure,
+   dumps the build log + `debian/files` so the regression
+   shows up in the CI log.
+
+### Phase 5.9 — CLOSED
+
+Five slices on 2026-06-04 → 2026-06-05:
+
+| Slice | Commit | Key deliverables |
+|---|---|---|
+| 5.9-a | `85f0807` | `debian/` scaffold: control (4 packages), rules, compat=13, source/format=native, changelog, Apache-2.0 copyright. |
+| 5.9-b | `76e4e53` | wolf-database.deb. Bundled wheel, postinst creates user/group/FHS + builds venv. |
+| 5.9-c | `258def4` | wolf-server.deb. Bundled wheel + 5 workspace pkgs (server/cert/common/secrets/schema) + 13+ transitive prod deps as a self-contained wheels/ dir. Air-gapped install works the same as connected. |
+| 5.9-d | `9a74c26` | wolf-dashboard.deb. Added `output: "standalone"` to next.config.ts. Postinst is simpler (no venv to build). |
+| 5.9-e | this commit | Meta-package postinst + `make smoke-deb` + CI smoke-deb job. |
+
+End-state:
+
+* `sudo apt install wolf` → all three components installed,
+  users + group + FHS dirs configured, services NOT auto-started
+  (operator runs init steps + provisions env files first,
+  then `systemctl enable --now …`).
+* Per-component installs work too — distributed deployments can
+  install just `wolf-database` on the brain host, `wolf-server`
+  on the API host, `wolf-dashboard` on the edge host.
+* All four .debs are buildable by `dpkg-buildpackage` on any
+  Debian/Ubuntu host with the documented Build-Depends. CI
+  produces them on every PR + uploads as a workflow artifact.
+* Four pre-push smokes: smoke-mtls (5.6-e), smoke-database
+  (5.7-d), smoke-systemd (5.8-d), smoke-deb (5.9-e). All four
+  run on every CI PR.
+
+### Verification policy
+
+Per the 2026-06-04 operator direction (defer build verification
+to CI), this slice deliberately doesn't run `dpkg-buildpackage`
+locally. The CI smoke-deb job is the canonical gate; if it
+fails when this commit lands, a follow-up commit on this slice
+fixes whatever's broken. Possible issues that could surface:
+
+* Python wheel resolution edge cases — some transitive dep that
+  isn't wheel-available on the CI runner's architecture.
+* npm ci that fails because of a lockfile / registry oddity.
+* dh_installsystemd auto-snippet that doesn't compose cleanly
+  with our service file's existing directives.
+* Missing Build-Dep we didn't notice.
+
+If any of these come up, we fix them in a 5.9-e follow-up before
+opening 5.10.
+
+### What's next
+**Phase 5.10 — DNF packaging.** RPM equivalent of Phase 5.9.
+Same component layout (one .rpm per component + a `wolf` meta-
+RPM), same end-state (`dnf install wolf` brings everything up
+the same way `apt install wolf` does). Shape:
+
+* `packaging/rpm/wolf.spec` — RPM spec file
+* `packaging/rpm/{wolf-server,wolf-database,wolf-dashboard}.{install,scripts}`
+* `make smoke-rpm` Makefile target — `dnf install` smoke in
+  fedora:latest container
+* CI smoke-rpm job
+
+Once 5.10 closes, Phase 5 is officially complete. The build can
+move to Phase 6 (Approval Gateway).
+
+---
+
 ## 2026-06-04 — Slice 5.8-d: ONBOARDING Path A rewrite + `make smoke-systemd` + CI (Phase 5.8 CLOSED)
 
 **Session type:** claude-code

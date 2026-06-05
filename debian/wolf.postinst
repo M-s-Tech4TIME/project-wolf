@@ -1,0 +1,83 @@
+#!/bin/sh
+# debian/wolf.postinst — Phase 5.9-e.
+#
+# The `wolf` meta-package ships no files of its own; its only job
+# is to declare Depends on wolf-database + wolf-server + wolf-
+# dashboard so `apt install wolf` pulls all three components in
+# one step. By the time THIS postinst runs, the three component
+# .debs have already configured themselves (their own postinsts
+# already ran, in dependency order).
+#
+# This postinst's only job: print a friendly "you're done; here's
+# what to do next" message that the operator-facing per-component
+# postinsts don't give in aggregate.
+
+set -e
+
+case "$1" in
+    configure)
+        cat <<'EOF'
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Wolf installed.
+
+  All three components are configured. Bring-up sequence:
+
+    1. Generate certificates:
+         sudo /usr/bin/wolf-cert init
+
+       Mints the self-signed Wolf CA + server / dashboard /
+       dashboard-client leaves under .local/certs/. For production
+       installs, set WOLF_CERT_DIR=/etc/wolf/certs first.
+
+    2. Initialize the database cluster:
+         sudo -u wolf-database \
+             WOLF_DATABASE_PRODUCTION=1 \
+             /usr/bin/wolf-database init
+
+       Lays down the Postgres cluster, creates the wolf role + db
+       + pgvector extension, prints a DATABASE_URL.
+
+    3. Provision wolf-server's env:
+         sudo install -d -m 0750 -o wolf-server -g wolf /etc/wolf-server
+         sudo $EDITOR /etc/wolf-server/env
+
+       Set at minimum DATABASE_URL (from step 2), SECRET_KEY (32+
+       random chars), SECRETS_FILE_KEY (cryptography Fernet key).
+
+    4. Provision wolf-dashboard's env:
+         sudo $EDITOR /etc/wolf-dashboard/env
+
+       Set WOLF_SERVER_URL=https://localhost:7860
+
+    5. Start all three components:
+         sudo systemctl enable --now wolf-database wolf-server wolf-dashboard
+
+       Per ADR 0016 v3 the units are fully independent; wolf-server
+       has a built-in retry loop that handles wolf-database not
+       being ready yet.
+
+    6. Open https://<host>:3000/ in a browser. The dashboard is
+       the only origin browsers talk to — wolf-server is reverse-
+       proxied through it via mTLS.
+
+  Detailed walkthrough + troubleshooting:
+    /usr/share/doc/wolf-server/README (if installed)
+    https://github.com/M-s-Tech4TIME/project-wolf/blob/main/ONBOARDING.md
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+EOF
+        ;;
+
+    abort-upgrade|abort-remove|abort-deconfigure)
+        ;;
+
+    *)
+        echo "postinst called with unknown argument \`$1'" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0
