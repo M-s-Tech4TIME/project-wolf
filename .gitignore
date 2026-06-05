@@ -47,3 +47,12 @@ credentials/
 .idea/
 .vscode/
 *.swp
+
+# graphify outputs are INTENTIONALLY committed so Claude Code sessions
+# (and other developers) start with a current knowledge graph of the
+# project. The post-commit `graphify hook install` regenerates the
+# graph automatically, keeping graphify-out/ in sync without manual
+# intervention. Only the per-developer interpreter pointer files are
+# excluded (they hardcode local paths):
+graphify-out/.graphify_python
+graphify-out/.graphify_root
