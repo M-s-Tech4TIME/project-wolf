@@ -11,6 +11,7 @@ import asyncio
 import os
 import uuid
 from collections.abc import AsyncGenerator
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -88,7 +89,12 @@ async def engine() -> AsyncGenerator[AsyncEngine]:
         from alembic import command
         from alembic.config import Config
 
-        cfg = Config("alembic.ini")
+        # Resolve alembic.ini relative to this file, NOT to cwd.
+        # pytest can be invoked from repo root (CI) or from
+        # services/server/ (dev workflow); the config path must
+        # work either way.
+        alembic_ini = Path(__file__).resolve().parent.parent / "alembic.ini"
+        cfg = Config(str(alembic_ini))
         loop = asyncio.get_event_loop()
         with ThreadPoolExecutor(1) as pool:
             await loop.run_in_executor(pool, command.upgrade, cfg, "head")

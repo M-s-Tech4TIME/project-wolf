@@ -8,6 +8,7 @@ Startup order:
 """
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 import structlog
@@ -125,6 +126,25 @@ async def _wait_for_database(
             elapsed += delay
 
 
+def _find_alembic_ini() -> Path:
+    """Locate alembic.ini in dev or .deb-installed layouts.
+
+    Dev workspace: services/server/alembic.ini (one dir above
+    wolf_server/main.py).
+    Prod .deb install: /usr/lib/wolf-server/alembic.ini (alongside
+    the .venv where wolf_server is installed).
+    """
+    deb_path = Path("/usr/lib/wolf-server/alembic.ini")
+    if deb_path.exists():
+        return deb_path
+    dev_path = Path(__file__).resolve().parent.parent / "alembic.ini"
+    if dev_path.exists():
+        return dev_path
+    raise FileNotFoundError(
+        f"alembic.ini not found at {deb_path} or {dev_path}"
+    )
+
+
 async def _run_migrations() -> None:
     """Run Alembic migrations programmatically on startup."""
     import asyncio  # noqa: PLC0415
@@ -133,7 +153,7 @@ async def _run_migrations() -> None:
     from alembic import command  # noqa: PLC0415
     from alembic.config import Config  # noqa: PLC0415
 
-    cfg = Config("alembic.ini")
+    cfg = Config(str(_find_alembic_ini()))
 
     loop = asyncio.get_event_loop()
     with ThreadPoolExecutor(max_workers=1) as pool:
