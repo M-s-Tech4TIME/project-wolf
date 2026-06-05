@@ -393,6 +393,52 @@ guards; specifics aren't public.
 
 ---
 
+### Gap 13 — Alembic model/migration drift cleanup + re-enable `alembic check`
+
+**What it is:** A dedicated cleanup pass that aligns the
+SQLAlchemy models (in `wolf_server/*/models.py`) with the
+migrations (in `services/server/migrations/versions/`), then
+re-introduces the `alembic-check` CI job as a permanent gate.
+
+**Why it matters:** Surfaced during the 2026-06-05 CI audit.
+`alembic check` reported drift across ~10 schema elements:
+
+* `knowledge_chunks` table + 5 indexes — diff between model
+  declaration and what migrations actually created.
+* `audit_events.event_data` — model says JSONB, migrations say
+  JSON (or vice versa).
+* `tenants.slug` and `users.email` — uniqueness expressed as
+  `UniqueConstraint` in migrations but as `Index(unique=True)`
+  in models. Stylistic; both produce the same DB-level outcome
+  but autogenerate sees them as different.
+
+None of this is breaking production today (the schema works;
+the unit tests pass). It's a hygiene gap — a model edit could
+land without a corresponding migration and the drift would just
+grow. With `alembic check` as a CI gate, this can't happen.
+
+**How Wazuh solves it:** they maintain strict model/migration
+parity as part of their release-engineering discipline.
+
+**What Wolf needs to build:**
+
+* A dedicated cleanup slice that:
+  - Runs `alembic revision --autogenerate -m "align models
+    and migrations"` to capture the current drift as a
+    proper migration.
+  - Reviews the generated migration for correctness.
+  - Squashes redundant index/constraint changes (the
+    style-difference ones).
+  - Verifies `alembic check` exits clean after the migration
+    lands.
+* Re-add the `alembic-check` CI job (currently reverted —
+  see commit history around 2026-06-05).
+
+**Sequencing:** Build-now-adjacent. Smaller than a full slice
+(probably ~half a session) but needs care because alembic
+autogenerate output is rarely perfect — manual review + edits
+required.
+
 ### Gap 12 — Documentation site
 
 **What it is:** A browsable, searchable version of the
@@ -432,12 +478,16 @@ renders the markdown adequately.
 | 10 — Dependency vulnerability scanning | Build-now |
 | 11 — Secrets / credential scanning | Build-now |
 | 12 — Documentation site | Dedicated release phase |
+| 13 — Alembic drift cleanup + re-enable `alembic check` | Build-now-adjacent |
 
 **Build-now items**: 8 (1, 3, 5, 7, 8, 9, 10, 11). Each is a
 small slice — collectively ~half a phase of work.
 
 **Dedicated release phase items**: 4 (2, 4, 6, 12). These need
 the APT repo decision + the v0.1.0 release as a starting point.
+
+**Build-now-adjacent**: 1 (13). Smaller than a full slice;
+focused cleanup work.
 
 ## Architectural decisions (resolved 2026-06-05)
 

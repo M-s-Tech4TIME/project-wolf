@@ -387,11 +387,11 @@ smoke-mtls: ## mTLS smoke: no-cert → 401 mtls_required, with-cert → 401 auth
 		\
 		echo "--- 1/4: wolf-cert status reports CA + 3 leaves ---"; \
 		st=$$(uv run --package wolf-cert python -m wolf_cert status 2>&1); \
-		echo "$$st" | grep -q "ca-cert.pem" || \
-		  { echo "FAIL: wolf-cert status missing ca-cert.pem"; echo "$$st"; exit 1; }; \
+		echo "$$st" | grep -q "CN=Wolf Root CA" || \
+		  { echo "FAIL: wolf-cert status missing CA section"; echo "$$st"; exit 1; }; \
 		for leaf in server dashboard dashboard-client; do \
-		  echo "$$st" | grep -q "$$leaf" || \
-		    { echo "FAIL: wolf-cert status missing leaf $$leaf"; echo "$$st"; exit 1; }; \
+		  echo "$$st" | grep -q "leaf '$$leaf'" || \
+		    { echo "FAIL: wolf-cert status missing leaf '$$leaf'"; echo "$$st"; exit 1; }; \
 		done; \
 		echo "    OK: wolf-cert status reports CA + server + dashboard + dashboard-client"; \
 		\
