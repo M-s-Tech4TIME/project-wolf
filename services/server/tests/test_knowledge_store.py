@@ -479,7 +479,15 @@ def test_factory_accepts_sentence_transformers_aliases(
             embedding_provider=alias,
             embedding_model="BAAI/bge-base-en-v1.5",
         )
-        provider = make_embedding_provider(settings)
+        try:
+            provider = make_embedding_provider(settings)
+        except OSError as e:
+            # CI runners sometimes can't reach HuggingFace (intermittent).
+            # The factory dispatch IS what we're verifying — the model
+            # download is incidental. Skip rather than fail-flaky.
+            if "huggingface.co" in str(e) or "cached files" in str(e):
+                pytest.skip(f"HuggingFace network access unavailable: {e}")
+            raise
         assert provider.model_id.startswith("st:")
 
 
