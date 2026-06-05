@@ -50,22 +50,11 @@ jobs:
   test:
     name: Test (pytest)
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: pgvector/pgvector:pg17
-        env:
-          POSTGRES_USER: wolf
-          POSTGRES_PASSWORD: wolf_test
-          POSTGRES_DB: wolf_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd="pg_isready -U wolf -d wolf_test"
-          --health-interval=5s
-          --health-timeout=5s
-          --health-retries=10
+    # No Postgres service container — unit tests use SQLite
+    # (conftest.py handles the dialect switch). Real-Postgres
+    # behaviour is exercised by smoke-mtls / smoke-database /
+    # smoke-systemd which are separate jobs.
     env:
-      DATABASE_URL: postgresql+asyncpg://wolf:wolf_test@localhost:5432/wolf_test
       SECRET_KEY: test-secret-key-exactly-32-chars!!
       ENVIRONMENT: test
       SECRETS_BACKEND: file
@@ -78,8 +67,6 @@ jobs:
           python-version: "3.13"
       - name: Install dependencies
         run: uv sync --all-packages
-      - name: Run migrations
-        run: uv run --package wolf-server alembic -c services/server/alembic.ini upgrade head
       - name: Run tests with coverage
         run: |
           uv run pytest services/server/tests packages/ \

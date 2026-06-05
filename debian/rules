@@ -13,7 +13,10 @@
 # add their files.
 
 %:
-	dh $@ --with python3,systemd
+	# Modern debhelper (compat 13) invokes dh_installsystemd and
+	# Python helpers natively. The legacy --with python3,systemd
+	# addon syntax errors out in compat >= 11.
+	dh $@
 
 # Build hooks (placeholders — filled in by 5.9-b/c/d).
 #
