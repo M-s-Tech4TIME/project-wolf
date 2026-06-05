@@ -21,6 +21,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    Index,
     String,
     Text,
     UniqueConstraint,
@@ -43,10 +44,17 @@ class Tenant(Base):
     """One isolated customer / deployment."""
 
     __tablename__ = "tenants"
+    # Migration 0001 created both a named UniqueConstraint and a
+    # separate non-unique Index on `slug`. Declare them explicitly
+    # here so `alembic check` doesn't see drift.
+    __table_args__ = (
+        UniqueConstraint("slug", name="uq_tenants_slug"),
+        Index("ix_tenants_slug", "slug"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=_uuid)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    slug: Mapped[str] = mapped_column(String(100), nullable=False, unique=True, index=True)
+    slug: Mapped[str] = mapped_column(String(100), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_now
@@ -67,14 +75,24 @@ class User(Base):
     """A platform user — local account or OIDC-federated."""
 
     __tablename__ = "users"
+    # Migration 0001 created both a named UniqueConstraint on `email`
+    # and a separate non-unique Index. Declare them explicitly here
+    # so `alembic check` doesn't see drift. oidc_sub gets a named
+    # UniqueConstraint too (no separate index — the constraint is
+    # sufficient since OIDC lookups don't need a non-unique fallback).
+    __table_args__ = (
+        UniqueConstraint("email", name="uq_users_email"),
+        Index("ix_users_email", "email"),
+        UniqueConstraint("oidc_sub", name="uq_users_oidc_sub"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=_uuid)
-    email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    email: Mapped[str] = mapped_column(String(255), nullable=False)
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)
     # Null when the user authenticates exclusively via OIDC.
     hashed_password: Mapped[str | None] = mapped_column(Text, nullable=True)
     # OIDC subject claim — null for local-only accounts.
-    oidc_sub: Mapped[str | None] = mapped_column(String(512), nullable=True, unique=True)
+    oidc_sub: Mapped[str | None] = mapped_column(String(512), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     # Superusers can administer all tenants; use sparingly.
     is_superuser: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

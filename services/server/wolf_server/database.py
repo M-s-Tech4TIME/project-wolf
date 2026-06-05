@@ -22,7 +22,6 @@ from sqlalchemy.orm import DeclarativeBase
 
 from wolf_server.config import get_settings
 
-
 # Naming convention so SQLAlchemy auto-generates the same constraint
 # / index names that our hand-written migrations already use. Without
 # this, `alembic check` reports false-positive drift on every named

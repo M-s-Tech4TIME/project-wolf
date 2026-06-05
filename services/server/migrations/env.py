@@ -46,8 +46,37 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
+# Postgres-specific indexes declared via op.execute() in migrations
+# (e.g., HNSW vector indexes, TSVECTOR full-text indexes) can't be
+# expressed in standard SQLAlchemy Index() syntax. They're intentionally
+# defined only in the migration, not in the model. alembic-check would
+# report spurious drift on them unless filtered out.
+_INDEXES_DECLARED_IN_MIGRATIONS_ONLY: frozenset[str] = frozenset({
+    "ix_knowledge_chunks_embedding_hnsw",      # HNSW pgvector index (0004)
+    "ix_knowledge_chunks_embedding_v2_hnsw",   # HNSW pgvector index (later)
+    "ix_knowledge_chunks_content_tsv",         # TSVECTOR full-text index
+})
+
+
+def _include_object(
+    object_: object,  # SchemaItem; alembic-typed
+    name: str | None,
+    type_: str,
+    reflected: bool,  # noqa: FBT001
+    compare_to: object,  # SchemaItem | None
+) -> bool:
+    """Filter callback: skip indexes that can't be modelled in SQLA."""
+    return not (
+        type_ == "index" and name in _INDEXES_DECLARED_IN_MIGRATIONS_ONLY
+    )
+
+
 def do_run_migrations(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        include_object=_include_object,
+    )
     with context.begin_transaction():
         context.run_migrations()
 
