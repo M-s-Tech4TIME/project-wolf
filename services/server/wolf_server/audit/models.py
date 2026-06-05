@@ -14,9 +14,16 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import JSON, DateTime, Index, String, Text, Uuid
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from wolf_server.database import Base
+
+# Use JSONB on Postgres (binary, indexable, queryable) and fall back to
+# generic JSON on SQLite (used by the test suite — SQLite has no JSONB).
+# The migration declared JSONB directly; this with_variant() construction
+# matches that exactly while keeping the test path working.
+_JSON_TYPE = JSONB().with_variant(JSON(), "sqlite")
 
 
 def _now() -> datetime:
@@ -55,7 +62,7 @@ class AuditEvent(Base):
     event_type: Mapped[str] = mapped_column(String(100), nullable=False)
     # Free-form JSON payload.  Keep it compact; large data should be referenced, not embedded.
     # Uses JSONB on Postgres (via migration) for indexing support; JSON type for SQLite compat.
-    event_data: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
+    event_data: Mapped[dict[str, object] | None] = mapped_column(_JSON_TYPE, nullable=True)
     # Optional link to a previous event this one supersedes or annotates.
     related_event_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
     # Source IP of the request, for forensic purposes.

@@ -145,6 +145,50 @@ jobs:
       - name: Verify standalone build artifact exists
         run: test -f .next/standalone/server.js && echo "OK"
 
+  # Catches model/migration drift: someone edits a SQLAlchemy model
+  # but forgets to run `alembic revision --autogenerate`. Spins up
+  # clean Postgres, applies all migrations, runs `alembic check`
+  # which diffs the model metadata against the migrated schema.
+  # Gap 13 from docs/17 — re-enabled 2026-06-05 after fixing three
+  # root causes:
+  #   1. env.py was missing knowledge.models import (so alembic
+  #      didn't see knowledge_chunks in model metadata)
+  #   2. Base needed a naming_convention (so model-generated
+  #      constraint names match what migrations declared by hand)
+  #   3. audit_events.event_data needed JSONB+with_variant(JSON,
+  #      "sqlite") to match the migration's JSONB while keeping
+  #      SQLite test compatibility
+  alembic-check:
+    name: Alembic migrations match models
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: wolf
+          POSTGRES_PASSWORD: wolf_test
+          POSTGRES_DB: wolf_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U wolf -d wolf_test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      DATABASE_URL: postgresql+asyncpg://wolf:wolf_test@localhost:5432/wolf_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+      - name: Install dependencies
+        run: uv sync --all-packages
+      - name: Apply all migrations
+        run: uv run --package wolf-server alembic -c services/server/alembic.ini upgrade head
+      - name: Verify models match migrations
+        run: uv run --package wolf-server alembic -c services/server/alembic.ini check
+
   # Verify no execute tools can be imported from wolf-server
   safety-check:
     name: Safety check (no execute tools in wolf-server)

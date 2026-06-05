@@ -11,6 +11,7 @@ or use the `override_engine` context manager.
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
+from sqlalchemy import MetaData
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -22,8 +23,25 @@ from sqlalchemy.orm import DeclarativeBase
 from wolf_server.config import get_settings
 
 
+# Naming convention so SQLAlchemy auto-generates the same constraint
+# / index names that our hand-written migrations already use. Without
+# this, `alembic check` reports false-positive drift on every named
+# constraint (model has unnamed UniqueConstraint, migration has
+# "uq_tenants_slug" — both produce the same DB outcome but autogenerate
+# sees them as different). Standard alembic recommendation.
+NAMING_CONVENTION: dict[str, str] = {
+    "ix": "ix_%(column_0_label)s",
+    "uq": "uq_%(table_name)s_%(column_0_name)s",
+    "ck": "ck_%(table_name)s_%(constraint_name)s",
+    "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
+    "pk": "pk_%(table_name)s",
+}
+
+
 class Base(DeclarativeBase):
     """Shared declarative base for all SQLAlchemy models."""
+
+    metadata = MetaData(naming_convention=NAMING_CONVENTION)
 
 
 def _make_engine(url: str) -> AsyncEngine:

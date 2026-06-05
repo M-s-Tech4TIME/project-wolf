@@ -9,6 +9,7 @@ import os
 from logging.config import fileConfig
 
 import wolf_server.audit.models  # noqa: F401
+import wolf_server.knowledge.models  # noqa: F401
 import wolf_server.tenancy.models  # noqa: F401
 import wolf_server.wazuh.models  # noqa: F401
 from alembic import context
