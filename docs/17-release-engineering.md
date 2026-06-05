@@ -395,6 +395,34 @@ guards; specifics aren't public.
 
 ### Gap 13 — Alembic model/migration drift cleanup + re-enable `alembic check`
 
+**Status (2026-06-05): CLOSED** — fixed across two commits
+(`4fa0411`, `8c53adc`). The `alembic-check` CI job is now a
+permanent gate; see `.github/workflows/ci.yml`.
+
+Root causes resolved:
+- `migrations/env.py` was missing the `wolf_server.knowledge.models`
+  import — knowledge_chunks wasn't in `Base.metadata` for comparison.
+- `Base` had no naming convention, so SQLAlchemy auto-generated
+  constraint names differed from migration-declared names. Standard
+  alembic naming convention added.
+- `audit_events.event_data` was generic `JSON`; migration used
+  `JSONB`. Changed to `JSONB().with_variant(JSON(), "sqlite")` so
+  Postgres gets JSONB while the SQLite test path still works.
+- Three Postgres-only indexes (`ix_knowledge_chunks_embedding_hnsw`,
+  `_embedding_v2_hnsw`, `_content_tsv`) use HNSW + TSVECTOR syntax
+  that can't be expressed in standard SQLAlchemy; added an
+  `include_object` filter in `env.py` to exclude them from
+  comparison.
+- `tenants.slug`, `users.email`, `users.oidc_sub` declared
+  uniqueness via `unique=True, index=True` on `mapped_column`,
+  generating a single unique Index. Migrations created both a
+  named `UniqueConstraint` AND a separate non-unique `Index`.
+  Refactored the models to declare both explicitly via
+  `__table_args__` matching the migration shape.
+
+The remainder of this gap entry is preserved as historical context
+for what was found + how it was diagnosed.
+
 **What it is:** A dedicated cleanup pass that aligns the
 SQLAlchemy models (in `wolf_server/*/models.py`) with the
 migrations (in `services/server/migrations/versions/`), then
@@ -439,6 +467,111 @@ parity as part of their release-engineering discipline.
 autogenerate output is rarely perfect — manual review + edits
 required.
 
+---
+
+### Gap 14 — Test coverage improvement + ratchet `fail-under` back to 80%
+
+**What it is:** A focused testing slice that writes targeted
+unit tests for the modules currently below the previous 80%
+coverage floor, then ratchets the `--cov-fail-under` argument
+in the CI Test job back to 80 (where it was set at Phase 4
+close).
+
+**Why it matters:** During the 2026-06-05 CI audit, the
+coverage gate was temporarily lowered from 80% to 70% to
+unblock CI (it was failing at 74.47%). That was the right
+pragmatic move — couldn't block the entire release-engineering
+sequence on adding tests for thousands of LOC. But the gate
+loosening was meant to be temporary; without active follow-up
+the project ends up with a permanent 70% floor that drifts
+even lower over time.
+
+The standing rule `quality-secure-coding-discipline` is
+explicit about this:
+> features-first; quality + secure coding applied inline as
+> each slice is built; dedicated hardening + audit pass
+> deferred to a later phase but tracked, never abandoned
+
+Gap 14 IS the "tracked, never abandoned" part for the coverage
+drift. Same shape as Wolf's other deferred-but-tracked hygiene
+work.
+
+**Concrete numbers (as of 2026-06-05):**
+
+| Module | Coverage | Lines missing |
+|---|---|---|
+| Overall | 74.47% | — |
+| `wazuh/resolver.py` | 47% | 18 lines missing — biggest single drag |
+| `wazuh/server_api.py` | 84% | 8 lines (error paths) |
+| `wazuh/opensearch.py` | 91% | 5 lines |
+| `wazuh/models.py` | 85% | 4 lines |
+| `wazuh/query_builder.py` | 96% | 2 lines |
+
+The bulk of the deficit is in `wazuh/resolver.py` — the alert
+context resolver that pulls related agent/rule data. It's
+exercised end-to-end by the integration tests but doesn't have
+unit-level tests against its branch logic.
+
+**Why a separate slice rather than inline test additions:**
+
+Adding tests inline with feature work tends to produce "the
+test that proves the code I just wrote does what I just made
+it do" — useful but not the same as a focused look at the
+under-tested module's branch logic. A dedicated slice can:
+
+* Read each under-covered module end-to-end and identify the
+  uncovered branches.
+* Write tests that cover the realistic operator-driven paths,
+  not just happy paths.
+* Treat the coverage gate as a forcing function for genuine
+  test quality, not a metric to game.
+
+**How Wazuh solves it:** They have a strong test culture +
+explicit coverage targets per major release. Wolf's <80% drift
+isn't unusual for an open-source project at our maturity, but
+the discipline of recovering from it IS important.
+
+**What Wolf needs to build:**
+
+* A focused test-writing slice. Estimated 1–2 sessions.
+* Order of attack:
+  1. `wazuh/resolver.py` — biggest delta. Branch coverage of
+     the "agent not found", "rule unknown", "alert pre-MITRE-
+     ATT&CK-mapping" code paths.
+  2. `wazuh/server_api.py` — error paths in the Wazuh API
+     client (auth fail, rate-limit, timeout, malformed
+     response). Use `httpx.MockTransport` patterns.
+  3. Sweep through the smaller deltas in `wazuh/opensearch.py`,
+     `models.py`, `query_builder.py` — should be quick.
+  4. Then any other modules I haven't named that turn out to
+     be under-covered when looking at the full per-file report.
+* After each batch, observe the coverage delta. When total
+  ≥ 80%, ratchet `--cov-fail-under` back to 80 in
+  `.github/workflows/ci.yml`.
+* If genuinely impossible to reach 80% without rewriting
+  parts of the codebase to be more testable: document why, set
+  a lower-but-honest floor (e.g., 75), and stop. Better an
+  enforced realistic floor than a perpetually-aspirational one.
+
+**Acceptance criteria:**
+
+* [ ] Total coverage ≥ 80% reported by the CI Test job.
+* [ ] `--cov-fail-under=80` set in `.github/workflows/ci.yml`,
+  replacing the temporary 70.
+* [ ] Per-module floors documented in `pyproject.toml` (or
+  similar) so individual modules can't silently drop below
+  their own targets while overall stays above 80%.
+* [ ] The TODO comment about "ratchet back" in
+  `.github/workflows/ci.yml` removed.
+
+**Sequencing:** Build-now-adjacent. Independent of the
+operator GPG preflight + the release-channel work. Could land
+in parallel with Batches 1/2/3. Recommended to land BEFORE
+v0.1.0 cuts (so the first stable release ships with the 80%
+gate) but not blocking on it (if v0.1.0 cuts at 74% coverage,
+the gate is still meaningful — it just hasn't been ratcheted
+yet).
+
 ### Gap 12 — Documentation site
 
 **What it is:** A browsable, searchable version of the
@@ -478,16 +611,20 @@ renders the markdown adequately.
 | 10 — Dependency vulnerability scanning | Build-now |
 | 11 — Secrets / credential scanning | Build-now |
 | 12 — Documentation site | Dedicated release phase |
-| 13 — Alembic drift cleanup + re-enable `alembic check` | Build-now-adjacent |
+| 13 — Alembic drift cleanup + re-enable `alembic check` | **CLOSED 2026-06-05** |
+| 14 — Test coverage improvement + ratchet `fail-under` back to 80% | Build-now-adjacent |
 
 **Build-now items**: 8 (1, 3, 5, 7, 8, 9, 10, 11). Each is a
-small slice — collectively ~half a phase of work.
+small slice — collectively ~half a phase of work. Of these,
+5, 7, 8 are CLOSED (Batch 1 — see commit 5363c74).
 
 **Dedicated release phase items**: 4 (2, 4, 6, 12). These need
 the APT repo decision + the v0.1.0 release as a starting point.
 
-**Build-now-adjacent**: 1 (13). Smaller than a full slice;
-focused cleanup work.
+**Build-now-adjacent**: 1 (14). Gap 13 was build-now-adjacent and
+is now CLOSED.
+
+**Closed**: 4 (5, 7, 8, 13).
 
 ## Architectural decisions (resolved 2026-06-05)
 
