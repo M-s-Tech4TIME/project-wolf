@@ -711,6 +711,178 @@ The relay daemons (the planned "wolf-relay" component that ships
 events from Wazuh hosts to wolf-server) will follow the same
 pattern with one `wolf-relay-<tenant>` cert per relay.
 
+#### Production distributed deployment via `.deb` packages
+
+The walkthrough above is dev-workflow focused. Production
+deployments use the `.deb` packages Wolf publishes (see
+[`docs/17-release-engineering.md`](docs/17-release-engineering.md))
+and split components across hosts according to the operator's
+threat model.
+
+##### Common topologies
+
+**Two-host topology (brain + edge):**
+
+```
+                  ┌────────────────────────┐
+  Browsers ──────▶│ wolf-dashboard host    │
+                  │ (DMZ / corporate VLAN) │
+                  │  - wolf-dashboard.deb  │
+                  │  - wolf-database.deb*  │
+                  └───────────┬────────────┘
+                              │ mTLS
+                              ▼
+                  ┌────────────────────────┐
+                  │ wolf-server host       │
+                  │ (internal "brain" VLAN)│
+                  │  - wolf-server.deb     │
+                  └───────────┬────────────┘
+                              │ Wazuh API
+                              ▼
+                  ┌────────────────────────┐
+                  │ Wazuh manager          │
+                  └────────────────────────┘
+
+* wolf-database can live on either host. Most operators
+  co-locate it with wolf-server (less network surface).
+```
+
+**Three-host topology (brain + edge + DB):**
+
+Same as above but `wolf-database` is on its own host. Used when
+the database needs its own backup/HA/network-isolation posture
+(e.g., a managed Postgres VM that other services also use).
+
+**Four-host topology (with gateway, post-Phase-6):**
+
+Adds a separate `wolf-gateway` host that runs the execute-tools
+and approval-token verification. Operators wanting maximum
+blast-radius reduction put the gateway on its own network
+segment with its own credentials.
+
+##### Per-host install steps (two-host example)
+
+Run these on the appropriate host. Order matters: install
+wolf-database first (it owns the schema), then wolf-server
+(applies migrations), then wolf-dashboard (consumes wolf-server).
+
+**On the wolf-server host** (the brain):
+
+```bash
+# 1. Add the Wolf APT repository (URL pending; tracked as
+#    docs/17 gap 2). Until then, sideload the .deb files:
+sudo apt install ./wolf-database_0.1.0_amd64.deb \
+                 ./wolf-server_0.1.0_amd64.deb
+
+# 2. Initialize the cluster (one-shot):
+sudo -u wolf-database \
+    WOLF_DATABASE_PRODUCTION=1 \
+    /usr/bin/wolf-database init
+
+# 3. Copy the printed DATABASE_URL into wolf-server's env:
+sudo $EDITOR /etc/wolf-server/env
+
+# Minimum required env vars:
+#   DATABASE_URL=postgresql+asyncpg://wolf:<pwd>@localhost:5432/wolf
+#   SECRET_KEY=<32+ random chars>
+#   SECRETS_BACKEND=file
+#   SECRETS_FILE_PATH=/var/lib/wolf-server/secrets.enc
+#   SECRETS_FILE_KEY=<cryptography.fernet.Fernet.generate_key()>
+#   ENVIRONMENT=production
+#   MTLS_ALLOWED_CLIENT_CNS=wolf-dashboard-client
+
+# 4. Copy the certs minted on your admin workstation:
+sudo install -d -m 0750 -o root -g wolf /etc/wolf/certs
+sudo install -d -m 0750 -o root -g wolf /etc/wolf/certs/ca
+sudo install -d -m 0750 -o root -g wolf /etc/wolf/certs/server
+sudo cp ca/ca-cert.pem        /etc/wolf/certs/ca/
+sudo cp server/cert.pem       /etc/wolf/certs/server/
+sudo install -m 0640 -o wolf-server -g wolf \
+    server/key.pem            /etc/wolf/certs/server/
+
+# 5. Start the services. Per ADR 0016 v3 they're fully
+#    independent; wolf-server has a built-in retry loop for
+#    wolf-database not being ready.
+sudo systemctl enable --now wolf-database wolf-server
+
+# 6. Verify:
+journalctl -u wolf-database -n 20 --no-pager
+journalctl -u wolf-server -n 20 --no-pager
+curl --cacert /etc/wolf/certs/ca/ca-cert.pem https://localhost:7860/healthz
+# Expect: {"status":"ok"}
+```
+
+**On the wolf-dashboard host** (the edge):
+
+```bash
+# 1. Install wolf-dashboard:
+sudo apt install ./wolf-dashboard_0.1.0_amd64.deb
+
+# 2. Provision the env file:
+sudo $EDITOR /etc/wolf-dashboard/env
+# Minimum:
+#   WOLF_SERVER_URL=https://wolf-server.internal:7860
+#   (use the brain host's DNS name or IP)
+
+# 3. Copy the certs:
+sudo install -d -m 0750 -o root -g wolf /etc/wolf/certs/ca
+sudo install -d -m 0750 -o root -g wolf /etc/wolf/certs/dashboard
+sudo install -d -m 0750 -o root -g wolf /etc/wolf/certs/dashboard-client
+sudo cp ca/ca-cert.pem /etc/wolf/certs/ca/
+sudo cp dashboard/cert.pem dashboard/key.pem \
+        /etc/wolf/certs/dashboard/
+sudo install -m 0640 -o wolf-dashboard -g wolf \
+    dashboard/key.pem /etc/wolf/certs/dashboard/
+sudo cp dashboard-client/cert.pem dashboard-client/key.pem \
+        /etc/wolf/certs/dashboard-client/
+sudo install -m 0640 -o wolf-dashboard -g wolf \
+    dashboard-client/key.pem /etc/wolf/certs/dashboard-client/
+
+# 4. Start:
+sudo systemctl enable --now wolf-dashboard
+
+# 5. Verify:
+journalctl -u wolf-dashboard -n 20 --no-pager
+curl --cacert /etc/wolf/certs/ca/ca-cert.pem https://localhost:3000/
+# Expect: HTML response (the login page).
+```
+
+##### Network + firewall rules
+
+For each topology, the operator must permit these inbound
+connections:
+
+| To host | Port | From | Reason |
+|---|---|---|---|
+| wolf-dashboard | 443 (or 3000) | Browser network | The only origin browsers connect to |
+| wolf-server | 7860 | wolf-dashboard host | mTLS-protected API |
+| wolf-database | 5432 | wolf-server host (if separate) | DB access |
+| Wazuh manager | 55000 / 1514 / 1515 | wolf-server host | Wazuh API access |
+
+Every other inter-component port should be blocked at the
+firewall level. wolf-server's mTLS middleware enforces this
+at the application layer too — but defense-in-depth.
+
+##### Common troubleshooting
+
+- **"mTLS: DISABLED" in wolf-server's journal** — the certs
+  aren't at the expected paths under `/etc/wolf/certs/` on
+  the wolf-server host. Check ownership: the dirs need
+  `0750 root:wolf` and the key file needs `0640 wolf-server:wolf`.
+- **Browser shows certificate-trust warning** — operators have
+  to add the Wolf CA cert (`ca/ca-cert.pem`) to their
+  browser's trust store. There's no public CA chain; that's
+  the deliberate posture of a self-signed CA.
+- **"connection refused" from wolf-dashboard to wolf-server** —
+  firewall isn't permitting the dashboard → server traffic on
+  port 7860. Verify with `nc -zv wolf-server.internal 7860`
+  from the wolf-dashboard host.
+- **wolf-server crashes on startup with "Database connection
+  failed"** — DATABASE_URL in `/etc/wolf-server/env` is wrong
+  or the database isn't running. wolf-server has a 120s retry
+  loop on startup; if it times out, journalctl shows the
+  underlying error.
+
 ---
 
 ## 4. Verifying everything works
