@@ -106,3 +106,13 @@ override_dh_auto_test:
 	# already run in CI before any commit reaches main. Re-running
 	# here would slow the build for no added safety.
 	@echo "wolf packaging: skipping test phase (already gated by CI)"
+
+override_dh_auto_install:
+	# Wolf installs files via debian/<package>.install — NOT via
+	# `make install`. Default dh_auto_install behaviour falls back
+	# to invoking our project Makefile's `install` target (which
+	# runs `uv sync` — not the right thing during a Debian build).
+	# Override to no-op; debhelper's dh_install + dh_installsystemd
+	# do the actual file placement from our debian/<package>.*
+	# config files.
+	@echo "wolf packaging: skipping dh_auto_install (files placed via debian/*.install)"
