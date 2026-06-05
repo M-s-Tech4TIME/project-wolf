@@ -1,0 +1,83 @@
+#!/bin/sh
+# debian/wolf-dashboard.postinst — runs after wolf-dashboard.deb installs.
+#
+# Phase 5.9-d. Simpler than wolf-server.postinst / wolf-database.postinst
+# because there's no Python venv to build at install time — the Next.js
+# standalone build is already self-contained in /usr/lib/wolf-dashboard/.
+#
+# Three jobs:
+#   1. Create the wolf group + wolf-dashboard system user if missing.
+#   2. Create FHS dirs at /var/lib/wolf-dashboard/ + /etc/wolf-dashboard/.
+#   3. Print operator-facing next steps.
+
+set -e
+
+WOLF_GROUP="wolf"
+WOLF_DASHBOARD_USER="wolf-dashboard"
+
+case "$1" in
+    configure)
+        # ── Group ─────────────────────────────────────────────────
+        if ! getent group "${WOLF_GROUP}" >/dev/null; then
+            addgroup --system "${WOLF_GROUP}"
+        fi
+
+        # ── User ──────────────────────────────────────────────────
+        if ! getent passwd "${WOLF_DASHBOARD_USER}" >/dev/null; then
+            adduser \
+                --system \
+                --ingroup "${WOLF_GROUP}" \
+                --home /nonexistent \
+                --no-create-home \
+                --shell /usr/sbin/nologin \
+                --gecos "Wolf edge component (Next.js)" \
+                "${WOLF_DASHBOARD_USER}"
+        fi
+
+        # ── FHS dirs ──────────────────────────────────────────────
+        for dir in /var/lib/wolf-dashboard \
+                   /etc/wolf-dashboard; do
+            install -d -m 0750 -o "${WOLF_DASHBOARD_USER}" -g "${WOLF_GROUP}" "${dir}"
+        done
+
+        # ── Sanity: standalone build present ──────────────────────
+        if [ ! -f "/usr/lib/wolf-dashboard/server.js" ]; then
+            echo "ERROR: standalone build not found at /usr/lib/wolf-dashboard/server.js" >&2
+            echo "  Reinstall the wolf-dashboard package." >&2
+            exit 1
+        fi
+
+        # ── systemd ───────────────────────────────────────────────
+        cat <<EOF
+
+  wolf-dashboard installed.
+
+  Before starting:
+    1. Provision /etc/wolf-dashboard/env (mode 0640
+       wolf-dashboard:wolf) with at minimum:
+         WOLF_SERVER_URL=https://localhost:7860
+       (Or the wolf-server host's URL for distributed deploys.)
+
+    2. Start the service:
+
+         sudo systemctl enable --now wolf-dashboard
+
+       The dashboard binds 0.0.0.0:3000 by default. Browser at
+       https://<host>:3000/ will log in via the same flow as the
+       dev workflow (Phase 5.6 mTLS reverse-proxy substrate).
+
+EOF
+        ;;
+
+    abort-upgrade|abort-remove|abort-deconfigure)
+        ;;
+
+    *)
+        echo "postinst called with unknown argument \`$1'" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

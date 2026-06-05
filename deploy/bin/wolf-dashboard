@@ -18,7 +18,7 @@
 set -eu
 
 INSTALL_DIR="/usr/lib/wolf-dashboard"
-SERVER_JS="${INSTALL_DIR}/.next/standalone/server.js"
+SERVER_JS="${INSTALL_DIR}/server.js"
 NODE_BIN="${WOLF_DASHBOARD_NODE:-/usr/bin/node}"
 
 if [ ! -f "${SERVER_JS}" ]; then
@@ -35,7 +35,11 @@ if [ ! -x "${NODE_BIN}" ]; then
     exit 2
 fi
 
-# Next.js's standalone server.js expects to run from the
-# .next/standalone dir so it can find adjacent .next/static.
-cd "${INSTALL_DIR}/.next/standalone"
+# wolf-dashboard.deb's postinst lays out the standalone build's
+# CONTENTS at the top level of INSTALL_DIR (not under
+# .next/standalone/), and copies .next/static + public alongside.
+# This is the conventional Next.js standalone deployment layout
+# the framework expects: server.js + node_modules/ + .next/static/
+# + public/ all at <cwd>.
+cd "${INSTALL_DIR}"
 exec "${NODE_BIN}" server.js

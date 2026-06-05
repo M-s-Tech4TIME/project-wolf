@@ -1,0 +1,26 @@
+# debian/wolf-dashboard.install — Phase 5.9-d.
+#
+# What ends up inside wolf-dashboard.deb. The Next.js standalone
+# build is structured as three separate trees that need to land in
+# specific places under /usr/lib/wolf-dashboard/.
+
+# CLI shim.
+deploy/bin/wolf-dashboard  usr/bin/
+
+# The Next.js standalone build's CONTENTS go at the top level of
+# /usr/lib/wolf-dashboard/ (not under .next/standalone/). This is
+# the conventional Next.js production layout — server.js +
+# node_modules/ + the compiled .next/server/ chunks all at <cwd>
+# when node runs.
+#
+# The `*` glob makes dh_install copy the contents-not-directory.
+services/dashboard/.next/standalone/*  usr/lib/wolf-dashboard/
+
+# Static assets — Next.js standalone deliberately doesn't bundle
+# these into .next/standalone/; we copy them from .next/static/
+# alongside the server. The runtime expects them at <cwd>/.next/static/.
+services/dashboard/.next/static  usr/lib/wolf-dashboard/.next/
+
+# Public assets (favicon, robots.txt, etc.) — same situation.
+# Next.js standalone reads these at <cwd>/public/.
+services/dashboard/public  usr/lib/wolf-dashboard/

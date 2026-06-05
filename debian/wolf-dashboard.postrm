@@ -1,0 +1,26 @@
+#!/bin/sh
+# debian/wolf-dashboard.postrm — Phase 5.9-d.
+#
+# Minimal cleanup: dpkg tracks all the dashboard's installed files
+# directly (no postinst-built venv to remove like wolf-server /
+# wolf-database have). dpkg's automatic file removal handles
+# uninstall. We just keep the conservative-preserve-user-data
+# stance for the FHS dirs.
+
+set -e
+
+case "$1" in
+    remove|upgrade|failed-upgrade|abort-install|abort-upgrade|disappear|purge)
+        # No-op; dpkg removes the standalone build files itself.
+        # /var/lib/wolf-dashboard preserved (operator's per-session
+        # state if we ever add any) even on purge.
+        ;;
+    *)
+        echo "postrm called with unknown argument \`$1'" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

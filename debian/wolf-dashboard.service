@@ -1,0 +1,44 @@
+[Unit]
+Description=Wolf dashboard — edge component (Next.js)
+Documentation=https://github.com/M-s-Tech4TIME/project-wolf/blob/main/docs/decisions/0016-wolf-component-architecture-and-packaging.md
+# Per ADR 0016 v3: fully independent — no After=/Requires=/Wants= between Wolf units.
+# The reverse proxy retries outbound fetches to wolf-server; nothing
+# breaks if wolf-server isn't up yet.
+
+[Service]
+Type=simple
+
+User=wolf-dashboard
+Group=wolf
+
+WorkingDirectory=/usr/lib/wolf-dashboard
+
+# wolf-dashboard reads WOLF_SERVER_URL + any other dashboard env
+# from /etc/wolf-dashboard/env. Mode 0640 wolf-dashboard:wolf.
+EnvironmentFile=/etc/wolf-dashboard/env
+
+# Production build: `npm run start` (vs `npm run dev` for the
+# user-level unit). Build happens at packaging time, NOT at unit
+# start — the .deb post-install runs `npm run build` once.
+ExecStart=/usr/bin/wolf-dashboard
+
+Restart=on-failure
+RestartSec=10s
+
+RuntimeDirectory=wolf-dashboard
+RuntimeDirectoryMode=0750
+
+# ── Hardening ─────────────────────────────────────────────────────
+ProtectSystem=strict
+# /var/lib/wolf-dashboard for Next.js's .next build cache + any
+# session-store data. The Next.js binary is read-only under
+# /usr/lib/wolf-dashboard.
+ReadWritePaths=/var/lib/wolf-dashboard
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

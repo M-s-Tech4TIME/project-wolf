@@ -82,7 +82,18 @@ override_dh_auto_build:
 
 	@echo "wolf-server wheel bundle built: $$(ls packaging/build/wolf-server-wheels/*.whl | wc -l) wheels"
 
-	# 5.9-d will add the Next.js standalone build for wolf-dashboard.
+	# ── wolf-dashboard Next.js standalone build (Phase 5.9-d) ───
+	# `npm ci` installs the lockfile-pinned deps deterministically.
+	# `npm run build` then produces the standalone artifact at
+	# services/dashboard/.next/standalone/ (server.js + a minimal
+	# node_modules tree) because next.config.ts has
+	# `output: "standalone"` set. debian/wolf-dashboard.install
+	# picks up the standalone tree + .next/static/ + public/ and
+	# ships them under /usr/lib/wolf-dashboard/ in the
+	# conventional Next.js production layout.
+	cd services/dashboard && npm ci --no-audit --no-fund
+	cd services/dashboard && npm run build
+	@echo "wolf-dashboard standalone build: $$(ls services/dashboard/.next/standalone/server.js && echo present)"
 
 # Strip the upstream test suite from the built packages — Wolf's
 # pytest suite shouldn't ship in /usr/lib/. dh_install rules in
