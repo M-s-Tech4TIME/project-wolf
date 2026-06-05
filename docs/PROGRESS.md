@@ -6,18 +6,19 @@
 >
 > For history of what changed when, see `CHANGELOG.md` (append-only).
 
-**Last updated:** 2026-06-05 by claude-code (Phase 5.9 CLOSED; Phase 5.10 next)
+**Last updated:** 2026-06-05 by claude-code (Phase 5.9 CLOSED; Phase 5.10 deferred to dedicated release phase per operator direction)
 
 ---
 
 ## 1. Where we are right now
 
-**Current phase:** Phase 5.10 — DNF packaging (RPM equivalent of
-Phase 5.9's APT). Operator opened Phase 5.9 earlier than
-originally scoped (after the deployment-substrate audit on
-2026-06-04 showed the substrate was complete). Phase 5.10 follows
-the same shape: per-component .rpm files plus a `wolf` meta-RPM
-that depends on all three.
+**Current phase:** No active build phase. Operator direction
+2026-06-05: APT (.deb) is the priority release channel; Phase
+5.10 (DNF / .rpm packaging) is deferred to the dedicated release
+phase that will land alongside the official Wolf v1 cut. Next
+session opens with a DevOps discussion (topic operator-driven);
+Phase 6 (Approval Gateway + wolf-gateway service) is the next
+build phase whenever the operator opens it.
 
 **Phase 5.9 — APT packaging — CLOSED 2026-06-05.** Five slices
 shipped on 2026-06-04 / 2026-06-05 that turn the deployment
