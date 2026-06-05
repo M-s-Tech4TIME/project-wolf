@@ -136,6 +136,46 @@ jobs:
       - name: Verify standalone build artifact exists
         run: test -f .next/standalone/server.js && echo "OK"
 
+  # Catches the most common migration-drift bug: someone edits a
+  # SQLAlchemy model but forgets to run `alembic revision
+  # --autogenerate`. CI spins up a clean Postgres, applies all
+  # migrations, then runs `alembic check` which diffs the model
+  # metadata against the migrated schema. Any unaccounted-for
+  # delta fails the job with a clear message naming what changed.
+  alembic-check:
+    name: Alembic migrations match models
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: wolf
+          POSTGRES_PASSWORD: wolf_test
+          POSTGRES_DB: wolf_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U wolf -d wolf_test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      DATABASE_URL: postgresql+asyncpg://wolf:wolf_test@localhost:5432/wolf_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+      - name: Install dependencies
+        run: uv sync --all-packages
+      - name: Apply all migrations
+        run: uv run --package wolf-server alembic -c services/server/alembic.ini upgrade head
+      - name: Verify models match migrations
+        # `alembic check` exits non-zero if `alembic revision
+        # --autogenerate` would produce a non-empty diff. That
+        # means: model edits without a corresponding migration.
+        run: uv run --package wolf-server alembic -c services/server/alembic.ini check
+
   # Verify no execute tools can be imported from wolf-server
   safety-check:
     name: Safety check (no execute tools in wolf-server)

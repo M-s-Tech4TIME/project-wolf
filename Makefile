@@ -335,14 +335,23 @@ smoke-database: ## End-to-end smoke for the wolf-database CLI lifecycle (Phase 5
 		fi; \
 		echo "    init succeeded"; \
 		\
-		echo "--- 3/5: start ---"; \
+		echo "--- 3/6: reconfigure (rewrites postgresql.conf + pg_hba.conf) ---"; \
+		uv run --project services/server python -m wolf_database reconfigure --port "$$PORT" 2>&1 | tail -3 || \
+		  { echo "FAIL: reconfigure failed"; exit 1; }; \
+		test -f "$$ROOT/cfg/postgresql.conf" || \
+		  { echo "FAIL: postgresql.conf missing post-reconfigure"; exit 1; }; \
+		test -f "$$ROOT/cfg/pg_hba.conf" || \
+		  { echo "FAIL: pg_hba.conf missing post-reconfigure"; exit 1; }; \
+		echo "    OK: reconfigure rewrote both config files"; \
+		\
+		echo "--- 4/6: start ---"; \
 		uv run --project services/server python -m wolf_database start || { echo "FAIL: start failed"; exit 1; }; \
 		\
-		echo "--- 4/5: status reports RUNNING ---"; \
+		echo "--- 5/6: status reports RUNNING ---"; \
 		out=$$(uv run --project services/server python -m wolf_database status 2>&1); \
 		echo "$$out" | grep -q "RUNNING" || { echo "FAIL: status should report RUNNING; got: $$out"; exit 1; }; \
 		\
-		echo "--- 5/5: stop + status reports STOPPED ---"; \
+		echo "--- 6/6: stop + status reports STOPPED ---"; \
 		uv run --project services/server python -m wolf_database stop || { echo "FAIL: stop failed"; exit 1; }; \
 		out=$$(uv run --project services/server python -m wolf_database status 2>&1); \
 		echo "$$out" | grep -q "STOPPED" || { echo "FAIL: status should report STOPPED; got: $$out"; exit 1; }; \
@@ -374,21 +383,31 @@ smoke-mtls: ## mTLS smoke: no-cert → 401 mtls_required, with-cert → 401 auth
 		curl -s --cacert "$$CA" --max-time 5 -o /dev/null https://localhost:7860/healthz || \
 		  { echo "FAIL: wolf-server not reachable on https://localhost:7860 (start it first)"; exit 2; }; \
 		\
-		echo "=== smoke-mtls: wolf-server is up; running 3-check sequence ==="; \
+		echo "=== smoke-mtls: wolf-server is up; running 4-check sequence ==="; \
 		\
-		echo "--- 1/3: no client cert  → expect 401 mtls_required ---"; \
+		echo "--- 1/4: wolf-cert status reports CA + 3 leaves ---"; \
+		st=$$(uv run --package wolf-cert python -m wolf_cert status 2>&1); \
+		echo "$$st" | grep -q "ca-cert.pem" || \
+		  { echo "FAIL: wolf-cert status missing ca-cert.pem"; echo "$$st"; exit 1; }; \
+		for leaf in server dashboard dashboard-client; do \
+		  echo "$$st" | grep -q "$$leaf" || \
+		    { echo "FAIL: wolf-cert status missing leaf $$leaf"; echo "$$st"; exit 1; }; \
+		done; \
+		echo "    OK: wolf-cert status reports CA + server + dashboard + dashboard-client"; \
+		\
+		echo "--- 2/4: no client cert  → expect 401 mtls_required ---"; \
 		body=$$(curl -s --cacert "$$CA" https://localhost:7860/api/v1/auth/me); \
 		echo "    response: $$body"; \
 		echo "$$body" | grep -q "mtls_required" || \
 		  { echo "FAIL: expected mtls_required, got: $$body"; exit 1; }; \
 		\
-		echo "--- 2/3: dashboard-client cert → expect 401 Not authenticated ---"; \
+		echo "--- 3/4: dashboard-client cert → expect 401 Not authenticated ---"; \
 		body=$$(curl -s --cacert "$$CA" --cert "$$CC" --key "$$CK" https://localhost:7860/api/v1/auth/me); \
 		echo "    response: $$body"; \
 		echo "$$body" | grep -q "Not authenticated" || \
 		  { echo "FAIL: expected \"Not authenticated\", got: $$body"; exit 1; }; \
 		\
-		echo "--- 3/3: /healthz loopback no-cert → expect status ok ---"; \
+		echo "--- 4/4: /healthz loopback no-cert → expect status ok ---"; \
 		body=$$(curl -s --cacert "$$CA" https://localhost:7860/healthz); \
 		echo "    response: $$body"; \
 		echo "$$body" | grep -q "\"status\":\"ok\"" || \
