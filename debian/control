@@ -4,7 +4,8 @@ Priority: optional
 Maintainer: Wolf Maintainers <abid.syed.golam@gmail.com>
 Build-Depends:
  debhelper-compat (= 13),
- python3 (>= 3.13),
+ build-essential,
+ python3,
  python3-venv,
  python3-pip,
  python3-build,

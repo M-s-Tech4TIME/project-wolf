@@ -247,6 +247,7 @@ jobs:
         run: |
           sudo apt-get install -y --no-install-recommends \
             debhelper devscripts dh-python \
+            build-essential \
             python3 python3-pip python3-venv python3-build \
             nodejs npm \
             ca-certificates
