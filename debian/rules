@@ -116,3 +116,21 @@ override_dh_auto_install:
 	# do the actual file placement from our debian/<package>.*
 	# config files.
 	@echo "wolf packaging: skipping dh_auto_install (files placed via debian/*.install)"
+
+override_dh_shlibdeps:
+	# Skip Node.js native modules (sharp, sharp-libvips, etc.).
+	# These ship pre-built ELF binaries for multiple libc variants
+	# (sharp-linuxmusl-x64 for Alpine-style musl; sharp-linux-x64
+	# for glibc Debian/Ubuntu). dh_shlibdeps tries to resolve ALL
+	# of them; the musl variants reference libc.musl-x86_64.so.1
+	# which doesn't exist on glibc systems, so dpkg-shlibdeps
+	# aborts. Excluding node_modules entirely is the correct
+	# stance: Node modules aren't tracked by Debian's shared-lib
+	# system; they're self-contained with their own RPATH.
+	dh_shlibdeps -X node_modules
+
+override_dh_strip:
+	# Same rationale as dh_shlibdeps — don't try to process
+	# Node.js native binaries (could trip on stripped/unstripped
+	# variants).
+	dh_strip -X node_modules

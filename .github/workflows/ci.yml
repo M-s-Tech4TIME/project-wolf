@@ -102,6 +102,36 @@ jobs:
             services/server/tests/test_tenant_scoped_cache.py \
             -v --tb=short
 
+  # Frontend gate — TypeScript type-check + ESLint + production
+  # build for services/dashboard. Mirrors what the Phase 5.9-d
+  # smoke-deb job exercises implicitly (npm run build) but does
+  # the explicit lint/type-check pass too. Catches dashboard
+  # regressions that the .deb build wouldn't necessarily surface.
+  # Phase 5.0c-l close-out gap caught by the 2026-06-05 CI audit.
+  frontend:
+    name: Frontend (tsc + eslint + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/dashboard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: services/dashboard/package-lock.json
+      - name: npm ci
+        run: npm ci --no-audit --no-fund
+      - name: TypeScript type-check
+        run: ./node_modules/.bin/tsc --noEmit
+      - name: ESLint
+        run: ./node_modules/.bin/eslint .
+      - name: Production build (Next.js standalone)
+        run: npm run build
+      - name: Verify standalone build artifact exists
+        run: test -f .next/standalone/server.js && echo "OK"
+
   # Verify no execute tools can be imported from wolf-server
   safety-check:
     name: Safety check (no execute tools in wolf-server)
