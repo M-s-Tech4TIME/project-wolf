@@ -439,21 +439,90 @@ small slice — collectively ~half a phase of work.
 **Dedicated release phase items**: 4 (2, 4, 6, 12). These need
 the APT repo decision + the v0.1.0 release as a starting point.
 
-## Open architectural decisions
+## Architectural decisions (resolved 2026-06-05)
 
-These need operator input before scoping any of the dependent
-gaps:
+| # | Decision | Answer |
+|---|---|---|
+| 1 | **APT repository hosting** | GitHub Pages + `reprepro`. Initial repo URL `https://m-s-tech4time.github.io/wolf-apt/` (or similar). Free, uses GitHub infrastructure already in place. |
+| 2 | **GPG keypair generation + storage** | Hybrid: generated locally on a clean machine → encrypted backup stored externally (1Password vault or equivalent) → private key copied into GitHub Actions Secrets (`GPG_PRIVATE_KEY` + `GPG_PASSPHRASE`) for CI signing. The local backup is the source of truth; GitHub is the CI-access copy. Survives any single failure (laptop dies, GitHub compromised, backup lost — pick any one and recovery is possible). |
+| 3 | **Release cadence** | Feature-driven — ship when ready, no promised cadence. The CHANGELOG speaks for itself. Trade accepted: operators can't plan upgrade windows; we'll revisit if Wolf gets enough operator scale to need predictable releases. |
+| 4 | **Long-term support window** | 12 months from each v0.X major's release date. Honest commitment, attainable for a solo maintainer. Documented in `SUPPORT.md` (gap 8). |
+| 5 | **Custom domain** | Defer to v0.X.0 (post-v1) cut. Initial v0.1.0 ships pointing at `https://m-s-tech4time.github.io/wolf-apt/`. Operators who installed via that URL will switch their sources.list when the custom domain lands. Domain name itself also deferred — choose closer to the migration cut. |
 
-1. **APT repository hosting** — GitHub Pages? Cloudflare R2?
-   Self-hosted VPS? Affects gap 2 directly, gap 4 indirectly.
-2. **Custom domain for the repo + docs** — `wolf-project.org`?
-   Subdomain pattern? Affects gaps 2, 4, 12.
-3. **GPG keypair generation + storage** — Hardware token?
-   Encrypted backup? Multiple signers? Affects gap 1.
-4. **Release cadence** — Time-based (monthly?) or
-   feature-driven? Affects gaps 3, 6, 8.
-5. **Major-version EOL window** — How long does v0.X stay
-   supported? Affects gap 8.
+These resolutions unblock the eight build-now gaps. The four
+dedicated-release-phase gaps (2, 4, 6, 12) still need additional
+operator-side action (e.g., publishing the GPG public key, the
+v0.1.0 release cut itself) before they can be exercised.
+
+## Implied sequencing for the eight build-now gaps
+
+Once the GPG keypair exists (operator-side prerequisite — see
+"Operator preflight" below), the build-now gaps can land in this
+order:
+
+**Batch 1 — pure docs (no code dependencies):**
+- Gap 7: `SECURITY.md` rewrite (disclosure process)
+- Gap 8: `SUPPORT.md` (12-month LTS policy)
+- Gap 5: distributed-install docs (expand ONBOARDING §3.13)
+
+**Batch 2 — small CI additions (independent):**
+- Gap 11: secrets / credential scanning (`gitleaks` pre-commit + CI)
+- Gap 10: dependency vulnerability scanning (Dependabot config + `pip-audit` CI job)
+- Gap 9: real `.deb` install verification in CI (`smoke-deb-install`)
+
+**Batch 3 — release infrastructure (depends on GPG keypair existing):**
+- Gap 1: GPG signing in CI (`smoke-deb` produces signed `.debs`)
+- Gap 3: `RELEASING.md` + tag-triggered release workflow
+
+Three batches; ~5–7 slices total. Could span 2–3 sessions.
+
+## Operator preflight (one-time, before Batch 3 starts)
+
+These are actions you do once, on your admin workstation. They
+don't require any Wolf code changes — but they must complete
+before gap 1 (GPG signing) can be wired into CI.
+
+1. **Generate the GPG keypair.** On a clean machine (fresh VM or
+   live USB recommended to minimise compromise window):
+   ```
+   gpg --full-generate-key
+   ```
+   Choose RSA 4096, no expiry (or set 5+ years), passphrase-
+   protected, identity `Wolf Maintainers <your-email>`.
+
+2. **Export both keys:**
+   ```
+   gpg --export-secret-keys --armor wolf-maintainers > wolf-maintainers-private.asc
+   gpg --export --armor wolf-maintainers > wolf-maintainers-public.asc
+   ```
+
+3. **Encrypt + store the private key for backup.** 1Password
+   secure note (or equivalent encrypted vault) holding the
+   contents of `wolf-maintainers-private.asc` + the passphrase.
+   This is the source of truth.
+
+4. **Add the private key to GitHub Actions Secrets:**
+   - Repository → Settings → Secrets and variables → Actions
+   - New secret: `GPG_PRIVATE_KEY` ← the contents of
+     `wolf-maintainers-private.asc`
+   - New secret: `GPG_PASSPHRASE` ← the passphrase
+
+5. **Publish the public key.** Commit
+   `wolf-maintainers-public.asc` to the repo at
+   `security/wolf-maintainers.gpg`. Operators reference this
+   URL during install (the Batch 3 release-workflow slice
+   wires the operator-facing docs).
+
+6. **Securely delete the temporary files** from the
+   key-generation machine:
+   ```
+   shred -u wolf-maintainers-private.asc
+   ```
+   (Optional — depends on whether you also want the
+   key-generation laptop as a third backup or only the
+   1Password vault + GitHub Secrets.)
+
+After this preflight, Batch 3 slices can land.
 
 ## Acceptance criteria for "Wolf is releasable as v1"
 
