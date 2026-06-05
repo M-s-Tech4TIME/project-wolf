@@ -59,14 +59,20 @@ jobs:
       ENVIRONMENT: test
       SECRETS_BACKEND: file
       SECRETS_FILE_PATH: /tmp/wolf_test_secrets.enc
-      SECRETS_FILE_KEY: test-fernet-key-change-in-prod====
+      # SECRETS_FILE_KEY intentionally NOT set here — the literal
+      # "test-fernet-key-change-in-prod====" isn't a valid Fernet
+      # key (Fernet wants 32 url-safe base64 bytes). conftest.py
+      # provides a valid key via os.environ.setdefault, which only
+      # fires when this env var is unset.
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.13"
       - name: Install dependencies
-        run: uv sync --all-packages
+        # --extra embeddings-local needed for test_factory_accepts_
+        # sentence_transformers_aliases. Other extras stay opt-in.
+        run: uv sync --all-packages --extra embeddings-local
       - name: Run tests with coverage
         run: |
           uv run pytest services/server/tests packages/ \
@@ -213,6 +219,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install Python 3.13
+        # ubuntu-latest (noble) ships python3.12 in apt. wolf-* packages
+        # have requires-python = ">=3.13"; pip wheel refuses to build
+        # them against 3.12. setup-python action installs 3.13 cleanly
+        # via the runner's tool cache.
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
       - name: Add PostgreSQL APT repo
         # Wolf's wheel build doesn't itself need Postgres, but the
         # .deb's Depends references postgresql-17 + pgvector
