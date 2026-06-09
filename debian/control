@@ -24,7 +24,8 @@ Depends:
  ${misc:Depends},
  postgresql-17,
  postgresql-17-pgvector,
- python3 (>= 3.13),
+ python3.13,
+ python3.13-venv,
  adduser,
 Description: Wolf bundled-Postgres component
  wolf-database wraps system-installed PostgreSQL 17 + pgvector with
@@ -41,8 +42,8 @@ Architecture: any
 Depends:
  ${shlibs:Depends},
  ${misc:Depends},
- python3 (>= 3.13),
- python3-venv,
+ python3.13,
+ python3.13-venv,
  adduser,
 Description: Wolf agent loop and API service
  wolf-server is the brain component: FastAPI app running the agent

@@ -51,8 +51,12 @@ case "$1" in
         # ── Python venv ───────────────────────────────────────────
         # Rebuild from scratch on every (re)install so an upgraded
         # wheel set actually takes effect.
+        # Use python3.13 explicitly (not unversioned `python3`) —
+        # the .deb's Depends pulls in python3.13 specifically since
+        # the bundled wheels have requires-python = ">=3.13" and
+        # Ubuntu noble's default python3 is 3.12.
         rm -rf "${VENV_DIR}"
-        python3 -m venv "${VENV_DIR}"
+        python3.13 -m venv "${VENV_DIR}"
 
         # Sanity: at least one wolf-server wheel must be present.
         if ! ls "${WHEEL_DIR}"/wolf_server-*-py3-none-any.whl >/dev/null 2>&1; then
