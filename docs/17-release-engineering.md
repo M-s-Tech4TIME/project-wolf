@@ -338,6 +338,28 @@ supported for 12 months from release") and refined over time.
 
 ### Gap 9 — Real `.deb` install verification in CI
 
+**Status (2026-06-09): CLOSED.** New `smoke-deb-install` job in
+`.github/workflows/ci.yml` downloads the `.debs` produced by
+`smoke-deb` + `apt install`s them on a clean ubuntu-latest +
+verifies (1) users/group created, (2) FHS dirs owned correctly,
+(3) Python venvs built by postinst, (4) CLI shims executable,
+(5) systemd units loaded.
+
+Closing this gap surfaced 5 real packaging bugs along the way:
+1. python3 (>= 3.13) Depends unsatisfiable on stock Ubuntu —
+   changed to `python3.13` (deadsnakes-provided package name).
+2. `python3 -m venv` in postinst created 3.12 venvs — changed
+   to explicit `python3.13 -m venv`.
+3. Unquoted heredocs in postinsts let dash interpret backticks
+   + escapes in the body — switched to `<<'EOF'` (quoted).
+4. The literal token `#DEBHELPER#` inside comments was being
+   substituted by debhelper globally, breaking the installed
+   postinst — replaced with "DEBHELPER substitution point".
+5. NodeSource setup_20.x repo needed for nodejs >= 20.
+
+Each fix was production-relevant: operators on stock Ubuntu would
+have hit the exact same problems.
+
 **What it is:** Today's CI builds the `.debs` but doesn't `apt
 install` them on a clean image and verify the services start.
 That's a real gap — the build succeeding doesn't prove the
@@ -366,6 +388,22 @@ packages, and verify the services come up.
 
 ### Gap 10 — Dependency vulnerability scanning
 
+**Status (2026-06-09): CLOSED.** Two pieces shipped:
+
+* `.github/dependabot.yml` — three update streams (uv, npm,
+  github-actions). Weekly schedule (Mondays 09:00 Asia/Dhaka)
+  for version updates; security updates land immediately. Major
+  bumps of `next` / `react` / `react-dom` ignored (require
+  manual coordination with the dashboard rebuild cadence).
+
+* `dep-audit` CI job — runs `pip-audit` against the synced uv
+  workspace on every push + PR. Exit 1 on any known CVE in
+  transitive deps.
+
+Closing this gap surfaced + fixed a real CVE (starlette 1.0.0 →
+PYSEC-2026-161) via `uv lock --upgrade-package starlette`
+(bumped 1.0.0 → 1.2.1).
+
 **What it is:** Automated CVE scanning across our Python +
 Node + Postgres + Postgres-package deps. Surfaces known
 vulnerabilities so we can patch + cut a release before
@@ -392,6 +430,20 @@ free).
 ---
 
 ### Gap 11 — Secrets / credential scanning
+
+**Status (2026-06-09): CLOSED.** Three pieces shipped:
+
+* `.gitleaks.toml` — gitleaks config with allowlist for known
+  test-fixture strings (test SECRET_KEY, Fernet test key,
+  Postgres test password 'wolf_test', etc.).
+* `secrets-scan` CI job — runs the gitleaks CLI binary
+  directly (MIT-licensed) rather than gitleaks/gitleaks-
+  action@v2 (which requires a paid license for organization
+  repos as of 2024+). Same scanner, no license requirement.
+* `.pre-commit-config.yaml` — optional pre-commit hook that
+  catches issues before they reach git history (CI is the
+  canonical gate; pre-commit is opt-in via
+  `pip install pre-commit && pre-commit install`).
 
 **What it is:** CI guards against accidentally committing
 secrets (API keys, passwords, private keys).
@@ -634,18 +686,19 @@ renders the markdown adequately.
 | 13 — Alembic drift cleanup + re-enable `alembic check` | **CLOSED 2026-06-05** |
 | 14 — Test coverage improvement + ratchet `fail-under` back to 80% | Build-now-adjacent |
 
-**Build-now items**: 8 (1, 3, 5, 7, 8, 9, 10, 11). Of these, 5
-of 8 are now CLOSED (1, 3, 5, 7, 8). Remaining 3: gap 9 (real
-.deb install verification), 10 (dependency scanning), 11
-(secrets scanning) — these are Batch 2.
+**Build-now items**: 8 (1, 3, 5, 7, 8, 9, 10, 11). **ALL 8 NOW
+CLOSED** as of 2026-06-09. Batch 1 closed gaps 5/7/8; Batch 3
+closed gaps 1/3; Batch 2 closed gaps 9/10/11.
 
 **Dedicated release phase items**: 4 (2, 4, 6, 12). These need
 the APT repo decision + the v0.1.0 release as a starting point.
 
 **Build-now-adjacent**: 1 (14). Gap 13 was build-now-adjacent and
-is now CLOSED.
+is also CLOSED.
 
-**Closed**: 6 (1, 3, 5, 7, 8, 13).
+**Closed**: 9 of 14 (1, 3, 5, 7, 8, 9, 10, 11, 13). Remaining
+open: 4 dedicated-release-phase (2, 4, 6, 12) + 1 build-now-
+adjacent (14 — coverage improvement).
 
 ## Architectural decisions (resolved 2026-06-05)
 
