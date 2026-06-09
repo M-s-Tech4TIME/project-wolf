@@ -46,6 +46,10 @@ ignore = [
 "packages/database/wolf_database/cli.py" = ["T20"]
 "packages/database/wolf_database/__main__.py" = ["T20"]
 "services/server/wolf_server/__main__.py" = ["T20"]
+# CI tooling scripts under .github/scripts/ are operator-facing
+# automation, not application code. They legitimately need `print`
+# for progress output and embed markdown URLs in f-strings (E501).
+".github/scripts/**" = ["T20", "E501"]
 
 [tool.mypy]
 python_version = "3.13"

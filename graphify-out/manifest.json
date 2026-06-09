@@ -1285,13 +1285,18 @@
     "semantic_hash": "a2760511c65806022ad20adf74370ff3"
   },
   ".github/workflows/release.yml": {
-    "mtime": 1781013739.7614565,
-    "ast_hash": "f64bc5964c5781667c6bf913d402c92c",
+    "mtime": 1781014557.6868467,
+    "ast_hash": "d3dfbe649eb0073f7c251643447f0ec9",
     "semantic_hash": ""
   },
   "RELEASING.md": {
     "mtime": 1781013806.566764,
     "ast_hash": "0e09a04493daf8393794bd9d4343cd8f",
+    "semantic_hash": ""
+  },
+  ".github/scripts/release-notes.py": {
+    "mtime": 1781014536.4263785,
+    "ast_hash": "8c3801d08ce643c2d293963bfe9189c6",
     "semantic_hash": ""
   }
 }
