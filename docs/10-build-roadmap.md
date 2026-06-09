@@ -287,11 +287,15 @@ different analyst with the right authority approves, wolf-gateway
 executes it against a real Wazuh deployment, verification read
 confirms the actual state. Every step audited.
 
-## Phase 7 — Cases and reporting
+## Phase 7 — Cases and reporting (wolf-hunt foundation)
 
 This was the original Phase 5 — bumped here because the
 deployment-substrate work (current Phase 5.x sub-tree) was the
 critical-path blocker for everything that comes after release.
+
+Scope extended per ADR 0017 (2026-06-10): this phase delivers
+the foundational case-management layer that **wolf-hunt** (Phase
+9.5) builds the full incident-response platform on top of.
 
 - Case data model — triggering signal, timeline, findings,
   proposals, communications, disposition.
@@ -308,6 +312,38 @@ critical-path blocker for everything that comes after release.
 question to closed case, produce a grounded incident report, and
 the report opens cleanly in PDF.
 
+## Phase 7.5 — Central Brain: memory + deep-think + self-validation
+
+**Proposed in ADR 0017 (2026-06-10).** Adds Wolf's cognitive layer
+— the integrated memory + reasoning + self-validation scaffolding
+that the underlying model runs inside.
+
+Four subsystems:
+
+- **Memory layer** — episodic (in-conversation) + session
+  (auto-compressed summary) + long-term (cross-conversation,
+  per-operator) + semantic (environment knowledge graph). All
+  forced-filtered by `(tenant_id, operator_id)` at the SQL layer.
+- **Thinking layer** — new **deep-think** agent strategy
+  alongside existing frontier / guided / pipeline. Decomposes
+  complex questions into sub-questions, retrieves + verifies per
+  sub-question, then synthesises.
+- **Self-validation layer** — extends grounding validator (ADR
+  0013) with an action validator (pre-flight checks before
+  propose-tool output reaches wolf-gateway) and confidence
+  calibration (signals certainty correctly; does NOT bluff under
+  uncertainty — see ADR 0017 §"Robust answer posture").
+- **Memory dashboard** — operator-facing read/edit/delete of
+  long-term + semantic memory. Right-to-be-forgotten.
+
+Nine sub-slices (7.5-a through 7.5-i) per ADR 0017's
+implementation sequencing.
+
+**Exit criteria:** the model remembers what was discussed
+yesterday, knows the operator's environment, can deep-think on
+complex queries, and self-validates actions before sending them
+to wolf-gateway.
+
 ## Phase 8 — Detection engineering and threat-hunt features
 
 - `propose_rule_tuning` enhanced: produces a diff with an
@@ -322,6 +358,31 @@ the report opens cleanly in PDF.
 **Exit criteria:** detection engineer investigates a noisy rule,
 proposes a tuning, and has it executed through wolf-gateway.
 
+## Phase 8.5 — Central Brain: continuous learning workers
+
+**Proposed in ADR 0017 (2026-06-10).** Background workers that
+make Wolf get smarter from the operator's environment over time.
+Independent of the chat path; all write to the per-tenant
+knowledge corpus (RAG store) + semantic memory (Phase 7.5).
+
+- **Knowledge feedback worker** — operator-reviewed case-close
+  summaries auto-ingest into the tenant's private corpus.
+  (Originally Phase 10; consolidated here.)
+- **Alert-pattern extraction worker** — periodic clustering of
+  Wazuh alerts, surfaces recurring patterns, promotes them to
+  semantic memory observations.
+- **User feedback signal** — thumbs-up/down on Wolf's answers
+  becomes a retrieval-ranking signal. Negative feedback weights
+  down those chunks for similar future queries.
+- **Environment fingerprinting worker** — walks Wazuh API to
+  enumerate agents / hosts / rules / network topology +
+  populates the semantic memory knowledge graph.
+
+**Exit criteria:** after one month of operation in a tenant,
+the per-tenant corpus contains operator-specific observations
++ feedback-tuned retrieval is measurably better at returning
+chunks the operator marked helpful previously.
+
 ## Phase 9 — Playbooks and orchestration
 
 - Playbook engine: named, versioned, step-by-step workflows with
@@ -329,6 +390,29 @@ proposes a tuning, and has it executed through wolf-gateway.
 - Starter library of playbooks for common scenarios.
 - Shift-handover report generated from open cases.
 - Cross-case analytics dashboards (per-tenant + MSSP-parent-scope).
+
+## Phase 9.5 — wolf-hunt: Incident Response + Case Management platform
+
+**Reserved per ADR 0017 (2026-06-10). Detailed design in a future
+ADR (likely 0018) at phase-open time.**
+
+Builds on Phase 7's case data model. Adds a dedicated incident-
+response platform within Wolf — separate dashboard + UI/UX,
+accessible from wolf-dashboard.
+
+Core capability: instead of one-case-per-alert (which produces
+alert fatigue), wolf-hunt **correlates** related Wazuh alerts +
+events into a single incident with:
+- A timeline of all contributing alerts + events
+- An attack-narrative summary (LLM-generated, grounding-checked)
+- Suggested eradication / mitigation / containment steps
+- Operator-facing case workflow (new / triaging / contained /
+  closed) with audit
+- Cross-referenced threat intel from wolf-den when available
+
+**Out of scope of this roadmap entry**: the correlation algorithm
+itself, the case schema, the dashboard UI. All deferred to the
+wolf-hunt ADR when Phase 9.5 opens.
 
 ## Phase 10 — Knowledge feedback and growth
 
@@ -347,13 +431,52 @@ proposes a tuning, and has it executed through wolf-gateway.
 
 Land any time after Phase 6 has a working approval queue.
 
-## Phase 12 — Wolf Knowledge Relay
+## Phase 11.5 — wolf-den: Cyber Threat Intelligence platform
 
-Native daemon shipped to every Wazuh host; ships rules, decoders,
-SCA findings, vuln data, asset inventory into Wolf via mTLS.
+**Reserved per ADR 0017 (2026-06-10). Detailed design in a future
+ADR (likely 0019) at phase-open time.**
+
+Separate platform within Wolf — distinct dashboard + UI/UX,
+accessible from wolf-dashboard. For threat hunters who want a
+focused CTI surface vs the general agent-chat experience.
+
+Core capabilities:
+- IOC extraction from the operator's environment (file hashes,
+  domains, IPs, registry keys, etc.) accumulated from Wazuh
+  events
+- Per-IOC observation tracking (where it appeared, how often,
+  on which hosts, what rules fired)
+- Threat-actor / campaign correlation against MITRE ATT&CK +
+  external threat feeds
+- Wolf-generated intel reports for the operator's environment
+- Case creation from CTI findings (cross-references wolf-hunt)
+
+**Out of scope of this roadmap entry**: the IOC schema, the
+intel-report format, the external-feed integration points. All
+deferred to the wolf-den ADR.
+
+## Phase 12 — wolf-pack: native agents on Wazuh hosts
+
+**Renamed from "Wolf Knowledge Relay" per operator direction
+(ADR 0017, 2026-06-10).** Scope also expanded.
+
+Native daemon (a "wolf-pack agent") deployed across every Wazuh
+host — indexers, servers, dashboards, managers. Two
+responsibilities:
+
+1. **Inbound to Wolf** — ships rules, decoders, SCA findings,
+   vulnerability data, asset inventory, agent-level health
+   into wolf-server via mTLS (the original "Wolf Knowledge
+   Relay" scope).
+2. **Outbound from Wolf** — executes actions Wolf can't reach
+   from the brain host: local-only commands, host-specific
+   diagnostics, container-bound tasks, custom scripts under
+   the wolf-gateway approval flow.
+
 Hard dependency on Phase 5.4 HTTPS + Phase 5.6 mTLS (both
-delivered). Tracked in cross-session memory
-`wolf-knowledge-relay.md`.
+delivered) + Phase 6 wolf-gateway (for the outbound command
+flow). Detailed design in a future ADR (likely 0020) at
+phase-open time.
 
 ## Phase 13 — Optional auto-execution
 

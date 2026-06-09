@@ -1,7 +1,7 @@
 # Graph Report - project-wolf  (2026-06-09)
 
 ## Corpus Check
-- 251 files · ~227,266 words
+- 251 files · ~229,428 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -10,7 +10,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `15bc015b`
+- Built from commit: `72608aeb`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -730,7 +730,7 @@ Cohesion: 0.25
 Nodes (5): Any, _FlakeyProvider, Stub that returns a scripted mix of content strings AND exceptions     so we can, A transient first-call failure (e.g. ReadTimeout on cold model) is     retried o, test_judge_recovers_when_first_call_raises()
 
 ## Knowledge Gaps
-- **351 isolated node(s):** `What "release" means in Wolf today`, `Versioning`, `Pre-release checklist`, `Cut the release`, `Post-release verification` (+346 more)
+- **351 isolated node(s):** `Why this doc exists`, `The Wazuh model we're targeting`, `What Wolf has today`, `Gap 1 — GPG signing of `.deb` artifacts`, `Gap 2 — A hosted APT repository` (+346 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **38 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 

@@ -995,8 +995,8 @@
     "semantic_hash": "bd5971088bdde244df43443750f0c6b0"
   },
   ".github/workflows/ci.yml": {
-    "mtime": 1781013432.3971689,
-    "ast_hash": "0a4e5a4eeb5ed55c987bbab9ac8c65b8",
+    "mtime": 1781023529.1981778,
+    "ast_hash": "d66200f3360a9c113206a88527ee9edd",
     "semantic_hash": ""
   },
   "CODE_OF_CONDUCT.md": {
@@ -1285,13 +1285,28 @@
     "semantic_hash": "a2760511c65806022ad20adf74370ff3"
   },
   ".github/workflows/release.yml": {
-    "mtime": 1781013739.7614565,
-    "ast_hash": "f64bc5964c5781667c6bf913d402c92c",
+    "mtime": 1781014557.6868467,
+    "ast_hash": "d3dfbe649eb0073f7c251643447f0ec9",
     "semantic_hash": ""
   },
   "RELEASING.md": {
     "mtime": 1781013806.566764,
     "ast_hash": "0e09a04493daf8393794bd9d4343cd8f",
+    "semantic_hash": ""
+  },
+  ".github/scripts/release-notes.py": {
+    "mtime": 1781014536.4263785,
+    "ast_hash": "8c3801d08ce643c2d293963bfe9189c6",
+    "semantic_hash": ""
+  },
+  ".pre-commit-config.yaml": {
+    "mtime": 1781016508.5368774,
+    "ast_hash": "8a0347d5b5fc19de81d6b82e29fa16ed",
+    "semantic_hash": ""
+  },
+  ".github/dependabot.yml": {
+    "mtime": 1781022628.3203266,
+    "ast_hash": "925e902e41f986dbf07b38a6b644ee97",
     "semantic_hash": ""
   }
 }

@@ -141,76 +141,301 @@
   },
   "nodes": [
     {
+      "label": "17-release-engineering.md",
+      "file_type": "document",
+      "source_file": "docs/17-release-engineering.md",
+      "source_location": "L1",
+      "id": "docs_17_release_engineering",
+      "community": 72,
+      "norm_label": "17-release-engineering.md"
+    },
+    {
+      "label": "17 \u2014 Release Engineering",
+      "file_type": "document",
+      "source_file": "docs/17-release-engineering.md",
+      "source_location": "L1",
+      "id": "docs_17_release_engineering_17_release_engineering",
+      "community": 72,
+      "norm_label": "17 \u2014 release engineering"
+    },
+    {
+      "label": "Why this doc exists",
+      "file_type": "document",
+      "source_file": "docs/17-release-engineering.md",
+      "source_location": "L9",
+      "id": "docs_17_release_engineering_why_this_doc_exists",
+      "community": 72,
+      "norm_label": "why this doc exists"
+    },
+    {
+      "label": "The Wazuh model we're targeting",
+      "file_type": "document",
+      "source_file": "docs/17-release-engineering.md",
+      "source_location": "L27",
+      "id": "docs_17_release_engineering_the_wazuh_model_we_re_targeting",
+      "community": 72,
+      "norm_label": "the wazuh model we're targeting"
+    },
+    {
+      "label": "What Wolf has today",
+      "file_type": "document",
+      "source_file": "docs/17-release-engineering.md",
+      "source_location": "L42",
+      "id": "docs_17_release_engineering_what_wolf_has_today",
+      "community": 72,
+      "norm_label": "what wolf has today"
+    },
+    {
+      "label": "The gaps \u2014 what Wolf is missing",
+      "file_type": "document",
+      "source_file": "docs/17-release-engineering.md",
+      "source_location": "L59",
+      "id": "docs_17_release_engineering_the_gaps_what_wolf_is_missing",
+      "community": 72,
+      "norm_label": "the gaps \u2014 what wolf is missing"
+    },
+    {
+      "label": "Gap 1 \u2014 GPG signing of `.deb` artifacts",
+      "file_type": "document",
+      "source_file": "docs/17-release-engineering.md",
+      "source_location": "L65",
+      "id": "docs_17_release_engineering_gap_1_gpg_signing_of_deb_artifacts",
+      "community": 72,
+      "norm_label": "gap 1 \u2014 gpg signing of `.deb` artifacts"
+    },
+    {
+      "label": "Gap 2 \u2014 A hosted APT repository",
+      "file_type": "document",
+      "source_file": "docs/17-release-engineering.md",
+      "source_location": "L110",
+      "id": "docs_17_release_engineering_gap_2_a_hosted_apt_repository",
+      "community": 72,
+      "norm_label": "gap 2 \u2014 a hosted apt repository"
+    },
+    {
+      "label": "Gap 3 \u2014 Versioned release tagging + release notes",
+      "file_type": "document",
+      "source_file": "docs/17-release-engineering.md",
+      "source_location": "L148",
+      "id": "docs_17_release_engineering_gap_3_versioned_release_tagging_release_notes",
+      "community": 72,
+      "norm_label": "gap 3 \u2014 versioned release tagging + release notes"
+    },
+    {
+      "label": "Gap 4 \u2014 Quickstart install script (Wazuh's `wazuh-install.sh` equivalent)",
+      "file_type": "document",
+      "source_file": "docs/17-release-engineering.md",
+      "source_location": "L194",
+      "id": "docs_17_release_engineering_gap_4_quickstart_install_script_wazuh_s_wazuh_install_sh_equivalent",
+      "community": 72,
+      "norm_label": "gap 4 \u2014 quickstart install script (wazuh's `wazuh-install.sh` equivalent)"
+    },
+    {
+      "label": "Gap 5 \u2014 Distributed-deployment install docs per release",
+      "file_type": "document",
+      "source_file": "docs/17-release-engineering.md",
+      "source_location": "L231",
+      "id": "docs_17_release_engineering_gap_5_distributed_deployment_install_docs_per_release",
+      "community": 72,
+      "norm_label": "gap 5 \u2014 distributed-deployment install docs per release"
+    },
+    {
+      "label": "Gap 6 \u2014 Upgrade testing matrix",
+      "file_type": "document",
+      "source_file": "docs/17-release-engineering.md",
+      "source_location": "L260",
+      "id": "docs_17_release_engineering_gap_6_upgrade_testing_matrix",
+      "community": 72,
+      "norm_label": "gap 6 \u2014 upgrade testing matrix"
+    },
+    {
+      "label": "Gap 7 \u2014 Security disclosure policy",
+      "file_type": "document",
+      "source_file": "docs/17-release-engineering.md",
+      "source_location": "L288",
+      "id": "docs_17_release_engineering_gap_7_security_disclosure_policy",
+      "community": 72,
+      "norm_label": "gap 7 \u2014 security disclosure policy"
+    },
+    {
+      "label": "Gap 8 \u2014 Long-term support policy",
+      "file_type": "document",
+      "source_file": "docs/17-release-engineering.md",
+      "source_location": "L316",
+      "id": "docs_17_release_engineering_gap_8_long_term_support_policy",
+      "community": 72,
+      "norm_label": "gap 8 \u2014 long-term support policy"
+    },
+    {
+      "label": "Gap 9 \u2014 Real `.deb` install verification in CI",
+      "file_type": "document",
+      "source_file": "docs/17-release-engineering.md",
+      "source_location": "L339",
+      "id": "docs_17_release_engineering_gap_9_real_deb_install_verification_in_ci",
+      "community": 72,
+      "norm_label": "gap 9 \u2014 real `.deb` install verification in ci"
+    },
+    {
+      "label": "Gap 10 \u2014 Dependency vulnerability scanning",
+      "file_type": "document",
+      "source_file": "docs/17-release-engineering.md",
+      "source_location": "L389",
+      "id": "docs_17_release_engineering_gap_10_dependency_vulnerability_scanning",
+      "community": 72,
+      "norm_label": "gap 10 \u2014 dependency vulnerability scanning"
+    },
+    {
+      "label": "Gap 11 \u2014 Secrets / credential scanning",
+      "file_type": "document",
+      "source_file": "docs/17-release-engineering.md",
+      "source_location": "L432",
+      "id": "docs_17_release_engineering_gap_11_secrets_credential_scanning",
+      "community": 72,
+      "norm_label": "gap 11 \u2014 secrets / credential scanning"
+    },
+    {
+      "label": "Gap 13 \u2014 Alembic model/migration drift cleanup + re-enable `alembic check`",
+      "file_type": "document",
+      "source_file": "docs/17-release-engineering.md",
+      "source_location": "L468",
+      "id": "docs_17_release_engineering_gap_13_alembic_model_migration_drift_cleanup_re_enable_alembic_check",
+      "community": 72,
+      "norm_label": "gap 13 \u2014 alembic model/migration drift cleanup + re-enable `alembic check`"
+    },
+    {
+      "label": "Gap 14 \u2014 Test coverage improvement + ratchet `fail-under` back to 80%",
+      "file_type": "document",
+      "source_file": "docs/17-release-engineering.md",
+      "source_location": "L544",
+      "id": "docs_17_release_engineering_gap_14_test_coverage_improvement_ratchet_fail_under_back_to_80",
+      "community": 72,
+      "norm_label": "gap 14 \u2014 test coverage improvement + ratchet `fail-under` back to 80%"
+    },
+    {
+      "label": "Gap 12 \u2014 Documentation site",
+      "file_type": "document",
+      "source_file": "docs/17-release-engineering.md",
+      "source_location": "L647",
+      "id": "docs_17_release_engineering_gap_12_documentation_site",
+      "community": 72,
+      "norm_label": "gap 12 \u2014 documentation site"
+    },
+    {
+      "label": "Summary \u2014 build-now vs dedicated release phase",
+      "file_type": "document",
+      "source_file": "docs/17-release-engineering.md",
+      "source_location": "L670",
+      "id": "docs_17_release_engineering_summary_build_now_vs_dedicated_release_phase",
+      "community": 72,
+      "norm_label": "summary \u2014 build-now vs dedicated release phase"
+    },
+    {
+      "label": "Architectural decisions (resolved 2026-06-05)",
+      "file_type": "document",
+      "source_file": "docs/17-release-engineering.md",
+      "source_location": "L703",
+      "id": "docs_17_release_engineering_architectural_decisions_resolved_2026_06_05",
+      "community": 72,
+      "norm_label": "architectural decisions (resolved 2026-06-05)"
+    },
+    {
+      "label": "Implied sequencing for the eight build-now gaps",
+      "file_type": "document",
+      "source_file": "docs/17-release-engineering.md",
+      "source_location": "L718",
+      "id": "docs_17_release_engineering_implied_sequencing_for_the_eight_build_now_gaps",
+      "community": 72,
+      "norm_label": "implied sequencing for the eight build-now gaps"
+    },
+    {
+      "label": "Operator preflight (one-time, before Batch 3 starts)",
+      "file_type": "document",
+      "source_file": "docs/17-release-engineering.md",
+      "source_location": "L740",
+      "id": "docs_17_release_engineering_operator_preflight_one_time_before_batch_3_starts",
+      "community": 72,
+      "norm_label": "operator preflight (one-time, before batch 3 starts)"
+    },
+    {
+      "label": "Acceptance criteria for \"Wolf is releasable as v1\"",
+      "file_type": "document",
+      "source_file": "docs/17-release-engineering.md",
+      "source_location": "L802",
+      "id": "docs_17_release_engineering_acceptance_criteria_for_wolf_is_releasable_as_v1",
+      "community": 72,
+      "norm_label": "acceptance criteria for \"wolf is releasable as v1\""
+    },
+    {
       "label": "release-notes.py",
       "file_type": "code",
       "source_file": ".github/scripts/release-notes.py",
       "source_location": "L1",
-      "id": "scripts_release_notes",
       "community": 114,
-      "norm_label": "release-notes.py"
+      "norm_label": "release-notes.py",
+      "id": "scripts_release_notes"
     },
     {
       "label": "extract_changelog_section()",
       "file_type": "code",
       "source_file": ".github/scripts/release-notes.py",
       "source_location": "L26",
-      "id": "scripts_release_notes_extract_changelog_section",
       "community": 114,
-      "norm_label": "extract_changelog_section()"
+      "norm_label": "extract_changelog_section()",
+      "id": "scripts_release_notes_extract_changelog_section"
     },
     {
       "label": "str",
       "file_type": "code",
       "source_file": ".github/scripts/release-notes.py",
       "source_location": "L26",
-      "id": "str",
       "community": 114,
-      "norm_label": "str"
+      "norm_label": "str",
+      "id": "str"
     },
     {
       "label": "fallback_notes()",
       "file_type": "code",
       "source_file": ".github/scripts/release-notes.py",
       "source_location": "L49",
-      "id": "scripts_release_notes_fallback_notes",
       "community": 114,
-      "norm_label": "fallback_notes()"
+      "norm_label": "fallback_notes()",
+      "id": "scripts_release_notes_fallback_notes"
     },
     {
       "label": "main()",
       "file_type": "code",
       "source_file": ".github/scripts/release-notes.py",
       "source_location": "L106",
-      "id": "scripts_release_notes_main",
       "community": 114,
-      "norm_label": "main()"
+      "norm_label": "main()",
+      "id": "scripts_release_notes_main"
     },
     {
       "label": "Generate release notes for a Wolf release.  Reads docs/CHANGELOG.md and either:",
       "file_type": "rationale",
       "source_file": ".github/scripts/release-notes.py",
       "source_location": "L1",
-      "id": "scripts_release_notes_rationale_1",
       "community": 114,
-      "norm_label": "generate release notes for a wolf release.  reads docs/changelog.md and either:"
+      "norm_label": "generate release notes for a wolf release.  reads docs/changelog.md and either:",
+      "id": "scripts_release_notes_rationale_1"
     },
     {
       "label": "Find the `## ... v{version} ...` section and return its body.      Returns the b",
       "file_type": "rationale",
       "source_file": ".github/scripts/release-notes.py",
       "source_location": "L27",
-      "id": "scripts_release_notes_rationale_27",
       "community": 114,
-      "norm_label": "find the `## ... v{version} ...` section and return its body.      returns the b"
+      "norm_label": "find the `## ... v{version} ...` section and return its body.      returns the b",
+      "id": "scripts_release_notes_rationale_27"
     },
     {
       "label": "Generic notes when CHANGELOG.md has no matching section.",
       "file_type": "rationale",
       "source_file": ".github/scripts/release-notes.py",
       "source_location": "L50",
-      "id": "scripts_release_notes_rationale_50",
       "community": 114,
-      "norm_label": "generic notes when changelog.md has no matching section."
+      "norm_label": "generic notes when changelog.md has no matching section.",
+      "id": "scripts_release_notes_rationale_50"
     },
     {
       "label": "RELEASING.md",
@@ -319,231 +544,6 @@
       "community": 95,
       "norm_label": "quick reference",
       "id": "releasing_quick_reference"
-    },
-    {
-      "label": "17-release-engineering.md",
-      "file_type": "document",
-      "source_file": "docs/17-release-engineering.md",
-      "source_location": "L1",
-      "community": 72,
-      "norm_label": "17-release-engineering.md",
-      "id": "docs_17_release_engineering"
-    },
-    {
-      "label": "17 \u2014 Release Engineering",
-      "file_type": "document",
-      "source_file": "docs/17-release-engineering.md",
-      "source_location": "L1",
-      "community": 72,
-      "norm_label": "17 \u2014 release engineering",
-      "id": "docs_17_release_engineering_17_release_engineering"
-    },
-    {
-      "label": "Why this doc exists",
-      "file_type": "document",
-      "source_file": "docs/17-release-engineering.md",
-      "source_location": "L9",
-      "community": 72,
-      "norm_label": "why this doc exists",
-      "id": "docs_17_release_engineering_why_this_doc_exists"
-    },
-    {
-      "label": "The Wazuh model we're targeting",
-      "file_type": "document",
-      "source_file": "docs/17-release-engineering.md",
-      "source_location": "L27",
-      "community": 72,
-      "norm_label": "the wazuh model we're targeting",
-      "id": "docs_17_release_engineering_the_wazuh_model_we_re_targeting"
-    },
-    {
-      "label": "What Wolf has today",
-      "file_type": "document",
-      "source_file": "docs/17-release-engineering.md",
-      "source_location": "L42",
-      "community": 72,
-      "norm_label": "what wolf has today",
-      "id": "docs_17_release_engineering_what_wolf_has_today"
-    },
-    {
-      "label": "The gaps \u2014 what Wolf is missing",
-      "file_type": "document",
-      "source_file": "docs/17-release-engineering.md",
-      "source_location": "L59",
-      "community": 72,
-      "norm_label": "the gaps \u2014 what wolf is missing",
-      "id": "docs_17_release_engineering_the_gaps_what_wolf_is_missing"
-    },
-    {
-      "label": "Gap 1 \u2014 GPG signing of `.deb` artifacts",
-      "file_type": "document",
-      "source_file": "docs/17-release-engineering.md",
-      "source_location": "L65",
-      "community": 72,
-      "norm_label": "gap 1 \u2014 gpg signing of `.deb` artifacts",
-      "id": "docs_17_release_engineering_gap_1_gpg_signing_of_deb_artifacts"
-    },
-    {
-      "label": "Gap 2 \u2014 A hosted APT repository",
-      "file_type": "document",
-      "source_file": "docs/17-release-engineering.md",
-      "source_location": "L110",
-      "community": 72,
-      "norm_label": "gap 2 \u2014 a hosted apt repository",
-      "id": "docs_17_release_engineering_gap_2_a_hosted_apt_repository"
-    },
-    {
-      "label": "Gap 3 \u2014 Versioned release tagging + release notes",
-      "file_type": "document",
-      "source_file": "docs/17-release-engineering.md",
-      "source_location": "L148",
-      "community": 72,
-      "norm_label": "gap 3 \u2014 versioned release tagging + release notes",
-      "id": "docs_17_release_engineering_gap_3_versioned_release_tagging_release_notes"
-    },
-    {
-      "label": "Gap 4 \u2014 Quickstart install script (Wazuh's `wazuh-install.sh` equivalent)",
-      "file_type": "document",
-      "source_file": "docs/17-release-engineering.md",
-      "source_location": "L194",
-      "community": 72,
-      "norm_label": "gap 4 \u2014 quickstart install script (wazuh's `wazuh-install.sh` equivalent)",
-      "id": "docs_17_release_engineering_gap_4_quickstart_install_script_wazuh_s_wazuh_install_sh_equivalent"
-    },
-    {
-      "label": "Gap 5 \u2014 Distributed-deployment install docs per release",
-      "file_type": "document",
-      "source_file": "docs/17-release-engineering.md",
-      "source_location": "L231",
-      "community": 72,
-      "norm_label": "gap 5 \u2014 distributed-deployment install docs per release",
-      "id": "docs_17_release_engineering_gap_5_distributed_deployment_install_docs_per_release"
-    },
-    {
-      "label": "Gap 6 \u2014 Upgrade testing matrix",
-      "file_type": "document",
-      "source_file": "docs/17-release-engineering.md",
-      "source_location": "L260",
-      "community": 72,
-      "norm_label": "gap 6 \u2014 upgrade testing matrix",
-      "id": "docs_17_release_engineering_gap_6_upgrade_testing_matrix"
-    },
-    {
-      "label": "Gap 7 \u2014 Security disclosure policy",
-      "file_type": "document",
-      "source_file": "docs/17-release-engineering.md",
-      "source_location": "L288",
-      "community": 72,
-      "norm_label": "gap 7 \u2014 security disclosure policy",
-      "id": "docs_17_release_engineering_gap_7_security_disclosure_policy"
-    },
-    {
-      "label": "Gap 8 \u2014 Long-term support policy",
-      "file_type": "document",
-      "source_file": "docs/17-release-engineering.md",
-      "source_location": "L316",
-      "community": 72,
-      "norm_label": "gap 8 \u2014 long-term support policy",
-      "id": "docs_17_release_engineering_gap_8_long_term_support_policy"
-    },
-    {
-      "label": "Gap 9 \u2014 Real `.deb` install verification in CI",
-      "file_type": "document",
-      "source_file": "docs/17-release-engineering.md",
-      "source_location": "L339",
-      "community": 72,
-      "norm_label": "gap 9 \u2014 real `.deb` install verification in ci",
-      "id": "docs_17_release_engineering_gap_9_real_deb_install_verification_in_ci"
-    },
-    {
-      "label": "Gap 10 \u2014 Dependency vulnerability scanning",
-      "file_type": "document",
-      "source_file": "docs/17-release-engineering.md",
-      "source_location": "L367",
-      "community": 72,
-      "norm_label": "gap 10 \u2014 dependency vulnerability scanning",
-      "id": "docs_17_release_engineering_gap_10_dependency_vulnerability_scanning"
-    },
-    {
-      "label": "Gap 11 \u2014 Secrets / credential scanning",
-      "file_type": "document",
-      "source_file": "docs/17-release-engineering.md",
-      "source_location": "L394",
-      "community": 72,
-      "norm_label": "gap 11 \u2014 secrets / credential scanning",
-      "id": "docs_17_release_engineering_gap_11_secrets_credential_scanning"
-    },
-    {
-      "label": "Gap 13 \u2014 Alembic model/migration drift cleanup + re-enable `alembic check`",
-      "file_type": "document",
-      "source_file": "docs/17-release-engineering.md",
-      "source_location": "L416",
-      "community": 72,
-      "norm_label": "gap 13 \u2014 alembic model/migration drift cleanup + re-enable `alembic check`",
-      "id": "docs_17_release_engineering_gap_13_alembic_model_migration_drift_cleanup_re_enable_alembic_check"
-    },
-    {
-      "label": "Gap 14 \u2014 Test coverage improvement + ratchet `fail-under` back to 80%",
-      "file_type": "document",
-      "source_file": "docs/17-release-engineering.md",
-      "source_location": "L492",
-      "community": 72,
-      "norm_label": "gap 14 \u2014 test coverage improvement + ratchet `fail-under` back to 80%",
-      "id": "docs_17_release_engineering_gap_14_test_coverage_improvement_ratchet_fail_under_back_to_80"
-    },
-    {
-      "label": "Gap 12 \u2014 Documentation site",
-      "file_type": "document",
-      "source_file": "docs/17-release-engineering.md",
-      "source_location": "L595",
-      "community": 72,
-      "norm_label": "gap 12 \u2014 documentation site",
-      "id": "docs_17_release_engineering_gap_12_documentation_site"
-    },
-    {
-      "label": "Summary \u2014 build-now vs dedicated release phase",
-      "file_type": "document",
-      "source_file": "docs/17-release-engineering.md",
-      "source_location": "L618",
-      "community": 72,
-      "norm_label": "summary \u2014 build-now vs dedicated release phase",
-      "id": "docs_17_release_engineering_summary_build_now_vs_dedicated_release_phase"
-    },
-    {
-      "label": "Architectural decisions (resolved 2026-06-05)",
-      "file_type": "document",
-      "source_file": "docs/17-release-engineering.md",
-      "source_location": "L650",
-      "community": 72,
-      "norm_label": "architectural decisions (resolved 2026-06-05)",
-      "id": "docs_17_release_engineering_architectural_decisions_resolved_2026_06_05"
-    },
-    {
-      "label": "Implied sequencing for the eight build-now gaps",
-      "file_type": "document",
-      "source_file": "docs/17-release-engineering.md",
-      "source_location": "L665",
-      "community": 72,
-      "norm_label": "implied sequencing for the eight build-now gaps",
-      "id": "docs_17_release_engineering_implied_sequencing_for_the_eight_build_now_gaps"
-    },
-    {
-      "label": "Operator preflight (one-time, before Batch 3 starts)",
-      "file_type": "document",
-      "source_file": "docs/17-release-engineering.md",
-      "source_location": "L687",
-      "community": 72,
-      "norm_label": "operator preflight (one-time, before batch 3 starts)",
-      "id": "docs_17_release_engineering_operator_preflight_one_time_before_batch_3_starts"
-    },
-    {
-      "label": "Acceptance criteria for \"Wolf is releasable as v1\"",
-      "file_type": "document",
-      "source_file": "docs/17-release-engineering.md",
-      "source_location": "L749",
-      "community": 72,
-      "norm_label": "acceptance criteria for \"wolf is releasable as v1\"",
-      "id": "docs_17_release_engineering_acceptance_criteria_for_wolf_is_releasable_as_v1"
     },
     {
       "label": "SECURITY.md",
@@ -28410,220 +28410,6 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
-      "source_file": ".github/scripts/release-notes.py",
-      "source_location": "L26",
-      "weight": 1.0,
-      "source": "scripts_release_notes",
-      "target": "scripts_release_notes_extract_changelog_section",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".github/scripts/release-notes.py",
-      "source_location": "L49",
-      "weight": 1.0,
-      "source": "scripts_release_notes",
-      "target": "scripts_release_notes_fallback_notes",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".github/scripts/release-notes.py",
-      "source_location": "L106",
-      "weight": 1.0,
-      "source": "scripts_release_notes",
-      "target": "scripts_release_notes_main",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "rationale_for",
-      "confidence": "EXTRACTED",
-      "source_file": ".github/scripts/release-notes.py",
-      "source_location": "L1",
-      "weight": 1.0,
-      "source": "scripts_release_notes_rationale_1",
-      "target": "scripts_release_notes",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "references",
-      "context": "return_type",
-      "confidence": "EXTRACTED",
-      "source_file": ".github/scripts/release-notes.py",
-      "source_location": "L26",
-      "weight": 1.0,
-      "source": "scripts_release_notes_extract_changelog_section",
-      "target": "str",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "EXTRACTED",
-      "source_file": ".github/scripts/release-notes.py",
-      "source_location": "L116",
-      "weight": 1.0,
-      "source": "scripts_release_notes_main",
-      "target": "scripts_release_notes_extract_changelog_section",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "rationale_for",
-      "confidence": "EXTRACTED",
-      "source_file": ".github/scripts/release-notes.py",
-      "source_location": "L27",
-      "weight": 1.0,
-      "source": "scripts_release_notes_rationale_27",
-      "target": "scripts_release_notes_extract_changelog_section",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "references",
-      "context": "return_type",
-      "confidence": "EXTRACTED",
-      "source_file": ".github/scripts/release-notes.py",
-      "source_location": "L49",
-      "weight": 1.0,
-      "source": "scripts_release_notes_fallback_notes",
-      "target": "str",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "EXTRACTED",
-      "source_file": ".github/scripts/release-notes.py",
-      "source_location": "L113",
-      "weight": 1.0,
-      "source": "scripts_release_notes_main",
-      "target": "scripts_release_notes_fallback_notes",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "rationale_for",
-      "confidence": "EXTRACTED",
-      "source_file": ".github/scripts/release-notes.py",
-      "source_location": "L50",
-      "weight": 1.0,
-      "source": "scripts_release_notes_rationale_50",
-      "target": "scripts_release_notes_fallback_notes",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "RELEASING.md",
-      "source_location": "L1",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "releasing",
-      "target": "releasing_releasing_wolf"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "RELEASING.md",
-      "source_location": "L83",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "releasing_releasing_wolf",
-      "target": "releasing_cut_the_release"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "RELEASING.md",
-      "source_location": "L131",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "releasing_releasing_wolf",
-      "target": "releasing_post_release_verification"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "RELEASING.md",
-      "source_location": "L47",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "releasing_releasing_wolf",
-      "target": "releasing_pre_release_checklist"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "RELEASING.md",
-      "source_location": "L258",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "releasing_releasing_wolf",
-      "target": "releasing_quick_reference"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "RELEASING.md",
-      "source_location": "L166",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "releasing_releasing_wolf",
-      "target": "releasing_release_notes_shape"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "RELEASING.md",
-      "source_location": "L227",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "releasing_releasing_wolf",
-      "target": "releasing_security_patch_flow"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "RELEASING.md",
-      "source_location": "L33",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "releasing_releasing_wolf",
-      "target": "releasing_versioning"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "RELEASING.md",
-      "source_location": "L7",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "releasing_releasing_wolf",
-      "target": "releasing_what_release_means_in_wolf_today"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "RELEASING.md",
-      "source_location": "L243",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "releasing_releasing_wolf",
-      "target": "releasing_where_the_signing_key_lives"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "RELEASING.md",
-      "source_location": "L200",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "releasing_releasing_wolf",
-      "target": "releasing_yank_or_amend_a_bad_release"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
       "source_file": "docs/17-release-engineering.md",
       "source_location": "L1",
       "weight": 1.0,
@@ -28860,6 +28646,220 @@
       "confidence_score": 1.0,
       "source": "docs_17_release_engineering_the_gaps_what_wolf_is_missing",
       "target": "docs_17_release_engineering_gap_9_real_deb_install_verification_in_ci"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".github/scripts/release-notes.py",
+      "source_location": "L26",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scripts_release_notes",
+      "target": "scripts_release_notes_extract_changelog_section"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".github/scripts/release-notes.py",
+      "source_location": "L49",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scripts_release_notes",
+      "target": "scripts_release_notes_fallback_notes"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".github/scripts/release-notes.py",
+      "source_location": "L106",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scripts_release_notes",
+      "target": "scripts_release_notes_main"
+    },
+    {
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": ".github/scripts/release-notes.py",
+      "source_location": "L1",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scripts_release_notes_rationale_1",
+      "target": "scripts_release_notes"
+    },
+    {
+      "relation": "references",
+      "context": "return_type",
+      "confidence": "EXTRACTED",
+      "source_file": ".github/scripts/release-notes.py",
+      "source_location": "L26",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scripts_release_notes_extract_changelog_section",
+      "target": "str"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": ".github/scripts/release-notes.py",
+      "source_location": "L116",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scripts_release_notes_main",
+      "target": "scripts_release_notes_extract_changelog_section"
+    },
+    {
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": ".github/scripts/release-notes.py",
+      "source_location": "L27",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scripts_release_notes_rationale_27",
+      "target": "scripts_release_notes_extract_changelog_section"
+    },
+    {
+      "relation": "references",
+      "context": "return_type",
+      "confidence": "EXTRACTED",
+      "source_file": ".github/scripts/release-notes.py",
+      "source_location": "L49",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scripts_release_notes_fallback_notes",
+      "target": "str"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": ".github/scripts/release-notes.py",
+      "source_location": "L113",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scripts_release_notes_main",
+      "target": "scripts_release_notes_fallback_notes"
+    },
+    {
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": ".github/scripts/release-notes.py",
+      "source_location": "L50",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scripts_release_notes_rationale_50",
+      "target": "scripts_release_notes_fallback_notes"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "RELEASING.md",
+      "source_location": "L1",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "releasing",
+      "target": "releasing_releasing_wolf"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "RELEASING.md",
+      "source_location": "L83",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "releasing_releasing_wolf",
+      "target": "releasing_cut_the_release"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "RELEASING.md",
+      "source_location": "L131",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "releasing_releasing_wolf",
+      "target": "releasing_post_release_verification"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "RELEASING.md",
+      "source_location": "L47",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "releasing_releasing_wolf",
+      "target": "releasing_pre_release_checklist"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "RELEASING.md",
+      "source_location": "L258",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "releasing_releasing_wolf",
+      "target": "releasing_quick_reference"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "RELEASING.md",
+      "source_location": "L166",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "releasing_releasing_wolf",
+      "target": "releasing_release_notes_shape"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "RELEASING.md",
+      "source_location": "L227",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "releasing_releasing_wolf",
+      "target": "releasing_security_patch_flow"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "RELEASING.md",
+      "source_location": "L33",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "releasing_releasing_wolf",
+      "target": "releasing_versioning"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "RELEASING.md",
+      "source_location": "L7",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "releasing_releasing_wolf",
+      "target": "releasing_what_release_means_in_wolf_today"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "RELEASING.md",
+      "source_location": "L243",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "releasing_releasing_wolf",
+      "target": "releasing_where_the_signing_key_lives"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "RELEASING.md",
+      "source_location": "L200",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "releasing_releasing_wolf",
+      "target": "releasing_yank_or_amend_a_bad_release"
     },
     {
       "relation": "contains",
@@ -105183,5 +105183,5 @@
       "source_file": "deploy/systemd/system/README.md"
     }
   ],
-  "built_at_commit": "15bc015b1488d4e82c6248a7247360f5ecc9104a"
+  "built_at_commit": "72608aebc43dd463dda4a8e2822274f7b5135f14"
 }

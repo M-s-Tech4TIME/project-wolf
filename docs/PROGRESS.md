@@ -6,18 +6,44 @@
 >
 > For history of what changed when, see `CHANGELOG.md` (append-only).
 
-**Last updated:** 2026-06-05 by claude-code (Phase 5.9 CLOSED; Phase 5.10 deferred to dedicated release phase per operator direction)
+**Last updated:** 2026-06-10 by claude-code (Batch 2 closed; ADR 0017 Central Brain proposal PROPOSED awaiting review)
 
 ---
 
 ## 1. Where we are right now
 
-**Current phase:** No active build phase. Operator direction
-2026-06-05: APT (.deb) is the priority release channel; Phase
-5.10 (DNF / .rpm packaging) is deferred to the dedicated release
-phase that will land alongside the official Wolf v1 cut. Next
-session opens with a DevOps discussion (topic operator-driven);
-Phase 6 (Approval Gateway + wolf-gateway service) is the next
+**Current phase:** No active build phase. Three closure points
+since the last update:
+
+1. **Batches 1, 2, 3 of docs/17 release-engineering all CLOSED**
+   (2026-06-09). 9 of 14 gaps in docs/17 are now closed; only
+   gaps 2, 4, 6, 12, 14 remain — all dedicated-release-phase or
+   build-now-adjacent. All 14 CI jobs green at HEAD.
+
+2. **Real CVE patched**: starlette 1.0.0 → 1.2.1 caught by the
+   new `dep-audit` CI job (Gap 10) before it could reach a
+   release. Validated end-to-end that the new gates work.
+
+3. **ADR 0017 — Wolf Central Brain — PROPOSED** (2026-06-10).
+   The 17-point operator requirements list (memory, deep-think,
+   continuous learning, self-validation, etc.) is captured in a
+   dedicated architecture document at
+   `docs/decisions/0017-wolf-central-brain.md`. Roadmap updated
+   with four new phases (7.5, 8.5, 9.5, 11.5) + Phase 12
+   renamed to wolf-pack. Status: PROPOSED, awaiting operator
+   review of the open architectural decisions (memory retention
+   policy, robust-answer-posture disagreement on point 8, etc.)
+   before any implementation work begins.
+
+Operator direction 2026-06-05 stands: APT (.deb) is the
+priority release channel; Phase 5.10 (DNF / .rpm packaging) is
+deferred to the dedicated release phase that will land alongside
+the official Wolf v1 cut. Next session opens with one of:
+- Triage the 15 Dependabot PRs sitting in the queue
+- Review + approve/modify ADR 0017
+- Cut v0.1.0 (exercises the release workflow we shipped in
+  Batch 3 for the first time)
+- Open Phase 6 (Approval Gateway + wolf-gateway service) — the next
 build phase whenever the operator opens it.
 
 **Phase 5.9 — APT packaging — CLOSED 2026-06-05.** Five slices
