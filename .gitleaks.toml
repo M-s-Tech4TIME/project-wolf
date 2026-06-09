@@ -1,0 +1,70 @@
+# gitleaks configuration — docs/17 Gap 11.
+#
+# Catches accidentally-committed credentials (API keys, private keys,
+# database URLs with embedded passwords, etc.). Runs in CI on every
+# push + PR; can also run as a pre-commit hook via
+# .pre-commit-config.yaml.
+#
+# gitleaks's built-in ruleset catches most leak shapes (AWS, GCP,
+# GitHub PATs, JWT, SSH private keys, etc.). The allowlist below
+# covers Wolf-specific test fixtures that LOOK like secrets but are
+# intentional test data.
+
+title = "Wolf gitleaks config"
+
+[extend]
+useDefault = true
+
+# ── Allowlist ────────────────────────────────────────────────────────────────
+#
+# Path-based: anything under tests/, .env.example, docs/, and the CI
+# workflow files is allowed to contain fake / test-fixture credentials.
+# These files are READ by humans + CI; they're not handed to production
+# operators.
+#
+# Regex-based: specific test-fixture values that gitleaks's
+# high-entropy heuristic flags but that are documented test data.
+
+[allowlist]
+description = "Test fixtures and example values — never used in production"
+
+paths = [
+    # All test directories at any depth
+    '''.*tests/.*''',
+    '''.*/conftest\.py''',
+    # CI workflow files — Postgres service container password, Fernet
+    # test keys etc. are intentionally committed for the test job's
+    # environment.
+    '''\.github/workflows/.*''',
+    # docs / planning / decisions — example values, not real keys
+    '''docs/.*\.md''',
+    '''docs/decisions/.*\.md''',
+    '''ONBOARDING\.md''',
+    '''RELEASING\.md''',
+    '''SECURITY\.md''',
+    '''CHANGELOG\.md''',
+    '''README\.md''',
+    # Environment file template — operator-visible example values
+    '''\.env\.example''',
+    # The published GPG public key file — a public key isn't a secret
+    '''security/wolf-maintainers\.gpg''',
+    # The graphify-generated graph artifacts include source-file snippets
+    # that may contain test-fixture strings as labels/metadata
+    '''graphify-out/.*''',
+]
+
+regexes = [
+    # Test SECRET_KEY in conftest + CI env
+    '''test-secret-key-exactly-32-chars!!''',
+    # Test Fernet key in conftest — intentionally documented as the
+    # test default; the workflow comment explicitly disclaims it
+    '''_KRS3GialojQA05LCxS3-JwSds9RBrZ1htT-BDO-I6U=''',
+    # Test Postgres password used in CI's pgvector service container
+    '''wolf_test''',
+    # Invalid-fernet-key example called out in a CI comment explaining
+    # why this literal string ISN'T a valid Fernet key
+    '''test-fernet-key-change-in-prod====''',
+    # Placeholder values in .env.example
+    '''GENERATED''',
+    '''CHANGE_ME''',
+]

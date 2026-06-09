@@ -1,0 +1,23 @@
+# Optional pre-commit hooks for Wolf developers — docs/17 Gap 11.
+#
+# CI is the canonical gate (`secrets-scan` job in .github/workflows/
+# ci.yml runs the same gitleaks check on every push + PR). This file
+# lets developers catch issues EARLIER, before the secret reaches
+# git's permanent history.
+#
+# Setup (one-time per dev box):
+#     pip install pre-commit         # or: uv tool install pre-commit
+#     pre-commit install             # wires .git/hooks/pre-commit
+#
+# After install, `git commit` runs these hooks automatically. To run
+# manually against staged files: `pre-commit run`. Against all
+# files: `pre-commit run --all-files`.
+
+repos:
+  # Secrets / credential scanning — catches accidentally-committed
+  # API keys, private keys, etc. before they reach git history.
+  # Configuration (allowlist for test fixtures) lives at .gitleaks.toml.
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks

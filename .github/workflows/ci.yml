@@ -111,6 +111,30 @@ jobs:
             services/server/tests/test_tenant_scoped_cache.py \
             -v --tb=short
 
+  # Secrets-scanning gate — docs/17 Gap 11. Runs gitleaks against
+  # the full git history on every push + PR. Allowlist for known
+  # test-fixture strings lives at .gitleaks.toml. Default ruleset
+  # covers AWS / GCP / GitHub PAT / SSH key / generic high-entropy
+  # leak shapes.
+  secrets-scan:
+    name: Secrets scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so gitleaks can scan every commit, not just
+          # the diff on the latest one. Catches leaks that may have
+          # been rebased/cherry-picked across the branch.
+          fetch-depth: 0
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Disable gitleaks's optional "report to gitleaks.io" SaaS
+          # — we don't need their cloud dashboard.
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: false
+          GITLEAKS_ENABLE_SUMMARY: true
+
   # Frontend gate — TypeScript type-check + ESLint + production
   # build for services/dashboard. Mirrors what the Phase 5.9-d
   # smoke-deb job exercises implicitly (npm run build) but does
