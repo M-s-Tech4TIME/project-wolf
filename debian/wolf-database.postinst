@@ -80,7 +80,11 @@ case "$1" in
         # systemctl daemon-reload + enable-on-fresh-install
         # snippets automatically below #DEBHELPER#. We just print
         # the operator-facing follow-up message.
-        cat <<EOF
+        # Quoted heredoc <<'EOF': no shell interpretation. The body
+        # contains backslash-line-continuations meant as LITERAL
+        # backslashes for the operator to copy/paste — unquoted
+        # heredoc would consume them as shell line-continuations.
+        cat <<'EOF'
 
   wolf-database installed.
 
@@ -90,8 +94,8 @@ case "$1" in
        extension. The CLI prints a DATABASE_URL — copy it into
        /etc/wolf-server/env after installing wolf-server:
 
-         sudo -u ${WOLF_DB_USER} \\
-             WOLF_DATABASE_PRODUCTION=1 \\
+         sudo -u wolf-database \
+             WOLF_DATABASE_PRODUCTION=1 \
              /usr/bin/wolf-database init
 
     2. Start the service:

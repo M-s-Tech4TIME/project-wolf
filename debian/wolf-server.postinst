@@ -88,24 +88,29 @@ case "$1" in
         # ── systemd ───────────────────────────────────────────────
         # dh_installsystemd's daemon-reload + enable-on-fresh-install
         # snippets land at #DEBHELPER# below.
-        cat <<EOF
+        # Quoted heredoc <<'EOF': no shell interpretation of the
+        # body. Critical here — the body contains backticks (`...`),
+        # Python single-quoted strings ('from ...'), <angle-bracket
+        # placeholders>, and quote characters that dash WOULD try to
+        # interpret as command substitution / redirection in an
+        # unquoted heredoc.
+        cat <<'EOF'
 
   wolf-server installed.
 
   Before starting:
     1. Provision /etc/wolf-server/env (mode 0640 wolf-server:wolf)
        with at minimum:
-         DATABASE_URL=postgresql+asyncpg://wolf:<password>@localhost:5432/wolf
+         DATABASE_URL=postgresql+asyncpg://wolf:PASSWORD@localhost:5432/wolf
          SECRET_KEY=<at least 32 random chars>
          ENVIRONMENT=production
          SECRETS_BACKEND=file
          SECRETS_FILE_PATH=/var/lib/wolf-server/secrets.enc
-         SECRETS_FILE_KEY=<generate with python3 -c 'from cryptography.fernet
-                                                    import Fernet; print(Fernet.generate_key().decode())'>
-       (Paste the DATABASE_URL printed by \`wolf-database init\` if you
+         SECRETS_FILE_KEY=<generate via cryptography.fernet.Fernet.generate_key()>
+       (Paste the DATABASE_URL printed by 'wolf-database init' if you
         installed wolf-database from the same source.)
 
-    2. (Optional) Run \`/usr/bin/wolf-cert init\` to mint the
+    2. (Optional) Run '/usr/bin/wolf-cert init' to mint the
        Wolf CA + leaf certs at .local/certs/. Production
        installs use /etc/wolf/certs/ instead — see
        /usr/share/doc/wolf-server/ for the operator walkthrough.
