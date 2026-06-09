@@ -995,8 +995,8 @@
     "semantic_hash": "bd5971088bdde244df43443750f0c6b0"
   },
   ".github/workflows/ci.yml": {
-    "mtime": 1781021747.7748718,
-    "ast_hash": "089c99188bb8d096086385046cc8ad9f",
+    "mtime": 1781022194.6251545,
+    "ast_hash": "8ecce0c7cfcc9ce3d0950f42a6e55307",
     "semantic_hash": ""
   },
   "CODE_OF_CONDUCT.md": {
@@ -1305,8 +1305,8 @@
     "semantic_hash": ""
   },
   ".github/dependabot.yml": {
-    "mtime": 1781021612.9607828,
-    "ast_hash": "de793f3cb201b2c51b2cd786348b9675",
+    "mtime": 1781022628.3203266,
+    "ast_hash": "925e902e41f986dbf07b38a6b644ee97",
     "semantic_hash": ""
   }
 }
