@@ -87,11 +87,18 @@ case "$1" in
 
         # ── systemd ───────────────────────────────────────────────
         # dh_installsystemd's daemon-reload + enable-on-fresh-install
-        # snippets land at #DEBHELPER# below.
-        # Quoted heredoc <<'EOF': no shell interpretation of the
-        # body. Critical here — the body contains backticks (`...`),
-        # Python single-quoted strings ('from ...'), <angle-bracket
-        # placeholders>, and quote characters that dash WOULD try to
+        # snippets land at the DEBHELPER substitution point below.
+        #
+        # CRITICAL: never write the literal token (hash-DEBHELPER-hash)
+        # in a comment. debhelper substitutes that token GLOBALLY in
+        # postinst files — including occurrences inside comments —
+        # which produces a broken installed postinst where the auto-
+        # generated systemd snippet gets injected mid-comment +
+        # leaves orphaned text dash later mis-interprets as commands.
+        #
+        # Quoted heredoc below: no shell interpretation of the body.
+        # The body contains backticks, single-quoted Python strings,
+        # angle-bracket placeholders, etc. that dash WOULD try to
         # interpret as command substitution / redirection in an
         # unquoted heredoc.
         cat <<'EOF'

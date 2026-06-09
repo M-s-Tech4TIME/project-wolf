@@ -1,6 +1,9 @@
 #!/bin/sh
 # debian/wolf-dashboard.prerm — Phase 5.9-d.
-# dh_installsystemd handles stop/disable via #DEBHELPER#.
+# dh_installsystemd handles stop/disable via the DEBHELPER
+# substitution point below. (NEVER write the literal token in a
+# comment — debhelper substitutes it globally, breaking the
+# installed script.)
 
 set -e
 

@@ -3,7 +3,10 @@
 #
 # Phase 5.9-b. Stops + disables the systemd unit before the unit
 # file is removed. dh_installsystemd auto-generates the stop logic
-# at #DEBHELPER# below; we add nothing of our own here today.
+# at the DEBHELPER substitution point below; we add nothing of
+# our own here today. (NEVER write the literal token in a
+# comment — debhelper substitutes it globally, breaking the
+# installed script.)
 
 set -e
 

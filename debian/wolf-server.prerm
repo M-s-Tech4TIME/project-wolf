@@ -1,6 +1,9 @@
 #!/bin/sh
 # debian/wolf-server.prerm — Phase 5.9-c.
-# dh_installsystemd's snippet at #DEBHELPER# handles the stop.
+# dh_installsystemd's snippet at the DEBHELPER substitution
+# point handles the stop. (NEVER write the literal token in a
+# comment — debhelper substitutes it globally, including in
+# comments, which breaks the installed script.)
 
 set -e
 

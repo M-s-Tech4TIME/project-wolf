@@ -78,8 +78,11 @@ case "$1" in
         # ── systemd ───────────────────────────────────────────────
         # `dh_installsystemd` (via dh in debian/rules) adds the
         # systemctl daemon-reload + enable-on-fresh-install
-        # snippets automatically below #DEBHELPER#. We just print
-        # the operator-facing follow-up message.
+        # snippets automatically at the DEBHELPER substitution
+        # point below (NEVER write the literal hash-DEBHELPER-hash
+        # token in a comment — it gets substituted too, breaking
+        # the installed postinst). We just print the operator-
+        # facing follow-up message.
         # Quoted heredoc <<'EOF': no shell interpretation. The body
         # contains backslash-line-continuations meant as LITERAL
         # backslashes for the operator to copy/paste — unquoted
