@@ -49,7 +49,7 @@ ignore = [
 # CI tooling scripts under .github/scripts/ are operator-facing
 # automation, not application code. They legitimately need `print`
 # for progress output and embed markdown URLs in f-strings (E501).
-".github/scripts/**" = ["T20", "E501"]
+".github/scripts/**" = ["T20", "E501", "S108"]
 
 [tool.mypy]
 python_version = "3.13"
