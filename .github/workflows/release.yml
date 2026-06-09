@@ -145,59 +145,16 @@ jobs:
       - name: Extract release notes from CHANGELOG.md
         # Pulls the section for this version from docs/CHANGELOG.md.
         # If no matching section is found, falls back to a stub
-        # that points at the full CHANGELOG.
+        # that points at the full CHANGELOG. Implementation lives
+        # in .github/scripts/release-notes.py — Python avoids the
+        # YAML/heredoc indentation tangle that broke the inline
+        # version of this step (commit history around 2026-06-09).
         id: notes
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          NOTES_FILE=/tmp/release-notes.md
-          # Try to extract a "## <date> — <something matching VERSION>" block
-          if grep -E "^## .*v?${VERSION}" docs/CHANGELOG.md > /dev/null 2>&1; then
-            awk -v v="${VERSION}" '
-              /^## .*v?'"${VERSION}"'/ { p=1; next }
-              p && /^## / { exit }
-              p { print }
-            ' docs/CHANGELOG.md > "${NOTES_FILE}"
-          else
-            cat > "${NOTES_FILE}" <<EOF
-Wolf v${VERSION} release.
-
-See [docs/CHANGELOG.md](https://github.com/M-s-Tech4TIME/project-wolf/blob/v${VERSION}/docs/CHANGELOG.md) for the full release history.
-
-## Artifacts
-
-Each .deb is signed with the Wolf maintainers' GPG key
-(fingerprint \`D995 2267 30A6 59B3 B86F  CDE7 3772 3B2D E0AB FD65\`).
-Verify before installing:
-
-\`\`\`bash
-gpg --verify wolf-server_${VERSION}_amd64.deb.asc wolf-server_${VERSION}_amd64.deb
-\`\`\`
-
-The Wolf public key is published in this repository at
-[\`security/wolf-maintainers.gpg\`](https://github.com/M-s-Tech4TIME/project-wolf/blob/main/security/wolf-maintainers.gpg).
-
-## Install
-
-Per-component:
-\`\`\`bash
-sudo apt install ./wolf-database_${VERSION}_amd64.deb \\
-                 ./wolf-server_${VERSION}_amd64.deb \\
-                 ./wolf-dashboard_${VERSION}_amd64.deb
-\`\`\`
-
-All-in-one (meta-package):
-\`\`\`bash
-sudo apt install ./wolf_${VERSION}_all.deb \\
-                 ./wolf-database_${VERSION}_amd64.deb \\
-                 ./wolf-server_${VERSION}_amd64.deb \\
-                 ./wolf-dashboard_${VERSION}_amd64.deb
-\`\`\`
-
-See [ONBOARDING.md §3.4](https://github.com/M-s-Tech4TIME/project-wolf/blob/v${VERSION}/ONBOARDING.md) for the full bring-up.
-EOF
-          fi
-          # Re-emit the file path for the create-release step.
-          echo "notes_file=${NOTES_FILE}" >> "$GITHUB_OUTPUT"
+          python3 .github/scripts/release-notes.py
+          echo "notes_file=/tmp/release-notes.md" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
         # softprops/action-gh-release is the modern idiom; uploads

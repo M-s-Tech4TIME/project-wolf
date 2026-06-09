@@ -1140,8 +1140,8 @@
     "semantic_hash": "b5a1b054fb8aad792df025c740eca7a5"
   },
   "docs/17-release-engineering.md": {
-    "mtime": 1781013164.5511405,
-    "ast_hash": "75ee5a640d0757e6c66686d5000f8779",
+    "mtime": 1781013840.359205,
+    "ast_hash": "b4c36793d84c69c1b2968779da601837",
     "semantic_hash": ""
   },
   "docs/CHANGELOG.md": {
@@ -1283,5 +1283,15 @@
     "mtime": 1780289542.7487235,
     "ast_hash": "a2760511c65806022ad20adf74370ff3",
     "semantic_hash": "a2760511c65806022ad20adf74370ff3"
+  },
+  ".github/workflows/release.yml": {
+    "mtime": 1781013739.7614565,
+    "ast_hash": "f64bc5964c5781667c6bf913d402c92c",
+    "semantic_hash": ""
+  },
+  "RELEASING.md": {
+    "mtime": 1781013806.566764,
+    "ast_hash": "0e09a04493daf8393794bd9d4343cd8f",
+    "semantic_hash": ""
   }
 }
