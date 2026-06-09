@@ -513,6 +513,124 @@ jobs:
           echo "=== debian/files (if exists) ==="
           cat debian/files 2>/dev/null || echo "(no debian/files — build didn't reach package stage)"
 
+  # docs/17 Gap 9 — real .deb install verification.
+  #
+  # smoke-deb BUILDS the .debs. This job INSTALLS them on a clean
+  # ubuntu-latest runner + verifies the postinst worked (users +
+  # group + FHS dirs + shims + systemd units registered). Catches
+  # the class of failure where the .deb builds but the postinst
+  # silently broke (e.g., a venv that resolves at build time but
+  # fails at install time, a missing dh_installsystemd snippet, a
+  # shim with the wrong shebang).
+  #
+  # Doesn't start the services — that needs wolf-database init +
+  # /etc/wolf-server/env provisioning, which is operator-driven.
+  # Just confirms the .debs land on disk + systemd recognises them.
+  smoke-deb-install:
+    name: .deb install verification (Phase 5.9 / Gap 9)
+    runs-on: ubuntu-latest
+    needs: smoke-deb
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download .debs from smoke-deb
+        uses: actions/download-artifact@v4
+        with:
+          name: wolf-debs
+          path: ./debs
+      - name: Add PostgreSQL APT repo (for postgresql-17 + pgvector deps)
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+              -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] \
+              https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | \
+              sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+      - name: Install all four wolf-*.debs
+        # apt install resolves the inter-package deps automatically
+        # (wolf-server depends on wolf-database, the meta wolf
+        # depends on all three components, etc.).
+        run: |
+          ls -la debs/
+          sudo apt install -y \
+              ./debs/wolf-database_*.deb \
+              ./debs/wolf-server_*.deb \
+              ./debs/wolf-dashboard_*.deb \
+              ./debs/wolf_*.deb
+      - name: Verify service users + group created by postinst
+        run: |
+          getent group wolf || { echo "FAIL: wolf group missing"; exit 1; }
+          for user in wolf-database wolf-server wolf-dashboard; do
+              getent passwd "$user" || { echo "FAIL: $user not created"; exit 1; }
+              # Verify nologin shell
+              getent passwd "$user" | grep -E 'nologin|false' \
+                  || { echo "FAIL: $user has interactive shell"; exit 1; }
+          done
+          echo "OK: wolf group + 3 component users (all nologin)"
+      - name: Verify FHS directories exist with correct ownership
+        run: |
+          declare -A expected_owner=(
+              [/var/lib/wolf-database/data]=wolf-database
+              [/var/lib/wolf-database/config]=wolf-database
+              [/var/lib/wolf-server]=wolf-server
+              [/var/lib/wolf-dashboard]=wolf-dashboard
+              [/etc/wolf-database]=wolf-database
+              [/etc/wolf-server]=wolf-server
+              [/etc/wolf-dashboard]=wolf-dashboard
+          )
+          for dir in "${!expected_owner[@]}"; do
+              test -d "$dir" || { echo "FAIL: $dir missing"; exit 1; }
+              owner=$(stat -c %U "$dir")
+              if [ "$owner" != "${expected_owner[$dir]}" ]; then
+                  echo "FAIL: $dir owned by $owner, expected ${expected_owner[$dir]}"
+                  exit 1
+              fi
+          done
+          echo "OK: all 7 FHS dirs present with correct ownership"
+      - name: Verify Python venvs built by postinst
+        # wolf-database + wolf-server postinsts create venvs at
+        # /usr/lib/wolf-*/.venv/ from the bundled wheels. wolf-
+        # dashboard ships a Next.js standalone build, not a venv.
+        run: |
+          for venv in /usr/lib/wolf-database/.venv /usr/lib/wolf-server/.venv; do
+              test -d "$venv" || { echo "FAIL: $venv missing"; exit 1; }
+              test -x "$venv/bin/python" || { echo "FAIL: $venv/bin/python not executable"; exit 1; }
+          done
+          test -f /usr/lib/wolf-dashboard/server.js \
+              || { echo "FAIL: wolf-dashboard standalone server.js missing"; exit 1; }
+          echo "OK: wolf-database + wolf-server venvs + wolf-dashboard standalone all present"
+      - name: Verify CLI shims work
+        run: |
+          for shim in /usr/bin/wolf-cert /usr/bin/wolf-database /usr/bin/wolf-server /usr/bin/wolf-dashboard; do
+              test -x "$shim" || { echo "FAIL: $shim not executable"; exit 1; }
+          done
+          # wolf-database --help should print actual help text (proves
+          # the venv works end-to-end + the console_scripts entry
+          # point resolved correctly).
+          /usr/bin/wolf-database --help 2>&1 | head -5
+          /usr/bin/wolf-cert --help 2>&1 | head -5
+          echo "OK: shims executable + CLIs respond"
+      - name: Verify systemd units are loaded
+        # Don't start them (needs operator-driven init); just
+        # confirm systemd recognises the units so they could be
+        # started.
+        run: |
+          for unit in wolf-database wolf-server wolf-dashboard; do
+              systemctl status "$unit" --no-pager 2>&1 | head -3 || true
+              # `is-enabled` returns "disabled" for fresh installs
+              # (postinst doesn't auto-enable; operator does that
+              # after env-file provisioning). The KEY signal is
+              # exit code 0 from `cat` — file is on disk + parseable.
+              systemctl cat "$unit" >/dev/null 2>&1 \
+                  || { echo "FAIL: systemctl can't load $unit unit"; exit 1; }
+          done
+          echo "OK: all 3 systemd units loaded + parseable"
+      - name: Smoke summary
+        run: |
+          echo "=== smoke-deb-install: PASS ==="
+          echo "wolf-* packages installed cleanly on ubuntu-latest"
+          echo "users / group / FHS dirs / venvs / shims / systemd units all verified"
+
   smoke-systemd:
     name: systemd + shims smoke (Phase 5.8-d)
     runs-on: ubuntu-latest

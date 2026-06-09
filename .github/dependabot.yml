@@ -26,18 +26,17 @@ updates:
     commit-message:
       prefix: "chore(deps)"
       include: "scope"
-    # Group routine updates so we don't get 30 separate PRs the
-    # week pydantic + sqlalchemy + fastapi all release.
+    # Group routine version updates so we don't get 30 separate
+    # PRs the week pydantic + sqlalchemy + fastapi all release.
+    # Security updates come individually by default (Dependabot's
+    # standard behaviour when no security-updates group exists)
+    # so they're easier to review + merge fast.
     groups:
       python-minor-patch:
         applies-to: version-updates
         update-types:
           - "minor"
           - "patch"
-      python-security:
-        applies-to: security-updates
-        # Security PRs come individually so they're easier to
-        # review + merge fast.
 
   # Frontend — Next.js + npm
   - package-ecosystem: "npm"
