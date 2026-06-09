@@ -995,8 +995,8 @@
     "semantic_hash": "bd5971088bdde244df43443750f0c6b0"
   },
   ".github/workflows/ci.yml": {
-    "mtime": 1781015630.4732776,
-    "ast_hash": "f028efc5d1eff297a3a0f8f79ab5af98",
+    "mtime": 1781018811.583782,
+    "ast_hash": "68f044606aeb684a248ee8914bfa517f",
     "semantic_hash": ""
   },
   "CODE_OF_CONDUCT.md": {

@@ -111,6 +111,45 @@ jobs:
             services/server/tests/test_tenant_scoped_cache.py \
             -v --tb=short
 
+  # Dependency-vulnerability gate — docs/17 Gap 10. Runs pip-audit
+  # against the synced uv workspace to catch known CVEs in any
+  # transitive Python dependency. Pairs with Dependabot's auto-PR
+  # flow (config: .github/dependabot.yml) — Dependabot proposes
+  # the fix, pip-audit blocks a merge that wouldn't actually
+  # resolve the CVE.
+  dep-audit:
+    name: Dependency vulnerability scan (pip-audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+      - name: Sync the workspace
+        # --all-packages installs every workspace package + their
+        # transitive deps into .venv. pip-audit then sees the
+        # complete dep graph that production .debs would ship.
+        run: uv sync --all-packages
+      - name: Install pip-audit into the workspace venv
+        # `uv pip install` adds pip-audit to .venv WITHOUT
+        # modifying pyproject.toml (no dev-dep pollution). Once
+        # in the venv, `uv run pip-audit` runs it with the venv
+        # active, so it sees every wolf-* + transitive dep.
+        run: uv pip install pip-audit
+      - name: Run pip-audit against the workspace venv
+        # --desc: include CVE descriptions in the output so the
+        # failure log is actionable without an extra lookup.
+        #
+        # NOT using --strict: that mode treats "Dependency not
+        # found on PyPI" warnings as failures. Wolf's 7 workspace
+        # packages (wolf-cert, wolf-common, wolf-database,
+        # wolf-gateway, wolf-schema, wolf-secrets, wolf-server)
+        # legitimately don't exist on PyPI — they're our internal
+        # packages. Default behaviour already exits 1 on real
+        # CVE findings, which is what we want.
+        run: |
+          uv run pip-audit --desc
+
   # Secrets-scanning gate — docs/17 Gap 11. Runs gitleaks against
   # the full git history on every push + PR. Allowlist for known
   # test-fixture strings lives at .gitleaks.toml. Default ruleset

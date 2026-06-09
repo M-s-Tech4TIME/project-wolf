@@ -1,0 +1,94 @@
+# Dependabot config — docs/17 Gap 10.
+#
+# Opens auto-PRs for dependency updates across the three ecosystems
+# Wolf uses (Python workspace, Next.js dashboard, GitHub Actions
+# versions in workflow files). Security updates are independent of
+# the weekly schedule — Dependabot opens PRs for those immediately
+# the moment an upstream advisory lands.
+
+version: 2
+
+updates:
+  # Python workspace — uv workspace declared in services/ and
+  # packages/. Dependabot's "uv" ecosystem (released 2024+) reads
+  # pyproject.toml + uv.lock to track exact versions.
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Dhaka"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "python"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    # Group routine updates so we don't get 30 separate PRs the
+    # week pydantic + sqlalchemy + fastapi all release.
+    groups:
+      python-minor-patch:
+        applies-to: version-updates
+        update-types:
+          - "minor"
+          - "patch"
+      python-security:
+        applies-to: security-updates
+        # Security PRs come individually so they're easier to
+        # review + merge fast.
+
+  # Frontend — Next.js + npm
+  - package-ecosystem: "npm"
+    directory: "/services/dashboard"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Dhaka"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "javascript"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    groups:
+      npm-minor-patch:
+        applies-to: version-updates
+        update-types:
+          - "minor"
+          - "patch"
+    # Ignore Next.js major bumps — they require coordination with
+    # the dashboard's manual rebuild cadence. The team triggers
+    # major Next.js bumps as a separate operator-driven slice.
+    ignore:
+      - dependency-name: "next"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-dom"
+        update-types: ["version-update:semver-major"]
+
+  # GitHub Actions versions in .github/workflows/*.yml
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Dhaka"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "ci"
+    commit-message:
+      prefix: "chore(ci-deps)"
+      include: "scope"
+    groups:
+      github-actions:
+        applies-to: version-updates
+        update-types:
+          - "minor"
+          - "patch"
