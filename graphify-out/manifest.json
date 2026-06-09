@@ -995,8 +995,8 @@
     "semantic_hash": "bd5971088bdde244df43443750f0c6b0"
   },
   ".github/workflows/ci.yml": {
-    "mtime": 1781013432.3971689,
-    "ast_hash": "0a4e5a4eeb5ed55c987bbab9ac8c65b8",
+    "mtime": 1781015630.4732776,
+    "ast_hash": "f028efc5d1eff297a3a0f8f79ab5af98",
     "semantic_hash": ""
   },
   "CODE_OF_CONDUCT.md": {
@@ -1297,6 +1297,11 @@
   ".github/scripts/release-notes.py": {
     "mtime": 1781014536.4263785,
     "ast_hash": "8c3801d08ce643c2d293963bfe9189c6",
+    "semantic_hash": ""
+  },
+  ".pre-commit-config.yaml": {
+    "mtime": 1781016508.5368774,
+    "ast_hash": "8a0347d5b5fc19de81d6b82e29fa16ed",
     "semantic_hash": ""
   }
 }

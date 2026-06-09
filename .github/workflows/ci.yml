@@ -116,24 +116,43 @@ jobs:
   # test-fixture strings lives at .gitleaks.toml. Default ruleset
   # covers AWS / GCP / GitHub PAT / SSH key / generic high-entropy
   # leak shapes.
+  #
+  # Uses the gitleaks CLI binary directly (MIT-licensed) rather
+  # than gitleaks/gitleaks-action@v2 (which requires a paid
+  # license for organization repos as of 2024+). The underlying
+  # scanner is identical — only the GHA action wrapper has the
+  # license clause.
   secrets-scan:
     name: Secrets scan (gitleaks)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          # Full history so gitleaks can scan every commit, not just
-          # the diff on the latest one. Catches leaks that may have
-          # been rebased/cherry-picked across the branch.
+          # Full history so gitleaks can scan every commit, not
+          # just the latest diff. Catches leaks that may have been
+          # rebased/cherry-picked anywhere in branch history.
           fetch-depth: 0
-      - name: Run gitleaks
-        uses: gitleaks/gitleaks-action@v2
+      - name: Install gitleaks CLI
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Disable gitleaks's optional "report to gitleaks.io" SaaS
-          # — we don't need their cloud dashboard.
-          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: false
-          GITLEAKS_ENABLE_SUMMARY: true
+          GITLEAKS_VERSION: "8.21.2"
+        run: |
+          curl -sSLf \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar -xz -C /tmp gitleaks
+          sudo mv /tmp/gitleaks /usr/local/bin/
+          gitleaks version
+      - name: Run gitleaks detect
+        # `detect` scans the full git history (vs `protect` which
+        # only scans uncommitted changes). --redact masks any
+        # found secrets in the log so they aren't echoed.
+        # --exit-code 1 ensures the job fails on findings.
+        run: |
+          gitleaks detect \
+            --source . \
+            --config .gitleaks.toml \
+            --verbose \
+            --redact \
+            --exit-code 1
 
   # Frontend gate — TypeScript type-check + ESLint + production
   # build for services/dashboard. Mirrors what the Phase 5.9-d
