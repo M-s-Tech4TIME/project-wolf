@@ -64,6 +64,15 @@ sequence it should land.
 
 ### Gap 1 — GPG signing of `.deb` artifacts
 
+**Status (2026-06-09): CLOSED.** CI signs every `.deb` produced
+by the `smoke-deb` job using the Wolf maintainers' GPG key
+(fingerprint `D995 2267 30A6 59B3 B86F  CDE7 3772 3B2D E0AB FD65`).
+See `.github/workflows/ci.yml` smoke-deb steps "Import Wolf
+maintainers' GPG signing key" / "Sign each .deb (detached
+ASCII-armored signature)" / "Verify .deb signatures". The
+release workflow (`.github/workflows/release.yml`) uses the
+same signing flow when triggered by a `v*` tag push.
+
 **What it is:** Every package shipped to operators should be
 cryptographically signed by a Wolf-maintainer key. Operators
 import the public key into their apt keyring; from then on, any
@@ -137,6 +146,17 @@ technical work around it.
 ---
 
 ### Gap 3 — Versioned release tagging + release notes
+
+**Status (2026-06-09): CLOSED.** `RELEASING.md` documents the
+operator playbook (pre-release checklist, cut commands, post-
+release verification, yank/amend, security-patch flow).
+`.github/workflows/release.yml` triggers on `v*` tag pushes,
+asserts tag-version-matches-debian-changelog, builds + signs
+the four .debs, generates a signed SHA256SUMS, extracts
+release notes from docs/CHANGELOG.md (or falls back to a
+generic stub), and creates a GitHub Release with all 10
+artifacts attached (4 .debs + 4 .asc signatures + SHA256SUMS
++ SHA256SUMS.asc).
 
 **What it is:** A discipline of cutting Wolf releases via
 `git tag v0.1.0` (semver), each tag producing shipping artifacts
@@ -614,9 +634,10 @@ renders the markdown adequately.
 | 13 — Alembic drift cleanup + re-enable `alembic check` | **CLOSED 2026-06-05** |
 | 14 — Test coverage improvement + ratchet `fail-under` back to 80% | Build-now-adjacent |
 
-**Build-now items**: 8 (1, 3, 5, 7, 8, 9, 10, 11). Each is a
-small slice — collectively ~half a phase of work. Of these,
-5, 7, 8 are CLOSED (Batch 1 — see commit 5363c74).
+**Build-now items**: 8 (1, 3, 5, 7, 8, 9, 10, 11). Of these, 5
+of 8 are now CLOSED (1, 3, 5, 7, 8). Remaining 3: gap 9 (real
+.deb install verification), 10 (dependency scanning), 11
+(secrets scanning) — these are Batch 2.
 
 **Dedicated release phase items**: 4 (2, 4, 6, 12). These need
 the APT repo decision + the v0.1.0 release as a starting point.
@@ -624,7 +645,7 @@ the APT repo decision + the v0.1.0 release as a starting point.
 **Build-now-adjacent**: 1 (14). Gap 13 was build-now-adjacent and
 is now CLOSED.
 
-**Closed**: 4 (5, 7, 8, 13).
+**Closed**: 6 (1, 3, 5, 7, 8, 13).
 
 ## Architectural decisions (resolved 2026-06-05)
 

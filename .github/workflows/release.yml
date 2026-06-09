@@ -1,0 +1,230 @@
+name: Release
+
+# docs/17 Gap 3 — tag-triggered release workflow. Cuts a signed
+# release every time the operator pushes a `v*` tag.
+#
+# Trigger:
+#   git tag v0.X.Y
+#   git push origin v0.X.Y
+#
+# What happens:
+#   1. Build the four wolf-*.deb files (same as smoke-deb).
+#   2. Sign each .deb with the Wolf maintainers' GPG key.
+#   3. Produce SHA256SUMS + sign that too.
+#   4. Create a GitHub Release at https://github.com/M-s-Tech4TIME/
+#      project-wolf/releases/tag/v0.X.Y with all artifacts attached.
+#
+# Pre-release: see RELEASING.md for the operator checklist.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+permissions:
+  contents: write  # required by softprops/action-gh-release to create + upload
+
+jobs:
+  release:
+    name: Build, sign, and publish release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The tag's commit is what we ship — not an arbitrary
+          # later main. fetch-depth: 0 lets us read the full
+          # changelog for the release notes.
+          fetch-depth: 0
+
+      - name: Extract version from tag
+        # Strip the leading "v": v0.1.0 → 0.1.0. Must match the
+        # version in debian/changelog (operator verifies in the
+        # pre-release checklist).
+        id: version
+        run: |
+          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "version=${TAG_VERSION}" >> "$GITHUB_OUTPUT"
+          DEB_VERSION=$(dpkg-parsechangelog --show-field Version)
+          echo "Tag version: ${TAG_VERSION}"
+          echo "debian/changelog version: ${DEB_VERSION}"
+          if [ "${TAG_VERSION}" != "${DEB_VERSION}" ]; then
+            echo "FAIL: tag version (${TAG_VERSION}) doesn't match debian/changelog (${DEB_VERSION})." >&2
+            echo "  Bump debian/changelog before tagging — see RELEASING.md." >&2
+            exit 1
+          fi
+
+      - name: Install Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Add PostgreSQL APT repo
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+              -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] \
+              https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | \
+              sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+
+      - name: Install build-deps from debian/control
+        run: |
+          sudo apt-get install -y --no-install-recommends \
+            debhelper devscripts dh-python \
+            build-essential \
+            python3 python3-pip python3-venv python3-build \
+            nodejs npm \
+            ca-certificates
+
+      - name: Build all four .debs
+        run: dpkg-buildpackage -b -us -uc
+
+      - name: Stage .debs inside the workspace
+        run: |
+          mkdir -p packaging/build/debs
+          mv ../wolf*.deb packaging/build/debs/
+          count=$(ls packaging/build/debs/wolf*.deb 2>/dev/null | wc -l)
+          if [ "$count" -lt 4 ]; then
+            echo "FAIL: expected 4 .debs, got $count"
+            exit 1
+          fi
+          echo "OK: ${count} .debs produced for ${{ steps.version.outputs.version }}"
+
+      - name: Import Wolf maintainers' GPG signing key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          if [ -z "$GPG_PRIVATE_KEY" ]; then
+            echo "FAIL: GPG_PRIVATE_KEY secret not set." >&2
+            exit 2
+          fi
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+          gpg --list-secret-keys --keyid-format=long | grep -E "37723B2DE0ABFD65" \
+            || { echo "FAIL: imported key fingerprint mismatch"; exit 1; }
+
+      - name: Sign each .deb (detached ASCII-armored signature)
+        env:
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          cd packaging/build/debs
+          for deb in wolf*.deb; do
+            gpg --batch --pinentry-mode loopback \
+                --passphrase "${GPG_PASSPHRASE}" \
+                --armor --detach-sign \
+                --default-key 0x37723B2DE0ABFD65 \
+                --output "${deb}.asc" "${deb}"
+          done
+
+      - name: Verify .deb signatures
+        run: |
+          cd packaging/build/debs
+          for deb in wolf*.deb; do
+            gpg --verify "${deb}.asc" "${deb}" 2>&1 | tail -1
+          done
+
+      - name: Generate SHA256SUMS + sign it
+        # Operators can verify integrity end-to-end via:
+        #   gpg --verify SHA256SUMS.asc SHA256SUMS
+        #   sha256sum -c SHA256SUMS
+        env:
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          cd packaging/build/debs
+          sha256sum wolf*.deb > SHA256SUMS
+          gpg --batch --pinentry-mode loopback \
+              --passphrase "${GPG_PASSPHRASE}" \
+              --armor --detach-sign \
+              --default-key 0x37723B2DE0ABFD65 \
+              --output SHA256SUMS.asc SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Extract release notes from CHANGELOG.md
+        # Pulls the section for this version from docs/CHANGELOG.md.
+        # If no matching section is found, falls back to a stub
+        # that points at the full CHANGELOG.
+        id: notes
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          NOTES_FILE=/tmp/release-notes.md
+          # Try to extract a "## <date> — <something matching VERSION>" block
+          if grep -E "^## .*v?${VERSION}" docs/CHANGELOG.md > /dev/null 2>&1; then
+            awk -v v="${VERSION}" '
+              /^## .*v?'"${VERSION}"'/ { p=1; next }
+              p && /^## / { exit }
+              p { print }
+            ' docs/CHANGELOG.md > "${NOTES_FILE}"
+          else
+            cat > "${NOTES_FILE}" <<EOF
+Wolf v${VERSION} release.
+
+See [docs/CHANGELOG.md](https://github.com/M-s-Tech4TIME/project-wolf/blob/v${VERSION}/docs/CHANGELOG.md) for the full release history.
+
+## Artifacts
+
+Each .deb is signed with the Wolf maintainers' GPG key
+(fingerprint \`D995 2267 30A6 59B3 B86F  CDE7 3772 3B2D E0AB FD65\`).
+Verify before installing:
+
+\`\`\`bash
+gpg --verify wolf-server_${VERSION}_amd64.deb.asc wolf-server_${VERSION}_amd64.deb
+\`\`\`
+
+The Wolf public key is published in this repository at
+[\`security/wolf-maintainers.gpg\`](https://github.com/M-s-Tech4TIME/project-wolf/blob/main/security/wolf-maintainers.gpg).
+
+## Install
+
+Per-component:
+\`\`\`bash
+sudo apt install ./wolf-database_${VERSION}_amd64.deb \\
+                 ./wolf-server_${VERSION}_amd64.deb \\
+                 ./wolf-dashboard_${VERSION}_amd64.deb
+\`\`\`
+
+All-in-one (meta-package):
+\`\`\`bash
+sudo apt install ./wolf_${VERSION}_all.deb \\
+                 ./wolf-database_${VERSION}_amd64.deb \\
+                 ./wolf-server_${VERSION}_amd64.deb \\
+                 ./wolf-dashboard_${VERSION}_amd64.deb
+\`\`\`
+
+See [ONBOARDING.md §3.4](https://github.com/M-s-Tech4TIME/project-wolf/blob/v${VERSION}/ONBOARDING.md) for the full bring-up.
+EOF
+          fi
+          # Re-emit the file path for the create-release step.
+          echo "notes_file=${NOTES_FILE}" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        # softprops/action-gh-release is the modern idiom; uploads
+        # files specified in `files:` as release assets. tag_name
+        # defaults to the triggering tag.
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Wolf v${{ steps.version.outputs.version }}"
+          body_path: ${{ steps.notes.outputs.notes_file }}
+          files: |
+            packaging/build/debs/wolf*.deb
+            packaging/build/debs/wolf*.deb.asc
+            packaging/build/debs/SHA256SUMS
+            packaging/build/debs/SHA256SUMS.asc
+          # Don't mark as prerelease for v0.X.Y by default. The
+          # operator can edit the release post-cut if needed (e.g.,
+          # to add the "Pre-release" badge before v1.0.0).
+          draft: false
+          prerelease: false
+          fail_on_unmatched_files: true
+
+      - name: Dump diagnostics on failure
+        if: failure()
+        run: |
+          echo "=== gpg secret keys ==="
+          gpg --list-secret-keys --keyid-format=long || true
+          echo "=== ls packaging/build/debs ==="
+          ls -la packaging/build/debs/ 2>&1 || true
+          echo "=== debian/changelog head ==="
+          head -5 debian/changelog || true
