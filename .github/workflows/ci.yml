@@ -361,15 +361,67 @@ jobs:
             exit 1
           fi
           echo "OK: $count .debs produced"
-      - name: Upload .debs as workflow artifact
+      - name: Import Wolf maintainers' GPG signing key
+        # docs/17 Gap 1. Pulls the private key from GitHub Actions
+        # Secrets (provisioned during the operator preflight on
+        # 2026-06-09). The public key is at security/wolf-maintainers.gpg
+        # in the repo; operators verify the fingerprint
+        # D995 2267 30A6 59B3 B86F  CDE7 3772 3B2D E0AB FD65 against
+        # SECURITY.md before importing.
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          if [ -z "$GPG_PRIVATE_KEY" ]; then
+            echo "FAIL: GPG_PRIVATE_KEY secret not set in repo settings." >&2
+            echo "  Add it at: Settings → Secrets and variables → Actions" >&2
+            exit 2
+          fi
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+          # Confirm the imported key matches the published fingerprint
+          gpg --list-secret-keys --keyid-format=long | grep -E "37723B2DE0ABFD65|D995 ?2267 ?30A6" \
+            || { echo "FAIL: imported key fingerprint doesn't match published key"; gpg --list-secret-keys; exit 1; }
+          echo "OK: Wolf signing key imported"
+      - name: Sign each .deb (detached ASCII-armored signature)
+        # Produces wolf-*.deb.asc alongside each .deb. Operators
+        # verify with `gpg --verify wolf-server_0.1.0_amd64.deb.asc
+        # wolf-server_0.1.0_amd64.deb`. The apt-repo-level Release
+        # file signing (different concern) lands with Gap 2 when
+        # the hosted apt repo is set up.
+        env:
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          if [ -z "$GPG_PASSPHRASE" ]; then
+            echo "FAIL: GPG_PASSPHRASE secret not set." >&2
+            exit 2
+          fi
+          for deb in packaging/build/debs/wolf*.deb; do
+            gpg --batch --pinentry-mode loopback \
+                --passphrase "${GPG_PASSPHRASE}" \
+                --armor --detach-sign \
+                --default-key 0x37723B2DE0ABFD65 \
+                --output "${deb}.asc" "${deb}"
+            echo "  signed: ${deb}.asc"
+          done
+      - name: Verify .deb signatures
+        # Sanity check: each .deb's signature must verify against
+        # the imported key. Catches the "signed but corrupted" case
+        # that would leave operators with broken signatures.
+        run: |
+          for deb in packaging/build/debs/wolf*.deb; do
+            gpg --verify "${deb}.asc" "${deb}" 2>&1 | tail -2
+          done
+          echo "OK: all signatures verified"
+      - name: Upload signed .debs + signatures as workflow artifact
         # So a maintainer reviewing a PR can download the actual
-        # .debs and `apt install ./wolf-*.deb` locally to spot-
-        # check. Not signed; for release ship via the .deb repo
-        # signing flow (gap 1 in docs/17 — build-now slice).
+        # signed .debs + their .asc signatures and `apt install
+        # ./wolf-*.deb` locally to spot-check. Verify the signature
+        # first via `gpg --verify wolf-*.deb.asc wolf-*.deb`.
         uses: actions/upload-artifact@v4
         with:
           name: wolf-debs
-          path: packaging/build/debs/wolf*.deb
+          path: |
+            packaging/build/debs/wolf*.deb
+            packaging/build/debs/wolf*.deb.asc
           retention-days: 14
       - name: Dump build log on failure
         if: failure()

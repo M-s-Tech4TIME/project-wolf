@@ -1020,9 +1020,9 @@
     "semantic_hash": "9b71115e9aef3dc02ee3485490736847"
   },
   "SECURITY.md": {
-    "mtime": 1781013129.77961,
-    "ast_hash": "5aba870fa6439c3d371631ab73922265",
-    "semantic_hash": ""
+    "mtime": 1780662299.8274403,
+    "ast_hash": "3a38f3c8765775a794369e7cba8b44ef",
+    "semantic_hash": "3a38f3c8765775a794369e7cba8b44ef"
   },
   "SUPPORT.md": {
     "mtime": 1780662343.499526,
@@ -1140,9 +1140,9 @@
     "semantic_hash": "b5a1b054fb8aad792df025c740eca7a5"
   },
   "docs/17-release-engineering.md": {
-    "mtime": 1781013164.5511405,
-    "ast_hash": "75ee5a640d0757e6c66686d5000f8779",
-    "semantic_hash": ""
+    "mtime": 1780664465.3094332,
+    "ast_hash": "13b5050f8cbf98ddab5a4c9c8293a9c8",
+    "semantic_hash": "13b5050f8cbf98ddab5a4c9c8293a9c8"
   },
   "docs/CHANGELOG.md": {
     "mtime": 1780634871.1832166,
