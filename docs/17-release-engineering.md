@@ -665,6 +665,20 @@ Three batches; ~5–7 slices total. Could span 2–3 sessions.
 
 ## Operator preflight (one-time, before Batch 3 starts)
 
+**Status (2026-06-09): DONE.** Public key committed to
+[`security/wolf-maintainers.gpg`](../security/wolf-maintainers.gpg);
+private key in 1Password + GitHub Actions Secrets (`GPG_PRIVATE_KEY`
++ `GPG_PASSPHRASE`).
+
+Actual key shipped:
+- Algorithm: RSA 4096 (capabilities `[SC]` primary, `[E]` subkey)
+- Fingerprint: `D995 2267 30A6 59B3 B86F  CDE7 3772 3B2D E0AB FD65`
+- Long key ID: `0x37723B2DE0ABFD65`
+- Identity: `M/s. Tech4TIME (Wolf package signing) <dev@tech4time.bd>`
+
+The original 6-step walkthrough is preserved below for historical
+reference + future re-keying.
+
 These are actions you do once, on your admin workstation. They
 don't require any Wolf code changes — but they must complete
 before gap 1 (GPG signing) can be wired into CI.

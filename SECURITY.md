@@ -32,11 +32,43 @@ email the Wolf maintainers at
 `pyproject.toml`).
 
 A GPG-encrypted email is preferred. The Wolf maintainers' GPG
-public key will be published at
-`security/wolf-maintainers.gpg` in the repo once Phase 5.9's
-release-engineering work lands the signing infrastructure
-(tracked in `docs/17-release-engineering.md` gap 1). Until then,
-plaintext email is acceptable.
+public key is published at
+[`security/wolf-maintainers.gpg`](security/wolf-maintainers.gpg)
+in this repo.
+
+**Fingerprint** (verify this before trusting the key):
+
+```
+D995 2267 30A6 59B3 B86F  CDE7 3772 3B2D E0AB FD65
+```
+
+**Long key ID**: `0x37723B2DE0ABFD65`
+
+**Identity**: `M/s. Tech4TIME (Wolf package signing) <dev@tech4time.bd>`
+
+**Algorithm**: RSA 4096-bit (capabilities `[SC]` on primary,
+`[E]` on encryption subkey).
+
+To import + verify the key:
+
+```bash
+# Fetch from the repo:
+curl -fsSLO https://raw.githubusercontent.com/M-s-Tech4TIME/project-wolf/main/security/wolf-maintainers.gpg
+
+# Verify the fingerprint BEFORE importing:
+gpg --show-keys --with-fingerprint wolf-maintainers.gpg
+# Expected: D995 2267 30A6 59B3 B86F  CDE7 3772 3B2D E0AB FD65
+
+# If the fingerprint matches, import:
+gpg --import wolf-maintainers.gpg
+```
+
+This key signs the Wolf `.deb` packages (release-engineering
+gap 1 — wired into CI per Batch 3 of `docs/17`). Operators
+adding the Wolf APT repository to their `sources.list` should
+import this key into `apt`'s trust store first; after that,
+`apt install wolf` automatically verifies the signature on
+every package before installing.
 
 ### What to include
 
