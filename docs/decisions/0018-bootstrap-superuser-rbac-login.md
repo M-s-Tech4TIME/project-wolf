@@ -232,6 +232,25 @@ Wrong because:
   to make the choice — the choice belongs AFTER auth, with proper org-name
   display
 
+### Cookie carries auth only; org context lives in a per-tab header (Round 3 design call)
+
+Before walking the flow, the architectural shape that drives it:
+
+- **Session cookie** carries **authentication only** — user identity +
+  session validity + session expiry. It does NOT carry the user's
+  active organization.
+- **`X-Organization-Id` request header** carries the active
+  organization for each request. The dashboard sets this header per
+  tab from in-memory state (React context backed by `sessionStorage`,
+  which is per-tab).
+- **The backend validates** on every request: the cookie identifies a
+  user; the header identifies the org; backend confirms the user has
+  a membership in that org with the role required for the endpoint.
+
+Consequence: **two browser tabs can coexist with different active
+organizations.** Switching org in one tab does not affect the other.
+This is the multi-org workflow MSSP analysts need.
+
 ### Proposed flow
 
 ```
@@ -243,62 +262,108 @@ Wrong because:
        ▼
 3. Backend authenticates the user.
        │
-   ┌───┴───┐
-   │       │
-   │ User has exactly 1 organization membership?
-   │       │
-   ├── YES ─→ auto-select that org. Session cookie issued
-   │          with OrganizationContext set. Redirect to /chat.
-   │
-   └── NO  ─→ user has 0 or N>1 memberships.
-              │
-              ├─ 0 memberships:
-              │   401 with detail "User has no organization
-              │   memberships. Contact your org admin."
-              │
-              └─ N>1 memberships:
-                  200 with body
-                    {needs_org_selection: true, memberships: [
-                      {organization_id, organization_name, role}, ...
-                    ]}
-                  Dashboard renders the org-switcher (reuse
-                  the existing tenant-switcher.tsx → rename
-                  to organization-switcher.tsx).
-                  │
-                  ▼
-                  4. User picks org → POST /api/v1/auth/select-organization
-                     {organization_id}
-                     │
-                     ▼
-                  5. Backend verifies membership + role.
-                     Session cookie issued with the resolved
-                     OrganizationContext. Redirect to /chat.
+   ┌───┴───┴───────────────────────────────┐
+   │   │                                   │
+   │   │   User is the Superuser?          │
+   │   │                                   │
+   │   ├── YES ─→ Special case: auth-only session
+   │   │          cookie issued (no org context); response
+   │   │          carries {is_superuser: true,
+   │   │          redirect: "/superuser/dashboard"}.
+   │   │          Dashboard routes to the install-admin UI
+   │   │          (org-selector NEVER shown — Superuser
+   │   │          works at install scope, not org scope).
+   │   │
+   │   └── NO ──→ User has exactly 1 organization membership?
+   │              │
+   │              ├── YES ─→ auth-only cookie issued; response
+   │              │          carries {auto_selected_organization: {
+   │              │            organization_id, organization_name, role
+   │              │          }}. Dashboard stores this in per-tab
+   │              │          memory + sets X-Organization-Id header
+   │              │          for subsequent requests. Redirect to /chat.
+   │              │
+   │              └── NO ──→ 0 or N>1 memberships:
+   │                         │
+   │                         ├─ 0 memberships:
+   │                         │   401 with detail "User has no organization
+   │                         │   memberships. If this is unexpected, contact
+   │                         │   your organization admin."
+   │                         │
+   │                         └─ N>1 memberships:
+   │                            200 with body {
+   │                              needs_org_selection: true,
+   │                              memberships: [
+   │                                {organization_id, organization_name, role},
+   │                                ... (one row per membership, role per row)
+   │                              ]
+   │                            }
+   │                            Dashboard renders the org-switcher
+   │                            (organization-switcher.tsx).
+   │                            │
+   │                            ▼
+   │                            4. User picks an org → dashboard stores
+   │                               {organization_id} in per-tab memory +
+   │                               sets X-Organization-Id header. Optional
+   │                               POST /api/v1/auth/select-organization
+   │                               to record the selection for audit /
+   │                               last-used persistence. Redirect to /chat.
 ```
 
-### Switching organizations post-login
+### Switching organizations mid-session (per-tab)
 
-The same org-switcher component (already present on the `/chats` page)
-lets a multi-org user switch context at any time. Each switch:
-- Calls `POST /api/v1/auth/switch-organization` with the new org_id
-- Backend re-validates the membership + emits an audit event
-- New session cookie issued with the new `OrganizationContext`
-- Dashboard re-fetches org-scoped data (chats, alerts, etc.)
+The in-app organization-switcher lets a user change the active org for
+the CURRENT TAB at any time:
 
-The CURRENT in-app org-switcher already does this; just needs to be aware
-of the post-login bootstrap case (when the user lands on the
-needs_org_selection page).
+- Dashboard updates per-tab in-memory state with the new
+  `organization_id`
+- New `X-Organization-Id` header value used on subsequent requests
+- Optional `POST /api/v1/auth/switch-organization` to record the switch
+  for audit
+- Dashboard re-fetches org-scoped data (chats, alerts, etc.) — but
+  ONLY for the current tab; other tabs are untouched
+- Other tabs with different active orgs continue with their own context
+
+No cookie blacklisting is involved in a normal switch — the auth cookie
+identifies the user, not the org; it stays valid. Switching is
+client-side state.
+
+### Session cookie blacklisting (logout / forced revocation)
+
+Cookie blacklisting kicks in for events that should invalidate ALL the
+user's sessions across ALL tabs:
+
+- Explicit logout (`POST /api/v1/auth/logout`) → cookie blacklisted;
+  every tab loses auth on next request
+- Admin / Superuser force-revoke (e.g., compromised account) →
+  blacklisted server-side; every tab loses auth on next request
+- Password reset (Superuser-initiated, per Round 1 changes) → ALL
+  existing sessions for the user blacklisted; user must re-authenticate
+- Session timeout / idle expiry → cookie naturally expires; no
+  blacklist needed
+
+The blacklist lives server-side (Redis or similar) with TTL matching
+the cookie's expiry. After expiry, the entry is auto-removed.
 
 ### API surface (new)
 
 | Endpoint | Purpose |
 |---|---|
-| `POST /api/v1/auth/login` | Email + password. Returns either auto-resolved session OR `needs_org_selection` + memberships list |
-| `POST /api/v1/auth/select-organization` | Pick an org from the post-login screen. Issues session cookie. |
-| `POST /api/v1/auth/switch-organization` | Mid-session org switch. Issues new session cookie. |
+| `POST /api/v1/auth/login` | Email + password ONLY (no `tenant_id` or `organization_id` accepted — see §"Removed: tenant_id field" below). Returns either Superuser-special-case, auto-selected-org, or `needs_org_selection`. |
+| `POST /api/v1/auth/select-organization` | OPTIONAL — record the user's post-login org selection for audit / last-used persistence. Org-context routing happens via the `X-Organization-Id` header, not via this endpoint. |
+| `POST /api/v1/auth/switch-organization` | OPTIONAL — record a mid-session org switch for audit. Same caveat: org context is header-driven. |
+| `POST /api/v1/auth/logout` | Blacklist the current session cookie. Every tab using it loses auth on next request. |
 
-The current `POST /api/v1/auth/login` (which takes optional `tenant_id`)
-gets renamed/refactored. Backward-compat: keep accepting `tenant_id` in
-the body for one release as a deprecated alias.
+### Removed: `tenant_id` field on login
+
+The current `POST /api/v1/auth/login` accepts an optional `tenant_id`
+in the body. The new endpoint **does NOT accept `tenant_id` at all** —
+any `tenant_id` field in the request body is silently ignored.
+
+Rationale (operator direction, Round 3): Wolf is pre-1.0; the only
+known callers (dashboard + first-party CLI tools) are being updated as
+part of the tenant→organization rename slice anyway; a backward-compat
+alias would add complexity for ~zero real-world callers. Drop cleanly.
 
 ---
 

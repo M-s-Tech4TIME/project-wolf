@@ -1150,8 +1150,8 @@
     "semantic_hash": "8f8473d7c57354f727935f0cd7901edb"
   },
   "docs/PROGRESS.md": {
-    "mtime": 1781066113.8924963,
-    "ast_hash": "7d19d1611f081b1d8e93cfce6f372e71",
+    "mtime": 1781085018.3788376,
+    "ast_hash": "1900362cd305b003fbb9174f3e5423cf",
     "semantic_hash": ""
   },
   "docs/decisions/0001-model-probe-llama3.2-baseline.md": {
@@ -1310,8 +1310,8 @@
     "semantic_hash": ""
   },
   "docs/decisions/0017-wolf-central-brain.md": {
-    "mtime": 1781066035.685177,
-    "ast_hash": "db7ee497e2a633358c33a76304f24323",
+    "mtime": 1781084985.7138264,
+    "ast_hash": "7e992db1a2a76fa407da90b9698e4b08",
     "semantic_hash": ""
   },
   "docs/decisions/0019-web-first-configurability.md": {
@@ -1405,8 +1405,8 @@
     "semantic_hash": ""
   },
   "memory/wolf-bootstrap-superuser-flow.md": {
-    "mtime": 1781063353.3835812,
-    "ast_hash": "e9431e691689f6d91d90855018d05912",
+    "mtime": 1781085008.129553,
+    "ast_hash": "607b095ffe1a3e754415c769b35f21f1",
     "semantic_hash": ""
   },
   "memory/wolf-color-palette.md": {
@@ -1420,13 +1420,13 @@
     "semantic_hash": ""
   },
   "docs/decisions/0018-bootstrap-superuser-rbac-login.md": {
-    "mtime": 1781065892.7023044,
-    "ast_hash": "cbc401620469da858e5e69859af2f244",
+    "mtime": 1781084950.995456,
+    "ast_hash": "73c807c0f566035ae372e6dbd000a15c",
     "semantic_hash": ""
   },
   "docs/decisions/0020-superuser-owned-wazuh-mapping.md": {
-    "mtime": 1781065982.6568828,
-    "ast_hash": "20635c2e81fb4ea0f58cc82d9f877379",
+    "mtime": 1781084991.6589136,
+    "ast_hash": "aa85603c64497c61acdd634f5d7b0e4f",
     "semantic_hash": ""
   }
 }
