@@ -1420,8 +1420,8 @@
     "semantic_hash": ""
   },
   "docs/decisions/0018-bootstrap-superuser-rbac-login.md": {
-    "mtime": 1781089092.7203505,
-    "ast_hash": "fae3aa26cae0cdc7340419ffb967c22d",
+    "mtime": 1781092139.5573485,
+    "ast_hash": "2965345612091410b09b483c2d3ddd1b",
     "semantic_hash": ""
   },
   "docs/decisions/0020-superuser-owned-wazuh-mapping.md": {

@@ -1,9 +1,31 @@
 # ADR 0018 — Bootstrap Superuser + Per-Org RBAC + Login UX
 
-**Status:** PROPOSED (2026-06-10) — revised 2026-06-10 to split out the
-Wazuh component mapping decision into its own ADR 0020 (operator
-direction: Wazuh mapping is large + security-sensitive enough to
-deserve a dedicated ADR).
+**Status:** ACCEPTED (2026-06-10)
+**Revision history:**
+- 2026-06-10 PROPOSED v1 (initial draft, 4 coupled concerns)
+- 2026-06-10 PROPOSED v2 (Round 1 review: Wazuh component mapping
+  split out into its own ADR 0020; silent-password-reset rule flipped
+  to allow Superuser reset with audit-event)
+- 2026-06-10 PROPOSED v3 (Round 2 review: Approver→Responder rename;
+  Responder gains direct-execute capability; Analyst gains propose-
+  actions; Engineer gains approve-actions; Superuser data access
+  requires org's explicit consent via Admin-granted membership;
+  break-glass org-recovery flow added)
+- 2026-06-10 PROPOSED v4 (Round 3 review: cookie carries auth only;
+  per-tab `X-Organization-Id` header for org context; Superuser
+  special-case login redirect to `/superuser/dashboard`; session
+  cookie blacklisting for logout/revoke/password-reset; clean drop
+  of `tenant_id` field — no backward-compat alias)
+- 2026-06-10 PROPOSED v5 (Round 4 review: implementation sequencing
+  finalized — Phase 6.4 codebase rename as pre-req; Phase 6.5 with 8
+  sub-slices deferring propose/approve/execute matrix rows to Phase 6
+  when wolf-gateway ships; 10-12 session estimate)
+- 2026-06-10 PROPOSED v6 (Round 5 review: all 5 originally-open
+  architectural decisions resolved; invite-link verification flow
+  with same-network gate added as new sub-slice 6.5-h; final scope
+  9 sub-slices / 12-13 sessions)
+- 2026-06-10 **ACCEPTED** (operator sign-off after 5-round review;
+  Phase 6.4 unblocked + becomes the next real work unit)
 **Authors:** Wolf Maintainers
 **Extends:** ADR 0010 (multi-organization isolation — currently named "multi-tenancy"
 in the legacy code, see ADR-relative note below), ADR 0016 (component
