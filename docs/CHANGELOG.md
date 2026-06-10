@@ -49,6 +49,147 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-10 → 2026-06-11 — Multi-organization design arc: ADRs 0017+0018+0019+0020 all ACCEPTED
+
+**Session type:** claude-code (mixed; multi-round operator review)
+**Phase:** Pre-Phase-6.4 design closure
+**Branch / commit:** main @ 7939c79 (after Commit 2 of the post-arc cleanup; arc itself spans `b22e424` through `be598b4`)
+
+### What we did
+
+Four tightly-coupled ADRs went through multi-round operator review and
+were ACCEPTED. ~20 commits across the arc. **No code touched** — pure
+design work + cross-referenced documentation.
+
+**ADR 0018 — Bootstrap Superuser + Per-Org RBAC + Login UX** (5-round
+review):
+- Round 1: Wazuh component mapping split out to its own ADR 0020;
+  silent-password-reset rule flipped (Superuser CAN reset with audit)
+- Round 2: Approver→Responder rename; Responder gained direct-execute
+  capability; Engineer gained approve-actions; Analyst gained
+  propose-actions; Superuser data access now requires org-Admin
+  explicit consent (no self-grant); break-glass org-recovery for
+  zero-Admin orgs
+- Round 3: Cookie carries auth ONLY; per-tab `X-Organization-Id`
+  header for org context; Superuser special-case login redirect to
+  `/superuser/dashboard`; cookie blacklist for logout / force-revoke /
+  password-reset; clean drop of `tenant_id` field on login (no
+  backward-compat alias)
+- Round 4: Implementation sequencing — Phase 6.4 (codebase rename) as
+  pre-req; Phase 6.5 with 8 sub-slices; defer propose/approve/execute
+  RBAC matrix rows to Phase 6 (wolf-gateway); honest 10-12 session
+  estimate (later 12-13 after Round 5)
+- Round 5: Invite-link verification flow with dynamic same-network
+  gate (copy-link out-of-band delivery, no SMTP); MFA deferred to
+  v1.1; 8h+1h uniform session timeout; password policy (12+ chars,
+  complexity, no rotation, common-password list rejection); both
+  global + per-org audit views for Superuser. 9th sub-slice 6.5-h
+  added for the invite-link flow. **ACCEPTED 2026-06-10** as
+  commit `b22e424`.
+
+**ADR 0019 — Web-first configurability mandate** (1-round review):
+- Manual restart with "pending restart" indicator (not auto-restart)
+- REST endpoints nested under resources (`/install/*`,
+  `/organizations/{id}/*`, `/users/{id}/*`)
+- Config-only scope; runtime observability deferred to its own
+  ADR/phase
+- Cross-org "My memory" UI semantics with Superuser-self-only
+  caveat at data-access level
+- **ACCEPTED 2026-06-10** as commit `24bcdb9`.
+
+**ADR 0020 — Superuser-owned Wazuh component mapping** (1-round review):
+- Random indexer node selection
+- Postgres + Fernet credentials (Vault deferred; Memgraph rejected
+  due to BSL non-production restriction)
+- Hard-fail install probe; soft-fail per-org credentials probe
+- One install = one Wazuh ecosystem (multi-ecosystem deferred)
+- Single shared dashboard URL (per-org override deferred)
+- No restart needed on topology change (per-query DB read,
+  microseconds overhead)
+- Credentials in secrets backend only (separate from org metadata)
+- **ACCEPTED 2026-06-10** as commit `c6dc92c`.
+
+**ADR 0017 — Wolf Central Brain** (4-round review):
+- Round 1: 5+1 architectural clustering of the 17 operator points
+  confirmed; cross-ref to ADR 0019 "My memory" semantics added to
+  the storage-vs-UI section
+- Round 2: 4 memory layers (episodic/session/long-term/semantic);
+  6-category `fact_type` enum (added `incident_lesson`; renamed
+  `relationship` → `social_context`); exponential decay (30d default,
+  auto-prune < 0.1); load-once retrieval at conversation start;
+  semantic memory in Postgres (Neo4j Community evaluated; Memgraph
+  BSL rejected); per-fact-type retention (preference / runbook /
+  incident_lesson live until deleted; environment_fact /
+  social_context 12mo; observation 90d); always-on with operator
+  opt-out; cross-org confirmation; read+delete (no edit) UI
+- Round 3: Deep-think trigger both manual + auto-escalate; soft cost
+  cap with warning; action validator hard-gate + no-bypass + no cost
+  cap + inline rejection + edit-and-retry; 3-state confidence
+  calibration; **point-8 §"Robust answer posture" ACCEPTED as
+  written** — Wolf delivers "always useful + never unexplained 'I
+  don't know'" but rejects "never says uncertain" to avoid SOC
+  hallucination
+- Round 4: Alert-pattern cadence operator-configurable default-daily;
+  environment fingerprinting auto at org bootstrap; **W4 scope
+  expanded to Wazuh log sources** (alerts.json + archives.json +
+  manager logs + indexer indices) tracked as `log_source` semantic-
+  memory entities (log CONTENT NOT replicated to Wolf DB; indexer
+  remains canonical); 5-phase additions (7.5, 8.5, 9.5, 11.5,
+  Phase 12 rename) confirmed; wolf-hunt / wolf-den / wolf-pack names
+  reserved for ADRs ~0021/0022/0023.
+- **ACCEPTED 2026-06-11** as commit `be598b4`.
+
+**Post-arc housekeeping** (3 commits):
+- Roadmap doc (`docs/10-build-roadmap.md`) updated: new Phase 6.4 /
+  6.5 / 6.6 sections; Phase 7.5 + 8.5 refreshed to reflect Round-2/3/4
+  design choices + ACCEPTED status; Phase 9.5 / 11.5 / 12 stale-ADR-
+  number references corrected (0018/0019/0020 → ~0021/0022/0023);
+  new "2026-06-10 / 2026-06-11 — multi-organization design arc"
+  subsection added to §"Phase ordering — divergence". Commit
+  `f47931a`.
+- Memory directory cleanup: `wolf-knowledge-relay.md` →
+  `wolf-pack.md`; MEMORY.md index entry updated; ADR-ACCEPTED
+  cross-ref preambles added to `wolf-bootstrap-superuser-flow.md`
+  (refs ADR 0018 + 0020), `web-first-configurability.md` (refs ADR
+  0019), `tenant-renamed-to-organization.md` (refs ADR 0018 +
+  notes Phase 6.4 schedule). Commit `7939c79`.
+- This CHANGELOG entry.
+
+### What we decided
+
+- Wolf is multi-organization-ready by design before any
+  multi-organization code ships. The 4 ADRs together define the
+  contract.
+- Phase 6.4 (tenant→organization codebase rename) is the next real
+  work unit. Single PR, ~40-60 files, 1-2 sessions. Unblocks
+  Phase 6.5 (9 sub-slices, 12-13 sessions) and Phase 6.6 (5
+  sub-slices, 3-5 sessions).
+- Wolf will never produce a bare "I don't know" answer — every
+  uncertainty includes context + actionable next steps + tool
+  offers, per ADR 0017 §"Robust answer posture" three pillars.
+  Wolf WILL say "uncertain" / "insufficient evidence" when honest,
+  to avoid SOC-incident hallucination.
+- The four memory entries from this arc (wolf-bootstrap-superuser-
+  flow, shell-wrapper-required-pattern, tenant-renamed-to-organization,
+  web-first-configurability) are now in `memory/` in the repo, not
+  in `~/.claude/projects/`. Memory travels with the code via git
+  history.
+- Future ADRs 0021 / 0022 / 0023 reserved for wolf-hunt (Phase 9.5)
+  / wolf-den (Phase 11.5) / wolf-pack (Phase 12) at phase-open
+  time.
+
+### What's next
+
+- **Phase 6.4 — tenant → organization codebase rename.** Single PR,
+  ~40-60 files. Mechanical rename across DB schema (Alembic
+  migration) + SQLAlchemy models + API routes + frontend +
+  TypeScript types + tests. Memory entry `tenant-renamed-to-
+  organization.md` flips to COMPLETED at end.
+- Phase 6.5 (Bootstrap + RBAC + Login UX, per ADR 0018) follows;
+  then Phase 6 (wolf-gateway), then Phase 6.6 (per ADR 0020).
+
+---
+
 ## 2026-06-05 — Slice 5.9-e: wolf meta-package + `make smoke-deb` + CI (Phase 5.9 CLOSED)
 
 **Session type:** claude-code
