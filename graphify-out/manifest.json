@@ -1150,8 +1150,8 @@
     "semantic_hash": "8f8473d7c57354f727935f0cd7901edb"
   },
   "docs/PROGRESS.md": {
-    "mtime": 1781109546.1013548,
-    "ast_hash": "8a59bbc9be2e923ab2c1919e706757a4",
+    "mtime": 1781111418.519651,
+    "ast_hash": "93bd5ce07479ad669a45a9e1750e8d2a",
     "semantic_hash": ""
   },
   "docs/decisions/0001-model-probe-llama3.2-baseline.md": {
@@ -1425,8 +1425,8 @@
     "semantic_hash": ""
   },
   "docs/decisions/0020-superuser-owned-wazuh-mapping.md": {
-    "mtime": 1781084991.6589136,
-    "ast_hash": "aa85603c64497c61acdd634f5d7b0e4f",
+    "mtime": 1781111400.5515041,
+    "ast_hash": "d34eaf2def0f59318cb711964e89b5c5",
     "semantic_hash": ""
   }
 }

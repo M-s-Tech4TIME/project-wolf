@@ -120,6 +120,31 @@ tables + workers. Currently tracks ~6 enforcement points; the ADR 0017
 implementation grows it to ~10+. The CI gate stays load-bearing — no merge
 to main without the suite passing.
 
+### Storage vs UI: how a user's OWN memory crosses orgs
+
+The partitioning above describes the **storage layer**: every memory row
+has `organization_id` as a hard filter, and no query can read across org
+boundaries except via explicit, audited UserOrganization membership.
+
+The **UI layer** for a user's "My memory" page (per [ADR 0019](0019-web-first-configurability.md)
+§"My memory: cross-org, self-only", ACCEPTED 2026-06-10) JOINs across all
+of the current user's `UserOrganization` rows to produce a combined
+self-view of THEIR OWN memory, each entry labeled by org name. This is
+not a contradiction with the per-org partitioning:
+
+- The partitioning protects org data from OUTSIDERS (Acme members
+  cannot see Beta's memory; Superuser without explicit membership in
+  Acme cannot see anyone else's Acme contributions to memory)
+- A user reading their OWN memory across their OWN org memberships is
+  not crossing an isolation boundary — they're aggregating self-data
+  they're already entitled to see, from orgs they're already members of
+- Superuser-self-only at the data-access level still applies: even
+  with org-consent grants, no role can see another user's memory
+
+See ADR 0019 for the UI semantics + Superuser-cannot-see-others
+caveat. ADR 0017 (this ADR) is the source of truth for the storage
+schema + partitioning discipline.
+
 ### MSSP scenario worked example
 
 One Wolf install, three customer organizations:
