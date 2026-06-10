@@ -6,28 +6,41 @@ capabilities that are optional or that benefit from the experience
 of running the earlier ones.
 
 **This roadmap is the recommended order for the coding agent to
-implement.** It reflects the actual build state as of 2026-06-04;
+implement.** It reflects the actual build state as of 2026-06-11;
 see `docs/CHANGELOG.md` for the full slice-by-slice history and
 `docs/PROGRESS.md` for the live current-phase pointer.
 
 ---
 
-## Where Wolf stands today (2026-06-04)
+## Where Wolf stands today (2026-06-11)
 
-**Phases 0–4 + 5.0–5.8: CLOSED.** Wolf has a working agent loop
+**Phases 0–4 + 5.0–5.10: CLOSED.** Wolf has a working agent loop
 against a real Wazuh, three-component architecture (wolf-server /
 wolf-dashboard / wolf-database) per ADR 0016, mTLS substrate,
 RAG + grounding validator, multi-tenancy with cross-tenant
-isolation suite, and systemd-deployable daemons.
+isolation suite, systemd-deployable daemons, and APT packaging
+that builds + installs cleanly on Ubuntu/Debian.
 
-**Phase 5.9 + 5.10 (APT + DNF packaging): the active branch.** The
-deployment substrate is complete; what remains is wrapping it in
-distro packages.
+**Major design arc closed 2026-06-10 — 2026-06-11.** Four ADRs
+ACCEPTED after multi-round operator reviews:
+- **ADR 0017** — Wolf Central Brain (memory + thinking +
+  self-validation + continuous learning) — drives Phases 7.5 + 8.5
+- **ADR 0018** — Bootstrap Superuser + Per-Org RBAC + Login UX —
+  drives Phases 6.4 + 6.5
+- **ADR 0019** — Web-first configurability mandate (GUI ↔ CLI sync
+  discipline applied to every future configurable knob)
+- **ADR 0020** — Superuser-owned Wazuh component mapping — drives
+  Phase 6.6
 
-**Phase 6+ (Approval Gateway and beyond): not yet started.** The
-ordering of post-5.10 phases reflects a refinement of the original
-roadmap; see `## Phase ordering — divergence from the original
-plan` below for context.
+**Phase 6.4 (tenant→organization codebase rename): the next active
+slice.** The unblocked pre-req for all Phase 6.5+ work. ~40-60
+files, single PR, 1-2 sessions.
+
+**Phase 6+ (Approval Gateway and beyond): designed but not yet
+started.** Sub-phase ordering 6.4 → 6.5 → 6 → 6.6 → 7 → 7.5 → 8 →
+8.5 → 9 → 9.5 → 10 → 11 → 11.5 → 12 → 13. Reflects the ADR-
+derived sequencing; see `## Phase ordering — divergence from the
+original plan` below.
 
 ---
 
@@ -287,6 +300,144 @@ different analyst with the right authority approves, wolf-gateway
 executes it against a real Wazuh deployment, verification read
 confirms the actual state. Every step audited.
 
+## Phase 6.4 — tenant → organization codebase rename
+
+**Per ADR 0018 (ACCEPTED 2026-06-10).** Pre-requisite for Phase 6.5
+and all subsequent phases. The entire codebase migrates from the
+"tenant" terminology to "organization":
+
+- DB: `tenants` table → `organizations`; `tenant_id` columns →
+  `organization_id`; foreign-key constraint names
+- Alembic migration that renames atomically + backfills any code
+  paths that touch the old column
+- SQLAlchemy models: `Tenant` → `Organization`; `UserTenant` →
+  `UserOrganization`; `TenantContext` → `OrganizationContext`
+- API routes: `/api/v1/tenants/...` → `/api/v1/organizations/...`
+- Frontend: `tenant-switcher.tsx` → `organization-switcher.tsx`;
+  all TypeScript types + variable names + React contexts
+- Test fixtures + factory helpers
+- Memory entry `tenant-renamed-to-organization.md` flips from
+  STANDING RULE to COMPLETED
+
+Single PR, single review session. Estimated scope: **1-2 sessions**.
+
+**Exit criteria:** every reference to `tenant`/`tenant_id`/`Tenant`
+in the codebase is renamed to `organization`/`organization_id`/
+`Organization`. All tests pass. Cross-organization isolation suite
+(formerly cross-tenant isolation suite) green.
+
+## Phase 6.5 — Bootstrap Superuser + Per-Org RBAC + Login UX
+
+**Per ADR 0018 (ACCEPTED 2026-06-10).** The first multi-organization-
+ready Wolf release. Builds on Phase 6.4's rename + Phase 6's
+wolf-gateway role-gate hook. 9 sub-slices, **12-13 sessions
+estimated**:
+
+1. **6.5-a — Bootstrap Superuser + org-recovery** — shell-wrapper
+   `bootstrap_superuser.sh` + Python core; `.deb` postinst
+   auto-create on fresh install; Superuser password reset for any
+   user (audit-emitted); break-glass org-recovery endpoint for
+   zero-Admin orgs.
+
+2. **6.5-b — Role enforcement (Phase 6.5 subset only)** — role
+   enum (Superuser / Admin / Engineer / Responder / Analyst) +
+   `UserOrganization` membership table; API-layer decorator pattern
+   for the capability matrix rows that don't depend on Phase 6;
+   "Last Admin" invariant guard. **Propose / approve / execute
+   decorators DEFERRED to Phase 6 (wolf-gateway)** — role values
+   exist + the ADR documents intent, but the plumbing that USES
+   these capabilities ships with Phase 6.
+
+3. **6.5-g — Session cookie blacklist infrastructure** — Redis-
+   backed blacklist with TTL matching cookie expiry; session
+   middleware checks blacklist on every authenticated request;
+   triggered by logout, force-revoke, password reset.
+
+4. **6.5-c-i — Backend header-based org context** — every
+   authenticated endpoint refactored to read org from
+   `X-Organization-Id` header instead of cookie/JWT (operator
+   direction: per-tab org context). The biggest backend change in
+   the slice — touches every API endpoint reading org context.
+
+5. **6.5-c-ii — Frontend login + per-tab org state** — dashboard
+   removes org field from login form; handles three login
+   responses (Superuser → `/superuser/dashboard`; auto-selected
+   → `/chat`; needs-org-selection → org-switcher); per-tab
+   `sessionStorage` for active `organization_id`; every API call
+   sets `X-Organization-Id` header.
+
+6. **6.5-d — Organizations + Superuser-dashboard UI** — Superuser-
+   only `/superuser/dashboard` route; Organizations page
+   (list/create/edit/delete); per-org page with initial Admin user
+   creation; install-wide audit-log view.
+
+7. **6.5-e — User management UI (per-org)** — Org-Admin-only
+   Users page within each org; role assignment dropdowns; audit-
+   event display for role changes.
+
+8. **6.5-f — Superuser-membership-grant flow + UI** — backend
+   Superuser-request → Admin-approve/reject → time-limited
+   membership grant (default 24h expiry); revoke (Admin-initiated
+   or expiry-driven); UI on both Superuser side ("Request access
+   to <org>") and Admin side (pending requests in Settings →
+   Access); org member notifications.
+
+9. **6.5-h — Invite-link verification flow + same-network gate** —
+   `User.verification_status` enum + verification token; Admin
+   generates + copies invite link via dashboard (no SMTP);
+   verification gate on every authenticated endpoint; dynamic
+   same-network detection (Wolf enumerates own NICs per-request +
+   matches source IP against any CIDR Wolf is on).
+
+**Exit criteria:** a fresh Wolf install (a) auto-creates Superuser
+"Wolf" with a 32-char autogenerated password; (b) Superuser can
+create Organizations + Users; (c) each user gets an invite link
+that they paste while logged-in-and-on-network to unlock features;
+(d) login UX requires only email + password (no org field); (e)
+multi-org users see the org-switcher post-auth; (f) every config
+change emits the appropriate audit event.
+
+## Phase 6.6 — Superuser-owned Wazuh component mapping
+
+**Per ADR 0020 (ACCEPTED 2026-06-10).** Sequenced AFTER Phase 6.5
+so the Superuser + RBAC + per-tab header model is in place before
+this UI uses it. 5 sub-slices, **3-5 sessions estimated**:
+
+1. **6.6-a — Backend: install-level Wazuh ecosystem config** — DB
+   schema `wazuh_ecosystem_topology` (single-row, install-wide);
+   API `GET / PUT /api/v1/install/wazuh-topology` (Superuser-only);
+   probe logic for all endpoints; audit-event emission on topology
+   change.
+
+2. **6.6-b — UI: install-level Wazuh ecosystem page** — Superuser-
+   only Settings → Wazuh Ecosystem page; Single/Distributed
+   topology builder; per-endpoint probe results; hard-fail save
+   if any endpoint probe fails.
+
+3. **6.6-c — Backend: per-org Wazuh credentials refactor** —
+   migrate existing `connection_profiles` to per-org credential
+   model; API `GET / PUT /api/v1/organizations/{id}/wazuh-credentials`
+   (Superuser-only; Admin/Engineer rejected at decorator); probe
+   logic for per-org credentials (returns scope summary); soft-
+   fail save when probe fails (so Superuser can save credentials
+   before Wazuh-side admin provisions them).
+
+4. **6.6-d — UI: per-org Wazuh credentials tab** — Superuser-only
+   "Wazuh Credentials" tab within each org's settings; form +
+   probe + save flow; rotation log display.
+
+5. **6.6-e — Runtime: per-query credential + topology resolution** —
+   update the Wazuh query path to read topology + credentials fresh
+   per query; random-indexer-node routing for distributed
+   deployments; end-to-end test from a chat query through the
+   per-org credentials hitting the actual Wazuh ecosystem.
+
+**Exit criteria:** Superuser configures Wazuh ecosystem topology
+(single-host OR distributed) via the GUI; for each Organization,
+Superuser configures per-org Wazuh API credentials; an Analyst in
+that org chats with Wolf + Wolf successfully queries the org's
+Wazuh data using the per-org credentials.
+
 ## Phase 7 — Cases and reporting (wolf-hunt foundation)
 
 This was the original Phase 5 — bumped here because the
@@ -314,30 +465,58 @@ the report opens cleanly in PDF.
 
 ## Phase 7.5 — Central Brain: memory + deep-think + self-validation
 
-**Proposed in ADR 0017 (2026-06-10).** Adds Wolf's cognitive layer
-— the integrated memory + reasoning + self-validation scaffolding
-that the underlying model runs inside.
+**Per ADR 0017 (ACCEPTED 2026-06-11).** Adds Wolf's cognitive
+layer — the integrated memory + reasoning + self-validation
+scaffolding that the underlying model runs inside.
 
 Four subsystems:
 
-- **Memory layer** — episodic (in-conversation) + session
-  (auto-compressed summary) + long-term (cross-conversation,
-  per-operator) + semantic (environment knowledge graph). All
-  forced-filtered by `(tenant_id, operator_id)` at the SQL layer.
+- **Memory layer** — four memory types:
+  - Episodic (in-conversation turns; existing `messages` table)
+  - Session (per-conversation auto-summary; NEW
+    `session_memory(conversation_id, summary, embedding, ...)`)
+  - Long-term (cross-conversation operator facts; NEW
+    `operator_memory(id, organization_id, user_id, fact_type, ...)`
+    — `fact_type` enum: 6 categories — preference /
+    environment_fact / runbook / social_context / observation /
+    incident_lesson)
+  - Semantic (environment knowledge graph; NEW
+    `environment_entities` + `environment_edges` tables in Postgres;
+    operator_memory + semantic both hard-partitioned by
+    `(organization_id, user_id)` at the SQL layer)
+  - Long-term confidence decay: exponential half-life (30d
+    default); auto-prune at confidence < 0.1
+  - Retention policy: per-fact-type defaults
+    (preference/runbook/incident_lesson live until deleted;
+    environment_fact + social_context 12mo; observation 90d)
+  - Memory recording: always-on by default with per-user opt-out
 - **Thinking layer** — new **deep-think** agent strategy
-  alongside existing frontier / guided / pipeline. Decomposes
-  complex questions into sub-questions, retrieves + verifies per
-  sub-question, then synthesises.
+  alongside existing frontier / guided / pipeline (ADR 0001).
+  5-step decomposition: decompose → per-sub-question RAG +
+  grounding loop → synthesize → final grounding pass → confidence
+  summary. **Triggers**: operator-explicit "Deep Think" button
+  AND auto-escalation from Uncertain / Not Verified first-pass
+  verdicts. **Cost cap**: soft (warning pill once threshold
+  crossed in a conversation; default configurable per install).
 - **Self-validation layer** — extends grounding validator (ADR
-  0013) with an action validator (pre-flight checks before
-  propose-tool output reaches wolf-gateway) and confidence
-  calibration (signals certainty correctly; does NOT bluff under
-  uncertainty — see ADR 0017 §"Robust answer posture").
-- **Memory dashboard** — operator-facing read/edit/delete of
-  long-term + semantic memory. Right-to-be-forgotten.
+  0013) with: (a) **action validator** — LLM-as-judge runs BEFORE
+  wolf-gateway approval; verifies target identity + blast radius
+  + organization context + action-vs-conversation alignment; HARD
+  GATE with no bypass + no cost cap (safety > perf); inline
+  rejection reason + "Edit and retry" UX. (b) **3-state confidence
+  calibration** — Confident+verified / Confident with caveat /
+  Insufficient evidence. Honors operator point 8 via the §"Robust
+  answer posture" three pillars (try harder → never abdicate
+  without a next step → transparency over confidence theater).
+- **"My memory" dashboard** — per ADR 0019: user-scoped + cross-
+  org view (Alice sees ALL her memory across all her
+  UserOrganization memberships, labeled by org). Read + delete
+  capability (no edit — prevents operator gaslighting Wolf into
+  false facts). Superuser-self-only at data-access: even with
+  org-consent grants, no role can see another user's memory.
 
-Nine sub-slices (7.5-a through 7.5-i) per ADR 0017's
-implementation sequencing.
+9 sub-slices (7.5-a through 7.5-i) per ADR 0017's implementation
+sequencing.
 
 **Exit criteria:** the model remembers what was discussed
 yesterday, knows the operator's environment, can deep-think on
@@ -360,28 +539,47 @@ proposes a tuning, and has it executed through wolf-gateway.
 
 ## Phase 8.5 — Central Brain: continuous learning workers
 
-**Proposed in ADR 0017 (2026-06-10).** Background workers that
+**Per ADR 0017 (ACCEPTED 2026-06-11).** Background workers that
 make Wolf get smarter from the operator's environment over time.
-Independent of the chat path; all write to the per-tenant
-knowledge corpus (RAG store) + semantic memory (Phase 7.5).
+Independent of the chat path; all write to the per-organization
+knowledge corpus (RAG store) + semantic memory (Phase 7.5). One
+worker invocation per organization, never a single job iterating
+across organizations.
 
 - **Knowledge feedback worker** — operator-reviewed case-close
-  summaries auto-ingest into the tenant's private corpus.
+  summaries auto-ingest into the organization's private corpus.
   (Originally Phase 10; consolidated here.)
 - **Alert-pattern extraction worker** — periodic clustering of
   Wazuh alerts, surfaces recurring patterns, promotes them to
-  semantic memory observations.
+  semantic memory observations. **Cadence**: operator-configurable
+  per org (default daily); via the ADR-0019 settings surface.
 - **User feedback signal** — thumbs-up/down on Wolf's answers
   becomes a retrieval-ranking signal. Negative feedback weights
   down those chunks for similar future queries.
-- **Environment fingerprinting worker** — walks Wazuh API to
-  enumerate agents / hosts / rules / network topology +
-  populates the semantic memory knowledge graph.
+- **Environment fingerprinting worker** — auto at org bootstrap
+  + periodic refresh (no opt-in). Walks the Wazuh API + indexer
+  to enumerate:
+  - Agents, hosts, rules, groups, network topology
+  - **Wazuh log sources** (Round 4 operator scope expansion,
+    2026-06-11): `alerts.json` (realtime manager alerts log),
+    `archives.json`, manager logs (ossec.log + agent buffers),
+    indexer-side indices (`wazuh-alerts-*`, `wazuh-monitoring-*`,
+    `wazuh-statistics-*`)
+  - **Log content NOT replicated** into Wolf's DB — the wazuh-
+    indexer remains the canonical store. Wolf tracks log SOURCES
+    as semantic-memory entities of type `log_source` + queries
+    the indexer for real-time content via per-org Wazuh API
+    credentials (per ADR 0020). Avoids storage explosion +
+    duplication of the indexer's role.
+  - Populates `environment_entities` + `environment_edges` with
+    entity types: host / agent / user / rule / mitre_technique /
+    network / service / cve / **log_source**.
 
-**Exit criteria:** after one month of operation in a tenant,
-the per-tenant corpus contains operator-specific observations
-+ feedback-tuned retrieval is measurably better at returning
-chunks the operator marked helpful previously.
+**Exit criteria:** after one month of operation in an organization,
+the per-org corpus contains org-specific observations + feedback-
+tuned retrieval is measurably better at returning chunks the
+operator marked helpful previously. Log sources are tracked + the
+agent can query them via the indexer.
 
 ## Phase 9 — Playbooks and orchestration
 
@@ -393,8 +591,8 @@ chunks the operator marked helpful previously.
 
 ## Phase 9.5 — wolf-hunt: Incident Response + Case Management platform
 
-**Reserved per ADR 0017 (2026-06-10). Detailed design in a future
-ADR (likely 0018) at phase-open time.**
+**Reserved per ADR 0017 (ACCEPTED 2026-06-11). Detailed design in
+a future ADR (expected ~0021) at phase-open time.**
 
 Builds on Phase 7's case data model. Adds a dedicated incident-
 response platform within Wolf — separate dashboard + UI/UX,
@@ -433,8 +631,8 @@ Land any time after Phase 6 has a working approval queue.
 
 ## Phase 11.5 — wolf-den: Cyber Threat Intelligence platform
 
-**Reserved per ADR 0017 (2026-06-10). Detailed design in a future
-ADR (likely 0019) at phase-open time.**
+**Reserved per ADR 0017 (ACCEPTED 2026-06-11). Detailed design in
+a future ADR (expected ~0022) at phase-open time.**
 
 Separate platform within Wolf — distinct dashboard + UI/UX,
 accessible from wolf-dashboard. For threat hunters who want a
@@ -475,7 +673,7 @@ responsibilities:
 
 Hard dependency on Phase 5.4 HTTPS + Phase 5.6 mTLS (both
 delivered) + Phase 6 wolf-gateway (for the outbound command
-flow). Detailed design in a future ADR (likely 0020) at
+flow). Detailed design in a future ADR (expected ~0023) at
 phase-open time.
 
 ## Phase 13 — Optional auto-execution
@@ -513,6 +711,23 @@ shifted by +1.
 The post-Phase-5.10 ordering reflects that shift. ADRs that
 reference "Phase 6" continue to mean the Approval Gateway
 (unchanged from the original numbering).
+
+### 2026-06-10 / 2026-06-11 — multi-organization design arc added
+
+Four ADRs ACCEPTED in this window added a tightly-coupled set of
+sub-phases between the existing Phase 6 work and Phase 7:
+
+| Phase | Driver | Why this position |
+|---|---|---|
+| **6.4** | ADR 0018 | tenant → organization codebase rename. Pre-req for every Phase 6.5+ slice that references the new naming. Single PR, ~1-2 sessions. |
+| **6.5** | ADR 0018 | Bootstrap Superuser + Per-Org RBAC + Login UX. 9 sub-slices, ~12-13 sessions. Land BEFORE Phase 7's case-management work since cases attach to an organization + a user with a role. |
+| **6** | (existing) | Wolf-gateway — the Approval Gateway. After 6.5 because the gateway uses 6.5's role-decorator pattern + needs the organization + role model from 6.5-b. |
+| **6.6** | ADR 0020 | Superuser-owned Wazuh component mapping. After Phase 6.5 because the UI requires the Superuser identity + per-tab header model. Sequenced after Phase 6 because it touches the same wolf-server settings APIs. |
+
+This is a meaningful expansion (~16-19 sessions across 6.4 + 6.5
++ 6.6) but unblocks everything downstream. With these in place,
+Phases 7, 7.5, 8, 8.5, 9, 9.5+ all build against the
+multi-organization-ready foundation.
 
 ---
 
