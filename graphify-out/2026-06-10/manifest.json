@@ -1150,8 +1150,8 @@
     "semantic_hash": "8f8473d7c57354f727935f0cd7901edb"
   },
   "docs/PROGRESS.md": {
-    "mtime": 1781043069.7483811,
-    "ast_hash": "d7c53e678748d3f80d5bff6bf493a302",
+    "mtime": 1781063818.8739789,
+    "ast_hash": "d354027bd9b41d02aba033c6729134c8",
     "semantic_hash": ""
   },
   "docs/decisions/0001-model-probe-llama3.2-baseline.md": {
@@ -1310,8 +1310,118 @@
     "semantic_hash": ""
   },
   "docs/decisions/0017-wolf-central-brain.md": {
-    "mtime": 1781042964.704291,
-    "ast_hash": "34b4a1a8eb366826021ed7fb303736d3",
+    "mtime": 1781052141.5571144,
+    "ast_hash": "242e36c997c4a19c2aa564de0e251a83",
+    "semantic_hash": ""
+  },
+  "docs/decisions/0018-bootstrap-superuser-rbac-login-wazuh-mapping.md": {
+    "mtime": 1781052240.170646,
+    "ast_hash": "d10deb1ac3f2b05ea04a5e1cb3644df1",
+    "semantic_hash": ""
+  },
+  "docs/decisions/0019-web-first-configurability.md": {
+    "mtime": 1781063791.8913434,
+    "ast_hash": "80f6d94306c33edd94c41e35df7eb56a",
+    "semantic_hash": ""
+  },
+  "memory/MEMORY.md": {
+    "mtime": 1781063353.3828754,
+    "ast_hash": "135e0b69903f6abb996199299e08ffcb",
+    "semantic_hash": ""
+  },
+  "memory/conversation-tree-persistence-plan.md": {
+    "mtime": 1781063353.3826332,
+    "ast_hash": "d7c57f1739d9582e3d2f35d9a996444c",
+    "semantic_hash": ""
+  },
+  "memory/graphify-first-discipline.md": {
+    "mtime": 1781063353.3827198,
+    "ast_hash": "72b17242f1c6e30c183b85ab79617008",
+    "semantic_hash": ""
+  },
+  "memory/grounding-enrichment-tools-future-phase.md": {
+    "mtime": 1781063353.3827734,
+    "ast_hash": "963fc61baa4084aa20943b5f2783212f",
+    "semantic_hash": ""
+  },
+  "memory/integrity-across-the-stack.md": {
+    "mtime": 1781063353.3828266,
+    "ast_hash": "2df49b89b3ceb49382c8383b36808efc",
+    "semantic_hash": ""
+  },
+  "memory/multi-slice-batch-handover.md": {
+    "mtime": 1781063353.3829284,
+    "ast_hash": "1ce64b5be26006791645297876e78f9d",
+    "semantic_hash": ""
+  },
+  "memory/native-https-and-wolf-cert.md": {
+    "mtime": 1781063353.3829813,
+    "ast_hash": "bac4d2ee0ac30b6183cbf62d957ae3ba",
+    "semantic_hash": ""
+  },
+  "memory/no-unaddressed-errors.md": {
+    "mtime": 1781063353.3830373,
+    "ast_hash": "781e410eb131ecc92c33be1c6e6d6e63",
+    "semantic_hash": ""
+  },
+  "memory/per-slice-web-test-checkpoints.md": {
+    "mtime": 1781063353.383142,
+    "ast_hash": "ad75912c30687795069e46019499e3e9",
+    "semantic_hash": ""
+  },
+  "memory/periodic-plan-sync.md": {
+    "mtime": 1781063353.3830895,
+    "ast_hash": "7e6e63fc288ed6a3ff81319b613ac2c1",
+    "semantic_hash": ""
+  },
+  "memory/progressive-response-and-live-activity.md": {
+    "mtime": 1781063353.383197,
+    "ast_hash": "933f1e23cfd38bf14416762e886a87fc",
+    "semantic_hash": ""
+  },
+  "memory/quality-secure-coding-discipline.md": {
+    "mtime": 1781063353.383251,
+    "ast_hash": "c105c78294adc273bf24b42c0cbf4738",
+    "semantic_hash": ""
+  },
+  "memory/runbook-authoring-and-actionable-runbooks.md": {
+    "mtime": 1781063353.383302,
+    "ast_hash": "ec9afdf47a8c96b52684ad80ea9651ee",
+    "semantic_hash": ""
+  },
+  "memory/shell-wrapper-required-pattern.md": {
+    "mtime": 1781063353.38336,
+    "ast_hash": "e48919d5a168a5b091fe3d0b8b400579",
+    "semantic_hash": ""
+  },
+  "memory/tenant-renamed-to-organization.md": {
+    "mtime": 1781063353.383416,
+    "ast_hash": "23e7ccf88c46cc87d5804f8cddd557c9",
+    "semantic_hash": ""
+  },
+  "memory/verdict-rename-and-four-chips.md": {
+    "mtime": 1781063353.3834794,
+    "ast_hash": "c41bbc51a9962785914e420844633e05",
+    "semantic_hash": ""
+  },
+  "memory/web-first-configurability.md": {
+    "mtime": 1781063353.383529,
+    "ast_hash": "9f2e195b0286d84b04ad896039aff887",
+    "semantic_hash": ""
+  },
+  "memory/wolf-bootstrap-superuser-flow.md": {
+    "mtime": 1781063353.3835812,
+    "ast_hash": "e9431e691689f6d91d90855018d05912",
+    "semantic_hash": ""
+  },
+  "memory/wolf-color-palette.md": {
+    "mtime": 1781063353.3836365,
+    "ast_hash": "cf0341cc6e77b9fa84ca7745cfadb48d",
+    "semantic_hash": ""
+  },
+  "memory/wolf-knowledge-relay.md": {
+    "mtime": 1781063353.3836877,
+    "ast_hash": "f59dd5eaed0143d0917bb1bd1cbb9b9c",
     "semantic_hash": ""
   }
 }

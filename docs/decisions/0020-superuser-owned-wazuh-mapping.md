@@ -48,7 +48,7 @@ components. This applies at BOTH layers:
 2. **Organization level** — per-org Wazuh API credentials (which org gets
    to query which slice of Wazuh data)
 
-No other role — not Admin, not Engineer, not Approver, not Analyst — can
+No other role — not Admin, not Engineer, not Responder, not Analyst — can
 configure either layer.
 
 ---

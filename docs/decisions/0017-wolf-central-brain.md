@@ -166,7 +166,7 @@ One Wolf install, three customer organizations:
    └─ MSSP analyst Sarah:
       ├─ UserOrganization (Acme, role=Analyst)
       ├─ UserOrganization (Beta, role=Analyst)
-      └─ UserOrganization (Gamma, role=Approver)
+      └─ UserOrganization (Gamma, role=Responder)
 
       At login: backend resolves all three memberships
       Dashboard: org-switcher lets Sarah switch context

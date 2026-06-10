@@ -22,11 +22,12 @@ STANDING RULE (2026-06-10): Wolf's bootstrap + RBAC model follows the Wazuh patt
 
 | Role | Capabilities |
 |---|---|
-| **Superuser** | Create/edit/delete organizations + users + assign roles. Configure + map Wazuh components (single + distributed). **Cannot** access any organization's data unless explicitly granted membership. There is exactly ONE Superuser per Wolf install (the bootstrap `Wolf` user). |
-| **Admin** (per-org) | Full access to their organization: configure org settings, manage users within the org, assign roles within the org, all data access. |
-| **Engineer** (per-org) | Configure + customize + fine-tune Wolf for the org: RAG corpus management, prompt customization, wolf-pack deployment, model selection, embedding provider, etc. Plus everything Analyst can do (chat + read-only data). **Does NOT configure Wazuh component mapping** — that's Superuser-only. |
-| **Analyst** (per-org) | Chat with Wolf + read-only access to the org's data + own conversation history. |
-| (future) | Extensible — Approver / Auditor / etc. |
+| **Superuser** | Create/edit/delete organizations + users + assign roles. Configure + map Wazuh components (single + distributed). **Cannot** access any organization's data unless the **organization's Admin explicitly grants membership** (org-consent gate, 2026-06-10). Superuser cannot self-grant. There is exactly ONE Superuser per Wolf install (the bootstrap `Wolf` user). |
+| **Admin** (per-org) | Full access to their organization: configure org settings, manage users within the org, assign roles within the org, all data access. Also: grants or revokes Superuser membership in the org (the consent gate). Propose + approve actions. |
+| **Engineer** (per-org) | Configure + customize + fine-tune Wolf for the org: RAG corpus management, prompt customization, wolf-pack deployment, model selection, embedding provider. Plus chat + read all data, propose + approve actions. **Does NOT configure Wazuh component mapping** (Superuser-only) or manage users. |
+| **Responder** (per-org; renamed from Approver 2026-06-10) | Incident-response role. Chat, read all data, view audit log, propose + approve actions, AND **execute actions directly** (the only role with the direct-execute shortcut — for time-critical containment). Audit-after, not approve-before. |
+| **Analyst** (per-org) | Chat + read-only access to the org's data + own conversation history + **propose actions** (someone else must approve). Cannot approve, cannot execute, cannot configure. |
+| (future) | Extensible — Auditor (read-only audit log) / Read-only (Analyst minus propose) / Custom (operator-defined). |
 
 ## Why a single fixed-username Superuser
 

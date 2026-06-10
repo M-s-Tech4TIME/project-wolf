@@ -1,16 +1,16 @@
 # Graph Report - project-wolf  (2026-06-10)
 
 ## Corpus Check
-- 274 files · ~251,200 words
+- 275 files · ~252,960 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 3186 nodes · 7533 edges · 209 communities (166 shown, 43 thin omitted)
+- 3227 nodes · 7572 edges · 201 communities (161 shown, 40 thin omitted)
 - Extraction: 69% EXTRACTED · 31% INFERRED · 0% AMBIGUOUS · INFERRED: 2314 edges (avg confidence: 0.54)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `87cee418`
+- Built from commit: `f4dd3a00`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -171,9 +171,7 @@
 - [[_COMMUNITY_dashboard mini|dashboard mini]]
 - [[_COMMUNITY_Community 168|Community 168]]
 - [[_COMMUNITY_Community 169|Community 169]]
-- [[_COMMUNITY_Community 170|Community 170]]
 - [[_COMMUNITY_Community 171|Community 171]]
-- [[_COMMUNITY_Community 172|Community 172]]
 - [[_COMMUNITY_Community 173|Community 173]]
 - [[_COMMUNITY_Community 174|Community 174]]
 - [[_COMMUNITY_Community 175|Community 175]]
@@ -186,19 +184,13 @@
 - [[_COMMUNITY_Community 182|Community 182]]
 - [[_COMMUNITY_Community 183|Community 183]]
 - [[_COMMUNITY_Community 184|Community 184]]
-- [[_COMMUNITY_Community 185|Community 185]]
-- [[_COMMUNITY_Community 186|Community 186]]
 - [[_COMMUNITY_Community 187|Community 187]]
 - [[_COMMUNITY_Community 188|Community 188]]
 - [[_COMMUNITY_Community 189|Community 189]]
-- [[_COMMUNITY_Community 190|Community 190]]
-- [[_COMMUNITY_Community 191|Community 191]]
 - [[_COMMUNITY_Community 192|Community 192]]
-- [[_COMMUNITY_Community 193|Community 193]]
 - [[_COMMUNITY_Community 194|Community 194]]
 - [[_COMMUNITY_Community 195|Community 195]]
 - [[_COMMUNITY_Community 196|Community 196]]
-- [[_COMMUNITY_Community 197|Community 197]]
 - [[_COMMUNITY_Community 198|Community 198]]
 - [[_COMMUNITY_Community 199|Community 199]]
 
@@ -219,12 +211,12 @@
   services/server/wolf_server/guardrails/limits.py → packages/common/wolf_common/errors.py
 - `int` --uses--> `WolfError`  [INFERRED]
   services/server/wolf_server/guardrails/limits.py → packages/common/wolf_common/errors.py
-- `str` --uses--> `WolfError`  [INFERRED]
-  services/server/wolf_server/guardrails/limits.py → packages/common/wolf_common/errors.py
-- `object` --uses--> `WolfError`  [INFERRED]
-  services/server/wolf_server/wazuh/server_api.py → packages/common/wolf_common/errors.py
-- `int` --uses--> `ChunkInput`  [INFERRED]
-  tools/seed_knowledge/wazuh_rules.py → services/server/wolf_server/knowledge/store.py
+- `bool` --uses--> `PgvectorKnowledgeStore`  [INFERRED]
+  tools/embedding_benchmark/full_corpus_chained_eval.py → services/server/wolf_server/knowledge/store.py
+- `int` --uses--> `PgvectorKnowledgeStore`  [INFERRED]
+  tools/embedding_benchmark/full_corpus_chained_eval.py → services/server/wolf_server/knowledge/store.py
+- `Path` --uses--> `LeafKind`  [INFERRED]
+  services/server/tests/test_cert_authority.py → packages/cert/wolf_cert/authority.py
 
 ## Import Cycles
 - 1-file cycle: `packages/cert/wolf_cert/authority.py -> packages/cert/wolf_cert/authority.py`
@@ -250,39 +242,39 @@
 - **Static quality CI gates (lint / typecheck / test / frontend / alembic-check / safety-check)** — ci_job_lint, ci_job_typecheck, ci_job_test, ci_job_frontend, ci_job_alembic_check, ci_job_safety_check [INFERRED 0.85]
 - **Production install chain (install-users.sh + install.sh + systemd units + shims)** — deploy_systemd_system_install_users_script, deploy_bin_install_script, deploy_systemd_system_readme, deploy_bin_shim_wolf_server, deploy_bin_shim_wolf_database, deploy_bin_shim_wolf_dashboard [INFERRED 0.85]
 
-## Communities (209 total, 43 thin omitted)
+## Communities (201 total, 40 thin omitted)
 
 ### Community 0 - "Agent Loop & Strategies"
-Cohesion: 0.13
-Nodes (49): ProbeReport, ModelProvider, Adapter contract all LLM provider implementations must satisfy., Return the static capability descriptor for this model., Send a chat completion request and return the full response., Stream response tokens.  Yields the full content as one chunk in         provide, ProbeTaskResult, ReasoningTier (+41 more)
+Cohesion: 0.11
+Nodes (19): Return the static capability descriptor for this model., Send a chat completion request and return the full response., Stream response tokens.  Yields the full content as one chunk in         provide, ReasoningTier, Any, CapabilityDescriptor, ChatRequest, ChatResponse (+11 more)
 
 ### Community 1 - "Wazuh Read Clients"
-Cohesion: 0.10
-Nodes (41): ABC, BaseModel, Any, str, ToolExecContext, str, ToolExecContext, ToolExecContext (+33 more)
+Cohesion: 0.11
+Nodes (25): BaseModel, Any, str, ToolExecContext, ToolExecContext, ToolExecContext, AgentDetail, GetAgentDetailOutput (+17 more)
 
 ### Community 2 - "Chat Loop & Audit"
-Cohesion: 0.17
-Nodes (32): AgentAnswer, _emit(), Core agent loop — plan-act-observe with bounded step budget.  The loop is provid, Produce a small, JSON-serializable summary for an SSE event., Streaming model call when the provider supports it; blocking         fallback ot, Re-prompt once (no tools) to recover from an empty final answer.          Return, Run the grounding validator (if configured) on the draft answer.          Always, The final output of an agent loop run. (+24 more)
+Cohesion: 0.10
+Nodes (68): LoopEvent, Loop-event type emitted by the AgentLoop for streaming consumers.  The loop opti, One observable transition inside the agent loop., AgentAnswer, _emit(), Core agent loop — plan-act-observe with bounded step budget.  The loop is provid, Produce a small, JSON-serializable summary for an SSE event., Streaming model call when the provider supports it; blocking         fallback ot (+60 more)
 
 ### Community 3 - "Tenant-Scoped Cache"
 Cohesion: 0.07
 Nodes (36): _compose_storage_key(), InMemoryTenantCache, TenantScopedCache + InMemoryTenantCache.  Implementation note: the type system e, Total entries across all tenants. Tests use this; production code shouldn't., Snapshot of currently-stored composed keys. Tests-only., Raised when a cache key composition is attempted without tenant_id.      Defence, Build the actual storage-layer key from (tenant_id, namespace, key).      The co, The public API. Every operation requires a tenant_id. (+28 more)
 
 ### Community 4 - "Structured-Output Fallback"
-Cohesion: 0.07
-Nodes (52): In-process registry of all tools and their capability tiers., Remove every registered tool — for test isolation only., ToolRegistry, ChatRequest, str, _make_tool(), _mock_response(), Tests for model adapters, tool registry, and structured-output fallback. (+44 more)
+Cohesion: 0.05
+Nodes (56): Tool registry — single source of truth for registered tools and their tiers.  Th, In-process registry of all tools and their capability tiers., Register a tool.  Raises ValueError on duplicate name., Return only read and propose tools — safe to include in model schemas., Return all registered tools including execute-tier (for gateway use)., Remove every registered tool — for test isolation only., ToolRegistry, ChatRequest (+48 more)
 
 ### Community 5 - "Guardrails & Rate Limits"
 Cohesion: 0.10
-Nodes (38): GuardrailViolation, A tool call exceeded a resource guardrail.  Rejected before execution., _Bucket, Per-tenant rate limiter — token bucket, in-process.  In-process is fine for sing, Token-bucket rate limiter, one bucket per tenant.      Default: 60 tool calls pe, Consume `cost` tokens from the tenant's bucket.          Raises GuardrailViolati, TenantRateLimiter, Return the tool or raise ToolNotFoundError. (+30 more)
+Nodes (39): GuardrailViolation, A tool call exceeded a resource guardrail.  Rejected before execution., _Bucket, Per-tenant rate limiter — token bucket, in-process.  In-process is fine for sing, Token-bucket rate limiter, one bucket per tenant.      Default: 60 tool calls pe, Consume `cost` tokens from the tenant's bucket.          Raises GuardrailViolati, TenantRateLimiter, Return the tool or raise ToolNotFoundError. (+31 more)
 
 ### Community 6 - "Model Resolver"
-Cohesion: 0.09
-Nodes (35): _build_provider(), get_grounding_judge_model(), get_model_for_tenant(), ModelProviderUnconfiguredError, Resolve a `ModelProvider` for a tenant.  Phase 2B: returns the process-default m, Return a ModelProvider for the grounding validator.      Defaults to the same pr, The settings or secrets do not contain a usable model configuration., Construct a ModelProvider from name + id + (optional) secret ref. (+27 more)
+Cohesion: 0.14
+Nodes (37): _build_provider(), get_grounding_judge_model(), get_model_for_tenant(), ModelProviderUnconfiguredError, Resolve a `ModelProvider` for a tenant.  Phase 2B: returns the process-default m, Return a ModelProvider for the grounding validator.      Defaults to the same pr, The settings or secrets do not contain a usable model configuration., Construct a ModelProvider from name + id + (optional) secret ref. (+29 more)
 
 ### Community 7 - "Model Probe Battery"
-Cohesion: 0.11
-Nodes (34): _grade(), Model probe — runs the battery of tasks and grades the model.  Usage (from the r, Run the full task battery and return a ProbeReport., Synchronous wrapper for use in CLI and tests., Derive a measured CapabilityDescriptor from probe task results., run_probe(), run_probe_sync(), _infer_tool_calling() (+26 more)
+Cohesion: 0.09
+Nodes (41): _grade(), ProbeReport, Model probe — runs the battery of tasks and grades the model.  Usage (from the r, Run the full task battery and return a ProbeReport., Synchronous wrapper for use in CLI and tests., Derive a measured CapabilityDescriptor from probe task results., run_probe(), run_probe_sync() (+33 more)
 
 ### Community 8 - "wolf-database Layout"
 Cohesion: 0.07
@@ -290,11 +282,11 @@ Nodes (47): DatabaseLayout, Path, bool, DatabaseLayout, int, str, layout(), Test
 
 ### Community 9 - "Tool Execution Context"
 Cohesion: 0.16
-Nodes (20): FrontierStrategy, Full autonomy — the model plans and acts within a generous step budget., Any, AsyncSession, CapabilityDescriptor, ChatRequest, ChatResponse, MagicMock (+12 more)
+Nodes (36): AgentLoop, The plan-act-observe loop.  Construct one per chat request., FrontierStrategy, Full autonomy — the model plans and acts within a generous step budget., AuditEvent, Immutable audit record.      Every action of significance is written here.  The, AgentStrategy, Any (+28 more)
 
 ### Community 10 - "Wazuh Smoke + DB Session"
-Cohesion: 0.15
-Nodes (37): async_sessionmaker, _ensure_schema(), main(), _parse_args(), Smoke-test the resolved Wazuh clients against a real deployment.  Two modes:, Exercise every registered read tool against the live deployment.      Calls each, One-line shape descriptor: result_count + first list/dict size., _shape_summary() (+29 more)
+Cohesion: 0.16
+Nodes (42): _ensure_schema(), main(), _parse_args(), Smoke-test the resolved Wazuh clients against a real deployment.  Two modes:, Exercise every registered read tool against the live deployment.      Calls each, One-line shape descriptor: result_count + first list/dict size., _shape_summary(), smoke_all_tools() (+34 more)
 
 ### Community 11 - "wolf-cert Certificates"
 Cohesion: 0.07
@@ -305,8 +297,8 @@ Cohesion: 0.15
 Nodes (37): CompletedProcess, DatabaseLayout, MonkeyPatch, Path, PostgresBinaries, fake_binaries(), layout(), _mock_completed() (+29 more)
 
 ### Community 13 - "ATT&CK Knowledge Ingest"
-Cohesion: 0.11
-Nodes (30): _chunks_from_bundle(), _chunks_from_file(), _download_if_missing(), ingest_wazuh_rules(), _iter_rule_xml_files(), Yield (filename, raw-bytes) for every rule XML inside the archive., Wazuh rule files use a 'group of rules' structure that isn't     well-formed XML, Parse one Wazuh rules XML file. Tolerant of multi-group files.      Strategy: wr (+22 more)
+Cohesion: 0.08
+Nodes (43): ChunkInput, A chunk to be embedded and stored. Embedding is computed by the store., _chunks_from_bundle(), _download_if_missing(), ingest_attack(), _kill_chain_phases(), Return ChunkInput list for the enterprise-ATT&CK matrix.      Network call (once, Fetch the STIX bundle once. Subsequent runs read the cache. (+35 more)
 
 ### Community 14 - "Dashboard Chat UI"
 Cohesion: 0.13
@@ -321,8 +313,8 @@ Cohesion: 0.12
 Nodes (39): bytes, CaptureFixture, Namespace, object, Path, str, _ns(), Tests for `wolf_cert.cli` — Phase 5.4-b.  Each subcommand is exercised by callin (+31 more)
 
 ### Community 17 - "Loop Events & Chat API"
-Cohesion: 0.12
-Nodes (30): LoopEvent, Loop-event type emitted by the AgentLoop for streaming consumers.  The loop opti, One observable transition inside the agent loop., chat(), chat_stream(), ChatRequestBody, ChatResponseBody, ConversationTurn (+22 more)
+Cohesion: 0.17
+Nodes (16): Any, bool, datetime, int, str, UUID, Tenant-scoped OpenSearch query builder.  The single guarantee of this module: **, Build an aggregation query (alerts grouped by a field). (+8 more)
 
 ### Community 18 - "wolf-cert CLI"
 Cohesion: 0.09
@@ -337,8 +329,8 @@ Cohesion: 0.08
 Nodes (25): ADR 0018 — Bootstrap Superuser + Per-Org RBAC + Login UX + Superuser-owned Wazuh Mapping, ADR-relative note on naming, API surface (new), Bootstrap script (`bootstrap_superuser.sh` wrapper + `.py` core), Capability matrix (concise), Context, Current flow (broken UX), Decision: bootstrap Superuser (+17 more)
 
 ### Community 21 - "Tool I/O Schemas"
-Cohesion: 0.12
-Nodes (36): AgentSummary, AlertHit, KnowledgeHit, float, str, ToolExecContext, _agent(), _alert() (+28 more)
+Cohesion: 0.13
+Nodes (34): AgentSummary, AlertHit, KnowledgeHit, float, str, _agent(), _alert(), _chunk() (+26 more)
 
 ### Community 22 - "JWT Token Plumbing"
 Cohesion: 0.20
@@ -357,20 +349,20 @@ Cohesion: 0.13
 Nodes (15): LoginForm(), ApiError, Alert(), AlertAction(), AlertDescription(), AlertTitle(), alertVariants, Card() (+7 more)
 
 ### Community 26 - "Strategy Base + Tool Lists"
-Cohesion: 0.21
-Nodes (16): GuidedStrategy, Agent strategies — frontier / guided / pipeline.  The strategy is picked from th, Shorter budget with explicit sub-task narration in the prompt., Map a capability descriptor to the matching Strategy instance., strategy_for(), _cap(), _fake_tools(), Tests for strategy selection and shape.  Confirms each capability tier maps to t (+8 more)
+Cohesion: 0.10
+Nodes (28): GuidedStrategy, PipelineStrategy, Agent strategies — frontier / guided / pipeline.  The strategy is picked from th, Shorter budget with explicit sub-task narration in the prompt., Deterministic outer scaffolding; the model only summarizes.      Phase 2B baseli, Map a capability descriptor to the matching Strategy instance., strategy_for(), AgentStrategy (+20 more)
 
 ### Community 27 - "Dashboard Dependencies"
 Cohesion: 0.06
 Nodes (34): dependencies, class-variance-authority, clsx, highlight.js, lucide-react, next, radix-ui, react (+26 more)
 
 ### Community 28 - "Embedding Benchmark"
-Cohesion: 0.27
-Nodes (13): callable, AdapterResult, _bench_one(), _cosine(), main(), _print_side_by_side(), _print_summary(), Embedding-provider side-by-side benchmark CLI.  Compares Ollama-hosted nomic-emb (+5 more)
+Cohesion: 0.10
+Nodes (20): ADR 0018 — Bootstrap Superuser + Per-Org RBAC + Login UX, ADR-relative note on naming, API surface (new), Bootstrap script (`bootstrap_superuser.sh` wrapper + `.py` core), Capability matrix (concise), Context, Current flow (broken UX), Decision: bootstrap Superuser (+12 more)
 
 ### Community 29 - "Resource-Limit Enforcement"
-Cohesion: 0.09
-Nodes (25): enforce_limits(), Raise GuardrailViolation if any limit is exceeded.      Call with only the field, Truncate a string payload to fit the model's context-volume budget.      Appends, truncate_for_context(), bool, int, str, Tests for resource guardrails — time range, result count, rate limit. (+17 more)
+Cohesion: 0.10
+Nodes (22): enforce_limits(), Raise GuardrailViolation if any limit is exceeded.      Call with only the field, bool, int, Tests for resource guardrails — time range, result count, rate limit., The default ceiling is a generous 365 days (Slice 5.0a)., enforce_time_window=False lets bucket-bounded tools span any range., Exempting the width cap must NOT exempt the correctness check. (+14 more)
 
 ### Community 30 - "Knowledge Seeders"
 Cohesion: 0.26
@@ -381,8 +373,8 @@ Cohesion: 0.12
 Nodes (31): CaptureFixture, MonkeyPatch, Path, PostgresBinaries, str, _fake_binaries(), _isolated_layout(), Tests for wolf_database.cli — argparse dispatch + subcommand logic.  The init fl (+23 more)
 
 ### Community 32 - "Chat Endpoint Tests"
-Cohesion: 0.16
-Nodes (22): Any, AsyncClient, ChatResponse, MonkeyPatch, str, UUID, _descriptor(), _fake_wazuh_connection() (+14 more)
+Cohesion: 0.14
+Nodes (27): AgentStrategy, Any, AsyncClient, bool, CapabilityDescriptor, ChatRequest, ChatResponse, MonkeyPatch (+19 more)
 
 ### Community 33 - "Grounding Validator Tests"
 Cohesion: 0.09
@@ -393,12 +385,12 @@ Cohesion: 0.13
 Nodes (16): ActivityVars, ANSWER_DONE, fmt(), GROUNDING_COMPLETED, GROUNDING_STARTED, MODEL_CALL_COMPLETED_ANSWER, MODEL_CALL_COMPLETED_TOOLS, MODEL_CALL_FAILED (+8 more)
 
 ### Community 35 - "Knowledge Store Tests"
-Cohesion: 0.08
-Nodes (20): Tests for the Phase 3 knowledge layer.  Scope (Slice 1): validation rules + tool, If exec_ctx.knowledge_store is None the tool must fail loud, not silent., Cormack et al. 2009 robust default is k=60; candidates ≥ limit so the     fusion, rrf_score is the fused score (higher = more relevant); None when     callers don, ADR 0014 — when aux embedder is wired, the third leg participates.      A chunk, Default behaviour (Slice-2A) is preserved when embedder_aux=None., Chunks present in both legs get boosted vs chunks present in only one.      Mock, Tool builds metadata_filters from rule_id/technique and forwards to store. (+12 more)
+Cohesion: 0.07
+Nodes (25): MonkeyPatch, ToolExecContext, Tests for the Phase 3 knowledge layer.  Scope (Slice 1): validation rules + tool, If exec_ctx.knowledge_store is None the tool must fail loud, not silent., Cormack et al. 2009 robust default is k=60; candidates ≥ limit so the     fusion, ADR 0014 — when aux embedder is wired, the third leg participates.      A chunk, Default behaviour (Slice-2A) is preserved when embedder_aux=None., Chunks present in both legs get boosted vs chunks present in only one.      Mock (+17 more)
 
 ### Community 36 - "Tenant-Scoped Query Builder"
-Cohesion: 0.08
-Nodes (46): Any, datetime, str, TenantScopedQueryBuilder, Any, bool, datetime, int (+38 more)
+Cohesion: 0.15
+Nodes (30): Any, datetime, str, TenantScopedQueryBuilder, builder(), _free_text_should(), Tests for the TenantScopedQueryBuilder — proves the tenant filter is mandatory., Standalone-deployment default: no term:{tenant_id} clause anywhere. (+22 more)
 
 ### Community 37 - "Markdown Renderer + Citations"
 Cohesion: 0.09
@@ -409,8 +401,8 @@ Cohesion: 0.10
 Nodes (25): geistMono, geistSans, metadata, HomePage(), ChatLayout(), AuthContext, AuthProvider(), AuthState (+17 more)
 
 ### Community 39 - "Embedding Provider Factory"
-Cohesion: 0.21
-Nodes (15): EmbeddingProvider, EmbeddingProvider, Returns fixed-dimension vectors for a batch of input texts., Stable identifier stamped on every chunk this provider embeds., KnowledgeChunk, _fetch_mismatched(), main(), Re-embed chunks whose embedding_model no longer matches the active provider.  Pe (+7 more)
+Cohesion: 0.13
+Nodes (22): EmbeddingProvider, EmbeddingProvider, make_embedding_provider(), make_embedding_provider_aux(), Construct the primary EmbeddingProvider.      Provider selection is env-driven v, Construct the optional secondary EmbeddingProvider (ADR 0014).      Returns `Non, Returns fixed-dimension vectors for a batch of input texts., Stable identifier stamped on every chunk this provider embeds. (+14 more)
 
 ### Community 40 - "wolf-cert CLI Args"
 Cohesion: 0.21
@@ -429,12 +421,12 @@ Cohesion: 0.13
 Nodes (15): Four Enforcement Points (credentials/query/RAG/audit), Forced Tenant Filter (Query Layer), RAG Store Per-Tenant Partition, Threat-Intel ATT&CK Corpus (versioned), 06 - Knowledge and RAG Layer, Hallucinated Grounding Failure Mode, Hybrid Retrieval (vector + BM25), Live State vs Stable Knowledge Split (+7 more)
 
 ### Community 44 - "Auth Endpoints"
-Cohesion: 0.17
-Nodes (24): _audit_login_failure(), _dummy_verify(), login(), LoginRequest, LoginResponse, logout(), me(), MeResponse (+16 more)
+Cohesion: 0.07
+Nodes (48): _audit_login_failure(), _dummy_verify(), login(), LoginRequest, LoginResponse, logout(), me(), MeResponse (+40 more)
 
 ### Community 45 - "mTLS Middleware Tests"
-Cohesion: 0.11
-Nodes (28): MtlsMiddleware, mTLS middleware — Phase 5.6-c.  Enforces that incoming TLS connections present a, Enforce the client-cert CN allowlist.      Only mounted when ``Settings.mtls_ena, FastAPI, _PeerCert, str, TestClient, _build_app() (+20 more)
+Cohesion: 0.13
+Nodes (24): _PeerCert, str, TestClient, _build_app(), _make_cert(), Unit tests for the Phase 5.6-c mTLS middleware.  Builds a tiny Starlette test ap, A degenerate cert whose subject has no commonName attribute is     treated as 'n, A cert whose CN matches the allowlist passes the gate; the     downstream handle (+16 more)
 
 ### Community 46 - "DB Session Mocks"
 Cohesion: 0.22
@@ -469,8 +461,8 @@ Cohesion: 0.29
 Nodes (7): 16 - Distribution and Packaging, FHS-Conformant File Layout, One-Line Install Script, Native System Packages (.deb/.rpm), Supported Distros (Ubuntu/Debian/RHEL/Rocky/SUSE), Two-Channel Delivery (native + containers), wolf CLI (thin wrapper)
 
 ### Community 54 - "server: repr"
-Cohesion: 0.16
-Nodes (14): DeclarativeBase, _include_object(), Filter callback: skip indexes that can't be modelled in SQLA., bool, object, str, Any, int (+6 more)
+Cohesion: 0.14
+Nodes (15): DeclarativeBase, _include_object(), Filter callback: skip indexes that can't be modelled in SQLA., bool, object, str, str, Any (+7 more)
 
 ### Community 55 - "dashboard: tsconfigjson"
 Cohesion: 0.10
@@ -481,8 +473,8 @@ Cohesion: 0.21
 Nodes (20): bootstrap_tenant(), _ensure_schema(), main(), _parse_args(), Bootstrap a tenant: create tenant + admin user + Wazuh connection profile.  Per, Raised on a re-bootstrap attempt without `--update`.      Doc 05 §Tenant misconf, Returns (tenant_exists, has_validated_wazuh_config).      Used by the bootstrap, Bootstrap or update a tenant.      First-time call: validates the Wazuh connecti (+12 more)
 
 ### Community 57 - "server: Path"
-Cohesion: 0.10
-Nodes (25): _make_patched_init(), patch_uvicorn_for_peer_cert(), Surface the TLS peer certificate into ASGI scope at request time.  The mTLS midd, Wrap a RequestResponseCycle.__init__ to inject peer cert into scope.      Closes, Apply the monkey-patch. Idempotent — safe to call multiple times., Path, bool, str (+17 more)
+Cohesion: 0.15
+Nodes (18): Path, bool, str, Tests for the wolf-server launcher's TLS resolution — Phase 5.4-c (renamed Phase, The cert exists but the key doesn't — half-loaded TLS would     produce confusin, Mirror of the key-missing case — equally broken, equally     surfaced. Symmetric, If `tls_cert_path` accidentally points at a directory (e.g.     operator forgot, `use_https` is derived from both paths being non-None; assert     no path-skew c (+10 more)
 
 ### Community 58 - "ADRs: Docker baselinesuppo"
 Cohesion: 0.12
@@ -501,12 +493,12 @@ Cohesion: 0.18
 Nodes (17): ConnectionValidationError, Raised when a Wazuh connection profile fails live validation.      Surfaced to t, Probe both Wazuh endpoints with the supplied credentials.      Raises Connection, _validate_wazuh_connection(), int, _client_responder(), Network-layer failure (DNS, connection refused, timeout) surfaces     with the f, The 401 message on the Server API leg specifically names the     Indexer-vs-Serv (+9 more)
 
 ### Community 62 - "server: defaultdescriptorfor"
-Cohesion: 0.22
-Nodes (5): Any, GetAgentAlertHistoryInput, GetEventTimelineInput, Chronological events for one host across a window., Alert history for one agent.
+Cohesion: 0.15
+Nodes (8): Any, str, ToolExecContext, GetAgentAlertHistoryOutput, GetEventTimelineOutput, _hit_to_alert(), Look up a Wazuh agent's numeric id by its human-readable name.      Uses the Ser, _resolve_agent_name_to_id()
 
 ### Community 63 - "server: ollamapy"
-Cohesion: 0.09
-Nodes (52): ChatFn, ChatStreamEvent, MockTransport, ChatStreamDelta, ChatStreamDone, ModelProvider protocol, known-model defaults, and provider factory., Incremental content from a streaming chat call (Slice 5.0c-d).      Adapters yie, Terminal event of a streaming chat call (Slice 5.0c-d).      Carries the fully-a (+44 more)
+Cohesion: 0.05
+Nodes (62): ChatStreamEvent, MockTransport, _build_anthropic_messages(), _canonical_to_anthropic_tool(), _parse_anthropic_response(), Anthropic adapter — calls the Claude Messages API via httpx.  No Anthropic SDK d, Split messages into (system_text, api_messages).      Anthropic places the syste, default_descriptor_for() (+54 more)
 
 ### Community 64 - "server: Any"
 Cohesion: 0.24
@@ -521,8 +513,8 @@ Cohesion: 0.18
 Nodes (17): bool, int, MonkeyPatch, float, _engine_factory(), Tests for wolf-server's startup DB-reachability retry loop.  Phase 5.8-a — per A, Three failed attempts then a success — four engines total,     three sleeps betw, When DB never comes back, we eventually give up and re-raise. (+9 more)
 
 ### Community 67 - "server: AsyncSession"
-Cohesion: 0.21
-Nodes (28): AgentLoop, The plan-act-observe loop.  Construct one per chat request., AsyncSession, TenantContext, ToolCall, _fake_clients(), isolated_registries(), MockProvider (+20 more)
+Cohesion: 0.17
+Nodes (28): AsyncSession, CapabilityDescriptor, TenantContext, ToolCall, _descriptor(), _fake_clients(), isolated_registries(), MockProvider (+20 more)
 
 ### Community 68 - "ADRs: Debian deb packaging"
 Cohesion: 0.17
@@ -533,8 +525,8 @@ Cohesion: 0.14
 Nodes (14): Next.js proxy.ts Network-Boundary Entry Point, User & Identity Layer, Apache 2.0 License, 09 - Tech Stack and Repository Layout, FastAPI, Keycloak (OIDC IdP), Monorepo Layout, Next.js 16 LTS (+6 more)
 
 ### Community 70 - "server: Any"
-Cohesion: 0.15
-Nodes (16): Any, AsyncClient, AsyncEngine, AsyncSession, str, client(), db(), engine() (+8 more)
+Cohesion: 0.14
+Nodes (17): async_sessionmaker, Any, AsyncClient, AsyncEngine, AsyncSession, str, client(), db() (+9 more)
 
 ### Community 71 - "docs/05-multi-tenancy.md: Agent Loop plancallo"
 Cohesion: 0.14
@@ -561,12 +553,12 @@ Cohesion: 0.25
 Nodes (13): Check, check_audit_isolation(), check_cache_cross_tenant_isolation(), check_cache_unprefixed_rejected(), check_rag_isolation(), main(), CLI entry point: live two-tenant isolation smoke suite.  Per doc 05 §Test isolat, Write an audit event as `asker`, query as `other`, assert empty. (+5 more)
 
 ### Community 77 - "server: oidcstart"
-Cohesion: 0.09
-Nodes (36): Exception, Resource limit definitions and pre-execution checks.  Limits enforced:   - Maxim, Tool registry — single source of truth for registered tools and their tiers.  Th, datetime, AsyncSession, SecretsBackend, str, TenantContext (+28 more)
+Cohesion: 0.07
+Nodes (39): Exception, Resource limit definitions and pre-execution checks.  Limits enforced:   - Maxim, Truncate a string payload to fit the model's context-volume budget.      Appends, truncate_for_context(), datetime, str, object, AsyncSession (+31 more)
 
 ### Community 78 - "server: logpy"
-Cohesion: 0.16
-Nodes (7): Embed passages (no query prefix)., Embed a query (BGE asymmetric prefix applied automatically)., Embed a batch of texts. Output order matches input order., Register a tool.  Raises ValueError on duplicate name., float, str, ValueError
+Cohesion: 0.10
+Nodes (25): callable, AdapterResult, _bench_one(), _cosine(), main(), _print_side_by_side(), _print_summary(), Embedding-provider side-by-side benchmark CLI.  Compares Ollama-hosted nomic-emb (+17 more)
 
 ### Community 79 - "ADRs: frontier agent strat"
 Cohesion: 0.18
@@ -581,8 +573,8 @@ Cohesion: 0.14
 Nodes (12): CERT_PATH, certPresent, child, CLIENT_CERT_PATH, CLIENT_KEY_PATH, __dirname, extraArgs, KEY_PATH (+4 more)
 
 ### Community 82 - "server: mtlsmiddlewarepy"
-Cohesion: 0.25
-Nodes (7): _peer_cert_cn(), Extract the Subject CN from a parsed peer cert dict.      Python's ``ssl.SSLSock, Any, Request, RequestResponseEndpoint, Response, str
+Cohesion: 0.11
+Nodes (18): AuthMiddleware, Auth middleware — validates JWT from cookie and populates request.state.session., Extract and validate the access token cookie; populate request.state.session., MtlsMiddleware, _peer_cert_cn(), mTLS middleware — Phase 5.6-c.  Enforces that incoming TLS connections present a, Extract the Subject CN from a parsed peer cert dict.      Python's ``ssl.SSLSock, Enforce the client-cert CN allowlist.      Only mounted when ``Settings.mtls_ena (+10 more)
 
 ### Community 83 - "Community 83"
 Cohesion: 0.50
@@ -605,28 +597,28 @@ Cohesion: 0.25
 Nodes (8): Stub that returns a different canned response on each successive call., qwen3:8b sometimes returns N-1 verdicts for N claims.      The validator retries, If retry is ALSO partial, missing claims default to uncertain     (yellow cautio, Happy path: every claim was judged → no second call to the judge., _ScriptedProvider, test_full_judge_response_does_not_retry(), test_partial_judge_response_falls_back_to_uncertain(), test_partial_judge_response_retries_and_recovers()
 
 ### Community 88 - "tools/embedding_benchmark: fullcorpuschainedeva"
-Cohesion: 0.12
-Nodes (26): AsyncBaseTransport, UUID, WazuhConnection, WazuhServerApiClient, Any, str, connection(), _make_api_client() (+18 more)
+Cohesion: 0.19
+Nodes (22): AsyncBaseTransport, UUID, WazuhConnection, WazuhOpenSearchClient, WazuhServerApiClient, connection(), _make_api_client(), _make_os_client() (+14 more)
 
 ### Community 89 - "tools/embedding_benchmark: fullcorpusv2evalpy"
-Cohesion: 0.27
-Nodes (12): _correct_chunk_ids_for(), _cosine(), main(), Full-corpus head-to-head: nomic-embed-text:v1.5 vs nomic-embed-text-v2-moe.  Bot, Return the chunk_ids with the K highest cosine similarity to query., Return the chunk IDs that satisfy the (kind, expected) ground truth.      For te, _top_k(), OllamaEmbeddingAdapter (+4 more)
+Cohesion: 0.29
+Nodes (10): _correct_chunk_ids_for(), _cosine(), main(), Full-corpus head-to-head: nomic-embed-text:v1.5 vs nomic-embed-text-v2-moe.  Bot, Return the chunk_ids with the K highest cosine similarity to query., Return the chunk IDs that satisfy the (kind, expected) ground truth.      For te, _top_k(), float (+2 more)
 
 ### Community 90 - "server: Any"
 Cohesion: 0.27
 Nodes (10): Any, AsyncClient, AsyncSession, str, Tests for GET /api/v1/auth/me/tenants — the wolf-dashboard tenant switcher., Inactive tenants must not appear in the switcher., A user sees only their own tenant memberships, never others'., test_my_tenants_excludes_inactive_tenants() (+2 more)
 
 ### Community 91 - "server: Any"
-Cohesion: 0.19
-Nodes (17): PipelineStrategy, Deterministic outer scaffolding; the model only summarizes.      Phase 2B baseli, AuditEvent, Immutable audit record.      Every action of significance is written here.  The, AgentStrategy, Any, CapabilityDescriptor, ChatRequest (+9 more)
+Cohesion: 0.10
+Nodes (19): ADR 0020 — Superuser-owned Wazuh component mapping (install + per-org), Context, Credential rotation, Decision: Superuser owns ALL Wazuh component configuration, Distributed deployment, GUI surfaces (per ADR 0019), Implementation sequencing, Install-level: "Wazuh Ecosystem" page (+11 more)
 
 ### Community 92 - "server: BaseSettings"
 Cohesion: 0.27
 Nodes (5): BaseSettings, bool, str, mTLS is on iff the CA + server cert/key all exist on disk.          This mirrors, Settings
 
 ### Community 93 - ".github/workflows: CI job alembiccheck"
-Cohesion: 0.21
-Nodes (11): default_descriptor_for(), Return the known-model default or a conservative unknown-model fallback., _canonical_to_openai_tool(), _message_to_openai(), _parse_openai_response(), OpenAI adapter — calls the Chat Completions API via httpx.  Works with any OpenA, Any, ChatRequest (+3 more)
+Cohesion: 0.33
+Nodes (6): Any, str, Exchange username/password for a short-lived JWT., Server API returned an unexpected response., Issue a read-only GET to the Server API.          Only GET is exposed — there is, WazuhServerApiError
 
 ### Community 94 - "deploy/bin: CI job smokedatabase"
 Cohesion: 0.16
@@ -673,12 +665,12 @@ Cohesion: 0.25
 Nodes (6): datetime, str, _now(), SQLAlchemy model for per-tenant Wazuh connection configuration.  The connection, One Wazuh connection profile per tenant.      The `opensearch_credential_key` an, TenantWazuhConfig
 
 ### Community 105 - "server: peercertpatchpy"
-Cohesion: 0.14
-Nodes (21): KnowledgeStore, PgvectorKnowledgeStore, KnowledgeStore protocol + pgvector implementation.  Per doc 05 + doc 06: a retri, Postgres + pgvector implementation of KnowledgeStore.      Single-leg mode (defa, Hybrid retrieval — vector (cosine) + FTS (ts_rank_cd) fused via RRF.          Pe, Top-N vector candidates with their 1-indexed rank., Top-N secondary-vector candidates (ADR 0014).          Skips chunks where embedd, Top-N FTS candidates with their 1-indexed rank.          Uses `plainto_tsquery(' (+13 more)
+Cohesion: 0.13
+Nodes (22): KnowledgeStore, PgvectorKnowledgeStore, KnowledgeStore protocol + pgvector implementation.  Per doc 05 + doc 06: a retri, Postgres + pgvector implementation of KnowledgeStore.      Single-leg mode (defa, Hybrid retrieval — vector (cosine) + FTS (ts_rank_cd) fused via RRF.          Pe, Top-N vector candidates with their 1-indexed rank., Top-N secondary-vector candidates (ADR 0014).          Skips chunks where embedd, Top-N FTS candidates with their 1-indexed rank.          Uses `plainto_tsquery(' (+14 more)
 
 ### Community 106 - "server: Any"
-Cohesion: 0.27
-Nodes (10): _correct(), _eval(), main(), Compare single-leg (v1.5 only) vs chained (v1.5 + v2-moe RRF) retrieval.  Both m, True iff any of the retrieved chunks' metadata matches the ground truth., bool, int, PgvectorKnowledgeStore (+2 more)
+Cohesion: 0.29
+Nodes (7): _make_patched_init(), patch_uvicorn_for_peer_cert(), Surface the TLS peer certificate into ASGI scope at request time.  The mTLS midd, Wrap a RequestResponseCycle.__init__ to inject peer cert into scope.      Closes, Apply the monkey-patch. Idempotent — safe to call multiple times., Any, main()
 
 ### Community 107 - "dashboard: Nextjs default brand"
 Cohesion: 0.33
@@ -701,8 +693,8 @@ Cohesion: 0.25
 Nodes (6): KnowledgeChunk, _now(), SQLAlchemy model for the knowledge_chunks table.  Per `docs/06-knowledge-and-rag, One retrievable unit of stable knowledge., datetime, str
 
 ### Community 112 - "deploy/systemd mini"
-Cohesion: 0.12
-Nodes (16): WazuhOpenSearchClient, Any, AsyncClient, object, str, TenantScopedQueryBuilder, WazuhConnection, Wazuh OpenSearch (Indexer) HTTP client — read-only, tenant-bound.  Constructed p (+8 more)
+Cohesion: 0.20
+Nodes (11): Any, AsyncClient, str, TenantScopedQueryBuilder, WazuhConnection, Verify every returned doc's tenant_id (if present) matches.          Wazuh deplo, Expose the tenant-bound query builder — the only way to build queries., Run a pre-built query.  The query MUST come from `self.query_builder`. (+3 more)
 
 ### Community 113 - "docs/12-glossary.md mini"
 Cohesion: 0.50
@@ -732,29 +724,17 @@ Nodes (12): Blast Radius Bounded by Architecture, Design Tenets (5 core principl
 Cohesion: 0.18
 Nodes (9): bytes, int, str, Path, wolf-database — Wolf's bundled-Postgres component (Phase 5.7).  Per ADR 0016, wo, DatabaseLayout, Filesystem layout + identity constants for wolf-database.  A `DatabaseLayout` is, Resolved filesystem layout for one wolf-database instance.      All paths are ab (+1 more)
 
-### Community 169 - "Community 169"
-Cohesion: 0.20
-Nodes (11): _build_provider(), make_embedding_provider(), make_embedding_provider_aux(), Embedding provider abstraction + Ollama-hosted + in-process implementations.  Th, Shared factory body — builds an EmbeddingProvider from a name + model.      Pull, Construct the primary EmbeddingProvider.      Provider selection is env-driven v, Construct the optional secondary EmbeddingProvider (ADR 0014).      Returns `Non, The factory accepts the canonical name plus common aliases.      Forces CPU devi (+3 more)
-
-### Community 170 - "Community 170"
-Cohesion: 0.19
-Nodes (13): oidc_start(), Redirect to the configured OIDC IdP., exchange_code(), get_authorization_url(), oidc_is_configured(), OIDC adapter — defers full SSO configuration to the operator.  This module provi, Return True if the operator has configured an OIDC provider., Return the IdP authorization URL for the OIDC flow.      Raises NotImplementedEr (+5 more)
-
 ### Community 171 - "Community 171"
-Cohesion: 0.17
-Nodes (16): _build_tool_list(), chat_with_fallback(), _inject_fallback_system(), parse_fallback_response(), Structured-output fallback for models without reliable native tool-calling.  Whe, Drive a model through the structured-output fallback loop.      Injects tool sch, Prepend the fallback instruction block to the conversation's system prompt., Parse a fallback JSON response into (answer, tool_call).      Exactly one of the (+8 more)
-
-### Community 172 - "Community 172"
-Cohesion: 0.18
-Nodes (13): ChunkInput, A chunk to be embedded and stored. Embedding is computed by the store., _download_if_missing(), ingest_attack(), _kill_chain_phases(), Return ChunkInput list for the enterprise-ATT&CK matrix.      Network call (once, Fetch the STIX bundle once. Subsequent runs read the cache., ATT&CK ID lives under external_references with source_name='mitre-attack'. (+5 more)
+Cohesion: 0.13
+Nodes (20): ChatFn, _build_tool_list(), chat_with_fallback(), _inject_fallback_system(), parse_fallback_response(), Structured-output fallback for models without reliable native tool-calling.  Whe, Drive a model through the structured-output fallback loop.      Injects tool sch, Prepend the fallback instruction block to the conversation's system prompt. (+12 more)
 
 ### Community 173 - "Community 173"
 Cohesion: 0.15
 Nodes (12): Alternative — Email, Coordinated disclosure, Preferred — GitHub Security Advisories, Public advisories, Reporting a vulnerability, Response timeline, Safe harbour, Security architecture summary (+4 more)
 
 ### Community 174 - "Community 174"
-Cohesion: 0.15
-Nodes (19): main(), seed_dev_knowledge — load a tiny inline corpus for Phase 3 Slice 1 dev.  Slice-1, runbook_chunks_for(), AsyncEngine, AsyncSession, str, int, object (+11 more)
+Cohesion: 0.10
+Nodes (29): _correct(), _eval(), main(), Compare single-leg (v1.5 only) vs chained (v1.5 + v2-moe RRF) retrieval.  Both m, True iff any of the retrieved chunks' metadata matches the ground truth., main(), seed_dev_knowledge — load a tiny inline corpus for Phase 3 Slice 1 dev.  Slice-1, runbook_chunks_for() (+21 more)
 
 ### Community 175 - "Community 175"
 Cohesion: 0.18
@@ -777,8 +757,8 @@ Cohesion: 0.25
 Nodes (5): Any, _FlakeyProvider, Stub that returns a scripted mix of content strings AND exceptions     so we can, A transient first-call failure (e.g. ReadTimeout on cold model) is     retried o, test_judge_recovers_when_first_call_raises()
 
 ### Community 180 - "Community 180"
-Cohesion: 0.14
-Nodes (23): Audit log writer — append-only, tenant-scoped.  All audit writes go through `wri, Insert an audit event and flush (but do not commit — the caller's     transactio, Convenience wrapper: populate tenant/user/session from a TenantContext., write_event(), write_event_from_context(), AuditEvent, Any, AsyncSession (+15 more)
+Cohesion: 0.19
+Nodes (13): ABC, Any, int, str, UUID, Tool base class, execution context, and citation primitive.  Every read tool sub, Build a citation for a result of this tool., Strip any tenant_id key the model might have included.      The model never pick (+5 more)
 
 ### Community 181 - "Community 181"
 Cohesion: 0.25
@@ -808,10 +788,6 @@ Nodes (5): How to apply, Roles (per-organization, on UserOrganization not on Use
 Cohesion: 0.50
 Nodes (3): _now(), Audit event SQLAlchemy model.  The audit table is append-only.  Nothing in the a, datetime
 
-### Community 193 - "Community 193"
-Cohesion: 0.40
-Nodes (4): AuthMiddleware, Auth middleware — validates JWT from cookie and populates request.state.session., Extract and validate the access token cookie; populate request.state.session., BaseHTTPMiddleware
-
 ### Community 194 - "Community 194"
 Cohesion: 0.40
 Nodes (4): Application rules, Implementation pointer, The palette, What stays the same
@@ -820,24 +796,20 @@ Nodes (4): Application rules, Implementation pointer, The palette, What stays th
 Cohesion: 0.50
 Nodes (3): (1) Progressive answer rendering ("token-by-token like Claude"), (2) Live activity feed during steps, Out of scope until 5.0c lands
 
-### Community 197 - "Community 197"
-Cohesion: 0.50
-Nodes (3): str, healthz(), Wolf Gateway — Phase 0 stub.  The gateway is a separate service with separate cr
-
 ## Knowledge Gaps
-- **514 isolated node(s):** `1. Where we are right now`, `Orchestrator (`services/orchestrator/`)`, `Gateway (`services/gateway/`)`, `Frontend (`frontend/`)`, `Shared packages (`packages/`)` (+509 more)
+- **544 isolated node(s):** `1. Where we are right now`, `Orchestrator (`services/orchestrator/`)`, `Gateway (`services/gateway/`)`, `Frontend (`frontend/`)`, `Shared packages (`packages/`)` (+539 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **43 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **40 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `WolfError` connect `server: oidcstart` to `Agent Loop & Strategies`, `Chat Loop & Audit`, `server: AsyncSession`, `Structured-Output Fallback`, `Guardrails & Rate Limits`, `Model Resolver`, `server: bool`, `Community 171`, `mTLS Middleware Tests`, `deploy/systemd mini`, `Loop Events & Chat API`, `server: middlewarepy`, `JWT Token Plumbing`, `tools/embedding_benchmark: fullcorpuschainedeva`, `Resource-Limit Enforcement`, `server: ollamapy`?**
-  _High betweenness centrality (0.052) - this node is a cross-community bridge._
-- **Why does `Base` connect `server: repr` to `Community 192`, `server: Connection`, `server: Any`, `server: datetime`, `Wazuh Smoke + DB Session`, `server: datetime`, `Community 174`, `server: modelspy`, `server: bootstraptenantpy`, `server: Any`, `server: ConnectionValidation`?**
-  _High betweenness centrality (0.049) - this node is a cross-community bridge._
-- **Why does `TenantContext` connect `Community 180` to `Wazuh Read Clients`, `Chat Loop & Audit`, `server: AsyncSession`, `Guardrails & Rate Limits`, `Model Resolver`, `server: object`, `server: peercertpatchpy`, `Tool Execution Context`, `Wazuh Smoke + DB Session`, `server: oidcstart`, `DB Session Mocks`, `server: logpy`, `Loop Events & Chat API`, `server: AsyncSession`, `Tool Dispatch Helpers`, `server: Any`?**
-  _High betweenness centrality (0.047) - this node is a cross-community bridge._
+- **Why does `WolfError` connect `server: oidcstart` to `Chat Loop & Audit`, `server: bool`, `Structured-Output Fallback`, `Guardrails & Rate Limits`, `Model Resolver`, `Tool Execution Context`, `Community 171`, `deploy/systemd mini`, `server: mtlsmiddlewarepy`, `server: middlewarepy`, `.github/workflows: CI job alembiccheck`, `JWT Token Plumbing`, `tools/embedding_benchmark: fullcorpuschainedeva`, `Resource-Limit Enforcement`?**
+  _High betweenness centrality (0.055) - this node is a cross-community bridge._
+- **Why does `Base` connect `server: repr` to `Community 192`, `server: Connection`, `server: Any`, `server: datetime`, `Tool Execution Context`, `Wazuh Smoke + DB Session`, `server: datetime`, `Community 174`, `server: modelspy`, `server: bootstraptenantpy`, `server: ConnectionValidation`?**
+  _High betweenness centrality (0.054) - this node is a cross-community bridge._
+- **Why does `TenantContext` connect `Chat Loop & Audit` to `Wazuh Read Clients`, `server: AsyncSession`, `Knowledge Store Tests`, `Guardrails & Rate Limits`, `Model Resolver`, `server: object`, `Tool Execution Context`, `Wazuh Smoke + DB Session`, `Community 169`, `Auth Endpoints`, `server: oidcstart`, `DB Session Mocks`, `server: logpy`, `Community 180`, `server: AsyncSession`, `Tool Dispatch Helpers`?**
+  _High betweenness centrality (0.038) - this node is a cross-community bridge._
 - **Are the 108 inferred relationships involving `TenantContext` (e.g. with `AgentAnswer` and `AgentLoop`) actually correct?**
   _`TenantContext` has 108 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 99 inferred relationships involving `NativeToolCalling` (e.g. with `ChatStreamEvent` and `ProbeReport`) actually correct?**

@@ -36,7 +36,9 @@ Three coupled concerns that the operator made explicit on 2026-06-10:
 2. **RBAC structure** — who can do what within an organization? Today: a
    `Role` model exists with `analyst`, `approver`, `admin`, `superuser`
    levels, but enforcement is incomplete + the role names + capabilities
-   need explicit definition for the MSSP scenario.
+   need explicit definition for the MSSP scenario. (Forward-looking
+   rename: `approver` → `responder`; code-side rename is a planned slice
+   alongside the tenant → organization rename.)
 3. **Login UX** — the current login form takes `tenant_id` as a required
    field. Operators shouldn't have to know their organization ID at login
    time. The right flow is: auth → backend returns the user's organization
@@ -65,7 +67,7 @@ pattern.
 | Password visibility | Printed ONCE to operator's stdout during install. Never shown again. | Operator stores it themselves (1Password). Forces an immediate "secrets are real" mindset. |
 | Role | `superuser` | Single permission class. |
 | Organization memberships | ZERO at install | Superuser is install-level, not org-level. No `UserOrganization` rows by default. |
-| Data access | NONE without explicit membership grant | Superuser is an admin permission, not a data-access bypass. |
+| Data access | NONE without the organization's **explicit consent** (the org's Admin grants the Superuser a UserOrganization membership). Superuser cannot self-grant data access. | Strong separation: install-admin authority does NOT cascade into customer-data access. MSSP super-admin can manage the install but cannot pry into customer data without consent. |
 | Recovery | Via `bootstrap_superuser.sh` CLI wrapper (operator-on-host) | Per `shell-wrapper-required-pattern` memory. |
 | MFA | Future scope; not in v1 | Mentioned for completeness; out of scope for this ADR. |
 | Deletion | NOT allowed | The install would be unusable without a Superuser. |
@@ -89,10 +91,61 @@ pattern.
   + forensics)
 
 **What the Superuser CANNOT do:**
-- Access an organization's data (Wazuh queries, knowledge corpus, chat
-  history) WITHOUT being explicitly granted UserOrganization membership.
-  Even with full admin rights, separation between "manage the install" and
-  "access data within an org" is preserved.
+- **Self-grant access to an organization's data.** Superuser cannot create
+  their own UserOrganization row. Data access requires the **organization's
+  explicit consent**: an Admin of the target org must grant the Superuser
+  the membership (using the same user-management flow the Admin uses for
+  any other user). Until then, the Superuser is install-admin only —
+  Wazuh queries, knowledge corpus, chat history, conversations are all
+  invisible to them, regardless of org.
+- (Practical implication) When the Superuser creates a new org (per the
+  install-level admin actions above), they create the org + create the
+  initial Admin user + grant that user the Admin role. The Superuser
+  does NOT grant themselves any role in the new org. After bootstrap,
+  the org is "owned" by its Admin(s); the Superuser has zero data access
+  unless an Admin explicitly grants membership later.
+
+### Superuser-membership-grant flow (when needed)
+
+If the Superuser legitimately needs access to an org's data (e.g.,
+operator-customer-jointly-debugging a Wolf issue), the flow is:
+
+```
+Superuser ─── requests membership ──→  Org's Admin
+                                          │
+                                          ├─ approves → UserOrganization
+                                          │            row created;
+                                          │            audit event in
+                                          │            BOTH install +
+                                          │            org audit logs;
+                                          │            all org members
+                                          │            notified
+                                          │
+                                          └─ rejects  → request denied;
+                                                       audit event records
+                                                       the rejection
+```
+
+The membership has a configurable expiry (default 24 hours; can be set
+shorter or "until-revoked"). On expiry, the UserOrganization row is
+removed automatically; data access stops. The Admin can also revoke at
+any time.
+
+### Break-glass / org-recovery (when there are zero Admins)
+
+If an organization has lost all its Admins (e.g., sole Admin departed
+without succession), the Superuser CAN recover the org via a specific
+recovery flow:
+
+- Superuser creates a new Admin user
+- Superuser force-adds the new Admin to the org (recovery-flow API
+  endpoint, distinct from normal membership grant)
+- Audit event records "recovery flow used" — visible to all org members
+- The Superuser still does NOT get data access — only the newly-created
+  Admin does
+
+This is the only way Superuser authority extends into an Adminless org:
+restoring Admin succession, NOT bypassing it.
 
 ### Bootstrap script (`bootstrap_superuser.sh` wrapper + `.py` core)
 
@@ -117,25 +170,40 @@ A single user can have different roles in different organizations.
 
 | Role | Within their organization, can: | Cannot: |
 |---|---|---|
-| **Admin** | Manage users + assign roles; view all org data; configure all org-level settings (RAG corpus, prompts, model selection, etc.); use chat; view audit log for the org. | Configure Wazuh component mapping (Superuser-only); access other orgs without explicit membership. |
-| **Engineer** | Configure + customize + fine-tune Wolf for the org: RAG corpus management, prompt engineering, model selection, embedding provider, wolf-pack deployment (Phase 12), etc. Plus chat + read-only data access. | Manage users, assign roles, view audit log, configure Wazuh component mapping. |
-| **Analyst** | Chat with Wolf about the org's data; read-only access to alerts, agents, knowledge, own conversation history. | Modify configuration, manage users, propose actions that require Approver gate. |
-| **Approver** | Everything Analyst can + approve propose-actions (Phase 6 wolf-gateway). | Modify org configuration; manage users. |
-| **(future)** | Extensible. Auditor (read-only audit log access for the org), Read-only (Analyst minus propose), Custom (operator-defined). | (defined per-role at addition time) |
+| **Admin** | Manage users + assign roles; view all org data; configure all org-level settings (RAG corpus, prompts, model selection); use chat; view audit log for the org; propose AND approve actions; grant or revoke Superuser membership in this org (the consent gate for install-admin data access). | Configure Wazuh component mapping (Superuser-only per ADR 0020); access other orgs without explicit membership; execute actions directly (must go through propose → approve flow). |
+| **Engineer** | Configure + customize + fine-tune Wolf for the org: RAG corpus management, prompt engineering, model selection, embedding provider, wolf-pack deployment (Phase 12). Plus chat, read data, propose actions, and approve propose-actions. | Manage users, assign roles, view audit log, configure Wazuh component mapping, grant Superuser membership, execute actions directly. |
+| **Responder** (renamed from Approver, 2026-06-10) | Incident-response role — analyze + act. Chat with Wolf, read all org data, view audit log, propose actions, approve propose-actions, AND **execute actions directly** (the only role with the direct-execute shortcut — for time-critical containment when going through propose→approve is too slow). | Modify org configuration; manage users; grant Superuser membership. |
+| **Analyst** | Chat with Wolf about the org's data; read-only access to alerts, agents, knowledge, own conversation history; **propose actions** (someone else must approve via the Responder/Engineer/Admin gate). | Approve their own (or any) propose-actions; execute actions directly; modify configuration; manage users; view audit log. |
+| **(future)** | Extensible. Auditor (read-only audit log access for the org), Read-only (Analyst minus propose), Custom (operator-defined). | Defined per-role at addition time. |
 
 ### Capability matrix (concise)
 
-|  | Superuser | Admin | Engineer | Approver | Analyst |
+|  | Superuser | Admin | Engineer | Responder | Analyst |
 |---|---|---|---|---|---|
 | Create / delete orgs | ✓ | | | | |
 | Configure Wazuh component mapping | ✓ | | | | |
+| Grant Superuser membership in this org | | ✓ | | | |
 | Manage users + roles within own org | | ✓ | | | |
 | Configure org settings (RAG, prompts, model) | | ✓ | ✓ | | |
 | Deploy wolf-pack agents | | ✓ | ✓ | | |
-| Approve propose-actions | | ✓ | | ✓ | |
+| Propose actions | (only if has membership) | ✓ | ✓ | ✓ | ✓ |
+| Approve propose-actions | | ✓ | ✓ | ✓ | |
+| Execute actions directly (no proposal step) | | | | ✓ | |
 | Chat with Wolf | (only if has membership) | ✓ | ✓ | ✓ | ✓ |
-| View org's audit log | | ✓ | | | |
+| View org's audit log | | ✓ | | ✓ | |
 | Read alerts / agents / knowledge | (only if has membership) | ✓ | ✓ | ✓ | ✓ |
+
+**Why Responder has the direct-execute shortcut:** SOC reality. When an
+analyst spots active lateral movement at 03:00, the responder needs to
+isolate the host NOW — not file a propose-action, wait for an approver
+to wake up, and then watch the attacker keep moving. Responder = the
+on-call operator who is trusted to act + accountable to the audit log.
+Admin does NOT get this shortcut because Admin is the governance role
+(user/role management, org config) — different responsibility axis.
+
+**Note: every direct-execute action by a Responder still emits a rich
+audit event** (responder identity + action + parameters + timestamp +
+target). Audit-after, not approve-before, but auditable all the same.
 
 ### Role-change discipline
 
@@ -145,7 +213,11 @@ A single user can have different roles in different organizations.
 - Role changes are audit-logged: who-promoted-whom-when, in BOTH the
   install audit + the org's audit.
 - An organization must have at least one Admin. The API refuses to delete
-  the last Admin or demote them.
+  the last Admin or demote them. (Recovery flow for zero-Admin orgs:
+  see "Break-glass / org-recovery" under the Superuser section above.)
+- Granting Superuser membership in an org is Admin-only (per the
+  capability matrix) and emits an audit event in BOTH the install audit
+  + the org's audit; affected org members notified.
 
 ---
 
