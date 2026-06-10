@@ -141,6 +141,159 @@
   },
   "nodes": [
     {
+      "label": "PROGRESS.md",
+      "file_type": "document",
+      "source_file": "docs/PROGRESS.md",
+      "source_location": "L1",
+      "id": "docs_progress",
+      "community": 109,
+      "norm_label": "progress.md"
+    },
+    {
+      "label": "Wolf \u2014 Development Progress",
+      "file_type": "document",
+      "source_file": "docs/PROGRESS.md",
+      "source_location": "L1",
+      "id": "docs_progress_wolf_development_progress",
+      "community": 109,
+      "norm_label": "wolf \u2014 development progress"
+    },
+    {
+      "label": "1. Where we are right now",
+      "file_type": "document",
+      "source_file": "docs/PROGRESS.md",
+      "source_location": "L13",
+      "id": "docs_progress_1_where_we_are_right_now",
+      "community": 109,
+      "norm_label": "1. where we are right now"
+    },
+    {
+      "label": "2. What's currently built and working",
+      "file_type": "document",
+      "source_file": "docs/PROGRESS.md",
+      "source_location": "L549",
+      "id": "docs_progress_2_what_s_currently_built_and_working",
+      "community": 109,
+      "norm_label": "2. what's currently built and working"
+    },
+    {
+      "label": "Orchestrator (`services/orchestrator/`)",
+      "file_type": "document",
+      "source_file": "docs/PROGRESS.md",
+      "source_location": "L553",
+      "id": "docs_progress_orchestrator_services_orchestrator",
+      "community": 109,
+      "norm_label": "orchestrator (`services/orchestrator/`)"
+    },
+    {
+      "label": "Gateway (`services/gateway/`)",
+      "file_type": "document",
+      "source_file": "docs/PROGRESS.md",
+      "source_location": "L592",
+      "id": "docs_progress_gateway_services_gateway",
+      "community": 109,
+      "norm_label": "gateway (`services/gateway/`)"
+    },
+    {
+      "label": "Frontend (`frontend/`)",
+      "file_type": "document",
+      "source_file": "docs/PROGRESS.md",
+      "source_location": "L596",
+      "id": "docs_progress_frontend_frontend",
+      "community": 109,
+      "norm_label": "frontend (`frontend/`)"
+    },
+    {
+      "label": "Shared packages (`packages/`)",
+      "file_type": "document",
+      "source_file": "docs/PROGRESS.md",
+      "source_location": "L609",
+      "id": "docs_progress_shared_packages_packages",
+      "community": 109,
+      "norm_label": "shared packages (`packages/`)"
+    },
+    {
+      "label": "Tooling (`tools/`)",
+      "file_type": "document",
+      "source_file": "docs/PROGRESS.md",
+      "source_location": "L618",
+      "id": "docs_progress_tooling_tools",
+      "community": 109,
+      "norm_label": "tooling (`tools/`)"
+    },
+    {
+      "label": "Infrastructure",
+      "file_type": "document",
+      "source_file": "docs/PROGRESS.md",
+      "source_location": "L628",
+      "id": "docs_progress_infrastructure",
+      "community": 109,
+      "norm_label": "infrastructure"
+    },
+    {
+      "label": "3. Current configuration",
+      "file_type": "document",
+      "source_file": "docs/PROGRESS.md",
+      "source_location": "L641",
+      "id": "docs_progress_3_current_configuration",
+      "community": 109,
+      "norm_label": "3. current configuration"
+    },
+    {
+      "label": "4. What's next",
+      "file_type": "document",
+      "source_file": "docs/PROGRESS.md",
+      "source_location": "L698",
+      "id": "docs_progress_4_what_s_next",
+      "community": 109,
+      "norm_label": "4. what's next"
+    },
+    {
+      "label": "5. Active decisions and open questions",
+      "file_type": "document",
+      "source_file": "docs/PROGRESS.md",
+      "source_location": "L786",
+      "id": "docs_progress_5_active_decisions_and_open_questions",
+      "community": 109,
+      "norm_label": "5. active decisions and open questions"
+    },
+    {
+      "label": "6. Known issues and tech debt",
+      "file_type": "document",
+      "source_file": "docs/PROGRESS.md",
+      "source_location": "L803",
+      "id": "docs_progress_6_known_issues_and_tech_debt",
+      "community": 109,
+      "norm_label": "6. known issues and tech debt"
+    },
+    {
+      "label": "7. Test coverage status",
+      "file_type": "document",
+      "source_file": "docs/PROGRESS.md",
+      "source_location": "L857",
+      "id": "docs_progress_7_test_coverage_status",
+      "community": 109,
+      "norm_label": "7. test coverage status"
+    },
+    {
+      "label": "8. Documentation status",
+      "file_type": "document",
+      "source_file": "docs/PROGRESS.md",
+      "source_location": "L884",
+      "id": "docs_progress_8_documentation_status",
+      "community": 109,
+      "norm_label": "8. documentation status"
+    },
+    {
+      "label": "9. Hand-off note for next session",
+      "file_type": "document",
+      "source_file": "docs/PROGRESS.md",
+      "source_location": "L921",
+      "id": "docs_progress_9_hand_off_note_for_next_session",
+      "community": 109,
+      "norm_label": "9. hand-off note for next session"
+    },
+    {
       "label": "0018-bootstrap-superuser-rbac-login.md",
       "file_type": "document",
       "source_file": "docs/decisions/0018-bootstrap-superuser-rbac-login.md",
@@ -162,7 +315,7 @@
       "label": "ADR-relative note on naming",
       "file_type": "document",
       "source_file": "docs/decisions/0018-bootstrap-superuser-rbac-login.md",
-      "source_location": "L17",
+      "source_location": "L39",
       "id": "decisions_0018_bootstrap_superuser_rbac_login_adr_relative_note_on_naming",
       "community": 28,
       "norm_label": "adr-relative note on naming"
@@ -171,7 +324,7 @@
       "label": "Context",
       "file_type": "document",
       "source_file": "docs/decisions/0018-bootstrap-superuser-rbac-login.md",
-      "source_location": "L28",
+      "source_location": "L50",
       "id": "decisions_0018_bootstrap_superuser_rbac_login_context",
       "community": 28,
       "norm_label": "context"
@@ -180,7 +333,7 @@
       "label": "Decision: bootstrap Superuser",
       "file_type": "document",
       "source_file": "docs/decisions/0018-bootstrap-superuser-rbac-login.md",
-      "source_location": "L56",
+      "source_location": "L78",
       "id": "decisions_0018_bootstrap_superuser_rbac_login_decision_bootstrap_superuser",
       "community": 28,
       "norm_label": "decision: bootstrap superuser"
@@ -189,7 +342,7 @@
       "label": "Properties",
       "file_type": "document",
       "source_file": "docs/decisions/0018-bootstrap-superuser-rbac-login.md",
-      "source_location": "L61",
+      "source_location": "L83",
       "id": "decisions_0018_bootstrap_superuser_rbac_login_properties",
       "community": 28,
       "norm_label": "properties"
@@ -198,7 +351,7 @@
       "label": "What the Superuser can do",
       "file_type": "document",
       "source_file": "docs/decisions/0018-bootstrap-superuser-rbac-login.md",
-      "source_location": "L76",
+      "source_location": "L98",
       "id": "decisions_0018_bootstrap_superuser_rbac_login_what_the_superuser_can_do",
       "community": 28,
       "norm_label": "what the superuser can do"
@@ -207,7 +360,7 @@
       "label": "Superuser-membership-grant flow (when needed)",
       "file_type": "document",
       "source_file": "docs/decisions/0018-bootstrap-superuser-rbac-login.md",
-      "source_location": "L108",
+      "source_location": "L130",
       "id": "decisions_0018_bootstrap_superuser_rbac_login_superuser_membership_grant_flow_when_needed",
       "community": 28,
       "norm_label": "superuser-membership-grant flow (when needed)"
@@ -216,7 +369,7 @@
       "label": "Break-glass / org-recovery (when there are zero Admins)",
       "file_type": "document",
       "source_file": "docs/decisions/0018-bootstrap-superuser-rbac-login.md",
-      "source_location": "L134",
+      "source_location": "L156",
       "id": "decisions_0018_bootstrap_superuser_rbac_login_break_glass_org_recovery_when_there_are_zero_admins",
       "community": 28,
       "norm_label": "break-glass / org-recovery (when there are zero admins)"
@@ -225,7 +378,7 @@
       "label": "Bootstrap script (`bootstrap_superuser.sh` wrapper + `.py` core)",
       "file_type": "document",
       "source_file": "docs/decisions/0018-bootstrap-superuser-rbac-login.md",
-      "source_location": "L150",
+      "source_location": "L172",
       "id": "decisions_0018_bootstrap_superuser_rbac_login_bootstrap_script_bootstrap_superuser_sh_wrapper_py_core",
       "community": 28,
       "norm_label": "bootstrap script (`bootstrap_superuser.sh` wrapper + `.py` core)"
@@ -234,7 +387,7 @@
       "label": "Decision: per-organization RBAC",
       "file_type": "document",
       "source_file": "docs/decisions/0018-bootstrap-superuser-rbac-login.md",
-      "source_location": "L164",
+      "source_location": "L186",
       "id": "decisions_0018_bootstrap_superuser_rbac_login_decision_per_organization_rbac",
       "community": 28,
       "norm_label": "decision: per-organization rbac"
@@ -243,7 +396,7 @@
       "label": "Roles",
       "file_type": "document",
       "source_file": "docs/decisions/0018-bootstrap-superuser-rbac-login.md",
-      "source_location": "L169",
+      "source_location": "L191",
       "id": "decisions_0018_bootstrap_superuser_rbac_login_roles",
       "community": 28,
       "norm_label": "roles"
@@ -252,7 +405,7 @@
       "label": "Capability matrix (concise)",
       "file_type": "document",
       "source_file": "docs/decisions/0018-bootstrap-superuser-rbac-login.md",
-      "source_location": "L179",
+      "source_location": "L201",
       "id": "decisions_0018_bootstrap_superuser_rbac_login_capability_matrix_concise",
       "community": 28,
       "norm_label": "capability matrix (concise)"
@@ -261,7 +414,7 @@
       "label": "Role-change discipline",
       "file_type": "document",
       "source_file": "docs/decisions/0018-bootstrap-superuser-rbac-login.md",
-      "source_location": "L208",
+      "source_location": "L230",
       "id": "decisions_0018_bootstrap_superuser_rbac_login_role_change_discipline",
       "community": 28,
       "norm_label": "role-change discipline"
@@ -270,7 +423,7 @@
       "label": "Decision: login UX (no tenant_id at sign-in)",
       "file_type": "document",
       "source_file": "docs/decisions/0018-bootstrap-superuser-rbac-login.md",
-      "source_location": "L224",
+      "source_location": "L246",
       "id": "decisions_0018_bootstrap_superuser_rbac_login_decision_login_ux_no_tenant_id_at_sign_in",
       "community": 28,
       "norm_label": "decision: login ux (no tenant_id at sign-in)"
@@ -279,7 +432,7 @@
       "label": "Current flow (broken UX)",
       "file_type": "document",
       "source_file": "docs/decisions/0018-bootstrap-superuser-rbac-login.md",
-      "source_location": "L226",
+      "source_location": "L248",
       "id": "decisions_0018_bootstrap_superuser_rbac_login_current_flow_broken_ux",
       "community": 28,
       "norm_label": "current flow (broken ux)"
@@ -288,7 +441,7 @@
       "label": "Cookie carries auth only; org context lives in a per-tab header (Round 3 design call)",
       "file_type": "document",
       "source_file": "docs/decisions/0018-bootstrap-superuser-rbac-login.md",
-      "source_location": "L235",
+      "source_location": "L257",
       "id": "decisions_0018_bootstrap_superuser_rbac_login_cookie_carries_auth_only_org_context_lives_in_a_per_tab_header_round_3_design_call",
       "community": 28,
       "norm_label": "cookie carries auth only; org context lives in a per-tab header (round 3 design call)"
@@ -297,7 +450,7 @@
       "label": "Proposed flow",
       "file_type": "document",
       "source_file": "docs/decisions/0018-bootstrap-superuser-rbac-login.md",
-      "source_location": "L254",
+      "source_location": "L276",
       "id": "decisions_0018_bootstrap_superuser_rbac_login_proposed_flow",
       "community": 28,
       "norm_label": "proposed flow"
@@ -306,7 +459,7 @@
       "label": "Switching organizations mid-session (per-tab)",
       "file_type": "document",
       "source_file": "docs/decisions/0018-bootstrap-superuser-rbac-login.md",
-      "source_location": "L313",
+      "source_location": "L335",
       "id": "decisions_0018_bootstrap_superuser_rbac_login_switching_organizations_mid_session_per_tab",
       "community": 28,
       "norm_label": "switching organizations mid-session (per-tab)"
@@ -315,7 +468,7 @@
       "label": "Session cookie blacklisting (logout / forced revocation)",
       "file_type": "document",
       "source_file": "docs/decisions/0018-bootstrap-superuser-rbac-login.md",
-      "source_location": "L331",
+      "source_location": "L353",
       "id": "decisions_0018_bootstrap_superuser_rbac_login_session_cookie_blacklisting_logout_forced_revocation",
       "community": 28,
       "norm_label": "session cookie blacklisting (logout / forced revocation)"
@@ -324,7 +477,7 @@
       "label": "API surface (new)",
       "file_type": "document",
       "source_file": "docs/decisions/0018-bootstrap-superuser-rbac-login.md",
-      "source_location": "L348",
+      "source_location": "L370",
       "id": "decisions_0018_bootstrap_superuser_rbac_login_api_surface_new",
       "community": 28,
       "norm_label": "api surface (new)"
@@ -333,7 +486,7 @@
       "label": "Removed: `tenant_id` field on login",
       "file_type": "document",
       "source_file": "docs/decisions/0018-bootstrap-superuser-rbac-login.md",
-      "source_location": "L357",
+      "source_location": "L379",
       "id": "decisions_0018_bootstrap_superuser_rbac_login_removed_tenant_id_field_on_login",
       "community": 28,
       "norm_label": "removed: `tenant_id` field on login"
@@ -342,7 +495,7 @@
       "label": "Decision: Superuser owns Wazuh component mapping",
       "file_type": "document",
       "source_file": "docs/decisions/0018-bootstrap-superuser-rbac-login.md",
-      "source_location": "L370",
+      "source_location": "L392",
       "id": "decisions_0018_bootstrap_superuser_rbac_login_decision_superuser_owns_wazuh_component_mapping",
       "community": 28,
       "norm_label": "decision: superuser owns wazuh component mapping"
@@ -351,7 +504,7 @@
       "label": "Implementation sequencing",
       "file_type": "document",
       "source_file": "docs/decisions/0018-bootstrap-superuser-rbac-login.md",
-      "source_location": "L383",
+      "source_location": "L405",
       "id": "decisions_0018_bootstrap_superuser_rbac_login_implementation_sequencing",
       "community": 28,
       "norm_label": "implementation sequencing"
@@ -360,7 +513,7 @@
       "label": "Pre-requisite: Phase 6.4 (tenant \u2192 organization codebase rename)",
       "file_type": "document",
       "source_file": "docs/decisions/0018-bootstrap-superuser-rbac-login.md",
-      "source_location": "L385",
+      "source_location": "L407",
       "id": "decisions_0018_bootstrap_superuser_rbac_login_pre_requisite_phase_6_4_tenant_organization_codebase_rename",
       "community": 28,
       "norm_label": "pre-requisite: phase 6.4 (tenant \u2192 organization codebase rename)"
@@ -369,7 +522,7 @@
       "label": "Phase 6.5: Bootstrap + RBAC + Login UX (8 sub-slices)",
       "file_type": "document",
       "source_file": "docs/decisions/0018-bootstrap-superuser-rbac-login.md",
-      "source_location": "L408",
+      "source_location": "L430",
       "id": "decisions_0018_bootstrap_superuser_rbac_login_phase_6_5_bootstrap_rbac_login_ux_8_sub_slices",
       "community": 28,
       "norm_label": "phase 6.5: bootstrap + rbac + login ux (8 sub-slices)"
@@ -378,7 +531,7 @@
       "label": "Out of this ADR's scope (forward refs)",
       "file_type": "document",
       "source_file": "docs/decisions/0018-bootstrap-superuser-rbac-login.md",
-      "source_location": "L548",
+      "source_location": "L570",
       "id": "decisions_0018_bootstrap_superuser_rbac_login_out_of_this_adr_s_scope_forward_refs",
       "community": 28,
       "norm_label": "out of this adr's scope (forward refs)"
@@ -387,7 +540,7 @@
       "label": "Sequencing summary",
       "file_type": "document",
       "source_file": "docs/decisions/0018-bootstrap-superuser-rbac-login.md",
-      "source_location": "L558",
+      "source_location": "L580",
       "id": "decisions_0018_bootstrap_superuser_rbac_login_sequencing_summary",
       "community": 28,
       "norm_label": "sequencing summary"
@@ -396,7 +549,7 @@
       "label": "Estimated scope",
       "file_type": "document",
       "source_file": "docs/decisions/0018-bootstrap-superuser-rbac-login.md",
-      "source_location": "L577",
+      "source_location": "L599",
       "id": "decisions_0018_bootstrap_superuser_rbac_login_estimated_scope",
       "community": 28,
       "norm_label": "estimated scope"
@@ -405,7 +558,7 @@
       "label": "Resolved architectural decisions (Round 5 review with operator, 2026-06-10)",
       "file_type": "document",
       "source_file": "docs/decisions/0018-bootstrap-superuser-rbac-login.md",
-      "source_location": "L601",
+      "source_location": "L623",
       "id": "decisions_0018_bootstrap_superuser_rbac_login_resolved_architectural_decisions_round_5_review_with_operator_2026_06_10",
       "community": 28,
       "norm_label": "resolved architectural decisions (round 5 review with operator, 2026-06-10)"
@@ -414,7 +567,7 @@
       "label": "Trusted-network mechanism (new design call from Q1)",
       "file_type": "document",
       "source_file": "docs/decisions/0018-bootstrap-superuser-rbac-login.md",
-      "source_location": "L657",
+      "source_location": "L679",
       "id": "decisions_0018_bootstrap_superuser_rbac_login_trusted_network_mechanism_new_design_call_from_q1",
       "community": 28,
       "norm_label": "trusted-network mechanism (new design call from q1)"
@@ -423,163 +576,10 @@
       "label": "Status, sign-off, next steps",
       "file_type": "document",
       "source_file": "docs/decisions/0018-bootstrap-superuser-rbac-login.md",
-      "source_location": "L682",
+      "source_location": "L704",
       "id": "decisions_0018_bootstrap_superuser_rbac_login_status_sign_off_next_steps",
       "community": 28,
       "norm_label": "status, sign-off, next steps"
-    },
-    {
-      "label": "PROGRESS.md",
-      "file_type": "document",
-      "source_file": "docs/PROGRESS.md",
-      "source_location": "L1",
-      "community": 109,
-      "norm_label": "progress.md",
-      "id": "docs_progress"
-    },
-    {
-      "label": "Wolf \u2014 Development Progress",
-      "file_type": "document",
-      "source_file": "docs/PROGRESS.md",
-      "source_location": "L1",
-      "community": 109,
-      "norm_label": "wolf \u2014 development progress",
-      "id": "docs_progress_wolf_development_progress"
-    },
-    {
-      "label": "1. Where we are right now",
-      "file_type": "document",
-      "source_file": "docs/PROGRESS.md",
-      "source_location": "L13",
-      "community": 109,
-      "norm_label": "1. where we are right now",
-      "id": "docs_progress_1_where_we_are_right_now"
-    },
-    {
-      "label": "2. What's currently built and working",
-      "file_type": "document",
-      "source_file": "docs/PROGRESS.md",
-      "source_location": "L545",
-      "community": 109,
-      "norm_label": "2. what's currently built and working",
-      "id": "docs_progress_2_what_s_currently_built_and_working"
-    },
-    {
-      "label": "Orchestrator (`services/orchestrator/`)",
-      "file_type": "document",
-      "source_file": "docs/PROGRESS.md",
-      "source_location": "L549",
-      "community": 109,
-      "norm_label": "orchestrator (`services/orchestrator/`)",
-      "id": "docs_progress_orchestrator_services_orchestrator"
-    },
-    {
-      "label": "Gateway (`services/gateway/`)",
-      "file_type": "document",
-      "source_file": "docs/PROGRESS.md",
-      "source_location": "L588",
-      "community": 109,
-      "norm_label": "gateway (`services/gateway/`)",
-      "id": "docs_progress_gateway_services_gateway"
-    },
-    {
-      "label": "Frontend (`frontend/`)",
-      "file_type": "document",
-      "source_file": "docs/PROGRESS.md",
-      "source_location": "L592",
-      "community": 109,
-      "norm_label": "frontend (`frontend/`)",
-      "id": "docs_progress_frontend_frontend"
-    },
-    {
-      "label": "Shared packages (`packages/`)",
-      "file_type": "document",
-      "source_file": "docs/PROGRESS.md",
-      "source_location": "L605",
-      "community": 109,
-      "norm_label": "shared packages (`packages/`)",
-      "id": "docs_progress_shared_packages_packages"
-    },
-    {
-      "label": "Tooling (`tools/`)",
-      "file_type": "document",
-      "source_file": "docs/PROGRESS.md",
-      "source_location": "L614",
-      "community": 109,
-      "norm_label": "tooling (`tools/`)",
-      "id": "docs_progress_tooling_tools"
-    },
-    {
-      "label": "Infrastructure",
-      "file_type": "document",
-      "source_file": "docs/PROGRESS.md",
-      "source_location": "L624",
-      "community": 109,
-      "norm_label": "infrastructure",
-      "id": "docs_progress_infrastructure"
-    },
-    {
-      "label": "3. Current configuration",
-      "file_type": "document",
-      "source_file": "docs/PROGRESS.md",
-      "source_location": "L637",
-      "community": 109,
-      "norm_label": "3. current configuration",
-      "id": "docs_progress_3_current_configuration"
-    },
-    {
-      "label": "4. What's next",
-      "file_type": "document",
-      "source_file": "docs/PROGRESS.md",
-      "source_location": "L694",
-      "community": 109,
-      "norm_label": "4. what's next",
-      "id": "docs_progress_4_what_s_next"
-    },
-    {
-      "label": "5. Active decisions and open questions",
-      "file_type": "document",
-      "source_file": "docs/PROGRESS.md",
-      "source_location": "L782",
-      "community": 109,
-      "norm_label": "5. active decisions and open questions",
-      "id": "docs_progress_5_active_decisions_and_open_questions"
-    },
-    {
-      "label": "6. Known issues and tech debt",
-      "file_type": "document",
-      "source_file": "docs/PROGRESS.md",
-      "source_location": "L799",
-      "community": 109,
-      "norm_label": "6. known issues and tech debt",
-      "id": "docs_progress_6_known_issues_and_tech_debt"
-    },
-    {
-      "label": "7. Test coverage status",
-      "file_type": "document",
-      "source_file": "docs/PROGRESS.md",
-      "source_location": "L853",
-      "community": 109,
-      "norm_label": "7. test coverage status",
-      "id": "docs_progress_7_test_coverage_status"
-    },
-    {
-      "label": "8. Documentation status",
-      "file_type": "document",
-      "source_file": "docs/PROGRESS.md",
-      "source_location": "L880",
-      "community": 109,
-      "norm_label": "8. documentation status",
-      "id": "docs_progress_8_documentation_status"
-    },
-    {
-      "label": "9. Hand-off note for next session",
-      "file_type": "document",
-      "source_file": "docs/PROGRESS.md",
-      "source_location": "L917",
-      "community": 109,
-      "norm_label": "9. hand-off note for next session",
-      "id": "docs_progress_9_hand_off_note_for_next_session"
     },
     {
       "label": "0017-wolf-central-brain.md",
@@ -30519,6 +30519,166 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+      "source_file": "docs/PROGRESS.md",
+      "source_location": "L1",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "docs_progress",
+      "target": "docs_progress_wolf_development_progress"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/PROGRESS.md",
+      "source_location": "L13",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "docs_progress_wolf_development_progress",
+      "target": "docs_progress_1_where_we_are_right_now"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/PROGRESS.md",
+      "source_location": "L509",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "docs_progress_wolf_development_progress",
+      "target": "docs_progress_2_what_s_currently_built_and_working"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/PROGRESS.md",
+      "source_location": "L601",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "docs_progress_wolf_development_progress",
+      "target": "docs_progress_3_current_configuration"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/PROGRESS.md",
+      "source_location": "L658",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "docs_progress_wolf_development_progress",
+      "target": "docs_progress_4_what_s_next"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/PROGRESS.md",
+      "source_location": "L746",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "docs_progress_wolf_development_progress",
+      "target": "docs_progress_5_active_decisions_and_open_questions"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/PROGRESS.md",
+      "source_location": "L763",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "docs_progress_wolf_development_progress",
+      "target": "docs_progress_6_known_issues_and_tech_debt"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/PROGRESS.md",
+      "source_location": "L817",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "docs_progress_wolf_development_progress",
+      "target": "docs_progress_7_test_coverage_status"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/PROGRESS.md",
+      "source_location": "L844",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "docs_progress_wolf_development_progress",
+      "target": "docs_progress_8_documentation_status"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/PROGRESS.md",
+      "source_location": "L881",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "docs_progress_wolf_development_progress",
+      "target": "docs_progress_9_hand_off_note_for_next_session"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/PROGRESS.md",
+      "source_location": "L556",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "docs_progress_2_what_s_currently_built_and_working",
+      "target": "docs_progress_frontend_frontend"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/PROGRESS.md",
+      "source_location": "L552",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "docs_progress_2_what_s_currently_built_and_working",
+      "target": "docs_progress_gateway_services_gateway"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/PROGRESS.md",
+      "source_location": "L588",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "docs_progress_2_what_s_currently_built_and_working",
+      "target": "docs_progress_infrastructure"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/PROGRESS.md",
+      "source_location": "L513",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "docs_progress_2_what_s_currently_built_and_working",
+      "target": "docs_progress_orchestrator_services_orchestrator"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/PROGRESS.md",
+      "source_location": "L569",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "docs_progress_2_what_s_currently_built_and_working",
+      "target": "docs_progress_shared_packages_packages"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/PROGRESS.md",
+      "source_location": "L578",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "docs_progress_2_what_s_currently_built_and_working",
+      "target": "docs_progress_tooling_tools"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
       "source_file": "docs/decisions/0018-bootstrap-superuser-rbac-login.md",
       "source_location": "L1",
       "weight": 1.0,
@@ -30602,9 +30762,9 @@
       "source_file": "docs/decisions/0018-bootstrap-superuser-rbac-login.md",
       "source_location": "L601",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "decisions_0018_bootstrap_superuser_rbac_login_adr_0018_bootstrap_superuser_per_org_rbac_login_ux",
-      "target": "decisions_0018_bootstrap_superuser_rbac_login_resolved_architectural_decisions_round_5_review_with_operator_2026_06_10",
-      "confidence_score": 1.0
+      "target": "decisions_0018_bootstrap_superuser_rbac_login_resolved_architectural_decisions_round_5_review_with_operator_2026_06_10"
     },
     {
       "relation": "contains",
@@ -30822,169 +30982,9 @@
       "source_file": "docs/decisions/0018-bootstrap-superuser-rbac-login.md",
       "source_location": "L657",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "decisions_0018_bootstrap_superuser_rbac_login_resolved_architectural_decisions_round_5_review_with_operator_2026_06_10",
-      "target": "decisions_0018_bootstrap_superuser_rbac_login_trusted_network_mechanism_new_design_call_from_q1",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/PROGRESS.md",
-      "source_location": "L1",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "docs_progress",
-      "target": "docs_progress_wolf_development_progress"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/PROGRESS.md",
-      "source_location": "L13",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "docs_progress_wolf_development_progress",
-      "target": "docs_progress_1_where_we_are_right_now"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/PROGRESS.md",
-      "source_location": "L509",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "docs_progress_wolf_development_progress",
-      "target": "docs_progress_2_what_s_currently_built_and_working"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/PROGRESS.md",
-      "source_location": "L601",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "docs_progress_wolf_development_progress",
-      "target": "docs_progress_3_current_configuration"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/PROGRESS.md",
-      "source_location": "L658",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "docs_progress_wolf_development_progress",
-      "target": "docs_progress_4_what_s_next"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/PROGRESS.md",
-      "source_location": "L746",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "docs_progress_wolf_development_progress",
-      "target": "docs_progress_5_active_decisions_and_open_questions"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/PROGRESS.md",
-      "source_location": "L763",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "docs_progress_wolf_development_progress",
-      "target": "docs_progress_6_known_issues_and_tech_debt"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/PROGRESS.md",
-      "source_location": "L817",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "docs_progress_wolf_development_progress",
-      "target": "docs_progress_7_test_coverage_status"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/PROGRESS.md",
-      "source_location": "L844",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "docs_progress_wolf_development_progress",
-      "target": "docs_progress_8_documentation_status"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/PROGRESS.md",
-      "source_location": "L881",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "docs_progress_wolf_development_progress",
-      "target": "docs_progress_9_hand_off_note_for_next_session"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/PROGRESS.md",
-      "source_location": "L556",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "docs_progress_2_what_s_currently_built_and_working",
-      "target": "docs_progress_frontend_frontend"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/PROGRESS.md",
-      "source_location": "L552",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "docs_progress_2_what_s_currently_built_and_working",
-      "target": "docs_progress_gateway_services_gateway"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/PROGRESS.md",
-      "source_location": "L588",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "docs_progress_2_what_s_currently_built_and_working",
-      "target": "docs_progress_infrastructure"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/PROGRESS.md",
-      "source_location": "L513",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "docs_progress_2_what_s_currently_built_and_working",
-      "target": "docs_progress_orchestrator_services_orchestrator"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/PROGRESS.md",
-      "source_location": "L569",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "docs_progress_2_what_s_currently_built_and_working",
-      "target": "docs_progress_shared_packages_packages"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/PROGRESS.md",
-      "source_location": "L578",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "docs_progress_2_what_s_currently_built_and_working",
-      "target": "docs_progress_tooling_tools"
+      "target": "decisions_0018_bootstrap_superuser_rbac_login_trusted_network_mechanism_new_design_call_from_q1"
     },
     {
       "relation": "contains",
@@ -109342,5 +109342,5 @@
       "source_file": "deploy/systemd/system/README.md"
     }
   ],
-  "built_at_commit": "4ed948e1d9f702ad380780a74ead72a029f292b6"
+  "built_at_commit": "b22e42463216fa48f6eaae69f332a13f66d0cba5"
 }

@@ -6,7 +6,7 @@
 >
 > For history of what changed when, see `CHANGELOG.md` (append-only).
 
-**Last updated:** 2026-06-10 by claude-code (ADR 0018 ACCEPTED after 5-round operator review — Phase 6.4 tenant→organization rename unblocked; ADRs 0017 + 0019 + 0020 still PROPOSED; memory/ moved into the repo)
+**Last updated:** 2026-06-10 by claude-code (ADRs 0018 + 0019 ACCEPTED — Phase 6.4 tenant→organization rename unblocked + web-first configurability discipline locked in; ADRs 0017 + 0020 still PROPOSED; memory/ moved into the repo)
 
 ---
 
@@ -48,11 +48,17 @@ since the last update:
      6.5 = 9 sub-slices, 12-13 sessions. Propose/approve/execute
      enforcement decorators defer to Phase 6 (wolf-gateway). MFA
      deferred to v1.1.
-   - **ADR 0019 — Web-first configurability mandate**: every
-     configurable Wolf knob has a GUI surface; CLI remains as a
-     power-user/automation tool; DB is source of truth; GUI ↔ CLI
-     sync via the same API; audit-log every change regardless of
-     surface origin.
+   - **ADR 0019 — Web-first configurability mandate** **— ACCEPTED
+     2026-06-10** after 1-round operator review. Two non-negotiable
+     rules: GUI completeness (every Wolf knob has a GUI surface) +
+     CLI ↔ GUI sync (DB is source of truth via wolf-server API).
+     Resolved decisions: manual restart with "pending restart"
+     indicator; REST endpoints nested under resources (`/install/*`,
+     `/organizations/{id}/*`, `/users/{id}/*`); config-only scope
+     (runtime observability is a separate concern). Cross-org
+     user-scoped "My memory" view with Superuser-cannot-see-others
+     caveat. Catalog of ~10 existing CLI surfaces becomes a tracked
+     checklist that closes per-row as GUI counterparts ship.
    - **ADR 0020 — Superuser-owned Wazuh component mapping**
      (split-out from ADR 0018 Round-1 review): install-level Wazuh
      ecosystem topology (single-host + distributed) + per-org Wazuh

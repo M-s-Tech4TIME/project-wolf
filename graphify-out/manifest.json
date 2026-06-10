@@ -1150,8 +1150,8 @@
     "semantic_hash": "8f8473d7c57354f727935f0cd7901edb"
   },
   "docs/PROGRESS.md": {
-    "mtime": 1781085018.3788376,
-    "ast_hash": "1900362cd305b003fbb9174f3e5423cf",
+    "mtime": 1781092353.8495526,
+    "ast_hash": "eafc1a2055f43ba5b02a473adf4737c6",
     "semantic_hash": ""
   },
   "docs/decisions/0001-model-probe-llama3.2-baseline.md": {
@@ -1420,8 +1420,8 @@
     "semantic_hash": ""
   },
   "docs/decisions/0018-bootstrap-superuser-rbac-login.md": {
-    "mtime": 1781092139.5573485,
-    "ast_hash": "2965345612091410b09b483c2d3ddd1b",
+    "mtime": 1781092333.199644,
+    "ast_hash": "d07f141b605a6fcfdd6e6e2894809570",
     "semantic_hash": ""
   },
   "docs/decisions/0020-superuser-owned-wazuh-mapping.md": {

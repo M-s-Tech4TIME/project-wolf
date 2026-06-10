@@ -1,6 +1,13 @@
 # ADR 0019 — Web-first configurability mandate (GUI ↔ CLI sync)
 
-**Status:** PROPOSED (2026-06-10)
+**Status:** ACCEPTED (2026-06-10)
+**Revision history:**
+- 2026-06-10 PROPOSED v1 (initial draft, two rules + catalog of 10
+  surfaces + 3 open architectural decisions)
+- 2026-06-10 PROPOSED v2 (Round 1 review with operator: all 3 open
+  decisions resolved + "My memory" catalog row clarified as
+  cross-org user-scoped + Superuser-self-only caveat added)
+- 2026-06-10 **ACCEPTED** (operator sign-off after 1-round review)
 **Authors:** Wolf Maintainers
 **Related:** ADR 0017 (Wolf Central Brain — new memory surfaces need GUI),
 ADR 0018 (Bootstrap Superuser + RBAC + Login UX — defines WHO can
@@ -58,7 +65,7 @@ Affected surfaces today (the catalog this ADR commits to delivering):
 | Per-org model + embedding selection | "AI Models" page in Engineer settings | Engineer | Future slice |
 | Per-org wolf-pack deployment | "Wolf Pack" page in Engineer settings | Engineer | Phase 12 |
 | Org-Admin user management | "Users" page within each org | Admin | Phase 6.5-f (per ADR 0018) |
-| Operator memory inspect / delete | "My memory" page in user settings | User (self only) | Phase 7.5 (per ADR 0017) |
+| Operator memory inspect / delete | "My memory" page in user settings (cross-org view — see §"My memory: cross-org, self-only" below) | User (self only) | Phase 7.5 (per ADR 0017) |
 | All `make smoke-*` targets | (none — CI-only; no GUI counterpart needed) | n/a | n/a |
 
 Anything added in a future phase implicitly inherits this rule.
@@ -275,39 +282,87 @@ code gets migrated incrementally**.
 
 ---
 
-## Open architectural decisions
+## Resolved architectural decisions (Round 1 review with operator, 2026-06-10)
 
-1. **Restart semantics for file-renderer changes** — Auto-restart
-   wolf-server when env changes? Or require manual operator restart?
-   (Auto-restart is operator-unfriendly during active investigations;
-   manual is safer but adds a "pending restart" step to every config
-   change.)
-2. **API endpoint naming convention** for settings — `PUT
-   /api/v1/settings/wazuh-mapping` vs `PUT /api/v1/superuser/wazuh-
-   mapping` vs `PUT /api/v1/organizations/{id}/wazuh-credentials`?
-   Pick one pattern for consistency.
-3. **GUI for purely-runtime state** (active sessions, current model
-   load, etc.) — out of scope for this ADR (those are observability
-   not configuration), but worth flagging that the discipline cleanly
-   separates the two.
+All 3 originally-open architectural decisions resolved + 1 catalog
+clarification on "My memory" scope.
+
+1. **Restart semantics for file-renderer changes — Manual, with
+   "pending restart" indicator.** When a GUI change writes a file
+   that requires a service restart, the GUI shows a "pending restart"
+   indicator next to the setting + a "Restart now" button. The
+   operator clicks explicitly. Rationale: auto-restart is
+   operator-unfriendly during active investigations (Wolf restarts
+   mid-incident would be disruptive); manual restart is safer + makes
+   the cutover auditable.
+
+2. **API endpoint naming convention — Mix per-topic (resource-nested
+   REST).** Endpoints are nested under their natural resource:
+   - **Install-level** settings (`wolf-cert`, `wolf-database`,
+     install-wide audit log, ecosystem topology): `/api/v1/install/*`
+     — Superuser-only at the route level
+   - **Organization-level** settings (org config, members, audit log,
+     Wazuh credentials per org per ADR 0020): `/api/v1/organizations/
+     {id}/*` — per-org RBAC gate via the role-decorator pattern (per
+     ADR 0018-6.5-b)
+   - **User-level** settings (memory, preferences, password):
+     `/api/v1/users/{id}/*` — self-only or Admin-scoped
+   - REST conventions match REST: settings ARE resources, not items
+     in a flat "settings bucket"
+
+3. **Runtime state vs configuration — Configuration only (ACCEPTED
+   scope).** This ADR commits to GUI surfaces for things that
+   PERSIST across restarts. Runtime state (active sessions, current
+   model load, request rate, active alerts) is observability — a
+   separate concern with its own ADR/phase eventually (likely tied
+   into wolf-grafana / wolf-hunt). The discipline of "GUI for every
+   config" cleanly separates from "GUI for every metric"; no
+   conflation in either direction.
+
+### My memory: cross-org, self-only (catalog clarification)
+
+The "My memory" catalog row (Phase 7.5, per ADR 0017) is **user-scoped
++ cross-org**. When a user opens their "My memory" page, they see
+ALL their memory across ALL their org memberships in one combined view,
+with each entry labeled by org name. Rationale: memory belongs to the
+user, not to the org; the user should see all their own learning in
+one place; the org-consent gate (per ADR 0018) is about protecting
+org data from OUTSIDERS, not about restricting a user's view of their
+own self-data.
+
+**Critical caveat — Superuser self-only at the data-access level:**
+Even though "My memory" is user-scoped, a Superuser without explicit
+UserOrganization membership in a given org CANNOT see anyone else's
+memory contributions from that org. Memory access is strictly
+self-only: every user sees ONLY their own memory, regardless of role.
+The "My memory" UI never exposes another user's memory, even to a
+Superuser. (To debug another user's memory issues, the Superuser would
+need to request UserOrganization membership in that org + then ask the
+affected user to grant temporary delegate-access — a flow that doesn't
+ship in v1 and is out of scope for this ADR.)
+
+### Acknowledged refactor scope
+
+- The catalog's ~10 existing CLI surfaces represent significant
+  follow-up work over multiple phases; new code follows Rule 2 from
+  day one; existing code gets migrated incrementally
+- Phase 6.5 (per ADR 0018) gets implemented under this discipline
+  from the start
+- The catalog table in §"Rule 1" becomes a tracked checklist; each
+  row gets closed as its GUI surface ships
 
 ---
 
 ## Status, sign-off, next steps
 
-This ADR is **PROPOSED**, not ACCEPTED. Before ACCEPTED:
-
-1. Operator review of Rules 1 + 2
-2. Resolution of the 3 open decisions above
-3. Acknowledgment of the refactor scope (existing CLI tools)
-
-Once ACCEPTED:
+This ADR is now **ACCEPTED**. Operator sign-off after 1-round review
+(2026-06-10) closed every previously-open decision + clarified the
+"My memory" scope.
 
 - ADR 0019 becomes the contract for all future configurable-feature work
-- Existing CLI tools are tracked for migration but not blocking
-- Phase 6.5 (per ADR 0018) gets implemented under this discipline from
-  the start
-- The catalog table in §"Rule 1" becomes a tracked checklist; each
-  row gets closed as its GUI surface ships
+- Existing CLI tools are tracked for migration but not blocking new work
+- Phase 6.5 (per ADR 0018) builds under this discipline from the start
+- The catalog table in §"Rule 1" is now the tracked checklist; each
+  row closes as its GUI surface ships
 
 No code ships from this commit. Design only.
