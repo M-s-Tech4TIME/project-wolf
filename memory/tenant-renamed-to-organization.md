@@ -7,6 +7,8 @@ metadata:
   originSessionId: 5cd03513-6614-4694-a862-5bd7c8534b36
 ---
 
+**Cross-ref (2026-06-11):** this rename is now **scheduled as Phase 6.4** in the roadmap — the unblocked pre-req for all Phase 6.5+ work. See [ADR 0018 — Bootstrap Superuser + Per-Org RBAC + Login UX](../docs/decisions/0018-bootstrap-superuser-rbac-login.md) §"Implementation sequencing" → "Pre-requisite: Phase 6.4". The full rename matrix is captured below; Phase 6.4 is a single PR (~40-60 files, 1-2 sessions). This memory entry FLIPS FROM STANDING RULE TO COMPLETED at the end of Phase 6.4 — `tenant-renamed-to-organization` will then be a historical record, not an active rule.
+
 STANDING RULE (2026-06-10): the operator made the explicit decision that **tenant = organization** is the canonical naming. There is no separate Organization entity; the existing Tenant model IS the org. Going forward:
 
 ## Naming convention (use these everywhere)

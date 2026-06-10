@@ -1150,8 +1150,8 @@
     "semantic_hash": "8f8473d7c57354f727935f0cd7901edb"
   },
   "docs/PROGRESS.md": {
-    "mtime": 1781111418.519651,
-    "ast_hash": "93bd5ce07479ad669a45a9e1750e8d2a",
+    "mtime": 1781118824.0661738,
+    "ast_hash": "3a71e2ffb73efab8e333ed01bf535a02",
     "semantic_hash": ""
   },
   "docs/decisions/0001-model-probe-llama3.2-baseline.md": {
@@ -1310,8 +1310,8 @@
     "semantic_hash": ""
   },
   "docs/decisions/0017-wolf-central-brain.md": {
-    "mtime": 1781115751.4103258,
-    "ast_hash": "33bf4a63ce2ef878adbc3218af0907af",
+    "mtime": 1781118799.7841108,
+    "ast_hash": "f536749c12bf34e8fea78814f0517914",
     "semantic_hash": ""
   },
   "docs/decisions/0019-web-first-configurability.md": {

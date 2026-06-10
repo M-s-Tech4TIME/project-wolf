@@ -7,6 +7,8 @@ metadata:
   originSessionId: 5cd03513-6614-4694-a862-5bd7c8534b36
 ---
 
+**Cross-ref (2026-06-11):** the design captured in this memory entry was formalized into [ADR 0018 (Bootstrap Superuser + Per-Org RBAC + Login UX)](../docs/decisions/0018-bootstrap-superuser-rbac-login.md) and [ADR 0020 (Superuser-owned Wazuh component mapping)](../docs/decisions/0020-superuser-owned-wazuh-mapping.md), both **ACCEPTED 2026-06-10**. The roles table below was refined during the ADR 0018 Round 2 review — Approver renamed to Responder; Responder gained direct-execute capability; Engineer gained approve-actions; Analyst gained propose-actions; Superuser data access now requires explicit org-Admin consent (no self-grant). This memory remains the operator's "load-bearing design constraint" record; the ADRs are the implementation contract.
+
 STANDING RULE (2026-06-10): Wolf's bootstrap + RBAC model follows the Wazuh pattern. Captured here so it survives across sessions + is treated as a load-bearing design constraint.
 
 ## The bootstrap flow

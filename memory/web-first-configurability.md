@@ -7,6 +7,8 @@ metadata:
   originSessionId: 5cd03513-6614-4694-a862-5bd7c8534b36
 ---
 
+**Cross-ref (2026-06-11):** this standing rule was formalized into [ADR 0019 — Web-first configurability mandate](../docs/decisions/0019-web-first-configurability.md), **ACCEPTED 2026-06-10**. The ADR adds the resolved details on: manual restart with "pending restart" indicator; REST endpoints nested under resources (`/install/*`, `/organizations/{id}/*`, `/users/{id}/*`); config-only scope (runtime observability deferred to its own ADR/phase); cross-org "My memory" UI semantics + Superuser-self-only caveat at the data-access level. This memory remains the operator's "standing rule" record; ADR 0019 is the implementation contract.
+
 STANDING RULE (2026-06-10): the operator's design intent is that **Wolf is operable end-to-end through the web interface**. Every configuration surface that matters to the user must have a GUI; the CLI is a power-user / automation tool, not the only access path.
 
 ## The two non-negotiable properties

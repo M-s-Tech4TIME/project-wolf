@@ -1,11 +1,49 @@
 ---
-name: wolf-knowledge-relay
-description: "Major future phase — a native Wolf-companion daemon (wolf-relay) on every Wazuh host that ships rules / decoders / SCA / vulnerability / inventory data into Wolf's knowledge store"
+name: wolf-pack
+description: "Phase 12 — native Wolf-companion daemon (wolf-pack agent) on every Wazuh host. Bidirectional: ships rules/decoders/SCA/vulnerability/inventory INTO Wolf; executes propose-approved actions OUTBOUND from Wolf. Renamed from wolf-knowledge-relay per ADR 0017 (ACCEPTED 2026-06-11) — scope expanded to bidirectional"
 metadata: 
   node_type: memory
   type: project
   originSessionId: 5cd03513-6614-4694-a862-5bd7c8534b36
 ---
+
+## Status update (2026-06-11)
+
+Originally captured 2026-05-30 as "Wolf Knowledge Relay" (`wolf-relay`).
+**Renamed to `wolf-pack` per ADR 0017 (ACCEPTED 2026-06-11)** with
+scope expansion to bidirectional — agents on Wazuh hosts both INGEST
+into Wolf (the original Knowledge Relay scope) AND EXECUTE actions
+OUTBOUND from Wolf via the wolf-gateway approval flow (the new scope).
+
+- **Phase**: now formally **Phase 12 (renamed)** in
+  `docs/10-build-roadmap.md`
+- **Detailed design**: future dedicated ADR expected ~0023 at
+  phase-open time (numbering shifted from the original
+  ADR-0017-draft suggestion of 0020 because 0018/0019/0020 are now
+  used by Bootstrap-Superuser+RBAC / Web-first-configurability /
+  Wazuh-component-mapping respectively)
+- **Naming**: working names below ("wolf-relay") are obsolete; the
+  agent is `wolf-pack`. References below to "wolf-relay" can be
+  read as "wolf-pack" — the body of this memory is preserved as the
+  original brainstorm + research that fed into ADR 0017's Phase 12.
+- **Terminology**: this file pre-dates the 2026-06-10 tenant →
+  organization rename. References to `tenant_id` / "per-tenant"
+  should be read as `organization_id` / "per-organization" in any
+  forward-looking implementation. Code-side rename happens in
+  Phase 6.4 (per ADR 0018).
+- **Dependencies confirmed**: hard dependency on Phase 5.4 HTTPS
+  (delivered) + Phase 5.6 mTLS (delivered) + Phase 6 wolf-gateway
+  (designed; for the new outbound command flow).
+
+The rest of this file is the original 2026-05-30 brainstorm,
+preserved for historical context + the detailed source-category
+catalog (Categories A-G). When Phase 12 opens, the dedicated ADR
+~0023 will be the source of truth + this memory entry will be
+referenced for background.
+
+---
+
+## Original brainstorm (2026-05-30)
 
 User proposed (2026-05-30) a deliberately big, deliberately load-bearing addition to Wolf: a **separate native program** that lives on Wazuh hosts and feeds Wolf the entire Wazuh ecosystem as embedded knowledge. Not an AI itself — a deterministic, persistent telemetry daemon, like `wazuh-agent` runs alongside what it observes.
 

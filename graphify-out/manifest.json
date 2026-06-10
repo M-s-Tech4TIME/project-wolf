@@ -1105,8 +1105,8 @@
     "semantic_hash": "f5fa3d52706ac445a9cd4e9b8ebf0ee5"
   },
   "docs/10-build-roadmap.md": {
-    "mtime": 1781043044.8381865,
-    "ast_hash": "bce3864b1d2a2b66a8edd2a31c6d61ac",
+    "mtime": 1781119380.5000727,
+    "ast_hash": "524937473bc9d06b8ec02f28fd399a58",
     "semantic_hash": ""
   },
   "docs/11-claude-code-instructions.md": {
@@ -1150,8 +1150,8 @@
     "semantic_hash": "8f8473d7c57354f727935f0cd7901edb"
   },
   "docs/PROGRESS.md": {
-    "mtime": 1781111418.519651,
-    "ast_hash": "93bd5ce07479ad669a45a9e1750e8d2a",
+    "mtime": 1781118824.0661738,
+    "ast_hash": "3a71e2ffb73efab8e333ed01bf535a02",
     "semantic_hash": ""
   },
   "docs/decisions/0001-model-probe-llama3.2-baseline.md": {
@@ -1310,8 +1310,8 @@
     "semantic_hash": ""
   },
   "docs/decisions/0017-wolf-central-brain.md": {
-    "mtime": 1781117598.8515022,
-    "ast_hash": "6970ff7c0406fcde390f78f0cbd166b3",
+    "mtime": 1781118799.7841108,
+    "ast_hash": "f536749c12bf34e8fea78814f0517914",
     "semantic_hash": ""
   },
   "docs/decisions/0019-web-first-configurability.md": {

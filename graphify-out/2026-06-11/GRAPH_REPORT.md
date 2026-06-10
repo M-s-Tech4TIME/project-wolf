@@ -1,7 +1,7 @@
 # Graph Report - project-wolf  (2026-06-11)
 
 ## Corpus Check
-- 275 files · ~258,034 words
+- 275 files · ~259,446 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -10,7 +10,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `d64eba91`
+- Built from commit: `be598b4d`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -570,7 +570,7 @@ Nodes (14): frontier agent strategy, GroundingBadge UI, GROUNDING_JUDGE_MODEL_ID
 
 ### Community 80 - "docs/10-build-roadmap.md: aggregatealerts tool"
 Cohesion: 0.05
-Nodes (40): Action validator (for propose tools), ADR 0017 — Wolf Central Brain: memory, deep-thinking, continuous learning, Architectural components, Concrete operator-experience contract, Confidence calibration, Context, Continuous learning, Deep-think strategy (+32 more)
+Nodes (40): Action validator (for propose tools), ADR 0017 — Wolf Central Brain: memory, deep-thinking, continuous learning, Architectural components, Concrete operator-experience contract, Confidence calibration, Context, Continuous learning (both RESOLVED — Round 4 review, 2026-06-11), Deep-think strategy (+32 more)
 
 ### Community 81 - "dashboard: devmjs"
 Cohesion: 0.14
@@ -809,7 +809,7 @@ Cohesion: 0.50
 Nodes (3): (1) Progressive answer rendering ("token-by-token like Claude"), (2) Live activity feed during steps, Out of scope until 5.0c lands
 
 ## Knowledge Gaps
-- **556 isolated node(s):** `Context`, `The Central Brain vision`, `Storage vs UI: how a user's OWN memory crosses orgs`, `MSSP scenario worked example`, `Wazuh access in MSSP` (+551 more)
+- **556 isolated node(s):** `1. Where we are right now`, `Orchestrator (`services/orchestrator/`)`, `Gateway (`services/gateway/`)`, `Frontend (`frontend/`)`, `Shared packages (`packages/`)` (+551 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **42 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 

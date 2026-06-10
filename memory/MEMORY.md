@@ -17,5 +17,5 @@
 - [Runbook authoring + actionable runbooks](runbook-authoring-and-actionable-runbooks.md) — Future Phase 5.5: web-based markdown editor for runbooks (tenant + shared), tag-aware retrieval, runbook-prescribed propose-actions feeding Phase 6 approval gateway
 - [Native HTTPS + wolf-cert CLI](native-https-and-wolf-cert.md) — Phase 5.4 (post-5.0c, pre-RBAC): self-signed CA + 100-year leaf certs, CLI lifecycle, unlocks secure-context APIs
 - [Wolf colour palette](wolf-color-palette.md) — Slice 5.0c-c source of truth: Platinum / Dusk Blue / Steel Blue / Icy Blue; supersedes wolf-color-palette-outlook.png
-- [Wolf Knowledge Relay (major future phase)](wolf-knowledge-relay.md) — native daemon on every Wazuh host ships rules/decoders/SCA/vuln/inventory into Wolf via mTLS; hard dependency on Phase 5.4 HTTPS
+- [wolf-pack (Phase 12)](wolf-pack.md) — bidirectional native daemon on every Wazuh host: ships rules/decoders/SCA/vuln/inventory INTO Wolf + executes propose-approved actions OUTBOUND. Renamed from wolf-knowledge-relay per ADR 0017 (ACCEPTED 2026-06-11); detailed design in future ADR ~0023
 - [Conversation tree persistence plan](conversation-tree-persistence-plan.md) — for the DB-storage phase: schema + atomic version-add + no path flattening + round-trip test; captured 2026-06-02 alongside Slice 5.0c-l v4.1
