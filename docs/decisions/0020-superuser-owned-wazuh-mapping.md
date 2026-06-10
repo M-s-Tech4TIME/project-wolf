@@ -1,6 +1,13 @@
 # ADR 0020 — Superuser-owned Wazuh component mapping (install + per-org)
 
-**Status:** PROPOSED (2026-06-10)
+**Status:** ACCEPTED (2026-06-10)
+**Revision history:**
+- 2026-06-10 PROPOSED v1 (split out from ADR 0018 Round 1 review:
+  install-level + per-org design, 7 open architectural decisions)
+- 2026-06-10 PROPOSED v2 (Round 2 review with operator: all 7 open
+  decisions resolved — see §"Resolved architectural decisions" below)
+- 2026-06-10 **ACCEPTED** (operator sign-off after 1-round review;
+  Phase 6.6 unblocked + sequenced after Phase 6.5)
 **Authors:** Wolf Maintainers
 **Extends:** ADR 0010 (multi-organization isolation), ADR 0016 (component
 architecture), ADR 0018 (Bootstrap Superuser + RBAC + Login UX — defines
@@ -264,56 +271,98 @@ Estimated scope: 3-5 sessions across 5 sub-slices.
 
 ---
 
-## Open architectural decisions
+## Resolved architectural decisions (Round 2 review with operator, 2026-06-10)
 
-1. **Indexer node selection for distributed deployments** — random,
-   round-robin, or stickiness by org? (Random is simplest; stickiness
-   improves cache locality but adds state.) Recommend random.
+All 7 originally-open architectural decisions resolved.
 
-2. **Credential storage backend** — current Wolf uses
-   `services/server/wolf_server/secrets/` with Fernet-encrypted storage
-   in Postgres. Continue using that, or pull in something heavier (HashiCorp
-   Vault, AWS Secrets Manager)? Recommend continue with current Postgres-
-   backed Fernet for v1 — operator-controlled key, no external dep.
+1. **Indexer node selection — Random.** Pick a random indexer node per
+   query; fall back to other nodes on failure. Simplest correct
+   default. Indexer clusters are designed for load distribution;
+   randomness gives even spread naturally. Stickiness-by-org adds
+   state (which-node-was-last-used per org) for marginal cache-
+   locality benefit — premature optimization for v1.
 
-3. **Probe-on-save: hard fail vs soft fail** — for the install-level
-   topology, fail-hard if any endpoint is down (current proposal). For
-   per-org credentials, fail-hard if the credential can't authenticate
-   (current proposal). Worth confirming this strict-validate stance vs
-   "save with warning if probe fails."
+2. **Credential storage backend — Postgres + Fernet (existing pattern).**
+   Continue using `services/server/wolf_server/secrets/` with
+   Fernet-encrypted storage in Postgres. Operator-controlled key, no
+   external dependency, airgap-deployable, matches existing Wolf
+   pattern. Vault / AWS Secrets Manager are best-in-class but add
+   significant operational burden (Vault deployment, sealing /
+   unsealing, IAM setup) for v1. Migration path to Vault preserved
+   if a future operator needs it.
 
-4. **Multi-Wazuh-cluster support** — does Wolf ever need to talk to
-   MORE than one Wazuh ecosystem from a single install? Current proposal
-   says NO (one install = one Wazuh ecosystem). If yes, the install-level
-   topology model needs a many-clusters extension.
+3. **Probe-on-save — Hard fail for install-level, soft fail for
+   per-org credentials.**
+   - **Install-level topology save**: REJECTED if any endpoint
+     probe fails. Wolf cannot function with an unreachable Wazuh
+     ecosystem; hard-fail prevents bad state.
+   - **Per-org credentials save**: SUCCEEDS with a warning if the
+     probe fails (e.g., `wazuh_api_user` not yet provisioned on
+     the Wazuh side). The Superuser can save the config now +
+     verify later when the Wazuh-side admin has provisioned the
+     credential. UI shows "Credentials saved (probe failed —
+     verify after Wazuh-side setup)".
 
-5. **Wazuh dashboard URL usage** — Wolf currently embeds links to the
-   Wazuh dashboard for "investigate in Wazuh" actions. Single shared
-   dashboard URL works for shared-ecosystem MSSP. Does any deployment
-   shape need per-org dashboard URLs?
+4. **Multi-Wazuh-cluster support — One install = one Wazuh ecosystem.**
+   The topology table is single-row; an install commits to one
+   Wazuh deployment. Customers with multiple Wazuh ecosystems spin
+   up multiple Wolf installs. Multi-ecosystem support is not in
+   v1 scope. Easy to extend later (ecosystem selector + ecosystem-
+   per-org routing) if real-world demand emerges.
 
-6. **Topology change requiring restart?** — Current proposal: no service
-   restart (read fresh per query). Confirm or push to require restart for
-   safety (auditable cutover).
+5. **Wazuh dashboard URL — Single shared.** All orgs link to the same
+   Wazuh dashboard host. Wazuh's own RBAC controls what each user
+   sees there. Per-org dashboard URLs (federated deployments with
+   per-customer dashboards) is a real but rare case; can be added
+   as a per-org override in a later slice if needed. v1 is single
+   shared.
 
-7. **Encrypted-at-rest in DB vs only-in-secrets-backend** — Should the
-   `wazuh_api_password` ever appear in the same DB row as the org metadata
-   (encrypted), or always live exclusively in the secrets backend? Current
-   proposal: secrets backend only. Confirm.
+6. **Topology change — No restart required.** Wolf reads the
+   topology fresh per query (microseconds DB overhead, negligible).
+   Topology changes take effect on the next query. Zero downtime;
+   matches ADR 0019's principle ("DB is source of truth; surfaces
+   are views over the same state, read fresh"). The audit log
+   captures the topology change — restart is not what makes the
+   cutover auditable. Restart-required option is preserved as an
+   operator-configurable strictness flag for future regulated-
+   industry deployments, but v1 default is no-restart.
+
+7. **Credential storage location — Secrets backend only.** The
+   `wazuh_api_password` never appears in the same DB row as org
+   metadata. Org metadata (org name, settings) and credentials
+   (passwords, tokens) live in separate tables. Org metadata is
+   queryable + auditable; credentials are accessed only via the
+   secrets API. Cleanest separation; matches principle of least
+   exposure.
+
+### Other confirmations (from the Round-2 ADR scope check)
+
+- **Install-level + org-level split** is the right abstraction
+  (vs per-org-only with no install-level concept) — install-level
+  models the Wazuh ecosystem TOPOLOGY (where the indexers,
+  managers, dashboard physically live); org-level models the
+  authentication credentials each org uses to query that ecosystem.
+  Two different concerns.
+- **Single-host + distributed shapes** are the right two to support
+  for v1. Hosted-Wazuh-cloud (e.g., Wazuh Cloud) is treated as a
+  variant of single-host (URL points to the cloud endpoint instead
+  of a self-hosted host). No third deployment shape needed at v1.
+- **Per-query credential + topology resolution** (the runtime model)
+  is the right design. Caching could be added later as an
+  optimization but is unnecessary at v1 scale.
 
 ---
 
 ## Status, sign-off, next steps
 
-This ADR is **PROPOSED**, not ACCEPTED. Before it can move to ACCEPTED:
+This ADR is now **ACCEPTED**. Operator sign-off after 1-round review
+(2026-06-10) closed every previously-open architectural decision.
 
-1. Operator reviews + answers the 7 open decisions above
-2. Confirms the install-level + org-level split is the right
-   abstraction (vs e.g., per-org-only with no install-level concept)
-3. Confirms the single-host + distributed shapes are the right two to
-   support (vs e.g., adding hosted-Wazuh-cloud as a third shape)
-4. Confirms the runtime model: per-query credential + topology
-   resolution (vs cached + invalidated on change)
+- Phase 6.6 (Superuser-owned Wazuh component mapping) becomes a real
+  work unit, sequenced AFTER Phase 6.5 (per ADR 0018) so the
+  Superuser + RBAC + per-tab header model is in place before this UI uses it
+- 5 sub-slices, 3-5 sessions, per the "Implementation sequencing" section
+- Existing per-tenant `connection_profiles` table refactor happens
+  in sub-slice 6.6-c (per-org credentials backend)
 
-Once ACCEPTED, Phase 6.6 becomes a real work unit. No code ships from
-this commit; design only.
+No code ships from this commit; design only.

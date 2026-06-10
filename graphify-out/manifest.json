@@ -1150,8 +1150,8 @@
     "semantic_hash": "8f8473d7c57354f727935f0cd7901edb"
   },
   "docs/PROGRESS.md": {
-    "mtime": 1781092353.8495526,
-    "ast_hash": "eafc1a2055f43ba5b02a473adf4737c6",
+    "mtime": 1781109546.1013548,
+    "ast_hash": "8a59bbc9be2e923ab2c1919e706757a4",
     "semantic_hash": ""
   },
   "docs/decisions/0001-model-probe-llama3.2-baseline.md": {
@@ -1315,8 +1315,8 @@
     "semantic_hash": ""
   },
   "docs/decisions/0019-web-first-configurability.md": {
-    "mtime": 1781066073.6476238,
-    "ast_hash": "35182d392e31680b0b1ae37ea8aa78d6",
+    "mtime": 1781109528.4912422,
+    "ast_hash": "2c5d3ebdc344c76c6adf230af35d0824",
     "semantic_hash": ""
   },
   "memory/MEMORY.md": {

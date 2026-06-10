@@ -6,7 +6,7 @@
 >
 > For history of what changed when, see `CHANGELOG.md` (append-only).
 
-**Last updated:** 2026-06-10 by claude-code (ADRs 0018 + 0019 ACCEPTED — Phase 6.4 tenant→organization rename unblocked + web-first configurability discipline locked in; ADRs 0017 + 0020 still PROPOSED; memory/ moved into the repo)
+**Last updated:** 2026-06-10 by claude-code (ADRs 0018 + 0019 + 0020 ACCEPTED — Phase 6.4 unblocked + web-first configurability locked in + Wazuh mapping design closed; ADR 0017 still PROPOSED; memory/ moved into the repo)
 
 ---
 
@@ -59,12 +59,18 @@ since the last update:
      user-scoped "My memory" view with Superuser-cannot-see-others
      caveat. Catalog of ~10 existing CLI surfaces becomes a tracked
      checklist that closes per-row as GUI counterparts ship.
-   - **ADR 0020 — Superuser-owned Wazuh component mapping**
-     (split-out from ADR 0018 Round-1 review): install-level Wazuh
-     ecosystem topology (single-host + distributed) + per-org Wazuh
-     API credentials. Superuser-only at both layers. 5 sub-slices
-     under new Phase 6.6, sequenced after Phase 6.5. 7 open
-     architectural decisions.
+   - **ADR 0020 — Superuser-owned Wazuh component mapping** **—
+     ACCEPTED 2026-06-10** after 1-round operator review. Install-
+     level Wazuh ecosystem topology (single-host + distributed) +
+     per-org Wazuh API credentials, Superuser-only at both layers.
+     Resolved decisions: random indexer node selection; Postgres +
+     Fernet credentials (no Vault for v1); hard fail install-probe
+     + soft fail per-org credential probe; one install = one Wazuh
+     ecosystem (multi-ecosystem deferred); single shared dashboard
+     URL; no restart needed on topology change (per-query DB read);
+     credentials live in secrets backend only (separate from org
+     metadata). 5 sub-slices under Phase 6.6, sequenced AFTER
+     Phase 6.5.
 
    Roadmap updated with four new phases (7.5, 8.5, 9.5, 11.5) +
    Phase 12 renamed to wolf-pack + new Phase 6.5 (Bootstrap + RBAC

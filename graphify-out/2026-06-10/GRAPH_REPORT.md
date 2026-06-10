@@ -1,7 +1,7 @@
 # Graph Report - project-wolf  (2026-06-10)
 
 ## Corpus Check
-- 275 files · ~256,078 words
+- 275 files · ~256,253 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -10,7 +10,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `4ed948e1`
+- Built from commit: `b22e4246`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -841,7 +841,7 @@ Cohesion: 0.67
 Nodes (3): Path, Build a fake archive that mirrors the real Wazuh release layout     and assert t, test_wazuh_zip_iter_handles_nested_paths()
 
 ## Knowledge Gaps
-- **553 isolated node(s):** `ADR-relative note on naming`, `Context`, `Properties`, `What the Superuser can do`, `Superuser-membership-grant flow (when needed)` (+548 more)
+- **553 isolated node(s):** `1. Where we are right now`, `Orchestrator (`services/orchestrator/`)`, `Gateway (`services/gateway/`)`, `Frontend (`frontend/`)`, `Shared packages (`packages/`)` (+548 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **44 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
