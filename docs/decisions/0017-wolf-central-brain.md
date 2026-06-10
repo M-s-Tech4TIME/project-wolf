@@ -430,16 +430,39 @@ pass verifies:
 - Target identity matches the operator's stated intent ("operator asked for
   host X, propose is targeting host X")
 - Blast radius is bounded ("operator asked to isolate ONE agent, propose
-  isn't isolating the whole tenant")
-- Tenant context is correct (defense-in-depth alongside the existing
-  forced-filter)
+  isn't isolating the whole org")
+- Organization context is correct (defense-in-depth alongside the existing
+  forced-filter per ADR 0010)
 - The action aligns with the conversation's stated outcome
 
 If the validator says "misaligned", the proposal is REJECTED before it ever
-reaches the approval queue. Operator sees the rejection reason.
+reaches the approval queue.
+
+**Round 3 design choices (2026-06-11):**
+
+- **Hard gate, no bypass.** If the validator rejects a proposal, the
+  operator must rephrase + retry. There is no Admin / Superuser /
+  emergency override path that lets a rejected proposal reach
+  approval. The validator's job IS to catch bad proposals; bypass
+  paths defeat the purpose. If false-positive rejection becomes a
+  measured real-world problem, an Admin-override path can be added
+  in v1.1 — but v1 ships strict.
+- **No cost cap on the validator.** Unlike deep-think (a perf cost
+  on user requests, where a cap is appropriate), the action
+  validator is a SAFETY cost — skipping it means a bad propose-
+  action reaches approval. Skipping is never worth the savings.
+  Every propose-action goes through validation, full stop.
+- **Rejection UX: inline + "Edit and retry".** When the validator
+  rejects, the operator sees the rejection reason in-line in the
+  current conversation (NOT a separate page; NOT a modal that loses
+  context). An "Edit and retry" affordance lets the operator
+  rephrase the action + resubmit without starting over. The
+  rejection event is audit-logged (per ADR 0018 audit-event schema).
 
 #### Confidence calibration
-Wolf signals certainty correctly. Three states for any answer:
+Wolf signals certainty correctly. **Three states** for any answer
+(operator-confirmed Round 3; 4-state granularity rejected as more
+than operators can meaningfully act on):
 - **Confident + verified** — RAG evidence + grounding validator both clean
 - **Confident with caveat** — partial evidence; Wolf states the caveat
 - **Insufficient evidence** — explicitly says so + offers next-step actions
@@ -647,11 +670,24 @@ implementation work starts on the affected subsystem:
   (no dedicated graph DB for v1). Migration path to Neo4j preserved
   if Wolf v3+ exceeds scale.
 
-### Thinking layer
+### Thinking layer (both RESOLVED — Round 3 review, 2026-06-11)
 
-5. **Deep-think trigger** — operator-explicit only (button) or also
-   auto-escalate from Uncertain verdicts?
-6. **Per-conversation cost cap** — deep-think uses more tokens. Limit?
+5. **Deep-think trigger — RESOLVED: Both (operator-explicit + auto-
+   escalate).** Operator can click a "Deep Think" button on the chat
+   input for the "I know this is complex" case; AND auto-escalation
+   triggers when the first-pass grounding validator returns Uncertain
+   or Not Verified (the "first-pass wasn't good enough" case). Two
+   trigger paths, same execution. Costs more on auto-escalate hits
+   but gives a better answer.
+
+6. **Per-conversation cost cap — RESOLVED: Soft cap with warning.**
+   Wolf tracks per-conversation deep-think invocations + tokens;
+   shows a visible "you've used N deep-think cycles in this
+   conversation" pill once the threshold is crossed. Hard caps
+   frustrate analysts in long investigations; no cap leads to
+   runaway costs. Default threshold (e.g., 5 deep-think cycles per
+   conversation) is operator-configurable per install via the
+   future ADR-0019 settings surface.
 
 ### Continuous learning
 
@@ -659,11 +695,29 @@ implementation work starts on the affected subsystem:
 8. **Environment fingerprinting consent** — does the operator have to
    explicitly authorize Wolf to walk their Wazuh API for fingerprinting?
 
-### General
+### General (RESOLVED — Round 3 review, 2026-06-11)
 
-9. **"Robust answer posture" disagreement** — operator may want to discuss
-   §"Robust answer posture" before this ADR moves to ACCEPTED status.
-   That conversation is the gating decision for the whole ADR.
+9. **"Robust answer posture" disagreement — RESOLVED: §"Robust
+   answer posture" accepted as written.** Operator accepted the
+   ADR's posture in full after Round 3 walkthrough:
+   - Wolf delivers rows 1-2 of the operator-experience contract:
+     "always a useful answer" + "never an unexplained 'I don't
+     know'" (every uncertainty includes context + actionable next
+     steps + tool offers per Pillar 2's required template)
+   - Wolf explicitly rejects rows 3-4: "always confident" + "never
+     says uncertain" — these would push Wolf to hallucinate during
+     incident response, which is a SOC safety regression, not a UX
+     improvement
+   - The three pillars (try harder before yielding; never abdicate
+     without a next step; transparency over confidence theater)
+     stand as the design contract
+   - The 4-verdict taxonomy (Verified / Uncertain / Not Verified /
+     Non-factual) continues to be Wolf's calibrated-uncertainty
+     mechanism + the per-answer overall verdict extension lands
+     with Phase 7.5 work
+   - This was the gating decision for the whole ADR; with it
+     resolved, ADR 0017 can move to ACCEPTED after Round 4 closes
+     the remaining 2 open decisions (continuous learning).
 
 ---
 
