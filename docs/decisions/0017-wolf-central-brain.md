@@ -317,29 +317,66 @@ Four kinds of memory, each with distinct storage + lifecycle:
 - **Storage**: NEW table `operator_memory(id, organization_id, user_id,
   fact_type, fact_text, embedding, confidence, source_conversation_id,
   created_at, expires_at, deleted_at)`.
-  - `fact_type`: enum (preference / environment_fact / runbook /
-    relationship / observation)
+  - `fact_type`: enum (6 categories, finalized Round 2 review 2026-06-11):
+    - `preference` — how the operator likes things presented / what
+      they care about
+    - `environment_fact` — about their Wazuh deployment, network,
+      hosts, services
+    - `runbook` — specific procedures the operator follows
+    - `social_context` — operator's role, peers, org context
+      (renamed from `relationship` in Round 2 for specificity)
+    - `observation` — general observations / catch-all
+    - `incident_lesson` — lessons learned from past investigations
+      ("tried X for this kind of alert; worked / didn't work")
   - `confidence`: float [0-1] — how sure the model is this fact is right
-  - `expires_at`: optional — facts can age out (e.g., "operator on call this
-    week" expires after 7 days)
+    - Decay function: **exponential half-life** (default half-life
+      30 days; configurable per-fact-type later if needed)
+    - Auto-prune threshold: confidence < 0.1 → fact is soft-deleted
+      (set `deleted_at`, retained for audit but excluded from retrieval)
+  - `expires_at`: optional — facts can age out by TTL independent of
+    confidence decay (e.g., "operator on call this week" expires
+    after 7 days)
 - **Lifecycle**: written by the model when it detects a recall-worthy fact.
   Pruned via:
     1. Explicit operator deletion (right-to-be-forgotten via dashboard)
     2. Auto-expiry via `expires_at`
-    3. Confidence decay if not re-confirmed in subsequent conversations
-- **Retrieval**: at conversation start, the agent loop queries
-  `operator_memory` for facts relevant to the operator's first message
-  (vector similarity). Top-K facts injected as context.
+    3. Confidence decay below 0.1 threshold (per-fact half-life)
+    4. Per-fact-type TTL when `expires_at` not set (defaults per type
+      — see "Retention policy" in Round-2 resolved decisions below)
+- **Retrieval**: **load-once at conversation start** (v1 design,
+  confirmed Round 2). The agent loop queries `operator_memory` for
+  facts relevant to the operator's first message (vector similarity).
+  Top-K facts injected as context. Mid-conversation re-query when
+  topic shifts is OUT OF SCOPE for v1; the session memory layer
+  evolves to capture topic-shift context within a conversation.
 - **Status**: NEW — needs implementation. Core of the "remembers" capability.
 
 #### Semantic memory (environment knowledge graph)
 - **What**: structured facts about the operator's Wazuh deployment.
   "Agent 042 monitors host db-prod-01." "Rule 5710 maps to MITRE T1078."
   "Cluster has 3 indexer nodes." Forms a graph of entities + relationships.
-- **Storage**: NEW tables `environment_entities(id, organization_id, type, name,
-  attributes_jsonb)` + `environment_edges(from_id, to_id, relation, weight)`.
-  Entity types: host / agent / user / rule / mitre_technique / network /
-  service / cve.
+- **Storage**: NEW tables in Wolf's existing Postgres
+  (`wolf-database`) — `environment_entities(id, organization_id, type,
+  name, attributes_jsonb)` + `environment_edges(from_id, to_id, relation,
+  weight)`. Entity types: host / agent / user / rule /
+  mitre_technique / network / service / cve.
+- **Storage choice rationale (Round 2 review, 2026-06-11)**: Postgres
+  tables chosen over a dedicated graph DB (Neo4j Community / Memgraph)
+  for v1. Reasons:
+  - Wolf's expected scale (~1k-10k entities + ~10k-100k edges per org)
+    fits Postgres comfortably; queries are 1-3 hops, handled by JOINs
+    or recursive CTEs in milliseconds
+  - Zero new infrastructure (uses existing `wolf-database`); operator
+    deployment stays simple
+  - Airgap-friendly; no new service to deploy + backup + upgrade
+  - Migration path preserved: if Wolf v3+ ever exceeds Postgres scale,
+    the schema is trivially exportable (`(id, type, name, attributes)`
+    + `(from, to, relation, weight)`) to Neo4j or equivalent
+  - Memgraph evaluated + rejected due to BSL non-production
+    restriction in Community Edition
+  - Real graph DB shines for 10+ hop traversals, billions of edges,
+    real-time graph algorithms, Cypher pattern matching — none of
+    which apply to Wolf's v1 workload
 - **Lifecycle**: written by the continuous-learning layer (subsystem 4) +
   manually via the operator's dashboard. Pruned by operator action only.
 - **Retrieval**: graph-walk queries during agent reasoning ("what hosts does
@@ -551,18 +588,64 @@ The existing `wolf-knowledge-relay.md` memory entry will be renamed to
 Things this ADR DOES NOT decide. Each needs operator input before
 implementation work starts on the affected subsystem:
 
-### Memory layer
+### Memory layer (all 4 RESOLVED — Round 2 review, 2026-06-11)
 
-1. **Retention policy** — how long does long-term memory persist?
-   - Forever (with manual deletion)
-   - 12 months default + per-fact-type overrides
-   - Tied to the operator's account lifecycle
-2. **Opt-in vs always-on** — does memory record by default, or does the
-   operator have to enable it?
-3. **Cross-tenant boundaries** — confirmed: no cross-tenant memory under any
-   circumstance (standard Wolf isolation). Just want operator confirmation.
-4. **Inspection UI scope** — operator-facing dashboard for memory:
-   read-only? Editable? Delete-only?
+1. **Retention policy — RESOLVED: 12 months default + per-fact-type
+   overrides.** Per-type defaults:
+   - `preference`: forever (until operator deletes) — high-value
+     stable facts
+   - `environment_fact`: 12 months — environment changes; stale facts
+     should age out
+   - `runbook`: forever (until operator deletes) — high-value stable
+     procedures
+   - `social_context`: 12 months — peer/role context can change
+   - `observation`: 90 days — short-shelf-life catch-all
+   - `incident_lesson`: forever (until operator deletes) — high-value,
+     rare facts; never auto-expire
+   - Override per fact via `expires_at` field; operator can also
+     delete explicitly via the dashboard. Aligns with GDPR data-
+     minimization principle while preserving high-value memory.
+
+2. **Opt-in vs always-on — RESOLVED: Always-on with operator opt-out.**
+   Memory records by default; user disables via settings (UI: User
+   → Settings → Privacy → "Wolf is learning about your environment"
+   toggle). Memory is what makes Wolf useful over time; opt-in
+   default means most users never get the benefit. Opt-out path
+   preserves privacy-conscious flexibility + clear disclosure
+   ("Wolf is learning — see settings to manage") at first login.
+
+3. **Cross-tenant (now: cross-organization) boundaries — RESOLVED:
+   Confirmed.** No cross-organization memory under any circumstance.
+   Memory rows hard-partitioned per `(organization_id, user_id)`.
+   Already locked by ADR 0018 design (org-consent gate) + ADR 0017
+   storage partitioning. ADR 0019 cross-org "My memory" UI is a
+   self-view aggregation (the user's own data across their own
+   memberships) — not a cross-org leak.
+
+4. **Inspection UI scope — RESOLVED: Read + delete.** "My memory"
+   page (per ADR 0019) shows all entries + each entry has a
+   per-row delete button. NO edit (would let operator gaslight Wolf
+   into believing false facts about their environment, corrupting
+   retrieval — simpler to delete the bad fact + let Wolf re-learn
+   from new conversations). Right-to-be-forgotten + transparency
+   delivered without the edit-trap.
+
+### Other Round-2 design choices (RESOLVED, embedded in Memory layer description above)
+
+- **`fact_type` enum — 6 categories** (preference / environment_fact /
+  runbook / social_context / observation / incident_lesson). Renamed
+  `relationship` → `social_context` for specificity; added
+  `incident_lesson` for high-value investigation-derived facts.
+- **Confidence decay — Exponential half-life** (default 30 days);
+  auto-prune at confidence < 0.1 (soft delete, retained for audit).
+- **Retrieval timing — Load-once at conversation start.** Vector
+  similarity against the operator's first message; top-K facts
+  injected as context. Mid-conversation re-query when topic shifts
+  is OUT OF SCOPE for v1 (session memory captures within-conversation
+  evolution).
+- **Semantic memory storage — Postgres tables in `wolf-database`**
+  (no dedicated graph DB for v1). Migration path to Neo4j preserved
+  if Wolf v3+ exceeds scale.
 
 ### Thinking layer
 

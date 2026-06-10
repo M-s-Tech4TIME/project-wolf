@@ -1310,8 +1310,8 @@
     "semantic_hash": ""
   },
   "docs/decisions/0017-wolf-central-brain.md": {
-    "mtime": 1781084985.7138264,
-    "ast_hash": "7e992db1a2a76fa407da90b9698e4b08",
+    "mtime": 1781112506.6505544,
+    "ast_hash": "664bd48bd7fd1fba71c2a6dbe736e0d3",
     "semantic_hash": ""
   },
   "docs/decisions/0019-web-first-configurability.md": {

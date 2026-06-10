@@ -171,7 +171,7 @@
       "label": "2. What's currently built and working",
       "file_type": "document",
       "source_file": "docs/PROGRESS.md",
-      "source_location": "L555",
+      "source_location": "L561",
       "id": "docs_progress_2_what_s_currently_built_and_working",
       "community": 109,
       "norm_label": "2. what's currently built and working"
@@ -180,7 +180,7 @@
       "label": "Orchestrator (`services/orchestrator/`)",
       "file_type": "document",
       "source_file": "docs/PROGRESS.md",
-      "source_location": "L559",
+      "source_location": "L565",
       "id": "docs_progress_orchestrator_services_orchestrator",
       "community": 109,
       "norm_label": "orchestrator (`services/orchestrator/`)"
@@ -189,7 +189,7 @@
       "label": "Gateway (`services/gateway/`)",
       "file_type": "document",
       "source_file": "docs/PROGRESS.md",
-      "source_location": "L598",
+      "source_location": "L604",
       "id": "docs_progress_gateway_services_gateway",
       "community": 109,
       "norm_label": "gateway (`services/gateway/`)"
@@ -198,7 +198,7 @@
       "label": "Frontend (`frontend/`)",
       "file_type": "document",
       "source_file": "docs/PROGRESS.md",
-      "source_location": "L602",
+      "source_location": "L608",
       "id": "docs_progress_frontend_frontend",
       "community": 109,
       "norm_label": "frontend (`frontend/`)"
@@ -207,7 +207,7 @@
       "label": "Shared packages (`packages/`)",
       "file_type": "document",
       "source_file": "docs/PROGRESS.md",
-      "source_location": "L615",
+      "source_location": "L621",
       "id": "docs_progress_shared_packages_packages",
       "community": 109,
       "norm_label": "shared packages (`packages/`)"
@@ -216,7 +216,7 @@
       "label": "Tooling (`tools/`)",
       "file_type": "document",
       "source_file": "docs/PROGRESS.md",
-      "source_location": "L624",
+      "source_location": "L630",
       "id": "docs_progress_tooling_tools",
       "community": 109,
       "norm_label": "tooling (`tools/`)"
@@ -225,7 +225,7 @@
       "label": "Infrastructure",
       "file_type": "document",
       "source_file": "docs/PROGRESS.md",
-      "source_location": "L634",
+      "source_location": "L640",
       "id": "docs_progress_infrastructure",
       "community": 109,
       "norm_label": "infrastructure"
@@ -234,7 +234,7 @@
       "label": "3. Current configuration",
       "file_type": "document",
       "source_file": "docs/PROGRESS.md",
-      "source_location": "L647",
+      "source_location": "L653",
       "id": "docs_progress_3_current_configuration",
       "community": 109,
       "norm_label": "3. current configuration"
@@ -243,7 +243,7 @@
       "label": "4. What's next",
       "file_type": "document",
       "source_file": "docs/PROGRESS.md",
-      "source_location": "L704",
+      "source_location": "L710",
       "id": "docs_progress_4_what_s_next",
       "community": 109,
       "norm_label": "4. what's next"
@@ -252,7 +252,7 @@
       "label": "5. Active decisions and open questions",
       "file_type": "document",
       "source_file": "docs/PROGRESS.md",
-      "source_location": "L792",
+      "source_location": "L798",
       "id": "docs_progress_5_active_decisions_and_open_questions",
       "community": 109,
       "norm_label": "5. active decisions and open questions"
@@ -261,7 +261,7 @@
       "label": "6. Known issues and tech debt",
       "file_type": "document",
       "source_file": "docs/PROGRESS.md",
-      "source_location": "L809",
+      "source_location": "L815",
       "id": "docs_progress_6_known_issues_and_tech_debt",
       "community": 109,
       "norm_label": "6. known issues and tech debt"
@@ -270,7 +270,7 @@
       "label": "7. Test coverage status",
       "file_type": "document",
       "source_file": "docs/PROGRESS.md",
-      "source_location": "L863",
+      "source_location": "L869",
       "id": "docs_progress_7_test_coverage_status",
       "community": 109,
       "norm_label": "7. test coverage status"
@@ -279,7 +279,7 @@
       "label": "8. Documentation status",
       "file_type": "document",
       "source_file": "docs/PROGRESS.md",
-      "source_location": "L890",
+      "source_location": "L896",
       "id": "docs_progress_8_documentation_status",
       "community": 109,
       "norm_label": "8. documentation status"
@@ -288,163 +288,352 @@
       "label": "9. Hand-off note for next session",
       "file_type": "document",
       "source_file": "docs/PROGRESS.md",
-      "source_location": "L927",
+      "source_location": "L933",
       "id": "docs_progress_9_hand_off_note_for_next_session",
       "community": 109,
       "norm_label": "9. hand-off note for next session"
+    },
+    {
+      "label": "0020-superuser-owned-wazuh-mapping.md",
+      "file_type": "document",
+      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
+      "source_location": "L1",
+      "id": "decisions_0020_superuser_owned_wazuh_mapping",
+      "community": 91,
+      "norm_label": "0020-superuser-owned-wazuh-mapping.md"
+    },
+    {
+      "label": "ADR 0020 \u2014 Superuser-owned Wazuh component mapping (install + per-org)",
+      "file_type": "document",
+      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
+      "source_location": "L1",
+      "id": "decisions_0020_superuser_owned_wazuh_mapping_adr_0020_superuser_owned_wazuh_component_mapping_install_per_org",
+      "community": 91,
+      "norm_label": "adr 0020 \u2014 superuser-owned wazuh component mapping (install + per-org)"
+    },
+    {
+      "label": "Context",
+      "file_type": "document",
+      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
+      "source_location": "L24",
+      "id": "decisions_0020_superuser_owned_wazuh_mapping_context",
+      "community": 91,
+      "norm_label": "context"
+    },
+    {
+      "label": "Decision: Superuser owns ALL Wazuh component configuration",
+      "file_type": "document",
+      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
+      "source_location": "L48",
+      "id": "decisions_0020_superuser_owned_wazuh_mapping_decision_superuser_owns_all_wazuh_component_configuration",
+      "community": 91,
+      "norm_label": "decision: superuser owns all wazuh component configuration"
+    },
+    {
+      "label": "Why centralize at the Superuser",
+      "file_type": "document",
+      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
+      "source_location": "L63",
+      "id": "decisions_0020_superuser_owned_wazuh_mapping_why_centralize_at_the_superuser",
+      "community": 91,
+      "norm_label": "why centralize at the superuser"
+    },
+    {
+      "label": "Why NOT the Engineer role",
+      "file_type": "document",
+      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
+      "source_location": "L73",
+      "id": "decisions_0020_superuser_owned_wazuh_mapping_why_not_the_engineer_role",
+      "community": 91,
+      "norm_label": "why not the engineer role"
+    },
+    {
+      "label": "Install-level: Wazuh ecosystem topology",
+      "file_type": "document",
+      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
+      "source_location": "L89",
+      "id": "decisions_0020_superuser_owned_wazuh_mapping_install_level_wazuh_ecosystem_topology",
+      "community": 91,
+      "norm_label": "install-level: wazuh ecosystem topology"
+    },
+    {
+      "label": "Single-host deployment",
+      "file_type": "document",
+      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
+      "source_location": "L95",
+      "id": "decisions_0020_superuser_owned_wazuh_mapping_single_host_deployment",
+      "community": 91,
+      "norm_label": "single-host deployment"
+    },
+    {
+      "label": "Distributed deployment",
+      "file_type": "document",
+      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
+      "source_location": "L115",
+      "id": "decisions_0020_superuser_owned_wazuh_mapping_distributed_deployment",
+      "community": 91,
+      "norm_label": "distributed deployment"
+    },
+    {
+      "label": "Topology re-configuration",
+      "file_type": "document",
+      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
+      "source_location": "L145",
+      "id": "decisions_0020_superuser_owned_wazuh_mapping_topology_re_configuration",
+      "community": 91,
+      "norm_label": "topology re-configuration"
+    },
+    {
+      "label": "Organization-level: per-org Wazuh credentials",
+      "file_type": "document",
+      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
+      "source_location": "L158",
+      "id": "decisions_0020_superuser_owned_wazuh_mapping_organization_level_per_org_wazuh_credentials",
+      "community": 91,
+      "norm_label": "organization-level: per-org wazuh credentials"
+    },
+    {
+      "label": "Per-org credential fields",
+      "file_type": "document",
+      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
+      "source_location": "L164",
+      "id": "decisions_0020_superuser_owned_wazuh_mapping_per_org_credential_fields",
+      "community": 91,
+      "norm_label": "per-org credential fields"
+    },
+    {
+      "label": "Runtime usage",
+      "file_type": "document",
+      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
+      "source_location": "L173",
+      "id": "decisions_0020_superuser_owned_wazuh_mapping_runtime_usage",
+      "community": 91,
+      "norm_label": "runtime usage"
+    },
+    {
+      "label": "Credential rotation",
+      "file_type": "document",
+      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
+      "source_location": "L190",
+      "id": "decisions_0020_superuser_owned_wazuh_mapping_credential_rotation",
+      "community": 91,
+      "norm_label": "credential rotation"
+    },
+    {
+      "label": "GUI surfaces (per ADR 0019)",
+      "file_type": "document",
+      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
+      "source_location": "L206",
+      "id": "decisions_0020_superuser_owned_wazuh_mapping_gui_surfaces_per_adr_0019",
+      "community": 91,
+      "norm_label": "gui surfaces (per adr 0019)"
+    },
+    {
+      "label": "Install-level: \"Wazuh Ecosystem\" page",
+      "file_type": "document",
+      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
+      "source_location": "L210",
+      "id": "decisions_0020_superuser_owned_wazuh_mapping_install_level_wazuh_ecosystem_page",
+      "community": 91,
+      "norm_label": "install-level: \"wazuh ecosystem\" page"
+    },
+    {
+      "label": "Organization-level: per-org Wazuh tab",
+      "file_type": "document",
+      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
+      "source_location": "L218",
+      "id": "decisions_0020_superuser_owned_wazuh_mapping_organization_level_per_org_wazuh_tab",
+      "community": 91,
+      "norm_label": "organization-level: per-org wazuh tab"
+    },
+    {
+      "label": "Implementation sequencing",
+      "file_type": "document",
+      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
+      "source_location": "L231",
+      "id": "decisions_0020_superuser_owned_wazuh_mapping_implementation_sequencing",
+      "community": 91,
+      "norm_label": "implementation sequencing"
+    },
+    {
+      "label": "Resolved architectural decisions (Round 2 review with operator, 2026-06-10)",
+      "file_type": "document",
+      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
+      "source_location": "L274",
+      "id": "decisions_0020_superuser_owned_wazuh_mapping_resolved_architectural_decisions_round_2_review_with_operator_2026_06_10",
+      "community": 91,
+      "norm_label": "resolved architectural decisions (round 2 review with operator, 2026-06-10)"
+    },
+    {
+      "label": "Other confirmations (from the Round-2 ADR scope check)",
+      "file_type": "document",
+      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
+      "source_location": "L338",
+      "id": "decisions_0020_superuser_owned_wazuh_mapping_other_confirmations_from_the_round_2_adr_scope_check",
+      "community": 91,
+      "norm_label": "other confirmations (from the round-2 adr scope check)"
+    },
+    {
+      "label": "Status, sign-off, next steps",
+      "file_type": "document",
+      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
+      "source_location": "L356",
+      "id": "decisions_0020_superuser_owned_wazuh_mapping_status_sign_off_next_steps",
+      "community": 91,
+      "norm_label": "status, sign-off, next steps"
     },
     {
       "label": "0019-web-first-configurability.md",
       "file_type": "document",
       "source_file": "docs/decisions/0019-web-first-configurability.md",
       "source_location": "L1",
-      "id": "decisions_0019_web_first_configurability",
       "community": 110,
-      "norm_label": "0019-web-first-configurability.md"
+      "norm_label": "0019-web-first-configurability.md",
+      "id": "decisions_0019_web_first_configurability"
     },
     {
       "label": "ADR 0019 \u2014 Web-first configurability mandate (GUI \u2194 CLI sync)",
       "file_type": "document",
       "source_file": "docs/decisions/0019-web-first-configurability.md",
       "source_location": "L1",
-      "id": "decisions_0019_web_first_configurability_adr_0019_web_first_configurability_mandate_gui_cli_sync",
       "community": 110,
-      "norm_label": "adr 0019 \u2014 web-first configurability mandate (gui \u2194 cli sync)"
+      "norm_label": "adr 0019 \u2014 web-first configurability mandate (gui \u2194 cli sync)",
+      "id": "decisions_0019_web_first_configurability_adr_0019_web_first_configurability_mandate_gui_cli_sync"
     },
     {
       "label": "Context",
       "file_type": "document",
       "source_file": "docs/decisions/0019-web-first-configurability.md",
       "source_location": "L23",
-      "id": "decisions_0019_web_first_configurability_context",
       "community": 110,
-      "norm_label": "context"
+      "norm_label": "context",
+      "id": "decisions_0019_web_first_configurability_context"
     },
     {
       "label": "Decision",
       "file_type": "document",
       "source_file": "docs/decisions/0019-web-first-configurability.md",
       "source_location": "L44",
-      "id": "decisions_0019_web_first_configurability_decision",
       "community": 110,
-      "norm_label": "decision"
+      "norm_label": "decision",
+      "id": "decisions_0019_web_first_configurability_decision"
     },
     {
       "label": "Rule 1 \u2014 GUI completeness",
       "file_type": "document",
       "source_file": "docs/decisions/0019-web-first-configurability.md",
       "source_location": "L48",
-      "id": "decisions_0019_web_first_configurability_rule_1_gui_completeness",
       "community": 110,
-      "norm_label": "rule 1 \u2014 gui completeness"
+      "norm_label": "rule 1 \u2014 gui completeness",
+      "id": "decisions_0019_web_first_configurability_rule_1_gui_completeness"
     },
     {
       "label": "Rule 2 \u2014 Database as source of truth",
       "file_type": "document",
       "source_file": "docs/decisions/0019-web-first-configurability.md",
       "source_location": "L73",
-      "id": "decisions_0019_web_first_configurability_rule_2_database_as_source_of_truth",
       "community": 110,
-      "norm_label": "rule 2 \u2014 database as source of truth"
+      "norm_label": "rule 2 \u2014 database as source of truth",
+      "id": "decisions_0019_web_first_configurability_rule_2_database_as_source_of_truth"
     },
     {
       "label": "Anti-patterns this ADR rules OUT",
       "file_type": "document",
       "source_file": "docs/decisions/0019-web-first-configurability.md",
       "source_location": "L117",
-      "id": "decisions_0019_web_first_configurability_anti_patterns_this_adr_rules_out",
       "community": 110,
-      "norm_label": "anti-patterns this adr rules out"
+      "norm_label": "anti-patterns this adr rules out",
+      "id": "decisions_0019_web_first_configurability_anti_patterns_this_adr_rules_out"
     },
     {
       "label": "Anti-patterns this ADR rules IN (enables)",
       "file_type": "document",
       "source_file": "docs/decisions/0019-web-first-configurability.md",
       "source_location": "L134",
-      "id": "decisions_0019_web_first_configurability_anti_patterns_this_adr_rules_in_enables",
       "community": 110,
-      "norm_label": "anti-patterns this adr rules in (enables)"
+      "norm_label": "anti-patterns this adr rules in (enables)",
+      "id": "decisions_0019_web_first_configurability_anti_patterns_this_adr_rules_in_enables"
     },
     {
       "label": "How file-based configuration works under this ADR",
       "file_type": "document",
       "source_file": "docs/decisions/0019-web-first-configurability.md",
       "source_location": "L151",
-      "id": "decisions_0019_web_first_configurability_how_file_based_configuration_works_under_this_adr",
       "community": 110,
-      "norm_label": "how file-based configuration works under this adr"
+      "norm_label": "how file-based configuration works under this adr",
+      "id": "decisions_0019_web_first_configurability_how_file_based_configuration_works_under_this_adr"
     },
     {
       "label": "Out of scope for this ADR",
       "file_type": "document",
       "source_file": "docs/decisions/0019-web-first-configurability.md",
       "source_location": "L206",
-      "id": "decisions_0019_web_first_configurability_out_of_scope_for_this_adr",
       "community": 110,
-      "norm_label": "out of scope for this adr"
+      "norm_label": "out of scope for this adr",
+      "id": "decisions_0019_web_first_configurability_out_of_scope_for_this_adr"
     },
     {
       "label": "Implementation discipline (going forward)",
       "file_type": "document",
       "source_file": "docs/decisions/0019-web-first-configurability.md",
       "source_location": "L221",
-      "id": "decisions_0019_web_first_configurability_implementation_discipline_going_forward",
       "community": 110,
-      "norm_label": "implementation discipline (going forward)"
+      "norm_label": "implementation discipline (going forward)",
+      "id": "decisions_0019_web_first_configurability_implementation_discipline_going_forward"
     },
     {
       "label": "Existing CLI surfaces \u2014 refactor scope",
       "file_type": "document",
       "source_file": "docs/decisions/0019-web-first-configurability.md",
       "source_location": "L246",
-      "id": "decisions_0019_web_first_configurability_existing_cli_surfaces_refactor_scope",
       "community": 110,
-      "norm_label": "existing cli surfaces \u2014 refactor scope"
+      "norm_label": "existing cli surfaces \u2014 refactor scope",
+      "id": "decisions_0019_web_first_configurability_existing_cli_surfaces_refactor_scope"
     },
     {
       "label": "Implementation sequencing",
       "file_type": "document",
       "source_file": "docs/decisions/0019-web-first-configurability.md",
       "source_location": "L265",
-      "id": "decisions_0019_web_first_configurability_implementation_sequencing",
       "community": 110,
-      "norm_label": "implementation sequencing"
+      "norm_label": "implementation sequencing",
+      "id": "decisions_0019_web_first_configurability_implementation_sequencing"
     },
     {
       "label": "Resolved architectural decisions (Round 1 review with operator, 2026-06-10)",
       "file_type": "document",
       "source_file": "docs/decisions/0019-web-first-configurability.md",
       "source_location": "L285",
-      "id": "decisions_0019_web_first_configurability_resolved_architectural_decisions_round_1_review_with_operator_2026_06_10",
       "community": 110,
-      "norm_label": "resolved architectural decisions (round 1 review with operator, 2026-06-10)"
+      "norm_label": "resolved architectural decisions (round 1 review with operator, 2026-06-10)",
+      "id": "decisions_0019_web_first_configurability_resolved_architectural_decisions_round_1_review_with_operator_2026_06_10"
     },
     {
       "label": "My memory: cross-org, self-only (catalog clarification)",
       "file_type": "document",
       "source_file": "docs/decisions/0019-web-first-configurability.md",
       "source_location": "L322",
-      "id": "decisions_0019_web_first_configurability_my_memory_cross_org_self_only_catalog_clarification",
       "community": 110,
-      "norm_label": "my memory: cross-org, self-only (catalog clarification)"
+      "norm_label": "my memory: cross-org, self-only (catalog clarification)",
+      "id": "decisions_0019_web_first_configurability_my_memory_cross_org_self_only_catalog_clarification"
     },
     {
       "label": "Acknowledged refactor scope",
       "file_type": "document",
       "source_file": "docs/decisions/0019-web-first-configurability.md",
       "source_location": "L344",
-      "id": "decisions_0019_web_first_configurability_acknowledged_refactor_scope",
       "community": 110,
-      "norm_label": "acknowledged refactor scope"
+      "norm_label": "acknowledged refactor scope",
+      "id": "decisions_0019_web_first_configurability_acknowledged_refactor_scope"
     },
     {
       "label": "Status, sign-off, next steps",
       "file_type": "document",
       "source_file": "docs/decisions/0019-web-first-configurability.md",
       "source_location": "L356",
-      "id": "decisions_0019_web_first_configurability_status_sign_off_next_steps",
       "community": 110,
-      "norm_label": "status, sign-off, next steps"
+      "norm_label": "status, sign-off, next steps",
+      "id": "decisions_0019_web_first_configurability_status_sign_off_next_steps"
     },
     {
       "label": "0018-bootstrap-superuser-rbac-login.md",
@@ -1084,186 +1273,6 @@
       "community": 80,
       "norm_label": "status, sign-off, next steps",
       "id": "decisions_0017_wolf_central_brain_status_sign_off_next_steps"
-    },
-    {
-      "label": "0020-superuser-owned-wazuh-mapping.md",
-      "file_type": "document",
-      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
-      "source_location": "L1",
-      "community": 91,
-      "norm_label": "0020-superuser-owned-wazuh-mapping.md",
-      "id": "decisions_0020_superuser_owned_wazuh_mapping"
-    },
-    {
-      "label": "ADR 0020 \u2014 Superuser-owned Wazuh component mapping (install + per-org)",
-      "file_type": "document",
-      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
-      "source_location": "L1",
-      "community": 91,
-      "norm_label": "adr 0020 \u2014 superuser-owned wazuh component mapping (install + per-org)",
-      "id": "decisions_0020_superuser_owned_wazuh_mapping_adr_0020_superuser_owned_wazuh_component_mapping_install_per_org"
-    },
-    {
-      "label": "Context",
-      "file_type": "document",
-      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
-      "source_location": "L17",
-      "community": 91,
-      "norm_label": "context",
-      "id": "decisions_0020_superuser_owned_wazuh_mapping_context"
-    },
-    {
-      "label": "Decision: Superuser owns ALL Wazuh component configuration",
-      "file_type": "document",
-      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
-      "source_location": "L41",
-      "community": 91,
-      "norm_label": "decision: superuser owns all wazuh component configuration",
-      "id": "decisions_0020_superuser_owned_wazuh_mapping_decision_superuser_owns_all_wazuh_component_configuration"
-    },
-    {
-      "label": "Why centralize at the Superuser",
-      "file_type": "document",
-      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
-      "source_location": "L56",
-      "community": 91,
-      "norm_label": "why centralize at the superuser",
-      "id": "decisions_0020_superuser_owned_wazuh_mapping_why_centralize_at_the_superuser"
-    },
-    {
-      "label": "Why NOT the Engineer role",
-      "file_type": "document",
-      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
-      "source_location": "L66",
-      "community": 91,
-      "norm_label": "why not the engineer role",
-      "id": "decisions_0020_superuser_owned_wazuh_mapping_why_not_the_engineer_role"
-    },
-    {
-      "label": "Install-level: Wazuh ecosystem topology",
-      "file_type": "document",
-      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
-      "source_location": "L82",
-      "community": 91,
-      "norm_label": "install-level: wazuh ecosystem topology",
-      "id": "decisions_0020_superuser_owned_wazuh_mapping_install_level_wazuh_ecosystem_topology"
-    },
-    {
-      "label": "Single-host deployment",
-      "file_type": "document",
-      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
-      "source_location": "L88",
-      "community": 91,
-      "norm_label": "single-host deployment",
-      "id": "decisions_0020_superuser_owned_wazuh_mapping_single_host_deployment"
-    },
-    {
-      "label": "Distributed deployment",
-      "file_type": "document",
-      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
-      "source_location": "L108",
-      "community": 91,
-      "norm_label": "distributed deployment",
-      "id": "decisions_0020_superuser_owned_wazuh_mapping_distributed_deployment"
-    },
-    {
-      "label": "Topology re-configuration",
-      "file_type": "document",
-      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
-      "source_location": "L138",
-      "community": 91,
-      "norm_label": "topology re-configuration",
-      "id": "decisions_0020_superuser_owned_wazuh_mapping_topology_re_configuration"
-    },
-    {
-      "label": "Organization-level: per-org Wazuh credentials",
-      "file_type": "document",
-      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
-      "source_location": "L151",
-      "community": 91,
-      "norm_label": "organization-level: per-org wazuh credentials",
-      "id": "decisions_0020_superuser_owned_wazuh_mapping_organization_level_per_org_wazuh_credentials"
-    },
-    {
-      "label": "Per-org credential fields",
-      "file_type": "document",
-      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
-      "source_location": "L157",
-      "community": 91,
-      "norm_label": "per-org credential fields",
-      "id": "decisions_0020_superuser_owned_wazuh_mapping_per_org_credential_fields"
-    },
-    {
-      "label": "Runtime usage",
-      "file_type": "document",
-      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
-      "source_location": "L166",
-      "community": 91,
-      "norm_label": "runtime usage",
-      "id": "decisions_0020_superuser_owned_wazuh_mapping_runtime_usage"
-    },
-    {
-      "label": "Credential rotation",
-      "file_type": "document",
-      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
-      "source_location": "L183",
-      "community": 91,
-      "norm_label": "credential rotation",
-      "id": "decisions_0020_superuser_owned_wazuh_mapping_credential_rotation"
-    },
-    {
-      "label": "GUI surfaces (per ADR 0019)",
-      "file_type": "document",
-      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
-      "source_location": "L199",
-      "community": 91,
-      "norm_label": "gui surfaces (per adr 0019)",
-      "id": "decisions_0020_superuser_owned_wazuh_mapping_gui_surfaces_per_adr_0019"
-    },
-    {
-      "label": "Install-level: \"Wazuh Ecosystem\" page",
-      "file_type": "document",
-      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
-      "source_location": "L203",
-      "community": 91,
-      "norm_label": "install-level: \"wazuh ecosystem\" page",
-      "id": "decisions_0020_superuser_owned_wazuh_mapping_install_level_wazuh_ecosystem_page"
-    },
-    {
-      "label": "Organization-level: per-org Wazuh tab",
-      "file_type": "document",
-      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
-      "source_location": "L211",
-      "community": 91,
-      "norm_label": "organization-level: per-org wazuh tab",
-      "id": "decisions_0020_superuser_owned_wazuh_mapping_organization_level_per_org_wazuh_tab"
-    },
-    {
-      "label": "Implementation sequencing",
-      "file_type": "document",
-      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
-      "source_location": "L224",
-      "community": 91,
-      "norm_label": "implementation sequencing",
-      "id": "decisions_0020_superuser_owned_wazuh_mapping_implementation_sequencing"
-    },
-    {
-      "label": "Open architectural decisions",
-      "file_type": "document",
-      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
-      "source_location": "L267",
-      "community": 91,
-      "norm_label": "open architectural decisions",
-      "id": "decisions_0020_superuser_owned_wazuh_mapping_open_architectural_decisions"
-    },
-    {
-      "label": "Status, sign-off, next steps",
-      "file_type": "document",
-      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
-      "source_location": "L306",
-      "community": 91,
-      "norm_label": "status, sign-off, next steps",
-      "id": "decisions_0020_superuser_owned_wazuh_mapping_status_sign_off_next_steps"
     },
     {
       "label": "wolf-bootstrap-superuser-flow.md",
@@ -3986,7 +3995,7 @@
       "file_type": "code",
       "source_file": "packages/common/wolf_common/errors.py",
       "source_location": "L1",
-      "community": 22,
+      "community": 88,
       "norm_label": "errors.py",
       "id": "wolf_common_errors"
     },
@@ -4013,7 +4022,7 @@
       "file_type": "code",
       "source_file": "packages/common/wolf_common/errors.py",
       "source_location": "L21",
-      "community": 22,
+      "community": 88,
       "norm_label": "tenantcontexterror",
       "id": "wolf_common_errors_tenantcontexterror"
     },
@@ -4031,7 +4040,7 @@
       "file_type": "code",
       "source_file": "packages/common/wolf_common/errors.py",
       "source_location": "L39",
-      "community": 22,
+      "community": 88,
       "norm_label": "tenantnotfounderror",
       "id": "wolf_common_errors_tenantnotfounderror"
     },
@@ -4049,7 +4058,7 @@
       "file_type": "code",
       "source_file": "packages/common/wolf_common/errors.py",
       "source_location": "L56",
-      "community": 22,
+      "community": 88,
       "norm_label": "authorizationerror",
       "id": "wolf_common_errors_authorizationerror"
     },
@@ -4085,7 +4094,7 @@
       "file_type": "code",
       "source_file": "packages/common/wolf_common/errors.py",
       "source_location": "L87",
-      "community": 22,
+      "community": 88,
       "norm_label": "toolschemaerror",
       "id": "wolf_common_errors_toolschemaerror"
     },
@@ -4094,7 +4103,7 @@
       "file_type": "code",
       "source_file": "packages/common/wolf_common/errors.py",
       "source_location": "L97",
-      "community": 77,
+      "community": 89,
       "norm_label": "secretnotfounderror",
       "id": "wolf_common_errors_secretnotfounderror"
     },
@@ -4103,7 +4112,7 @@
       "file_type": "code",
       "source_file": "packages/common/wolf_common/errors.py",
       "source_location": "L104",
-      "community": 22,
+      "community": 88,
       "norm_label": "secretbackenderror",
       "id": "wolf_common_errors_secretbackenderror"
     },
@@ -4112,7 +4121,7 @@
       "file_type": "rationale",
       "source_file": "packages/common/wolf_common/errors.py",
       "source_location": "L1",
-      "community": 22,
+      "community": 88,
       "norm_label": "error taxonomy for wolf services.  all wolf errors inherit from wolferror so ser",
       "id": "wolf_common_errors_rationale_1"
     },
@@ -4130,7 +4139,7 @@
       "file_type": "rationale",
       "source_file": "packages/common/wolf_common/errors.py",
       "source_location": "L22",
-      "community": 22,
+      "community": 88,
       "norm_label": "raised when a tenant context is missing or cannot be established.",
       "id": "wolf_common_errors_rationale_22"
     },
@@ -4148,7 +4157,7 @@
       "file_type": "rationale",
       "source_file": "packages/common/wolf_common/errors.py",
       "source_location": "L40",
-      "community": 22,
+      "community": 88,
       "norm_label": "raised when the requested tenant does not exist or is inactive.",
       "id": "wolf_common_errors_rationale_40"
     },
@@ -4157,7 +4166,7 @@
       "file_type": "rationale",
       "source_file": "packages/common/wolf_common/errors.py",
       "source_location": "L57",
-      "community": 22,
+      "community": 88,
       "norm_label": "authenticated user lacks permission for this action.",
       "id": "wolf_common_errors_rationale_57"
     },
@@ -4193,7 +4202,7 @@
       "file_type": "rationale",
       "source_file": "packages/common/wolf_common/errors.py",
       "source_location": "L88",
-      "community": 22,
+      "community": 88,
       "norm_label": "tool input or output does not match the strict schema.",
       "id": "wolf_common_errors_rationale_88"
     },
@@ -4202,7 +4211,7 @@
       "file_type": "rationale",
       "source_file": "packages/common/wolf_common/errors.py",
       "source_location": "L98",
-      "community": 77,
+      "community": 89,
       "norm_label": "the requested secret key does not exist in the backend.",
       "id": "wolf_common_errors_rationale_98"
     },
@@ -4211,7 +4220,7 @@
       "file_type": "rationale",
       "source_file": "packages/common/wolf_common/errors.py",
       "source_location": "L105",
-      "community": 22,
+      "community": 88,
       "norm_label": "the secrets backend is unavailable or returned an unexpected error.",
       "id": "wolf_common_errors_rationale_105"
     },
@@ -6956,7 +6965,7 @@
       "file_type": "code",
       "source_file": "packages/schema/wolf_schema/tools.py",
       "source_location": "L1",
-      "community": 99,
+      "community": 4,
       "norm_label": "tools.py",
       "id": "wolf_schema_tools"
     },
@@ -6965,7 +6974,7 @@
       "file_type": "code",
       "source_file": "packages/schema/wolf_schema/tools.py",
       "source_location": "L9",
-      "community": 6,
+      "community": 0,
       "norm_label": "tooltier",
       "id": "wolf_schema_tools_tooltier"
     },
@@ -7001,7 +7010,7 @@
       "file_type": "rationale",
       "source_file": "packages/schema/wolf_schema/tools.py",
       "source_location": "L1",
-      "community": 99,
+      "community": 4,
       "norm_label": "canonical tool types: tier, schema, call, result.",
       "id": "wolf_schema_tools_rationale_1"
     },
@@ -7118,7 +7127,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/app/chat/layout.tsx",
       "source_location": "L1",
-      "community": 2,
+      "community": 38,
       "norm_label": "layout.tsx",
       "id": "chat_layout"
     },
@@ -7127,7 +7136,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/app/chat/layout.tsx",
       "source_location": "L8",
-      "community": 2,
+      "community": 38,
       "norm_label": "chatlayout()",
       "id": "chat_layout_chatlayout"
     },
@@ -7199,7 +7208,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/app/login/page.tsx",
       "source_location": "L1",
-      "community": 2,
+      "community": 25,
       "norm_label": "page.tsx",
       "id": "login_page"
     },
@@ -7208,7 +7217,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/app/login/page.tsx",
       "source_location": "L5",
-      "community": 2,
+      "community": 25,
       "norm_label": "loginpage()",
       "id": "login_page_loginpage"
     },
@@ -7217,7 +7226,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/app/page.tsx",
       "source_location": "L1",
-      "community": 2,
+      "community": 38,
       "norm_label": "page.tsx",
       "id": "app_page"
     },
@@ -7226,7 +7235,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/app/page.tsx",
       "source_location": "L8",
-      "community": 2,
+      "community": 38,
       "norm_label": "homepage()",
       "id": "app_page_homepage"
     },
@@ -7469,7 +7478,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/components/auth-provider.tsx",
       "source_location": "L69",
-      "community": 2,
+      "community": 38,
       "norm_label": "useauth()",
       "id": "components_auth_provider_useauth"
     },
@@ -7478,7 +7487,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/components/chat-composer.tsx",
       "source_location": "L1",
-      "community": 41,
+      "community": 13,
       "norm_label": "chat-composer.tsx",
       "id": "components_chat_composer"
     },
@@ -7487,7 +7496,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/components/chat-composer.tsx",
       "source_location": "L8",
-      "community": 41,
+      "community": 13,
       "norm_label": "props",
       "id": "components_chat_composer_props"
     },
@@ -7496,7 +7505,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/components/chat-composer.tsx",
       "source_location": "L45",
-      "community": 41,
+      "community": 13,
       "norm_label": "chatcomposer()",
       "id": "components_chat_composer_chatcomposer"
     },
@@ -7595,7 +7604,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/components/chat-sidebar.tsx",
       "source_location": "L80",
-      "community": 41,
+      "community": 14,
       "norm_label": "chatsidebar()",
       "id": "components_chat_sidebar_chatsidebar"
     },
@@ -7631,7 +7640,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/components/chats-history-overlay.tsx",
       "source_location": "L1",
-      "community": 14,
+      "community": 13,
       "norm_label": "chats-history-overlay.tsx",
       "id": "components_chats_history_overlay"
     },
@@ -7640,7 +7649,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/components/chats-history-overlay.tsx",
       "source_location": "L35",
-      "community": 14,
+      "community": 13,
       "norm_label": "props",
       "id": "components_chats_history_overlay_props"
     },
@@ -7649,7 +7658,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/components/chats-history-overlay.tsx",
       "source_location": "L80",
-      "community": 14,
+      "community": 13,
       "norm_label": "chatshistoryoverlay()",
       "id": "components_chats_history_overlay_chatshistoryoverlay"
     },
@@ -7658,7 +7667,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/components/chats-history-overlay.tsx",
       "source_location": "L361",
-      "community": 14,
+      "community": 13,
       "norm_label": "resultrowprops",
       "id": "components_chats_history_overlay_resultrowprops"
     },
@@ -7667,7 +7676,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/components/chats-history-overlay.tsx",
       "source_location": "L376",
-      "community": 14,
+      "community": 13,
       "norm_label": "resultrow()",
       "id": "components_chats_history_overlay_resultrow"
     },
@@ -7676,7 +7685,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/components/chats-history-overlay.tsx",
       "source_location": "L558",
-      "community": 14,
+      "community": 13,
       "norm_label": "emptystate()",
       "id": "components_chats_history_overlay_emptystate"
     },
@@ -7685,7 +7694,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/components/chats-history-overlay.tsx",
       "source_location": "L571",
-      "community": 14,
+      "community": 13,
       "norm_label": "highlightedsnippet()",
       "id": "components_chats_history_overlay_highlightedsnippet"
     },
@@ -7694,7 +7703,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/components/chats-history-overlay.tsx",
       "source_location": "L589",
-      "community": 14,
+      "community": 13,
       "norm_label": "searchresult",
       "id": "components_chats_history_overlay_searchresult"
     },
@@ -7703,7 +7712,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/components/chats-history-overlay.tsx",
       "source_location": "L607",
-      "community": 14,
+      "community": 13,
       "norm_label": "searchconversations()",
       "id": "components_chats_history_overlay_searchconversations"
     },
@@ -7712,7 +7721,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/components/chats-history-overlay.tsx",
       "source_location": "L669",
-      "community": 14,
+      "community": 13,
       "norm_label": "usermessagecount()",
       "id": "components_chats_history_overlay_usermessagecount"
     },
@@ -7721,7 +7730,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/components/chats-history-overlay.tsx",
       "source_location": "L677",
-      "community": 14,
+      "community": 13,
       "norm_label": "extractwindow()",
       "id": "components_chats_history_overlay_extractwindow"
     },
@@ -7730,7 +7739,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/components/citations-panel.tsx",
       "source_location": "L1",
-      "community": 25,
+      "community": 104,
       "norm_label": "citations-panel.tsx",
       "id": "components_citations_panel"
     },
@@ -7739,7 +7748,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/components/citations-panel.tsx",
       "source_location": "L10",
-      "community": 25,
+      "community": 104,
       "norm_label": "props",
       "id": "components_citations_panel_props"
     },
@@ -7748,7 +7757,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/components/citations-panel.tsx",
       "source_location": "L15",
-      "community": 25,
+      "community": 104,
       "norm_label": "citationspanel()",
       "id": "components_citations_panel_citationspanel"
     },
@@ -7757,7 +7766,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/components/confirm-dialog.tsx",
       "source_location": "L1",
-      "community": 41,
+      "community": 13,
       "norm_label": "confirm-dialog.tsx",
       "id": "components_confirm_dialog"
     },
@@ -7766,7 +7775,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/components/confirm-dialog.tsx",
       "source_location": "L8",
-      "community": 41,
+      "community": 13,
       "norm_label": "props",
       "id": "components_confirm_dialog_props"
     },
@@ -7775,7 +7784,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/components/confirm-dialog.tsx",
       "source_location": "L35",
-      "community": 41,
+      "community": 13,
       "norm_label": "confirmdialog()",
       "id": "components_confirm_dialog_confirmdialog"
     },
@@ -7793,7 +7802,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/components/login-form.tsx",
       "source_location": "L20",
-      "community": 2,
+      "community": 25,
       "norm_label": "loginform()",
       "id": "components_login_form_loginform"
     },
@@ -7910,7 +7919,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/components/message-thread.tsx",
       "source_location": "L383",
-      "community": 2,
+      "community": 38,
       "norm_label": "greetingscreen()",
       "id": "components_message_thread_greetingscreen"
     },
@@ -8090,7 +8099,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/components/ui/badge.tsx",
       "source_location": "L1",
-      "community": 25,
+      "community": 104,
       "norm_label": "badge.tsx",
       "id": "ui_badge"
     },
@@ -8099,7 +8108,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/components/ui/badge.tsx",
       "source_location": "L7",
-      "community": 25,
+      "community": 104,
       "norm_label": "badgevariants",
       "id": "ui_badge_badgevariants"
     },
@@ -8108,7 +8117,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/components/ui/badge.tsx",
       "source_location": "L30",
-      "community": 25,
+      "community": 104,
       "norm_label": "badge()",
       "id": "ui_badge_badge"
     },
@@ -8117,7 +8126,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/components/ui/button.tsx",
       "source_location": "L1",
-      "community": 14,
+      "community": 13,
       "norm_label": "button.tsx",
       "id": "ui_button"
     },
@@ -8126,7 +8135,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/components/ui/button.tsx",
       "source_location": "L7",
-      "community": 14,
+      "community": 13,
       "norm_label": "buttonvariants",
       "id": "ui_button_buttonvariants"
     },
@@ -8135,7 +8144,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/components/ui/button.tsx",
       "source_location": "L44",
-      "community": 14,
+      "community": 13,
       "norm_label": "button()",
       "id": "ui_button_button"
     },
@@ -8360,7 +8369,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/components/ui/input.tsx",
       "source_location": "L1",
-      "community": 25,
+      "community": 14,
       "norm_label": "input.tsx",
       "id": "ui_input"
     },
@@ -8369,7 +8378,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/components/ui/input.tsx",
       "source_location": "L5",
-      "community": 25,
+      "community": 14,
       "norm_label": "input()",
       "id": "ui_input_input"
     },
@@ -8396,7 +8405,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/components/ui/scroll-area.tsx",
       "source_location": "L1",
-      "community": 25,
+      "community": 14,
       "norm_label": "scroll-area.tsx",
       "id": "ui_scroll_area"
     },
@@ -8405,7 +8414,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/components/ui/scroll-area.tsx",
       "source_location": "L8",
-      "community": 25,
+      "community": 14,
       "norm_label": "scrollarea()",
       "id": "ui_scroll_area_scrollarea"
     },
@@ -8414,7 +8423,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/components/ui/scroll-area.tsx",
       "source_location": "L31",
-      "community": 25,
+      "community": 14,
       "norm_label": "scrollbar()",
       "id": "ui_scroll_area_scrollbar"
     },
@@ -8423,7 +8432,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/components/ui/separator.tsx",
       "source_location": "L1",
-      "community": 25,
+      "community": 104,
       "norm_label": "separator.tsx",
       "id": "ui_separator"
     },
@@ -8432,7 +8441,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/components/ui/separator.tsx",
       "source_location": "L8",
-      "community": 25,
+      "community": 104,
       "norm_label": "separator()",
       "id": "ui_separator_separator"
     },
@@ -8441,7 +8450,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/components/ui/skeleton.tsx",
       "source_location": "L1",
-      "community": 25,
+      "community": 14,
       "norm_label": "skeleton.tsx",
       "id": "ui_skeleton"
     },
@@ -8450,7 +8459,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/components/ui/skeleton.tsx",
       "source_location": "L3",
-      "community": 25,
+      "community": 14,
       "norm_label": "skeleton()",
       "id": "ui_skeleton_skeleton"
     },
@@ -8477,7 +8486,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/hooks/use-conversation-streams.ts",
       "source_location": "L1",
-      "community": 34,
+      "community": 41,
       "norm_label": "use-conversation-streams.ts",
       "id": "hooks_use_conversation_streams"
     },
@@ -8486,7 +8495,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/hooks/use-conversation-streams.ts",
       "source_location": "L16",
-      "community": 34,
+      "community": 41,
       "norm_label": "streamphase",
       "id": "hooks_use_conversation_streams_streamphase"
     },
@@ -8495,7 +8504,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/hooks/use-conversation-streams.ts",
       "source_location": "L18",
-      "community": 34,
+      "community": 41,
       "norm_label": "streamstatus",
       "id": "hooks_use_conversation_streams_streamstatus"
     },
@@ -8504,7 +8513,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/hooks/use-conversation-streams.ts",
       "source_location": "L34",
-      "community": 34,
+      "community": 37,
       "norm_label": "streamstate",
       "id": "hooks_use_conversation_streams_streamstate"
     },
@@ -8513,7 +8522,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/hooks/use-conversation-streams.ts",
       "source_location": "L65",
-      "community": 34,
+      "community": 41,
       "norm_label": "neutral_stream",
       "id": "hooks_use_conversation_streams_neutral_stream"
     },
@@ -8522,7 +8531,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/hooks/use-conversation-streams.ts",
       "source_location": "L165",
-      "community": 34,
+      "community": 41,
       "norm_label": "useconversationstreams",
       "id": "hooks_use_conversation_streams_useconversationstreams"
     },
@@ -8531,7 +8540,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/hooks/use-conversation-streams.ts",
       "source_location": "L119",
-      "community": 34,
+      "community": 41,
       "norm_label": "asstring()",
       "id": "hooks_use_conversation_streams_asstring"
     },
@@ -8540,7 +8549,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/hooks/use-conversation-streams.ts",
       "source_location": "L123",
-      "community": 34,
+      "community": 41,
       "norm_label": "asnumber()",
       "id": "hooks_use_conversation_streams_asnumber"
     },
@@ -8549,7 +8558,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/hooks/use-conversation-streams.ts",
       "source_location": "L127",
-      "community": 34,
+      "community": 41,
       "norm_label": "asnullablenumber()",
       "id": "hooks_use_conversation_streams_asnullablenumber"
     },
@@ -8720,7 +8729,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/lib/api.ts",
       "source_location": "L29",
-      "community": 34,
+      "community": 25,
       "norm_label": "apierror",
       "id": "lib_api_apierror"
     },
@@ -8729,7 +8738,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/lib/api.ts",
       "source_location": "L30",
-      "community": 34,
+      "community": 25,
       "norm_label": ".constructor()",
       "id": "lib_api_apierror_constructor"
     },
@@ -8963,7 +8972,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/lib/types.ts",
       "source_location": "L1",
-      "community": 38,
+      "community": 41,
       "norm_label": "types.ts",
       "id": "lib_types"
     },
@@ -9008,7 +9017,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/lib/types.ts",
       "source_location": "L34",
-      "community": 25,
+      "community": 41,
       "norm_label": "citation",
       "id": "lib_types_citation"
     },
@@ -9053,7 +9062,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/lib/types.ts",
       "source_location": "L119",
-      "community": 38,
+      "community": 41,
       "norm_label": "loopeventtype",
       "id": "lib_types_loopeventtype"
     },
@@ -9062,7 +9071,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/lib/types.ts",
       "source_location": "L131",
-      "community": 38,
+      "community": 41,
       "norm_label": "loopevent",
       "id": "lib_types_loopevent"
     },
@@ -9071,7 +9080,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/lib/types.ts",
       "source_location": "L149",
-      "community": 38,
+      "community": 41,
       "norm_label": "basenode",
       "id": "lib_types_basenode"
     },
@@ -9107,7 +9116,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/lib/types.ts",
       "source_location": "L197",
-      "community": 25,
+      "community": 41,
       "norm_label": "toolevent",
       "id": "lib_types_toolevent"
     },
@@ -9116,7 +9125,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/lib/types.ts",
       "source_location": "L215",
-      "community": 34,
+      "community": 41,
       "norm_label": "streamcompletion",
       "id": "lib_types_streamcompletion"
     },
@@ -9125,7 +9134,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/lib/utils.ts",
       "source_location": "L1",
-      "community": 25,
+      "community": 14,
       "norm_label": "utils.ts",
       "id": "lib_utils"
     },
@@ -9134,7 +9143,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/lib/utils.ts",
       "source_location": "L4",
-      "community": 25,
+      "community": 14,
       "norm_label": "cn()",
       "id": "lib_utils_cn"
     },
@@ -9143,7 +9152,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/lib/uuid.ts",
       "source_location": "L1",
-      "community": 34,
+      "community": 41,
       "norm_label": "uuid.ts",
       "id": "lib_uuid"
     },
@@ -9152,7 +9161,7 @@
       "file_type": "code",
       "source_file": "services/dashboard/lib/uuid.ts",
       "source_location": "L8",
-      "community": 34,
+      "community": 41,
       "norm_label": "randomid()",
       "id": "lib_uuid_randomid"
     },
@@ -9845,7 +9854,7 @@
       "file_type": "code",
       "source_file": "services/gateway/wolf_gateway/main.py",
       "source_location": "L1",
-      "community": 199,
+      "community": 82,
       "norm_label": "main.py",
       "id": "wolf_gateway_main"
     },
@@ -9854,7 +9863,7 @@
       "file_type": "code",
       "source_file": "services/gateway/wolf_gateway/main.py",
       "source_location": "L20",
-      "community": 199,
+      "community": 82,
       "norm_label": "healthz()",
       "id": "wolf_gateway_main_healthz"
     },
@@ -9863,7 +9872,7 @@
       "file_type": "code",
       "source_file": "services/gateway/wolf_gateway/main.py",
       "source_location": "L20",
-      "community": 199,
+      "community": 82,
       "norm_label": "str",
       "id": "services_gateway_wolf_gateway_main_py_str"
     },
@@ -9872,7 +9881,7 @@
       "file_type": "rationale",
       "source_file": "services/gateway/wolf_gateway/main.py",
       "source_location": "L1",
-      "community": 199,
+      "community": 82,
       "norm_label": "wolf gateway \u2014 phase 0 stub.  the gateway is a separate service with separate cr",
       "id": "wolf_gateway_main_rationale_1"
     },
@@ -10394,7 +10403,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_agent_loop.py",
       "source_location": "L65",
-      "community": 67,
+      "community": 9,
       "norm_label": "magicmock",
       "id": "services_server_tests_test_agent_loop_py_magicmock"
     },
@@ -10403,7 +10412,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_agent_loop.py",
       "source_location": "L93",
-      "community": 67,
+      "community": 9,
       "norm_label": "_descriptor()",
       "id": "tests_test_agent_loop_descriptor"
     },
@@ -10412,7 +10421,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_agent_loop.py",
       "source_location": "L93",
-      "community": 67,
+      "community": 9,
       "norm_label": "agentstrategy",
       "id": "services_server_tests_test_agent_loop_py_agentstrategy"
     },
@@ -10421,7 +10430,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_agent_loop.py",
       "source_location": "L93",
-      "community": 67,
+      "community": 9,
       "norm_label": "capabilitydescriptor",
       "id": "services_server_tests_test_agent_loop_py_capabilitydescriptor"
     },
@@ -10439,7 +10448,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_agent_loop.py",
       "source_location": "L109",
-      "community": 67,
+      "community": 9,
       "norm_label": ".__init__()",
       "id": "tests_test_agent_loop_mockprovider_init"
     },
@@ -10448,7 +10457,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_agent_loop.py",
       "source_location": "L109",
-      "community": 67,
+      "community": 9,
       "norm_label": "chatresponse",
       "id": "services_server_tests_test_agent_loop_py_chatresponse"
     },
@@ -10457,7 +10466,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_agent_loop.py",
       "source_location": "L109",
-      "community": 67,
+      "community": 9,
       "norm_label": "int",
       "id": "services_server_tests_test_agent_loop_py_int"
     },
@@ -10466,7 +10475,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_agent_loop.py",
       "source_location": "L122",
-      "community": 67,
+      "community": 9,
       "norm_label": ".capability()",
       "id": "tests_test_agent_loop_mockprovider_capability"
     },
@@ -10475,7 +10484,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_agent_loop.py",
       "source_location": "L125",
-      "community": 67,
+      "community": 9,
       "norm_label": ".chat()",
       "id": "tests_test_agent_loop_mockprovider_chat"
     },
@@ -10484,7 +10493,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_agent_loop.py",
       "source_location": "L125",
-      "community": 67,
+      "community": 9,
       "norm_label": "chatrequest",
       "id": "services_server_tests_test_agent_loop_py_chatrequest"
     },
@@ -10493,7 +10502,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_agent_loop.py",
       "source_location": "L136",
-      "community": 67,
+      "community": 9,
       "norm_label": ".stream()",
       "id": "tests_test_agent_loop_mockprovider_stream"
     },
@@ -10502,7 +10511,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_agent_loop.py",
       "source_location": "L136",
-      "community": 67,
+      "community": 9,
       "norm_label": "any",
       "id": "services_server_tests_test_agent_loop_py_any"
     },
@@ -10520,7 +10529,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_agent_loop.py",
       "source_location": "L140",
-      "community": 67,
+      "community": 9,
       "norm_label": "str",
       "id": "services_server_tests_test_agent_loop_py_str"
     },
@@ -11690,7 +11699,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_chat_endpoint.py",
       "source_location": "L28",
-      "community": 32,
+      "community": 10,
       "norm_label": "isolated_registries()",
       "id": "tests_test_chat_endpoint_isolated_registries"
     },
@@ -11978,7 +11987,7 @@
       "file_type": "rationale",
       "source_file": "services/server/tests/test_chat_endpoint.py",
       "source_location": "L29",
-      "community": 32,
+      "community": 10,
       "norm_label": "tools registered at app startup leak across tests \u2014 reset here.",
       "id": "tests_test_chat_endpoint_rationale_29"
     },
@@ -12212,7 +12221,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_grounding_validator.py",
       "source_location": "L1",
-      "community": 115,
+      "community": 33,
       "norm_label": "test_grounding_validator.py",
       "id": "tests_test_grounding_validator"
     },
@@ -12293,7 +12302,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_grounding_validator.py",
       "source_location": "L50",
-      "community": 115,
+      "community": 33,
       "norm_label": "test_split_claims_handles_simple_sentences()",
       "id": "tests_test_grounding_validator_test_split_claims_handles_simple_sentences"
     },
@@ -12302,7 +12311,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_grounding_validator.py",
       "source_location": "L61",
-      "community": 115,
+      "community": 33,
       "norm_label": "test_split_claims_handles_numbered_list()",
       "id": "tests_test_grounding_validator_test_split_claims_handles_numbered_list"
     },
@@ -12311,7 +12320,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_grounding_validator.py",
       "source_location": "L71",
-      "community": 115,
+      "community": 33,
       "norm_label": "test_split_claims_on_empty_string()",
       "id": "tests_test_grounding_validator_test_split_claims_on_empty_string"
     },
@@ -12320,7 +12329,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_grounding_validator.py",
       "source_location": "L79",
-      "community": 115,
+      "community": 33,
       "norm_label": "test_build_evidence_tags_tool_results_and_knowledge_separately()",
       "id": "tests_test_grounding_validator_test_build_evidence_tags_tool_results_and_knowledge_separately"
     },
@@ -12329,7 +12338,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_grounding_validator.py",
       "source_location": "L96",
-      "community": 115,
+      "community": 33,
       "norm_label": "test_build_evidence_empty_inputs()",
       "id": "tests_test_grounding_validator_test_build_evidence_empty_inputs"
     },
@@ -12365,7 +12374,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_grounding_validator.py",
       "source_location": "L186",
-      "community": 210,
+      "community": 33,
       "norm_label": "test_failed_tool_makes_evidence_and_flags_fabrication()",
       "id": "tests_test_grounding_validator_test_failed_tool_makes_evidence_and_flags_fabrication"
     },
@@ -12374,7 +12383,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_grounding_validator.py",
       "source_location": "L206",
-      "community": 115,
+      "community": 33,
       "norm_label": "test_build_evidence_includes_failure_notes()",
       "id": "tests_test_grounding_validator_test_build_evidence_includes_failure_notes"
     },
@@ -12554,7 +12563,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_grounding_validator.py",
       "source_location": "L459",
-      "community": 115,
+      "community": 175,
       "norm_label": "test_validate_judge_failure_returns_original_answer()",
       "id": "tests_test_grounding_validator_test_validate_judge_failure_returns_original_answer"
     },
@@ -12563,7 +12572,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_grounding_validator.py",
       "source_location": "L478",
-      "community": 211,
+      "community": 33,
       "norm_label": "test_validate_malformed_json_returns_original_answer()",
       "id": "tests_test_grounding_validator_test_validate_malformed_json_returns_original_answer"
     },
@@ -12581,7 +12590,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_grounding_validator.py",
       "source_location": "L507",
-      "community": 212,
+      "community": 33,
       "norm_label": "test_validate_clamps_claim_count()",
       "id": "tests_test_grounding_validator_test_validate_clamps_claim_count"
     },
@@ -12590,7 +12599,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_grounding_validator.py",
       "source_location": "L533",
-      "community": 115,
+      "community": 101,
       "norm_label": "test_annotate_inserts_one_marker_per_verdict()",
       "id": "tests_test_grounding_validator_test_annotate_inserts_one_marker_per_verdict"
     },
@@ -12599,7 +12608,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_grounding_validator.py",
       "source_location": "L554",
-      "community": 115,
+      "community": 101,
       "norm_label": "test_annotate_marks_supported_with_green_verified()",
       "id": "tests_test_grounding_validator_test_annotate_marks_supported_with_green_verified"
     },
@@ -12608,7 +12617,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_grounding_validator.py",
       "source_location": "L571",
-      "community": 115,
+      "community": 169,
       "norm_label": "test_validation_result_default_state()",
       "id": "tests_test_grounding_validator_test_validation_result_default_state"
     },
@@ -12617,7 +12626,7 @@
       "file_type": "rationale",
       "source_file": "services/server/tests/test_grounding_validator.py",
       "source_location": "L1",
-      "community": 115,
+      "community": 33,
       "norm_label": "tests for the phase 3 slice 2b grounding validator.  the validator is the struct",
       "id": "tests_test_grounding_validator_rationale_1"
     },
@@ -12653,7 +12662,7 @@
       "file_type": "rationale",
       "source_file": "services/server/tests/test_grounding_validator.py",
       "source_location": "L187",
-      "community": 210,
+      "community": 33,
       "norm_label": "a failed tool is negative evidence; the validator still runs and a     fabricate",
       "id": "tests_test_grounding_validator_rationale_187"
     },
@@ -12761,7 +12770,7 @@
       "file_type": "rationale",
       "source_file": "services/server/tests/test_grounding_validator.py",
       "source_location": "L460",
-      "community": 115,
+      "community": 175,
       "norm_label": "a judge llm call that raises must degrade gracefully \u2014 phase 3     grounding pos",
       "id": "tests_test_grounding_validator_rationale_460"
     },
@@ -12770,7 +12779,7 @@
       "file_type": "rationale",
       "source_file": "services/server/tests/test_grounding_validator.py",
       "source_location": "L479",
-      "community": 211,
+      "community": 33,
       "norm_label": "judge returned text that isn't valid json \u2014 skip validation.",
       "id": "tests_test_grounding_validator_rationale_479"
     },
@@ -12788,7 +12797,7 @@
       "file_type": "rationale",
       "source_file": "services/server/tests/test_grounding_validator.py",
       "source_location": "L508",
-      "community": 212,
+      "community": 33,
       "norm_label": "runaway-long answers don't get an unbounded judge prompt.",
       "id": "tests_test_grounding_validator_rationale_508"
     },
@@ -12797,7 +12806,7 @@
       "file_type": "rationale",
       "source_file": "services/server/tests/test_grounding_validator.py",
       "source_location": "L534",
-      "community": 115,
+      "community": 101,
       "norm_label": "slice 5.0c-a: every verdict now gets an inline marker so the     analyst sees a",
       "id": "tests_test_grounding_validator_rationale_534"
     },
@@ -12806,7 +12815,7 @@
       "file_type": "rationale",
       "source_file": "services/server/tests/test_grounding_validator.py",
       "source_location": "L555",
-      "community": 115,
+      "community": 101,
       "norm_label": "slice 5.0c-a: supported claims now also get a chip ([verified] \u2192     green) so t",
       "id": "tests_test_grounding_validator_rationale_555"
     },
@@ -13094,7 +13103,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_knowledge_store.py",
       "source_location": "L107",
-      "community": 35,
+      "community": 46,
       "norm_label": "test_query_runbook_input_requires_non_empty_query()",
       "id": "tests_test_knowledge_store_test_query_runbook_input_requires_non_empty_query"
     },
@@ -13103,7 +13112,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_knowledge_store.py",
       "source_location": "L112",
-      "community": 35,
+      "community": 46,
       "norm_label": "test_query_runbook_input_clamps_limit()",
       "id": "tests_test_knowledge_store_test_query_runbook_input_clamps_limit"
     },
@@ -13112,7 +13121,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_knowledge_store.py",
       "source_location": "L119",
-      "community": 35,
+      "community": 46,
       "norm_label": "test_query_runbook_input_accepts_minimal_args()",
       "id": "tests_test_knowledge_store_test_query_runbook_input_accepts_minimal_args"
     },
@@ -13121,7 +13130,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_knowledge_store.py",
       "source_location": "L128",
-      "community": 35,
+      "community": 46,
       "norm_label": "test_query_runbook_raises_when_store_not_configured()",
       "id": "tests_test_knowledge_store_test_query_runbook_raises_when_store_not_configured"
     },
@@ -13202,7 +13211,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_knowledge_store.py",
       "source_location": "L453",
-      "community": 77,
+      "community": 46,
       "norm_label": "monkeypatch",
       "id": "services_server_tests_test_knowledge_store_py_monkeypatch"
     },
@@ -13211,7 +13220,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_knowledge_store.py",
       "source_location": "L495",
-      "community": 35,
+      "community": 46,
       "norm_label": "test_query_runbook_passes_filters_to_store()",
       "id": "tests_test_knowledge_store_test_query_runbook_passes_filters_to_store"
     },
@@ -13229,7 +13238,7 @@
       "file_type": "rationale",
       "source_file": "services/server/tests/test_knowledge_store.py",
       "source_location": "L129",
-      "community": 35,
+      "community": 46,
       "norm_label": "if exec_ctx.knowledge_store is none the tool must fail loud, not silent.",
       "id": "tests_test_knowledge_store_rationale_129"
     },
@@ -13292,7 +13301,7 @@
       "file_type": "rationale",
       "source_file": "services/server/tests/test_knowledge_store.py",
       "source_location": "L496",
-      "community": 35,
+      "community": 46,
       "norm_label": "tool builds metadata_filters from rule_id/technique and forwards to store.",
       "id": "tests_test_knowledge_store_rationale_496"
     },
@@ -13733,7 +13742,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_loop_events.py",
       "source_location": "L77",
-      "community": 0,
+      "community": 9,
       "norm_label": "chatrequest",
       "id": "services_server_tests_test_loop_events_py_chatrequest"
     },
@@ -13742,7 +13751,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_loop_events.py",
       "source_location": "L82",
-      "community": 0,
+      "community": 9,
       "norm_label": ".stream()",
       "id": "tests_test_loop_events_scriptedprovider_stream"
     },
@@ -13751,7 +13760,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_loop_events.py",
       "source_location": "L82",
-      "community": 0,
+      "community": 9,
       "norm_label": "any",
       "id": "services_server_tests_test_loop_events_py_any"
     },
@@ -13769,7 +13778,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_loop_events.py",
       "source_location": "L86",
-      "community": 0,
+      "community": 9,
       "norm_label": "str",
       "id": "services_server_tests_test_loop_events_py_str"
     },
@@ -13796,7 +13805,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_loop_events.py",
       "source_location": "L97",
-      "community": 0,
+      "community": 9,
       "norm_label": "magicmock",
       "id": "services_server_tests_test_loop_events_py_magicmock"
     },
@@ -13868,7 +13877,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_models.py",
       "source_location": "L29",
-      "community": 6,
+      "community": 4,
       "norm_label": "str",
       "id": "services_server_tests_test_models_py_str"
     },
@@ -13877,7 +13886,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_models.py",
       "source_location": "L29",
-      "community": 6,
+      "community": 0,
       "norm_label": "any",
       "id": "services_server_tests_test_models_py_any"
     },
@@ -13886,7 +13895,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_models.py",
       "source_location": "L29",
-      "community": 6,
+      "community": 0,
       "norm_label": "int",
       "id": "services_server_tests_test_models_py_int"
     },
@@ -13895,7 +13904,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_models.py",
       "source_location": "L29",
-      "community": 6,
+      "community": 0,
       "norm_label": "response",
       "id": "services_server_tests_test_models_py_response"
     },
@@ -13931,7 +13940,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_models.py",
       "source_location": "L41",
-      "community": 6,
+      "community": 0,
       "norm_label": "capabilitydescriptor",
       "id": "services_server_tests_test_models_py_capabilitydescriptor"
     },
@@ -14048,7 +14057,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_models.py",
       "source_location": "L182",
-      "community": 6,
+      "community": 0,
       "norm_label": "tooltier",
       "id": "tooltier"
     },
@@ -14057,7 +14066,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_models.py",
       "source_location": "L182",
-      "community": 6,
+      "community": 0,
       "norm_label": "toolschema",
       "id": "services_server_tests_test_models_py_toolschema"
     },
@@ -14552,7 +14561,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_ollama_stream.py",
       "source_location": "L1",
-      "community": 52,
+      "community": 99,
       "norm_label": "test_ollama_stream.py",
       "id": "tests_test_ollama_stream"
     },
@@ -14597,7 +14606,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_ollama_stream.py",
       "source_location": "L30",
-      "community": 52,
+      "community": 99,
       "norm_label": "_make_adapter()",
       "id": "tests_test_ollama_stream_make_adapter"
     },
@@ -14606,7 +14615,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_ollama_stream.py",
       "source_location": "L30",
-      "community": 52,
+      "community": 99,
       "norm_label": "mocktransport",
       "id": "mocktransport"
     },
@@ -14624,7 +14633,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_ollama_stream.py",
       "source_location": "L38",
-      "community": 52,
+      "community": 99,
       "norm_label": "test_chat_stream_yields_one_delta_per_non_empty_chunk()",
       "id": "tests_test_ollama_stream_test_chat_stream_yields_one_delta_per_non_empty_chunk"
     },
@@ -14633,7 +14642,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_ollama_stream.py",
       "source_location": "L78",
-      "community": 52,
+      "community": 99,
       "norm_label": "test_chat_stream_carries_tool_calls_through_to_done()",
       "id": "tests_test_ollama_stream_test_chat_stream_carries_tool_calls_through_to_done"
     },
@@ -14642,7 +14651,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_ollama_stream.py",
       "source_location": "L123",
-      "community": 52,
+      "community": 99,
       "norm_label": "test_chat_stream_skips_malformed_lines()",
       "id": "tests_test_ollama_stream_test_chat_stream_skips_malformed_lines"
     },
@@ -14651,7 +14660,7 @@
       "file_type": "rationale",
       "source_file": "services/server/tests/test_ollama_stream.py",
       "source_location": "L1",
-      "community": 52,
+      "community": 99,
       "norm_label": "unit tests for ollamaadapter.chat_stream (slice 5.0c-d).  uses httpx.mocktranspo",
       "id": "tests_test_ollama_stream_rationale_1"
     },
@@ -14669,7 +14678,7 @@
       "file_type": "rationale",
       "source_file": "services/server/tests/test_ollama_stream.py",
       "source_location": "L79",
-      "community": 52,
+      "community": 99,
       "norm_label": "a stream where the model emits a tool call instead of prose.",
       "id": "tests_test_ollama_stream_rationale_79"
     },
@@ -14678,7 +14687,7 @@
       "file_type": "rationale",
       "source_file": "services/server/tests/test_ollama_stream.py",
       "source_location": "L124",
-      "community": 52,
+      "community": 99,
       "norm_label": "a misbehaving proxy that chunks weirdly mustn't kill the stream.",
       "id": "tests_test_ollama_stream_rationale_124"
     },
@@ -14975,7 +14984,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_search_alerts_agent_name.py",
       "source_location": "L20",
-      "community": 77,
+      "community": 24,
       "norm_label": "toolexeccontext",
       "id": "services_server_tests_test_search_alerts_agent_name_py_toolexeccontext"
     },
@@ -15056,7 +15065,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_search_alerts_agent_name.py",
       "source_location": "L138",
-      "community": 77,
+      "community": 24,
       "norm_label": "int",
       "id": "services_server_tests_test_search_alerts_agent_name_py_int"
     },
@@ -15344,7 +15353,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_seed_knowledge_ingesters.py",
       "source_location": "L189",
-      "community": 13,
+      "community": 178,
       "norm_label": "test_wazuh_zip_iter_handles_nested_paths()",
       "id": "tests_test_seed_knowledge_ingesters_test_wazuh_zip_iter_handles_nested_paths"
     },
@@ -15353,7 +15362,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_seed_knowledge_ingesters.py",
       "source_location": "L189",
-      "community": 13,
+      "community": 178,
       "norm_label": "path",
       "id": "services_server_tests_test_seed_knowledge_ingesters_py_path"
     },
@@ -15380,7 +15389,7 @@
       "file_type": "rationale",
       "source_file": "services/server/tests/test_seed_knowledge_ingesters.py",
       "source_location": "L190",
-      "community": 13,
+      "community": 178,
       "norm_label": "build a fake archive that mirrors the real wazuh release layout     and assert t",
       "id": "tests_test_seed_knowledge_ingesters_rationale_190"
     },
@@ -15866,7 +15875,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_timefmt.py",
       "source_location": "L1",
-      "community": 24,
+      "community": 2,
       "norm_label": "test_timefmt.py",
       "id": "tests_test_timefmt"
     },
@@ -15875,7 +15884,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_timefmt.py",
       "source_location": "L18",
-      "community": 24,
+      "community": 2,
       "norm_label": "_approx_days_ago()",
       "id": "tests_test_timefmt_approx_days_ago"
     },
@@ -15884,7 +15893,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_timefmt.py",
       "source_location": "L18",
-      "community": 24,
+      "community": 2,
       "norm_label": "object",
       "id": "services_server_tests_test_timefmt_py_object"
     },
@@ -15893,7 +15902,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_timefmt.py",
       "source_location": "L18",
-      "community": 24,
+      "community": 2,
       "norm_label": "float",
       "id": "services_server_tests_test_timefmt_py_float"
     },
@@ -15902,7 +15911,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_timefmt.py",
       "source_location": "L18",
-      "community": 24,
+      "community": 2,
       "norm_label": "bool",
       "id": "services_server_tests_test_timefmt_py_bool"
     },
@@ -15911,7 +15920,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_timefmt.py",
       "source_location": "L40",
-      "community": 24,
+      "community": 2,
       "norm_label": "test_relative_day_scale_units_parse()",
       "id": "tests_test_timefmt_test_relative_day_scale_units_parse"
     },
@@ -15920,7 +15929,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_timefmt.py",
       "source_location": "L40",
-      "community": 24,
+      "community": 2,
       "norm_label": "str",
       "id": "services_server_tests_test_timefmt_py_str"
     },
@@ -15929,7 +15938,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_timefmt.py",
       "source_location": "L44",
-      "community": 24,
+      "community": 2,
       "norm_label": "test_minutes_vs_months_case_sensitivity()",
       "id": "tests_test_timefmt_test_minutes_vs_months_case_sensitivity"
     },
@@ -15938,7 +15947,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_timefmt.py",
       "source_location": "L54",
-      "community": 24,
+      "community": 2,
       "norm_label": "test_bare_now_is_current_time()",
       "id": "tests_test_timefmt_test_bare_now_is_current_time"
     },
@@ -15947,7 +15956,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_timefmt.py",
       "source_location": "L60",
-      "community": 24,
+      "community": 2,
       "norm_label": "test_iso_8601_still_parses_and_is_tz_aware()",
       "id": "tests_test_timefmt_test_iso_8601_still_parses_and_is_tz_aware"
     },
@@ -15956,7 +15965,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_timefmt.py",
       "source_location": "L67",
-      "community": 24,
+      "community": 2,
       "norm_label": "test_unknown_unit_passes_through_for_pydantic_to_reject()",
       "id": "tests_test_timefmt_test_unknown_unit_passes_through_for_pydantic_to_reject"
     },
@@ -15965,7 +15974,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_timefmt.py",
       "source_location": "L72",
-      "community": 24,
+      "community": 2,
       "norm_label": "test_naive_datetime_gets_utc()",
       "id": "tests_test_timefmt_test_naive_datetime_gets_utc"
     },
@@ -15974,7 +15983,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_timefmt.py",
       "source_location": "L78",
-      "community": 24,
+      "community": 2,
       "norm_label": "test_default_time_to_is_now_utc()",
       "id": "tests_test_timefmt_test_default_time_to_is_now_utc"
     },
@@ -15983,7 +15992,7 @@
       "file_type": "rationale",
       "source_file": "services/server/tests/test_timefmt.py",
       "source_location": "L1",
-      "community": 24,
+      "community": 2,
       "norm_label": "tests for the relative/iso time-field parser.  the load-bearing property: the na",
       "id": "tests_test_timefmt_rationale_1"
     },
@@ -15992,7 +16001,7 @@
       "file_type": "rationale",
       "source_file": "services/server/tests/test_timefmt.py",
       "source_location": "L45",
-      "community": 24,
+      "community": 2,
       "norm_label": "m' is minutes; 'm' is months \u2014 case must not be flattened.",
       "id": "tests_test_timefmt_rationale_45"
     },
@@ -16001,7 +16010,7 @@
       "file_type": "rationale",
       "source_file": "services/server/tests/test_timefmt.py",
       "source_location": "L68",
-      "community": 24,
+      "community": 2,
       "norm_label": "an unrecognized unit must not be silently guessed \u2014 return as-is.",
       "id": "tests_test_timefmt_rationale_68"
     },
@@ -16010,7 +16019,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_tool_dispatcher.py",
       "source_location": "L1",
-      "community": 46,
+      "community": 5,
       "norm_label": "test_tool_dispatcher.py",
       "id": "tests_test_tool_dispatcher"
     },
@@ -16019,7 +16028,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_tool_dispatcher.py",
       "source_location": "L31",
-      "community": 46,
+      "community": 5,
       "norm_label": "tenant_ctx()",
       "id": "tests_test_tool_dispatcher_tenant_ctx"
     },
@@ -16028,7 +16037,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_tool_dispatcher.py",
       "source_location": "L31",
-      "community": 46,
+      "community": 5,
       "norm_label": "tenantcontext",
       "id": "services_server_tests_test_tool_dispatcher_py_tenantcontext"
     },
@@ -16037,7 +16046,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_tool_dispatcher.py",
       "source_location": "L43",
-      "community": 46,
+      "community": 5,
       "norm_label": "isolated_registries()",
       "id": "tests_test_tool_dispatcher_isolated_registries"
     },
@@ -16046,7 +16055,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_tool_dispatcher.py",
       "source_location": "L59",
-      "community": 46,
+      "community": 5,
       "norm_label": "_register_search_alerts()",
       "id": "tests_test_tool_dispatcher_register_search_alerts"
     },
@@ -16055,7 +16064,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_tool_dispatcher.py",
       "source_location": "L65",
-      "community": 46,
+      "community": 5,
       "norm_label": "_register_execute_stub()",
       "id": "tests_test_tool_dispatcher_register_execute_stub"
     },
@@ -16064,7 +16073,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_tool_dispatcher.py",
       "source_location": "L79",
-      "community": 46,
+      "community": 5,
       "norm_label": "_fake_clients()",
       "id": "tests_test_tool_dispatcher_fake_clients"
     },
@@ -16073,7 +16082,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_tool_dispatcher.py",
       "source_location": "L79",
-      "community": 46,
+      "community": 5,
       "norm_label": "magicmock",
       "id": "services_server_tests_test_tool_dispatcher_py_magicmock"
     },
@@ -16082,7 +16091,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_tool_dispatcher.py",
       "source_location": "L97",
-      "community": 46,
+      "community": 5,
       "norm_label": "_count_events()",
       "id": "tests_test_tool_dispatcher_count_events"
     },
@@ -16091,7 +16100,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_tool_dispatcher.py",
       "source_location": "L97",
-      "community": 46,
+      "community": 5,
       "norm_label": "asyncsession",
       "id": "services_server_tests_test_tool_dispatcher_py_asyncsession"
     },
@@ -16100,7 +16109,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_tool_dispatcher.py",
       "source_location": "L97",
-      "community": 67,
+      "community": 9,
       "norm_label": "str",
       "id": "services_server_tests_test_tool_dispatcher_py_str"
     },
@@ -16109,7 +16118,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_tool_dispatcher.py",
       "source_location": "L97",
-      "community": 46,
+      "community": 5,
       "norm_label": "uuid",
       "id": "services_server_tests_test_tool_dispatcher_py_uuid"
     },
@@ -16118,7 +16127,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_tool_dispatcher.py",
       "source_location": "L97",
-      "community": 67,
+      "community": 9,
       "norm_label": "int",
       "id": "services_server_tests_test_tool_dispatcher_py_int"
     },
@@ -16127,7 +16136,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_tool_dispatcher.py",
       "source_location": "L112",
-      "community": 46,
+      "community": 5,
       "norm_label": "test_unknown_tool_returns_failure_and_audits()",
       "id": "tests_test_tool_dispatcher_test_unknown_tool_returns_failure_and_audits"
     },
@@ -16136,7 +16145,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_tool_dispatcher.py",
       "source_location": "L131",
-      "community": 46,
+      "community": 5,
       "norm_label": "test_execute_tier_call_rejected_as_anomaly()",
       "id": "tests_test_tool_dispatcher_test_execute_tier_call_rejected_as_anomaly"
     },
@@ -16145,7 +16154,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_tool_dispatcher.py",
       "source_location": "L151",
-      "community": 46,
+      "community": 5,
       "norm_label": "test_schema_invalid_input_returns_failure_and_audits()",
       "id": "tests_test_tool_dispatcher_test_schema_invalid_input_returns_failure_and_audits"
     },
@@ -16154,7 +16163,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_tool_dispatcher.py",
       "source_location": "L172",
-      "community": 46,
+      "community": 5,
       "norm_label": "test_rate_limit_exhaustion_returns_failure_and_audits()",
       "id": "tests_test_tool_dispatcher_test_rate_limit_exhaustion_returns_failure_and_audits"
     },
@@ -16163,7 +16172,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_tool_dispatcher.py",
       "source_location": "L203",
-      "community": 46,
+      "community": 5,
       "norm_label": "test_successful_call_audits_success()",
       "id": "tests_test_tool_dispatcher_test_successful_call_audits_success"
     },
@@ -16172,7 +16181,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_tool_dispatcher.py",
       "source_location": "L234",
-      "community": 46,
+      "community": 5,
       "norm_label": "test_explicit_null_args_use_pydantic_defaults()",
       "id": "tests_test_tool_dispatcher_test_explicit_null_args_use_pydantic_defaults"
     },
@@ -16181,7 +16190,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_tool_dispatcher.py",
       "source_location": "L275",
-      "community": 46,
+      "community": 5,
       "norm_label": "test_model_supplied_tenant_id_is_stripped()",
       "id": "tests_test_tool_dispatcher_test_model_supplied_tenant_id_is_stripped"
     },
@@ -16190,7 +16199,7 @@
       "file_type": "rationale",
       "source_file": "services/server/tests/test_tool_dispatcher.py",
       "source_location": "L1",
-      "community": 46,
+      "community": 5,
       "norm_label": "tests for the tool dispatcher \u2014 schema/tier enforcement, audit, isolation.  the",
       "id": "tests_test_tool_dispatcher_rationale_1"
     },
@@ -16199,7 +16208,7 @@
       "file_type": "rationale",
       "source_file": "services/server/tests/test_tool_dispatcher.py",
       "source_location": "L44",
-      "community": 46,
+      "community": 5,
       "norm_label": "empty both module-level singletons before and after each test.      avoids state",
       "id": "tests_test_tool_dispatcher_rationale_44"
     },
@@ -16208,7 +16217,7 @@
       "file_type": "rationale",
       "source_file": "services/server/tests/test_tool_dispatcher.py",
       "source_location": "L80",
-      "community": 46,
+      "community": 5,
       "norm_label": "return a (opensearch, server_api) pair of magicmocks.",
       "id": "tests_test_tool_dispatcher_rationale_80"
     },
@@ -16217,7 +16226,7 @@
       "file_type": "rationale",
       "source_file": "services/server/tests/test_tool_dispatcher.py",
       "source_location": "L237",
-      "community": 46,
+      "community": 5,
       "norm_label": "small models often emit ``null`` for optional fields; dispatcher     drops them",
       "id": "tests_test_tool_dispatcher_rationale_237"
     },
@@ -16226,7 +16235,7 @@
       "file_type": "rationale",
       "source_file": "services/server/tests/test_tool_dispatcher.py",
       "source_location": "L278",
-      "community": 46,
+      "community": 5,
       "norm_label": "if the model tries to pass tenant_id, the dispatcher strips it.",
       "id": "tests_test_tool_dispatcher_rationale_278"
     },
@@ -16379,7 +16388,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_tool_summaries.py",
       "source_location": "L148",
-      "community": 21,
+      "community": 46,
       "norm_label": "test_runbook_summary_empty_inputs()",
       "id": "tests_test_tool_summaries_test_runbook_summary_empty_inputs"
     },
@@ -16451,7 +16460,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_wazuh_clients.py",
       "source_location": "L45",
-      "community": 96,
+      "community": 172,
       "norm_label": "asyncbasetransport",
       "id": "asyncbasetransport"
     },
@@ -16460,7 +16469,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_wazuh_clients.py",
       "source_location": "L45",
-      "community": 96,
+      "community": 172,
       "norm_label": "wazuhopensearchclient",
       "id": "services_server_tests_test_wazuh_clients_py_wazuhopensearchclient"
     },
@@ -16514,7 +16523,7 @@
       "file_type": "code",
       "source_file": "services/server/tests/test_wazuh_clients.py",
       "source_location": "L153",
-      "community": 96,
+      "community": 172,
       "norm_label": "wazuhserverapiclient",
       "id": "services_server_tests_test_wazuh_clients_py_wazuhserverapiclient"
     },
@@ -17108,7 +17117,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/agent/loop.py",
       "source_location": "L125",
-      "community": 67,
+      "community": 9,
       "norm_label": "agentloop",
       "id": "agent_loop_agentloop"
     },
@@ -17288,7 +17297,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/agent/loop.py",
       "source_location": "L126",
-      "community": 67,
+      "community": 9,
       "norm_label": "the plan-act-observe loop.  construct one per chat request.",
       "id": "agent_loop_rationale_126"
     },
@@ -17576,7 +17585,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/agent/strategies.py",
       "source_location": "L31",
-      "community": 67,
+      "community": 9,
       "norm_label": "frontierstrategy",
       "id": "agent_strategies_frontierstrategy"
     },
@@ -17711,7 +17720,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/agent/strategies.py",
       "source_location": "L32",
-      "community": 67,
+      "community": 9,
       "norm_label": "full autonomy \u2014 the model plans and acts within a generous step budget.",
       "id": "agent_strategies_rationale_32"
     },
@@ -18314,7 +18323,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/audit/log.py",
       "source_location": "L61",
-      "community": 44,
+      "community": 9,
       "norm_label": "tenantcontext",
       "id": "services_server_wolf_server_audit_log_py_tenantcontext"
     },
@@ -18386,7 +18395,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/audit/models.py",
       "source_location": "L37",
-      "community": 67,
+      "community": 9,
       "norm_label": "auditevent",
       "id": "audit_models_auditevent"
     },
@@ -18422,7 +18431,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/audit/models.py",
       "source_location": "L38",
-      "community": 67,
+      "community": 9,
       "norm_label": "immutable audit record.      every action of significance is written here.  the",
       "id": "audit_models_rationale_38"
     },
@@ -18584,7 +18593,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/auth/middleware.py",
       "source_location": "L1",
-      "community": 82,
+      "community": 88,
       "norm_label": "middleware.py",
       "id": "auth_middleware"
     },
@@ -18593,7 +18602,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/auth/middleware.py",
       "source_location": "L25",
-      "community": 82,
+      "community": 22,
       "norm_label": "authmiddleware",
       "id": "auth_middleware_authmiddleware"
     },
@@ -18602,7 +18611,7 @@
       "file_type": "code",
       "source_file": "",
       "source_location": "",
-      "community": 82,
+      "community": 112,
       "norm_label": "basehttpmiddleware",
       "id": "basehttpmiddleware"
     },
@@ -18647,7 +18656,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/auth/middleware.py",
       "source_location": "L1",
-      "community": 82,
+      "community": 88,
       "norm_label": "auth middleware \u2014 validates jwt from cookie and populates request.state.session.",
       "id": "auth_middleware_rationale_1"
     },
@@ -18656,7 +18665,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/auth/middleware.py",
       "source_location": "L26",
-      "community": 82,
+      "community": 22,
       "norm_label": "extract and validate the access token cookie; populate request.state.session.",
       "id": "auth_middleware_rationale_26"
     },
@@ -19205,7 +19214,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/config.py",
       "source_location": "L1",
-      "community": 10,
+      "community": 30,
       "norm_label": "config.py",
       "id": "wolf_server_config"
     },
@@ -19295,7 +19304,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/config.py",
       "source_location": "L220",
-      "community": 10,
+      "community": 30,
       "norm_label": "get_settings()",
       "id": "wolf_server_config_get_settings"
     },
@@ -19304,7 +19313,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/config.py",
       "source_location": "L1",
-      "community": 10,
+      "community": 30,
       "norm_label": "service configuration loaded from environment variables.  all settings have defa",
       "id": "wolf_server_config_rationale_1"
     },
@@ -19322,7 +19331,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/database.py",
       "source_location": "L1",
-      "community": 104,
+      "community": 30,
       "norm_label": "database.py",
       "id": "wolf_server_database"
     },
@@ -19349,7 +19358,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/database.py",
       "source_location": "L46",
-      "community": 104,
+      "community": 30,
       "norm_label": "_make_engine()",
       "id": "wolf_server_database_make_engine"
     },
@@ -19358,7 +19367,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/database.py",
       "source_location": "L46",
-      "community": 104,
+      "community": 30,
       "norm_label": "str",
       "id": "services_server_wolf_server_database_py_str"
     },
@@ -19367,7 +19376,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/database.py",
       "source_location": "L46",
-      "community": 104,
+      "community": 30,
       "norm_label": "asyncengine",
       "id": "services_server_wolf_server_database_py_asyncengine"
     },
@@ -19376,7 +19385,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/database.py",
       "source_location": "L62",
-      "community": 104,
+      "community": 30,
       "norm_label": "get_engine()",
       "id": "wolf_server_database_get_engine"
     },
@@ -19385,7 +19394,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/database.py",
       "source_location": "L69",
-      "community": 104,
+      "community": 30,
       "norm_label": "get_session_factory()",
       "id": "wolf_server_database_get_session_factory"
     },
@@ -19403,7 +19412,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/database.py",
       "source_location": "L69",
-      "community": 104,
+      "community": 30,
       "norm_label": "asyncsession",
       "id": "services_server_wolf_server_database_py_asyncsession"
     },
@@ -19412,7 +19421,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/database.py",
       "source_location": "L78",
-      "community": 104,
+      "community": 30,
       "norm_label": "get_db()",
       "id": "wolf_server_database_get_db"
     },
@@ -19421,7 +19430,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/database.py",
       "source_location": "L86",
-      "community": 104,
+      "community": 30,
       "norm_label": "db_session()",
       "id": "wolf_server_database_db_session"
     },
@@ -19430,7 +19439,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/database.py",
       "source_location": "L1",
-      "community": 104,
+      "community": 30,
       "norm_label": "sqlalchemy async engine and session factory.  usage in fastapi route handlers:",
       "id": "wolf_server_database_rationale_1"
     },
@@ -19448,7 +19457,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/database.py",
       "source_location": "L79",
-      "community": 104,
+      "community": 30,
       "norm_label": "fastapi dependency: yields a database session and closes it after the request.",
       "id": "wolf_server_database_rationale_79"
     },
@@ -19457,7 +19466,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/database.py",
       "source_location": "L87",
-      "community": 104,
+      "community": 30,
       "norm_label": "context manager for use outside of fastapi request handlers (e.g. startup tasks)",
       "id": "wolf_server_database_rationale_87"
     },
@@ -19484,7 +19493,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/grounding/validator.py",
       "source_location": "L1",
-      "community": 74,
+      "community": 169,
       "norm_label": "validator.py",
       "id": "grounding_validator"
     },
@@ -19493,7 +19502,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/grounding/validator.py",
       "source_location": "L90",
-      "community": 74,
+      "community": 101,
       "norm_label": "claimverdict",
       "id": "grounding_validator_claimverdict"
     },
@@ -19502,7 +19511,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/grounding/validator.py",
       "source_location": "L110",
-      "community": 74,
+      "community": 169,
       "norm_label": "validationresult",
       "id": "grounding_validator_validationresult"
     },
@@ -19520,7 +19529,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/grounding/validator.py",
       "source_location": "L174",
-      "community": 74,
+      "community": 52,
       "norm_label": ".__init__()",
       "id": "grounding_validator_groundingvalidator_init"
     },
@@ -19529,7 +19538,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/grounding/validator.py",
       "source_location": "L174",
-      "community": 74,
+      "community": 52,
       "norm_label": "modelprovider",
       "id": "services_server_wolf_server_grounding_validator_py_modelprovider"
     },
@@ -19538,7 +19547,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/grounding/validator.py",
       "source_location": "L174",
-      "community": 74,
+      "community": 52,
       "norm_label": "int",
       "id": "services_server_wolf_server_grounding_validator_py_int"
     },
@@ -19619,7 +19628,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/grounding/validator.py",
       "source_location": "L1",
-      "community": 74,
+      "community": 169,
       "norm_label": "llm-as-judge grounding validator.  the validator splits the agent's draft answer",
       "id": "grounding_validator_rationale_1"
     },
@@ -19628,7 +19637,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/grounding/validator.py",
       "source_location": "L91",
-      "community": 74,
+      "community": 101,
       "norm_label": "one claim and its verdict.      verdicts (slice 5.0b \u2014 four levels so the ui can",
       "id": "grounding_validator_rationale_91"
     },
@@ -19637,7 +19646,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/grounding/validator.py",
       "source_location": "L111",
-      "community": 74,
+      "community": 169,
       "norm_label": "aggregate verdict for the answer.",
       "id": "grounding_validator_rationale_111"
     },
@@ -19961,7 +19970,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/knowledge/embeddings.py",
       "source_location": "L1",
-      "community": 39,
+      "community": 78,
       "norm_label": "embeddings.py",
       "id": "knowledge_embeddings"
     },
@@ -19979,7 +19988,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/knowledge/embeddings.py",
       "source_location": "L34",
-      "community": 78,
+      "community": 39,
       "norm_label": ".model_id()",
       "id": "knowledge_embeddings_embeddingprovider_model_id"
     },
@@ -19997,7 +20006,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/knowledge/embeddings.py",
       "source_location": "L38",
-      "community": 78,
+      "community": 39,
       "norm_label": ".dimension()",
       "id": "knowledge_embeddings_embeddingprovider_dimension"
     },
@@ -20033,7 +20042,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/knowledge/embeddings.py",
       "source_location": "L45",
-      "community": 89,
+      "community": 78,
       "norm_label": "ollamaembeddingadapter",
       "id": "knowledge_embeddings_ollamaembeddingadapter"
     },
@@ -20078,7 +20087,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/knowledge/embeddings.py",
       "source_location": "L99",
-      "community": 89,
+      "community": 78,
       "norm_label": "sentencetransformersembeddingadapter",
       "id": "knowledge_embeddings_sentencetransformersembeddingadapter"
     },
@@ -20150,7 +20159,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/knowledge/embeddings.py",
       "source_location": "L194",
-      "community": 39,
+      "community": 78,
       "norm_label": "_build_provider()",
       "id": "knowledge_embeddings_build_provider"
     },
@@ -20168,7 +20177,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/knowledge/embeddings.py",
       "source_location": "L235",
-      "community": 39,
+      "community": 77,
       "norm_label": "make_embedding_provider_aux()",
       "id": "knowledge_embeddings_make_embedding_provider_aux"
     },
@@ -20177,7 +20186,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/knowledge/embeddings.py",
       "source_location": "L1",
-      "community": 39,
+      "community": 78,
       "norm_label": "embedding provider abstraction + ollama-hosted + in-process implementations.  th",
       "id": "knowledge_embeddings_rationale_1"
     },
@@ -20195,7 +20204,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/knowledge/embeddings.py",
       "source_location": "L35",
-      "community": 78,
+      "community": 39,
       "norm_label": "stable identifier stamped on every chunk this provider embeds.",
       "id": "knowledge_embeddings_rationale_35"
     },
@@ -20204,7 +20213,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/knowledge/embeddings.py",
       "source_location": "L39",
-      "community": 78,
+      "community": 39,
       "norm_label": "vector dimension; must match the db column width.",
       "id": "knowledge_embeddings_rationale_39"
     },
@@ -20222,7 +20231,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/knowledge/embeddings.py",
       "source_location": "L46",
-      "community": 89,
+      "community": 78,
       "norm_label": "calls ollama's /api/embeddings endpoint per text in the batch.      ollama's emb",
       "id": "knowledge_embeddings_rationale_46"
     },
@@ -20231,7 +20240,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/knowledge/embeddings.py",
       "source_location": "L100",
-      "community": 89,
+      "community": 78,
       "norm_label": "in-process embedding via the huggingface sentence-transformers library.      req",
       "id": "knowledge_embeddings_rationale_100"
     },
@@ -20258,7 +20267,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/knowledge/embeddings.py",
       "source_location": "L199",
-      "community": 39,
+      "community": 78,
       "norm_label": "shared factory body \u2014 builds an embeddingprovider from a name + model.      pull",
       "id": "knowledge_embeddings_rationale_199"
     },
@@ -20276,7 +20285,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/knowledge/embeddings.py",
       "source_location": "L238",
-      "community": 39,
+      "community": 77,
       "norm_label": "construct the optional secondary embeddingprovider (adr 0014).      returns `non",
       "id": "knowledge_embeddings_rationale_238"
     },
@@ -20375,7 +20384,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/knowledge/store.py",
       "source_location": "L44",
-      "community": 88,
+      "community": 105,
       "norm_label": "chunkinput",
       "id": "knowledge_store_chunkinput"
     },
@@ -20456,7 +20465,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/knowledge/store.py",
       "source_location": "L99",
-      "community": 77,
+      "community": 105,
       "norm_label": "pgvectorknowledgestore",
       "id": "knowledge_store_pgvectorknowledgestore"
     },
@@ -20483,7 +20492,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/knowledge/store.py",
       "source_location": "L124",
-      "community": 88,
+      "community": 105,
       "norm_label": ".upsert()",
       "id": "knowledge_store_pgvectorknowledgestore_upsert"
     },
@@ -20546,7 +20555,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/knowledge/store.py",
       "source_location": "L362",
-      "community": 88,
+      "community": 105,
       "norm_label": "._validate_chunk()",
       "id": "knowledge_store_pgvectorknowledgestore_validate_chunk"
     },
@@ -20564,7 +20573,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/knowledge/store.py",
       "source_location": "L45",
-      "community": 88,
+      "community": 105,
       "norm_label": "a chunk to be embedded and stored. embedding is computed by the store.",
       "id": "knowledge_store_rationale_45"
     },
@@ -20609,7 +20618,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/knowledge/store.py",
       "source_location": "L100",
-      "community": 77,
+      "community": 105,
       "norm_label": "postgres + pgvector implementation of knowledgestore.      single-leg mode (defa",
       "id": "knowledge_store_rationale_100"
     },
@@ -21167,7 +21176,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/management/seed_dev_knowledge.py",
       "source_location": "L1",
-      "community": 88,
+      "community": 30,
       "norm_label": "seed_dev_knowledge.py",
       "id": "management_seed_dev_knowledge"
     },
@@ -21176,7 +21185,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/management/seed_dev_knowledge.py",
       "source_location": "L105",
-      "community": 88,
+      "community": 105,
       "norm_label": "runbook_chunks_for()",
       "id": "management_seed_dev_knowledge_runbook_chunks_for"
     },
@@ -21185,7 +21194,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/management/seed_dev_knowledge.py",
       "source_location": "L105",
-      "community": 88,
+      "community": 105,
       "norm_label": "str",
       "id": "services_server_wolf_server_management_seed_dev_knowledge_py_str"
     },
@@ -21194,7 +21203,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/management/seed_dev_knowledge.py",
       "source_location": "L105",
-      "community": 88,
+      "community": 105,
       "norm_label": "object",
       "id": "services_server_wolf_server_management_seed_dev_knowledge_py_object"
     },
@@ -21203,7 +21212,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/management/seed_dev_knowledge.py",
       "source_location": "L152",
-      "community": 88,
+      "community": 30,
       "norm_label": "main()",
       "id": "management_seed_dev_knowledge_main"
     },
@@ -21212,7 +21221,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/management/seed_dev_knowledge.py",
       "source_location": "L152",
-      "community": 88,
+      "community": 30,
       "norm_label": "int",
       "id": "services_server_wolf_server_management_seed_dev_knowledge_py_int"
     },
@@ -21221,7 +21230,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/management/seed_dev_knowledge.py",
       "source_location": "L1",
-      "community": 88,
+      "community": 30,
       "norm_label": "seed_dev_knowledge \u2014 load a tiny inline corpus for phase 3 slice 1 dev.  slice-1",
       "id": "management_seed_dev_knowledge_rationale_1"
     },
@@ -21392,7 +21401,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/models/anthropic.py",
       "source_location": "L30",
-      "community": 93,
+      "community": 52,
       "norm_label": "toolschema",
       "id": "services_server_wolf_server_models_anthropic_py_toolschema"
     },
@@ -21428,7 +21437,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/models/anthropic.py",
       "source_location": "L38",
-      "community": 93,
+      "community": 52,
       "norm_label": "message",
       "id": "services_server_wolf_server_models_anthropic_py_message"
     },
@@ -21464,7 +21473,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/models/anthropic.py",
       "source_location": "L124",
-      "community": 168,
+      "community": 93,
       "norm_label": ".__init__()",
       "id": "models_anthropic_anthropicadapter_init"
     },
@@ -21473,7 +21482,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/models/anthropic.py",
       "source_location": "L124",
-      "community": 168,
+      "community": 52,
       "norm_label": "asyncclient",
       "id": "services_server_wolf_server_models_anthropic_py_asyncclient"
     },
@@ -21725,7 +21734,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/models/interface.py",
       "source_location": "L30",
-      "community": 52,
+      "community": 63,
       "norm_label": "chatstreamdone",
       "id": "models_interface_chatstreamdone"
     },
@@ -21734,7 +21743,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/models/interface.py",
       "source_location": "L45",
-      "community": 6,
+      "community": 0,
       "norm_label": "modelprovider",
       "id": "models_interface_modelprovider"
     },
@@ -21743,7 +21752,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/models/interface.py",
       "source_location": "L48",
-      "community": 6,
+      "community": 0,
       "norm_label": ".capability()",
       "id": "models_interface_modelprovider_capability"
     },
@@ -21833,7 +21842,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/models/interface.py",
       "source_location": "L31",
-      "community": 52,
+      "community": 63,
       "norm_label": "terminal event of a streaming chat call (slice 5.0c-d).      carries the fully-a",
       "id": "models_interface_rationale_31"
     },
@@ -21842,7 +21851,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/models/interface.py",
       "source_location": "L46",
-      "community": 6,
+      "community": 0,
       "norm_label": "adapter contract all llm provider implementations must satisfy.",
       "id": "models_interface_rationale_46"
     },
@@ -21851,7 +21860,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/models/interface.py",
       "source_location": "L49",
-      "community": 6,
+      "community": 0,
       "norm_label": "return the static capability descriptor for this model.",
       "id": "models_interface_rationale_49"
     },
@@ -22121,7 +22130,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/models/openai.py",
       "source_location": "L29",
-      "community": 168,
+      "community": 52,
       "norm_label": "toolschema",
       "id": "services_server_wolf_server_models_openai_py_toolschema"
     },
@@ -22283,7 +22292,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/models/registry.py",
       "source_location": "L1",
-      "community": 22,
+      "community": 88,
       "norm_label": "registry.py",
       "id": "models_registry"
     },
@@ -22292,7 +22301,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/models/registry.py",
       "source_location": "L12",
-      "community": 6,
+      "community": 4,
       "norm_label": "toolregistry",
       "id": "models_registry_toolregistry"
     },
@@ -22301,7 +22310,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/models/registry.py",
       "source_location": "L15",
-      "community": 6,
+      "community": 4,
       "norm_label": ".__init__()",
       "id": "models_registry_toolregistry_init"
     },
@@ -22310,7 +22319,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/models/registry.py",
       "source_location": "L18",
-      "community": 1,
+      "community": 78,
       "norm_label": ".register()",
       "id": "models_registry_toolregistry_register"
     },
@@ -22319,7 +22328,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/models/registry.py",
       "source_location": "L18",
-      "community": 1,
+      "community": 5,
       "norm_label": "toolschema",
       "id": "services_server_wolf_server_models_registry_py_toolschema"
     },
@@ -22328,7 +22337,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/models/registry.py",
       "source_location": "L24",
-      "community": 1,
+      "community": 5,
       "norm_label": ".lookup()",
       "id": "models_registry_toolregistry_lookup"
     },
@@ -22337,7 +22346,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/models/registry.py",
       "source_location": "L24",
-      "community": 1,
+      "community": 5,
       "norm_label": "str",
       "id": "services_server_wolf_server_models_registry_py_str"
     },
@@ -22346,7 +22355,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/models/registry.py",
       "source_location": "L30",
-      "community": 1,
+      "community": 5,
       "norm_label": ".model_tools()",
       "id": "models_registry_toolregistry_model_tools"
     },
@@ -22355,7 +22364,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/models/registry.py",
       "source_location": "L38",
-      "community": 1,
+      "community": 5,
       "norm_label": ".all_tools()",
       "id": "models_registry_toolregistry_all_tools"
     },
@@ -22364,7 +22373,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/models/registry.py",
       "source_location": "L42",
-      "community": 6,
+      "community": 4,
       "norm_label": ".clear()",
       "id": "models_registry_toolregistry_clear"
     },
@@ -22373,7 +22382,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/models/registry.py",
       "source_location": "L46",
-      "community": 1,
+      "community": 5,
       "norm_label": ".validate_model_call()",
       "id": "models_registry_toolregistry_validate_model_call"
     },
@@ -22382,7 +22391,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/models/registry.py",
       "source_location": "L1",
-      "community": 22,
+      "community": 88,
       "norm_label": "tool registry \u2014 single source of truth for registered tools and their tiers.  th",
       "id": "models_registry_rationale_1"
     },
@@ -22391,7 +22400,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/models/registry.py",
       "source_location": "L13",
-      "community": 6,
+      "community": 4,
       "norm_label": "in-process registry of all tools and their capability tiers.",
       "id": "models_registry_rationale_13"
     },
@@ -22400,7 +22409,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/models/registry.py",
       "source_location": "L19",
-      "community": 1,
+      "community": 78,
       "norm_label": "register a tool.  raises valueerror on duplicate name.",
       "id": "models_registry_rationale_19"
     },
@@ -22409,7 +22418,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/models/registry.py",
       "source_location": "L25",
-      "community": 1,
+      "community": 5,
       "norm_label": "return the tool or raise toolnotfounderror.",
       "id": "models_registry_rationale_25"
     },
@@ -22418,7 +22427,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/models/registry.py",
       "source_location": "L31",
-      "community": 1,
+      "community": 5,
       "norm_label": "return only read and propose tools \u2014 safe to include in model schemas.",
       "id": "models_registry_rationale_31"
     },
@@ -22427,7 +22436,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/models/registry.py",
       "source_location": "L39",
-      "community": 1,
+      "community": 5,
       "norm_label": "return all registered tools including execute-tier (for gateway use).",
       "id": "models_registry_rationale_39"
     },
@@ -22436,7 +22445,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/models/registry.py",
       "source_location": "L43",
-      "community": 6,
+      "community": 4,
       "norm_label": "remove every registered tool \u2014 for test isolation only.",
       "id": "models_registry_rationale_43"
     },
@@ -22445,7 +22454,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/models/registry.py",
       "source_location": "L47",
-      "community": 1,
+      "community": 5,
       "norm_label": "validate a model-originated tool call.          raises toolnotfounderror for unk",
       "id": "models_registry_rationale_47"
     },
@@ -22553,7 +22562,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tenancy/context.py",
       "source_location": "L37",
-      "community": 77,
+      "community": 9,
       "norm_label": "tenantcontext",
       "id": "tenancy_context_tenantcontext"
     },
@@ -22652,7 +22661,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/tenancy/context.py",
       "source_location": "L38",
-      "community": 77,
+      "community": 9,
       "norm_label": "immutable context stamped onto every request.      frozen so that downstream cod",
       "id": "tenancy_context_rationale_38"
     },
@@ -22841,7 +22850,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/agents.py",
       "source_location": "L1",
-      "community": 10,
+      "community": 1,
       "norm_label": "agents.py",
       "id": "tools_agents"
     },
@@ -22859,7 +22868,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/agents.py",
       "source_location": "L23",
-      "community": 10,
+      "community": 1,
       "norm_label": "agentdetail",
       "id": "tools_agents_agentdetail"
     },
@@ -22868,7 +22877,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/agents.py",
       "source_location": "L38",
-      "community": 10,
+      "community": 1,
       "norm_label": "_summarize_agent()",
       "id": "tools_agents_summarize_agent"
     },
@@ -22877,7 +22886,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/agents.py",
       "source_location": "L38",
-      "community": 10,
+      "community": 1,
       "norm_label": "str",
       "id": "services_server_wolf_server_tools_agents_py_str"
     },
@@ -22886,7 +22895,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/agents.py",
       "source_location": "L38",
-      "community": 10,
+      "community": 1,
       "norm_label": "any",
       "id": "services_server_wolf_server_tools_agents_py_any"
     },
@@ -22922,7 +22931,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/agents.py",
       "source_location": "L88",
-      "community": 10,
+      "community": 1,
       "norm_label": "listagentsoutput",
       "id": "tools_agents_listagentsoutput"
     },
@@ -22949,7 +22958,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/agents.py",
       "source_location": "L105",
-      "community": 10,
+      "community": 1,
       "norm_label": ".run()",
       "id": "tools_agents_listagentstool_run"
     },
@@ -22958,7 +22967,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/agents.py",
       "source_location": "L105",
-      "community": 10,
+      "community": 1,
       "norm_label": "toolexeccontext",
       "id": "services_server_wolf_server_tools_agents_py_toolexeccontext"
     },
@@ -22976,7 +22985,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/agents.py",
       "source_location": "L136",
-      "community": 10,
+      "community": 1,
       "norm_label": "getagentdetailoutput",
       "id": "tools_agents_getagentdetailoutput"
     },
@@ -22994,7 +23003,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/agents.py",
       "source_location": "L147",
-      "community": 10,
+      "community": 1,
       "norm_label": ".run()",
       "id": "tools_agents_getagentdetailtool_run"
     },
@@ -23003,7 +23012,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/tools/agents.py",
       "source_location": "L1",
-      "community": 10,
+      "community": 1,
       "norm_label": "agent (fleet inventory) read tools \u2014 wazuh server api tier.",
       "id": "tools_agents_rationale_1"
     },
@@ -23057,7 +23066,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/alerts.py",
       "source_location": "L41",
-      "community": 24,
+      "community": 106,
       "norm_label": "any",
       "id": "services_server_wolf_server_tools_alerts_py_any"
     },
@@ -23093,7 +23102,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/alerts.py",
       "source_location": "L168",
-      "community": 24,
+      "community": 106,
       "norm_label": "._coerce_time()",
       "id": "tools_alerts_searchalertsinput_coerce_time"
     },
@@ -23102,7 +23111,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/alerts.py",
       "source_location": "L173",
-      "community": 24,
+      "community": 106,
       "norm_label": "._coerce_min_level()",
       "id": "tools_alerts_searchalertsinput_coerce_min_level"
     },
@@ -23147,7 +23156,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/alerts.py",
       "source_location": "L271",
-      "community": 21,
+      "community": 24,
       "norm_label": "searchalertsoutput",
       "id": "tools_alerts_searchalertsoutput"
     },
@@ -23183,7 +23192,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/alerts.py",
       "source_location": "L385",
-      "community": 24,
+      "community": 106,
       "norm_label": "._coerce_time()",
       "id": "tools_alerts_aggregatealertsinput_coerce_time"
     },
@@ -23192,7 +23201,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/alerts.py",
       "source_location": "L389",
-      "community": 21,
+      "community": 1,
       "norm_label": "aggregatebucket",
       "id": "tools_alerts_aggregatebucket"
     },
@@ -23201,7 +23210,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/alerts.py",
       "source_location": "L394",
-      "community": 21,
+      "community": 1,
       "norm_label": "aggregatealertsoutput",
       "id": "tools_alerts_aggregatealertsoutput"
     },
@@ -23219,7 +23228,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/alerts.py",
       "source_location": "L413",
-      "community": 21,
+      "community": 1,
       "norm_label": ".run()",
       "id": "tools_alerts_aggregatealertstool_run"
     },
@@ -23237,7 +23246,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/alerts.py",
       "source_location": "L463",
-      "community": 24,
+      "community": 106,
       "norm_label": "._coerce_time()",
       "id": "tools_alerts_geteventtimelineinput_coerce_time"
     },
@@ -23282,7 +23291,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/alerts.py",
       "source_location": "L529",
-      "community": 24,
+      "community": 10,
       "norm_label": "._coerce_time()",
       "id": "tools_alerts_getagentalerthistoryinput_coerce_time"
     },
@@ -23318,7 +23327,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/alerts.py",
       "source_location": "L570",
-      "community": 24,
+      "community": 106,
       "norm_label": "._coerce_time()",
       "id": "tools_alerts_countalertsbyseverityinput_coerce_time"
     },
@@ -23480,7 +23489,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/base.py",
       "source_location": "L25",
-      "community": 10,
+      "community": 1,
       "norm_label": "citation",
       "id": "tools_base_citation"
     },
@@ -23489,7 +23498,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/base.py",
       "source_location": "L46",
-      "community": 10,
+      "community": 1,
       "norm_label": "toolexeccontext",
       "id": "tools_base_toolexeccontext"
     },
@@ -23525,7 +23534,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/base.py",
       "source_location": "L100",
-      "community": 10,
+      "community": 1,
       "norm_label": ".run()",
       "id": "tools_base_readtool_run"
     },
@@ -23606,7 +23615,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/tools/base.py",
       "source_location": "L26",
-      "community": 10,
+      "community": 1,
       "norm_label": "a traceable pointer back to where a fact came from.      the agent's grounding v",
       "id": "tools_base_rationale_26"
     },
@@ -23615,7 +23624,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/tools/base.py",
       "source_location": "L47",
-      "community": 10,
+      "community": 1,
       "norm_label": "per-request execution context passed to every tool.      built by the dispatcher",
       "id": "tools_base_rationale_47"
     },
@@ -23642,7 +23651,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/tools/base.py",
       "source_location": "L101",
-      "community": 10,
+      "community": 1,
       "norm_label": "execute the tool.  `args` is already a validated inputmodel instance.",
       "id": "tools_base_rationale_101"
     },
@@ -23678,7 +23687,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/cluster.py",
       "source_location": "L1",
-      "community": 10,
+      "community": 1,
       "norm_label": "cluster.py",
       "id": "tools_cluster"
     },
@@ -23696,7 +23705,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/cluster.py",
       "source_location": "L16",
-      "community": 10,
+      "community": 1,
       "norm_label": "nodehealth",
       "id": "tools_cluster_nodehealth"
     },
@@ -23705,7 +23714,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/cluster.py",
       "source_location": "L24",
-      "community": 10,
+      "community": 1,
       "norm_label": "getclusterhealthoutput",
       "id": "tools_cluster_getclusterhealthoutput"
     },
@@ -23723,7 +23732,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/cluster.py",
       "source_location": "L74",
-      "community": 10,
+      "community": 1,
       "norm_label": ".run()",
       "id": "tools_cluster_getclusterhealthtool_run"
     },
@@ -23732,7 +23741,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/cluster.py",
       "source_location": "L74",
-      "community": 10,
+      "community": 1,
       "norm_label": "toolexeccontext",
       "id": "services_server_wolf_server_tools_cluster_py_toolexeccontext"
     },
@@ -23741,7 +23750,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/tools/cluster.py",
       "source_location": "L1",
-      "community": 10,
+      "community": 1,
       "norm_label": "cluster health read tool \u2014 wazuh server api tier.",
       "id": "tools_cluster_rationale_1"
     },
@@ -23948,7 +23957,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/knowledge.py",
       "source_location": "L1",
-      "community": 21,
+      "community": 46,
       "norm_label": "knowledge.py",
       "id": "tools_knowledge"
     },
@@ -23957,7 +23966,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/knowledge.py",
       "source_location": "L22",
-      "community": 35,
+      "community": 46,
       "norm_label": "queryrunbookinput",
       "id": "tools_knowledge_queryrunbookinput"
     },
@@ -23975,7 +23984,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/knowledge.py",
       "source_location": "L72",
-      "community": 21,
+      "community": 46,
       "norm_label": "knowledgeretrievalsummary",
       "id": "tools_knowledge_knowledgeretrievalsummary"
     },
@@ -23984,7 +23993,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/knowledge.py",
       "source_location": "L87",
-      "community": 21,
+      "community": 46,
       "norm_label": "_compute_runbook_summary()",
       "id": "tools_knowledge_compute_runbook_summary"
     },
@@ -23993,7 +24002,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/knowledge.py",
       "source_location": "L99",
-      "community": 10,
+      "community": 46,
       "norm_label": "queryrunbookoutput",
       "id": "tools_knowledge_queryrunbookoutput"
     },
@@ -24002,7 +24011,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/knowledge.py",
       "source_location": "L108",
-      "community": 10,
+      "community": 46,
       "norm_label": "queryrunbooktool",
       "id": "tools_knowledge_queryrunbooktool"
     },
@@ -24011,7 +24020,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/knowledge.py",
       "source_location": "L121",
-      "community": 10,
+      "community": 46,
       "norm_label": ".run()",
       "id": "tools_knowledge_queryrunbooktool_run"
     },
@@ -24020,7 +24029,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/knowledge.py",
       "source_location": "L121",
-      "community": 10,
+      "community": 46,
       "norm_label": "toolexeccontext",
       "id": "services_server_wolf_server_tools_knowledge_py_toolexeccontext"
     },
@@ -24029,7 +24038,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/tools/knowledge.py",
       "source_location": "L1",
-      "community": 21,
+      "community": 46,
       "norm_label": "query_runbook \u2014 rag retrieval over stable-knowledge corpora.  per doc 06: \"metad",
       "id": "tools_knowledge_rationale_1"
     },
@@ -24038,7 +24047,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/tools/knowledge.py",
       "source_location": "L23",
-      "community": 35,
+      "community": 46,
       "norm_label": "inputs to the runbook / knowledge retrieval.",
       "id": "tools_knowledge_rationale_23"
     },
@@ -24047,7 +24056,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/tools/knowledge.py",
       "source_location": "L73",
-      "community": 21,
+      "community": 46,
       "norm_label": "per-source-type roll-up over the retrieved chunks.      computed client-side so",
       "id": "tools_knowledge_rationale_73"
     },
@@ -24092,7 +24101,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/registry.py",
       "source_location": "L1",
-      "community": 175,
+      "community": 5,
       "norm_label": "registry.py",
       "id": "tools_registry"
     },
@@ -24101,7 +24110,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/registry.py",
       "source_location": "L16",
-      "community": 175,
+      "community": 5,
       "norm_label": "toolrunnerregistry",
       "id": "tools_registry_toolrunnerregistry"
     },
@@ -24110,7 +24119,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/registry.py",
       "source_location": "L19",
-      "community": 175,
+      "community": 5,
       "norm_label": ".__init__()",
       "id": "tools_registry_toolrunnerregistry_init"
     },
@@ -24119,7 +24128,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/registry.py",
       "source_location": "L22",
-      "community": 175,
+      "community": 5,
       "norm_label": ".register()",
       "id": "tools_registry_toolrunnerregistry_register"
     },
@@ -24128,7 +24137,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/registry.py",
       "source_location": "L22",
-      "community": 175,
+      "community": 5,
       "norm_label": "readtool",
       "id": "services_server_wolf_server_tools_registry_py_readtool"
     },
@@ -24137,7 +24146,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/registry.py",
       "source_location": "L29",
-      "community": 175,
+      "community": 5,
       "norm_label": ".get()",
       "id": "tools_registry_toolrunnerregistry_get"
     },
@@ -24146,7 +24155,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/registry.py",
       "source_location": "L29",
-      "community": 175,
+      "community": 5,
       "norm_label": "str",
       "id": "services_server_wolf_server_tools_registry_py_str"
     },
@@ -24155,7 +24164,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/registry.py",
       "source_location": "L34",
-      "community": 175,
+      "community": 5,
       "norm_label": ".names()",
       "id": "tools_registry_toolrunnerregistry_names"
     },
@@ -24164,7 +24173,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/registry.py",
       "source_location": "L37",
-      "community": 175,
+      "community": 5,
       "norm_label": ".clear()",
       "id": "tools_registry_toolrunnerregistry_clear"
     },
@@ -24173,7 +24182,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/tools/registry.py",
       "source_location": "L1",
-      "community": 175,
+      "community": 5,
       "norm_label": "runtime registry of tool implementations \u2014 single source of truth at execution.",
       "id": "tools_registry_rationale_1"
     },
@@ -24182,7 +24191,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/tools/registry.py",
       "source_location": "L17",
-      "community": 175,
+      "community": 5,
       "norm_label": "in-process mapping of tool name \u2192 executable readtool instance.",
       "id": "tools_registry_rationale_17"
     },
@@ -24191,7 +24200,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/tools/registry.py",
       "source_location": "L23",
-      "community": 175,
+      "community": 5,
       "norm_label": "register a tool: stores the runner here and the schema in the wire registry.",
       "id": "tools_registry_rationale_23"
     },
@@ -24200,7 +24209,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/tools/registry.py",
       "source_location": "L38",
-      "community": 175,
+      "community": 5,
       "norm_label": "remove every registered runner \u2014 for test isolation only.",
       "id": "tools_registry_rationale_38"
     },
@@ -24209,7 +24218,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/rules.py",
       "source_location": "L1",
-      "community": 10,
+      "community": 1,
       "norm_label": "rules.py",
       "id": "tools_rules"
     },
@@ -24227,7 +24236,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/rules.py",
       "source_location": "L14",
-      "community": 10,
+      "community": 1,
       "norm_label": "ruledefinition",
       "id": "tools_rules_ruledefinition"
     },
@@ -24236,7 +24245,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/rules.py",
       "source_location": "L24",
-      "community": 10,
+      "community": 1,
       "norm_label": "getruledefinitionoutput",
       "id": "tools_rules_getruledefinitionoutput"
     },
@@ -24254,7 +24263,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/rules.py",
       "source_location": "L38",
-      "community": 10,
+      "community": 1,
       "norm_label": ".run()",
       "id": "tools_rules_getruledefinitiontool_run"
     },
@@ -24263,7 +24272,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/rules.py",
       "source_location": "L38",
-      "community": 10,
+      "community": 1,
       "norm_label": "toolexeccontext",
       "id": "services_server_wolf_server_tools_rules_py_toolexeccontext"
     },
@@ -24272,7 +24281,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/tools/rules.py",
       "source_location": "L1",
-      "community": 10,
+      "community": 1,
       "norm_label": "rule definition read tool \u2014 wazuh server api tier.",
       "id": "tools_rules_rationale_1"
     },
@@ -24281,7 +24290,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/timefmt.py",
       "source_location": "L1",
-      "community": 24,
+      "community": 2,
       "norm_label": "timefmt.py",
       "id": "tools_timefmt"
     },
@@ -24290,7 +24299,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/timefmt.py",
       "source_location": "L46",
-      "community": 24,
+      "community": 2,
       "norm_label": "_resolve_unit()",
       "id": "tools_timefmt_resolve_unit"
     },
@@ -24299,7 +24308,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/timefmt.py",
       "source_location": "L46",
-      "community": 24,
+      "community": 2,
       "norm_label": "str",
       "id": "services_server_wolf_server_tools_timefmt_py_str"
     },
@@ -24308,7 +24317,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/timefmt.py",
       "source_location": "L46",
-      "community": 24,
+      "community": 2,
       "norm_label": "timedelta",
       "id": "services_server_wolf_server_tools_timefmt_py_timedelta"
     },
@@ -24317,7 +24326,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/timefmt.py",
       "source_location": "L59",
-      "community": 24,
+      "community": 2,
       "norm_label": "parse_time_field()",
       "id": "tools_timefmt_parse_time_field"
     },
@@ -24326,7 +24335,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/timefmt.py",
       "source_location": "L59",
-      "community": 24,
+      "community": 2,
       "norm_label": "any",
       "id": "services_server_wolf_server_tools_timefmt_py_any"
     },
@@ -24335,7 +24344,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/timefmt.py",
       "source_location": "L59",
-      "community": 24,
+      "community": 2,
       "norm_label": "datetime",
       "id": "services_server_wolf_server_tools_timefmt_py_datetime"
     },
@@ -24344,7 +24353,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/tools/timefmt.py",
       "source_location": "L96",
-      "community": 24,
+      "community": 2,
       "norm_label": "default_time_to()",
       "id": "tools_timefmt_default_time_to"
     },
@@ -24353,7 +24362,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/tools/timefmt.py",
       "source_location": "L1",
-      "community": 24,
+      "community": 2,
       "norm_label": "permissive time-field parser for tool inputs.  models \u2014 especially small / local",
       "id": "tools_timefmt_rationale_1"
     },
@@ -24362,7 +24371,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/tools/timefmt.py",
       "source_location": "L47",
-      "community": 24,
+      "community": 2,
       "norm_label": "map a relative-time unit token to a timedelta, or none if unknown.      single-l",
       "id": "tools_timefmt_rationale_47"
     },
@@ -24371,7 +24380,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/tools/timefmt.py",
       "source_location": "L60",
-      "community": 24,
+      "community": 2,
       "norm_label": "accept iso datetime, datetime, or a 'now[-n<unit>]' relative form.      units ac",
       "id": "tools_timefmt_rationale_60"
     },
@@ -24380,7 +24389,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/tools/timefmt.py",
       "source_location": "L97",
-      "community": 24,
+      "community": 2,
       "norm_label": "return 'now' for tool inputs where the model omitted time_to.",
       "id": "tools_timefmt_rationale_97"
     },
@@ -24524,7 +24533,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/wazuh/opensearch.py",
       "source_location": "L1",
-      "community": 96,
+      "community": 172,
       "norm_label": "opensearch.py",
       "id": "wazuh_opensearch"
     },
@@ -24533,7 +24542,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/wazuh/opensearch.py",
       "source_location": "L27",
-      "community": 96,
+      "community": 172,
       "norm_label": "wazuhopensearcherror",
       "id": "wazuh_opensearch_wazuhopensearcherror"
     },
@@ -24542,7 +24551,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/wazuh/opensearch.py",
       "source_location": "L34",
-      "community": 63,
+      "community": 77,
       "norm_label": "wazuhopensearchclient",
       "id": "wazuh_opensearch_wazuhopensearchclient"
     },
@@ -24596,7 +24605,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/wazuh/opensearch.py",
       "source_location": "L61",
-      "community": 106,
+      "community": 77,
       "norm_label": ".aclose()",
       "id": "wazuh_opensearch_wazuhopensearchclient_aclose"
     },
@@ -24605,7 +24614,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/wazuh/opensearch.py",
       "source_location": "L65",
-      "community": 63,
+      "community": 77,
       "norm_label": ".__aenter__()",
       "id": "wazuh_opensearch_wazuhopensearchclient_aenter"
     },
@@ -24614,7 +24623,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/wazuh/opensearch.py",
       "source_location": "L68",
-      "community": 106,
+      "community": 77,
       "norm_label": ".__aexit__()",
       "id": "wazuh_opensearch_wazuhopensearchclient_aexit"
     },
@@ -24623,7 +24632,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/wazuh/opensearch.py",
       "source_location": "L68",
-      "community": 106,
+      "community": 77,
       "norm_label": "object",
       "id": "services_server_wolf_server_wazuh_opensearch_py_object"
     },
@@ -24677,7 +24686,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/wazuh/opensearch.py",
       "source_location": "L1",
-      "community": 96,
+      "community": 172,
       "norm_label": "wazuh opensearch (indexer) http client \u2014 read-only, tenant-bound.  constructed p",
       "id": "wazuh_opensearch_rationale_1"
     },
@@ -24686,7 +24695,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/wazuh/opensearch.py",
       "source_location": "L28",
-      "community": 96,
+      "community": 172,
       "norm_label": "opensearch returned an unexpected response.",
       "id": "wazuh_opensearch_rationale_28"
     },
@@ -24695,7 +24704,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/wazuh/opensearch.py",
       "source_location": "L35",
-      "community": 63,
+      "community": 77,
       "norm_label": "tenant-bound opensearch client for read-only alert queries.",
       "id": "wazuh_opensearch_rationale_35"
     },
@@ -24974,7 +24983,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/wazuh/resolver.py",
       "source_location": "L1",
-      "community": 77,
+      "community": 89,
       "norm_label": "resolver.py",
       "id": "wazuh_resolver"
     },
@@ -24983,7 +24992,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/wazuh/resolver.py",
       "source_location": "L22",
-      "community": 77,
+      "community": 89,
       "norm_label": "opensearch_credential_key()",
       "id": "wazuh_resolver_opensearch_credential_key"
     },
@@ -24992,7 +25001,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/wazuh/resolver.py",
       "source_location": "L22",
-      "community": 77,
+      "community": 89,
       "norm_label": "uuid",
       "id": "services_server_wolf_server_wazuh_resolver_py_uuid"
     },
@@ -25001,7 +25010,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/wazuh/resolver.py",
       "source_location": "L22",
-      "community": 77,
+      "community": 89,
       "norm_label": "str",
       "id": "services_server_wolf_server_wazuh_resolver_py_str"
     },
@@ -25010,7 +25019,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/wazuh/resolver.py",
       "source_location": "L26",
-      "community": 77,
+      "community": 89,
       "norm_label": "server_api_credential_key()",
       "id": "wazuh_resolver_server_api_credential_key"
     },
@@ -25019,7 +25028,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/wazuh/resolver.py",
       "source_location": "L30",
-      "community": 77,
+      "community": 89,
       "norm_label": "wazuhconfigmissingerror",
       "id": "wazuh_resolver_wazuhconfigmissingerror"
     },
@@ -25028,7 +25037,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/wazuh/resolver.py",
       "source_location": "L37",
-      "community": 77,
+      "community": 89,
       "norm_label": "get_wazuh_connection()",
       "id": "wazuh_resolver_get_wazuh_connection"
     },
@@ -25037,7 +25046,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/wazuh/resolver.py",
       "source_location": "L37",
-      "community": 77,
+      "community": 89,
       "norm_label": "tenantcontext",
       "id": "services_server_wolf_server_wazuh_resolver_py_tenantcontext"
     },
@@ -25046,7 +25055,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/wazuh/resolver.py",
       "source_location": "L37",
-      "community": 77,
+      "community": 89,
       "norm_label": "asyncsession",
       "id": "services_server_wolf_server_wazuh_resolver_py_asyncsession"
     },
@@ -25055,7 +25064,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/wazuh/resolver.py",
       "source_location": "L37",
-      "community": 77,
+      "community": 89,
       "norm_label": "secretsbackend",
       "id": "services_server_wolf_server_wazuh_resolver_py_secretsbackend"
     },
@@ -25064,7 +25073,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/wazuh/resolver.py",
       "source_location": "L37",
-      "community": 77,
+      "community": 89,
       "norm_label": "wazuhconnection",
       "id": "services_server_wolf_server_wazuh_resolver_py_wazuhconnection"
     },
@@ -25073,7 +25082,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/wazuh/resolver.py",
       "source_location": "L73",
-      "community": 77,
+      "community": 89,
       "norm_label": "_load_credential_blob()",
       "id": "wazuh_resolver_load_credential_blob"
     },
@@ -25082,7 +25091,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/wazuh/resolver.py",
       "source_location": "L1",
-      "community": 77,
+      "community": 89,
       "norm_label": "resolve a tenant's wazuh connection by combining db config + secrets backend.  t",
       "id": "wazuh_resolver_rationale_1"
     },
@@ -25091,7 +25100,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/wazuh/resolver.py",
       "source_location": "L31",
-      "community": 77,
+      "community": 89,
       "norm_label": "no tenantwazuhconfig row exists for this tenant.",
       "id": "wazuh_resolver_rationale_31"
     },
@@ -25100,7 +25109,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/wazuh/resolver.py",
       "source_location": "L42",
-      "community": 77,
+      "community": 89,
       "norm_label": "fetch and assemble the tenant's wazuh connection profile.      looks up the row",
       "id": "wazuh_resolver_rationale_42"
     },
@@ -25109,7 +25118,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/wazuh/resolver.py",
       "source_location": "L74",
-      "community": 77,
+      "community": 89,
       "norm_label": "fetch a json-encoded {username, password} blob from the secrets backend.",
       "id": "wazuh_resolver_rationale_74"
     },
@@ -25118,7 +25127,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/wazuh/server_api.py",
       "source_location": "L1",
-      "community": 96,
+      "community": 88,
       "norm_label": "server_api.py",
       "id": "wazuh_server_api"
     },
@@ -25127,7 +25136,7 @@
       "file_type": "code",
       "source_file": "services/server/wolf_server/wazuh/server_api.py",
       "source_location": "L26",
-      "community": 96,
+      "community": 172,
       "norm_label": "wazuhserverapierror",
       "id": "wazuh_server_api_wazuhserverapierror"
     },
@@ -25253,7 +25262,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/wazuh/server_api.py",
       "source_location": "L1",
-      "community": 96,
+      "community": 88,
       "norm_label": "wazuh server api http client \u2014 read-only endpoints.  the server api is the intro",
       "id": "wazuh_server_api_rationale_1"
     },
@@ -25262,7 +25271,7 @@
       "file_type": "rationale",
       "source_file": "services/server/wolf_server/wazuh/server_api.py",
       "source_location": "L27",
-      "community": 96,
+      "community": 172,
       "norm_label": "server api returned an unexpected response.",
       "id": "wazuh_server_api_rationale_27"
     },
@@ -25334,7 +25343,7 @@
       "file_type": "code",
       "source_file": "tools/embedding_benchmark/__main__.py",
       "source_location": "L1",
-      "community": 89,
+      "community": 78,
       "norm_label": "__main__.py",
       "id": "embedding_benchmark_main"
     },
@@ -25343,7 +25352,7 @@
       "file_type": "code",
       "source_file": "tools/embedding_benchmark/__main__.py",
       "source_location": "L56",
-      "community": 89,
+      "community": 78,
       "norm_label": "adapterresult",
       "id": "embedding_benchmark_main_adapterresult"
     },
@@ -25352,7 +25361,7 @@
       "file_type": "code",
       "source_file": "tools/embedding_benchmark/__main__.py",
       "source_location": "L65",
-      "community": 89,
+      "community": 78,
       "norm_label": "_cosine()",
       "id": "embedding_benchmark_main_cosine"
     },
@@ -25361,7 +25370,7 @@
       "file_type": "code",
       "source_file": "tools/embedding_benchmark/__main__.py",
       "source_location": "L65",
-      "community": 89,
+      "community": 78,
       "norm_label": "float",
       "id": "tools_embedding_benchmark_main_py_float"
     },
@@ -25370,7 +25379,7 @@
       "file_type": "code",
       "source_file": "tools/embedding_benchmark/__main__.py",
       "source_location": "L72",
-      "community": 89,
+      "community": 78,
       "norm_label": "_bench_one()",
       "id": "embedding_benchmark_main_bench_one"
     },
@@ -25379,7 +25388,7 @@
       "file_type": "code",
       "source_file": "tools/embedding_benchmark/__main__.py",
       "source_location": "L72",
-      "community": 89,
+      "community": 78,
       "norm_label": "str",
       "id": "tools_embedding_benchmark_main_py_str"
     },
@@ -25388,7 +25397,7 @@
       "file_type": "code",
       "source_file": "tools/embedding_benchmark/__main__.py",
       "source_location": "L72",
-      "community": 89,
+      "community": 78,
       "norm_label": "callable",
       "id": "callable"
     },
@@ -25397,7 +25406,7 @@
       "file_type": "code",
       "source_file": "tools/embedding_benchmark/__main__.py",
       "source_location": "L130",
-      "community": 89,
+      "community": 78,
       "norm_label": "_print_summary()",
       "id": "embedding_benchmark_main_print_summary"
     },
@@ -25406,7 +25415,7 @@
       "file_type": "code",
       "source_file": "tools/embedding_benchmark/__main__.py",
       "source_location": "L148",
-      "community": 89,
+      "community": 78,
       "norm_label": "_print_side_by_side()",
       "id": "embedding_benchmark_main_print_side_by_side"
     },
@@ -25415,7 +25424,7 @@
       "file_type": "code",
       "source_file": "tools/embedding_benchmark/__main__.py",
       "source_location": "L159",
-      "community": 89,
+      "community": 78,
       "norm_label": "main()",
       "id": "embedding_benchmark_main_main"
     },
@@ -25424,7 +25433,7 @@
       "file_type": "code",
       "source_file": "tools/embedding_benchmark/__main__.py",
       "source_location": "L159",
-      "community": 89,
+      "community": 78,
       "norm_label": "int",
       "id": "tools_embedding_benchmark_main_py_int"
     },
@@ -25433,7 +25442,7 @@
       "file_type": "rationale",
       "source_file": "tools/embedding_benchmark/__main__.py",
       "source_location": "L1",
-      "community": 89,
+      "community": 78,
       "norm_label": "embedding-provider side-by-side benchmark cli.  compares ollama-hosted nomic-emb",
       "id": "embedding_benchmark_main_rationale_1"
     },
@@ -25721,7 +25730,7 @@
       "file_type": "code",
       "source_file": "tools/model_probe/probe.py",
       "source_location": "L35",
-      "community": 7,
+      "community": 0,
       "norm_label": "probereport",
       "id": "model_probe_probe_probereport"
     },
@@ -25730,7 +25739,7 @@
       "file_type": "code",
       "source_file": "tools/model_probe/probe.py",
       "source_location": "L45",
-      "community": 7,
+      "community": 0,
       "norm_label": ".overall_score()",
       "id": "model_probe_probe_probereport_overall_score"
     },
@@ -25748,7 +25757,7 @@
       "file_type": "code",
       "source_file": "tools/model_probe/probe.py",
       "source_location": "L50",
-      "community": 7,
+      "community": 0,
       "norm_label": ".summary()",
       "id": "model_probe_probe_probereport_summary"
     },
@@ -25928,7 +25937,7 @@
       "file_type": "code",
       "source_file": "tools/model_probe/tasks.py",
       "source_location": "L363",
-      "community": 6,
+      "community": 0,
       "norm_label": "nativetoolcalling",
       "id": "tools_model_probe_tasks_py_nativetoolcalling"
     },
@@ -26135,7 +26144,7 @@
       "file_type": "code",
       "source_file": "tools/seed_knowledge/attack.py",
       "source_location": "L50",
-      "community": 88,
+      "community": 178,
       "norm_label": "_download_if_missing()",
       "id": "seed_knowledge_attack_download_if_missing"
     },
@@ -26144,7 +26153,7 @@
       "file_type": "code",
       "source_file": "tools/seed_knowledge/attack.py",
       "source_location": "L50",
-      "community": 88,
+      "community": 178,
       "norm_label": "path",
       "id": "tools_seed_knowledge_attack_py_path"
     },
@@ -26189,7 +26198,7 @@
       "file_type": "code",
       "source_file": "tools/seed_knowledge/attack.py",
       "source_location": "L81",
-      "community": 88,
+      "community": 178,
       "norm_label": "chunkinput",
       "id": "tools_seed_knowledge_attack_py_chunkinput"
     },
@@ -26198,7 +26207,7 @@
       "file_type": "code",
       "source_file": "tools/seed_knowledge/attack.py",
       "source_location": "L123",
-      "community": 88,
+      "community": 178,
       "norm_label": "ingest_attack()",
       "id": "seed_knowledge_attack_ingest_attack"
     },
@@ -26207,7 +26216,7 @@
       "file_type": "code",
       "source_file": "tools/seed_knowledge/attack.py",
       "source_location": "L123",
-      "community": 88,
+      "community": 178,
       "norm_label": "int",
       "id": "tools_seed_knowledge_attack_py_int"
     },
@@ -26216,7 +26225,7 @@
       "file_type": "rationale",
       "source_file": "tools/seed_knowledge/attack.py",
       "source_location": "L51",
-      "community": 88,
+      "community": 178,
       "norm_label": "fetch the stix bundle once. subsequent runs read the cache.",
       "id": "seed_knowledge_attack_rationale_51"
     },
@@ -26234,7 +26243,7 @@
       "file_type": "rationale",
       "source_file": "tools/seed_knowledge/attack.py",
       "source_location": "L128",
-      "community": 88,
+      "community": 178,
       "norm_label": "return chunkinput list for the enterprise-att&ck matrix.      network call (once",
       "id": "seed_knowledge_attack_rationale_128"
     },
@@ -26243,7 +26252,7 @@
       "file_type": "code",
       "source_file": "tools/seed_knowledge/wazuh_rules.py",
       "source_location": "L1",
-      "community": 13,
+      "community": 178,
       "norm_label": "wazuh_rules.py",
       "id": "seed_knowledge_wazuh_rules"
     },
@@ -26252,7 +26261,7 @@
       "file_type": "code",
       "source_file": "tools/seed_knowledge/wazuh_rules.py",
       "source_location": "L58",
-      "community": 13,
+      "community": 178,
       "norm_label": "_download_if_missing()",
       "id": "seed_knowledge_wazuh_rules_download_if_missing"
     },
@@ -26261,7 +26270,7 @@
       "file_type": "code",
       "source_file": "tools/seed_knowledge/wazuh_rules.py",
       "source_location": "L58",
-      "community": 13,
+      "community": 178,
       "norm_label": "path",
       "id": "tools_seed_knowledge_wazuh_rules_py_path"
     },
@@ -26270,7 +26279,7 @@
       "file_type": "code",
       "source_file": "tools/seed_knowledge/wazuh_rules.py",
       "source_location": "L70",
-      "community": 13,
+      "community": 178,
       "norm_label": "_iter_rule_xml_files()",
       "id": "seed_knowledge_wazuh_rules_iter_rule_xml_files"
     },
@@ -26279,7 +26288,7 @@
       "file_type": "code",
       "source_file": "tools/seed_knowledge/wazuh_rules.py",
       "source_location": "L70",
-      "community": 13,
+      "community": 178,
       "norm_label": "str",
       "id": "tools_seed_knowledge_wazuh_rules_py_str"
     },
@@ -26288,7 +26297,7 @@
       "file_type": "code",
       "source_file": "tools/seed_knowledge/wazuh_rules.py",
       "source_location": "L70",
-      "community": 13,
+      "community": 178,
       "norm_label": "bytes",
       "id": "tools_seed_knowledge_wazuh_rules_py_bytes"
     },
@@ -26297,7 +26306,7 @@
       "file_type": "code",
       "source_file": "tools/seed_knowledge/wazuh_rules.py",
       "source_location": "L84",
-      "community": 13,
+      "community": 178,
       "norm_label": "_strip_xml_namespaces()",
       "id": "seed_knowledge_wazuh_rules_strip_xml_namespaces"
     },
@@ -26324,7 +26333,7 @@
       "file_type": "code",
       "source_file": "tools/seed_knowledge/wazuh_rules.py",
       "source_location": "L160",
-      "community": 13,
+      "community": 178,
       "norm_label": "ingest_wazuh_rules()",
       "id": "seed_knowledge_wazuh_rules_ingest_wazuh_rules"
     },
@@ -26333,7 +26342,7 @@
       "file_type": "code",
       "source_file": "tools/seed_knowledge/wazuh_rules.py",
       "source_location": "L160",
-      "community": 13,
+      "community": 178,
       "norm_label": "int",
       "id": "tools_seed_knowledge_wazuh_rules_py_int"
     },
@@ -26342,7 +26351,7 @@
       "file_type": "rationale",
       "source_file": "tools/seed_knowledge/wazuh_rules.py",
       "source_location": "L71",
-      "community": 13,
+      "community": 178,
       "norm_label": "yield (filename, raw-bytes) for every rule xml inside the archive.",
       "id": "seed_knowledge_wazuh_rules_rationale_71"
     },
@@ -26351,7 +26360,7 @@
       "file_type": "rationale",
       "source_file": "tools/seed_knowledge/wazuh_rules.py",
       "source_location": "L85",
-      "community": 13,
+      "community": 178,
       "norm_label": "wazuh rule files use a 'group of rules' structure that isn't     well-formed xml",
       "id": "seed_knowledge_wazuh_rules_rationale_85"
     },
@@ -30697,6 +30706,206 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
+      "source_location": "L1",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "decisions_0020_superuser_owned_wazuh_mapping",
+      "target": "decisions_0020_superuser_owned_wazuh_mapping_adr_0020_superuser_owned_wazuh_component_mapping_install_per_org"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
+      "source_location": "L17",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "decisions_0020_superuser_owned_wazuh_mapping_adr_0020_superuser_owned_wazuh_component_mapping_install_per_org",
+      "target": "decisions_0020_superuser_owned_wazuh_mapping_context"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
+      "source_location": "L41",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "decisions_0020_superuser_owned_wazuh_mapping_adr_0020_superuser_owned_wazuh_component_mapping_install_per_org",
+      "target": "decisions_0020_superuser_owned_wazuh_mapping_decision_superuser_owns_all_wazuh_component_configuration"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
+      "source_location": "L199",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "decisions_0020_superuser_owned_wazuh_mapping_adr_0020_superuser_owned_wazuh_component_mapping_install_per_org",
+      "target": "decisions_0020_superuser_owned_wazuh_mapping_gui_surfaces_per_adr_0019"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
+      "source_location": "L224",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "decisions_0020_superuser_owned_wazuh_mapping_adr_0020_superuser_owned_wazuh_component_mapping_install_per_org",
+      "target": "decisions_0020_superuser_owned_wazuh_mapping_implementation_sequencing"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
+      "source_location": "L82",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "decisions_0020_superuser_owned_wazuh_mapping_adr_0020_superuser_owned_wazuh_component_mapping_install_per_org",
+      "target": "decisions_0020_superuser_owned_wazuh_mapping_install_level_wazuh_ecosystem_topology"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
+      "source_location": "L151",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "decisions_0020_superuser_owned_wazuh_mapping_adr_0020_superuser_owned_wazuh_component_mapping_install_per_org",
+      "target": "decisions_0020_superuser_owned_wazuh_mapping_organization_level_per_org_wazuh_credentials"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
+      "source_location": "L274",
+      "weight": 1.0,
+      "source": "decisions_0020_superuser_owned_wazuh_mapping_adr_0020_superuser_owned_wazuh_component_mapping_install_per_org",
+      "target": "decisions_0020_superuser_owned_wazuh_mapping_resolved_architectural_decisions_round_2_review_with_operator_2026_06_10",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
+      "source_location": "L306",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "decisions_0020_superuser_owned_wazuh_mapping_adr_0020_superuser_owned_wazuh_component_mapping_install_per_org",
+      "target": "decisions_0020_superuser_owned_wazuh_mapping_status_sign_off_next_steps"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
+      "source_location": "L56",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "decisions_0020_superuser_owned_wazuh_mapping_adr_0020_superuser_owned_wazuh_component_mapping_install_per_org",
+      "target": "decisions_0020_superuser_owned_wazuh_mapping_why_centralize_at_the_superuser"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
+      "source_location": "L66",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "decisions_0020_superuser_owned_wazuh_mapping_why_centralize_at_the_superuser",
+      "target": "decisions_0020_superuser_owned_wazuh_mapping_why_not_the_engineer_role"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
+      "source_location": "L108",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "decisions_0020_superuser_owned_wazuh_mapping_install_level_wazuh_ecosystem_topology",
+      "target": "decisions_0020_superuser_owned_wazuh_mapping_distributed_deployment"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
+      "source_location": "L88",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "decisions_0020_superuser_owned_wazuh_mapping_install_level_wazuh_ecosystem_topology",
+      "target": "decisions_0020_superuser_owned_wazuh_mapping_single_host_deployment"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
+      "source_location": "L138",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "decisions_0020_superuser_owned_wazuh_mapping_install_level_wazuh_ecosystem_topology",
+      "target": "decisions_0020_superuser_owned_wazuh_mapping_topology_re_configuration"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
+      "source_location": "L183",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "decisions_0020_superuser_owned_wazuh_mapping_organization_level_per_org_wazuh_credentials",
+      "target": "decisions_0020_superuser_owned_wazuh_mapping_credential_rotation"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
+      "source_location": "L157",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "decisions_0020_superuser_owned_wazuh_mapping_organization_level_per_org_wazuh_credentials",
+      "target": "decisions_0020_superuser_owned_wazuh_mapping_per_org_credential_fields"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
+      "source_location": "L166",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "decisions_0020_superuser_owned_wazuh_mapping_organization_level_per_org_wazuh_credentials",
+      "target": "decisions_0020_superuser_owned_wazuh_mapping_runtime_usage"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
+      "source_location": "L203",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "decisions_0020_superuser_owned_wazuh_mapping_gui_surfaces_per_adr_0019",
+      "target": "decisions_0020_superuser_owned_wazuh_mapping_install_level_wazuh_ecosystem_page"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
+      "source_location": "L211",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "decisions_0020_superuser_owned_wazuh_mapping_gui_surfaces_per_adr_0019",
+      "target": "decisions_0020_superuser_owned_wazuh_mapping_organization_level_per_org_wazuh_tab"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
+      "source_location": "L338",
+      "weight": 1.0,
+      "source": "decisions_0020_superuser_owned_wazuh_mapping_resolved_architectural_decisions_round_2_review_with_operator_2026_06_10",
+      "target": "decisions_0020_superuser_owned_wazuh_mapping_other_confirmations_from_the_round_2_adr_scope_check",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
       "source_file": "docs/decisions/0019-web-first-configurability.md",
       "source_location": "L1",
       "weight": 1.0,
@@ -30800,9 +31009,9 @@
       "source_file": "docs/decisions/0019-web-first-configurability.md",
       "source_location": "L285",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "decisions_0019_web_first_configurability_adr_0019_web_first_configurability_mandate_gui_cli_sync",
-      "target": "decisions_0019_web_first_configurability_resolved_architectural_decisions_round_1_review_with_operator_2026_06_10",
-      "confidence_score": 1.0
+      "target": "decisions_0019_web_first_configurability_resolved_architectural_decisions_round_1_review_with_operator_2026_06_10"
     },
     {
       "relation": "contains",
@@ -30840,9 +31049,9 @@
       "source_file": "docs/decisions/0019-web-first-configurability.md",
       "source_location": "L344",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "decisions_0019_web_first_configurability_resolved_architectural_decisions_round_1_review_with_operator_2026_06_10",
-      "target": "decisions_0019_web_first_configurability_acknowledged_refactor_scope",
-      "confidence_score": 1.0
+      "target": "decisions_0019_web_first_configurability_acknowledged_refactor_scope"
     },
     {
       "relation": "contains",
@@ -30850,9 +31059,9 @@
       "source_file": "docs/decisions/0019-web-first-configurability.md",
       "source_location": "L322",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "decisions_0019_web_first_configurability_resolved_architectural_decisions_round_1_review_with_operator_2026_06_10",
-      "target": "decisions_0019_web_first_configurability_my_memory_cross_org_self_only_catalog_clarification",
-      "confidence_score": 1.0
+      "target": "decisions_0019_web_first_configurability_my_memory_cross_org_self_only_catalog_clarification"
     },
     {
       "relation": "contains",
@@ -31543,196 +31752,6 @@
       "confidence_score": 1.0,
       "source": "decisions_0017_wolf_central_brain_open_architectural_decisions",
       "target": "decisions_0017_wolf_central_brain_thinking_layer"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
-      "source_location": "L1",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "decisions_0020_superuser_owned_wazuh_mapping",
-      "target": "decisions_0020_superuser_owned_wazuh_mapping_adr_0020_superuser_owned_wazuh_component_mapping_install_per_org"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
-      "source_location": "L17",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "decisions_0020_superuser_owned_wazuh_mapping_adr_0020_superuser_owned_wazuh_component_mapping_install_per_org",
-      "target": "decisions_0020_superuser_owned_wazuh_mapping_context"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
-      "source_location": "L41",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "decisions_0020_superuser_owned_wazuh_mapping_adr_0020_superuser_owned_wazuh_component_mapping_install_per_org",
-      "target": "decisions_0020_superuser_owned_wazuh_mapping_decision_superuser_owns_all_wazuh_component_configuration"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
-      "source_location": "L199",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "decisions_0020_superuser_owned_wazuh_mapping_adr_0020_superuser_owned_wazuh_component_mapping_install_per_org",
-      "target": "decisions_0020_superuser_owned_wazuh_mapping_gui_surfaces_per_adr_0019"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
-      "source_location": "L224",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "decisions_0020_superuser_owned_wazuh_mapping_adr_0020_superuser_owned_wazuh_component_mapping_install_per_org",
-      "target": "decisions_0020_superuser_owned_wazuh_mapping_implementation_sequencing"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
-      "source_location": "L82",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "decisions_0020_superuser_owned_wazuh_mapping_adr_0020_superuser_owned_wazuh_component_mapping_install_per_org",
-      "target": "decisions_0020_superuser_owned_wazuh_mapping_install_level_wazuh_ecosystem_topology"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
-      "source_location": "L267",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "decisions_0020_superuser_owned_wazuh_mapping_adr_0020_superuser_owned_wazuh_component_mapping_install_per_org",
-      "target": "decisions_0020_superuser_owned_wazuh_mapping_open_architectural_decisions"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
-      "source_location": "L151",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "decisions_0020_superuser_owned_wazuh_mapping_adr_0020_superuser_owned_wazuh_component_mapping_install_per_org",
-      "target": "decisions_0020_superuser_owned_wazuh_mapping_organization_level_per_org_wazuh_credentials"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
-      "source_location": "L306",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "decisions_0020_superuser_owned_wazuh_mapping_adr_0020_superuser_owned_wazuh_component_mapping_install_per_org",
-      "target": "decisions_0020_superuser_owned_wazuh_mapping_status_sign_off_next_steps"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
-      "source_location": "L56",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "decisions_0020_superuser_owned_wazuh_mapping_adr_0020_superuser_owned_wazuh_component_mapping_install_per_org",
-      "target": "decisions_0020_superuser_owned_wazuh_mapping_why_centralize_at_the_superuser"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
-      "source_location": "L66",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "decisions_0020_superuser_owned_wazuh_mapping_why_centralize_at_the_superuser",
-      "target": "decisions_0020_superuser_owned_wazuh_mapping_why_not_the_engineer_role"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
-      "source_location": "L108",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "decisions_0020_superuser_owned_wazuh_mapping_install_level_wazuh_ecosystem_topology",
-      "target": "decisions_0020_superuser_owned_wazuh_mapping_distributed_deployment"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
-      "source_location": "L88",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "decisions_0020_superuser_owned_wazuh_mapping_install_level_wazuh_ecosystem_topology",
-      "target": "decisions_0020_superuser_owned_wazuh_mapping_single_host_deployment"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
-      "source_location": "L138",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "decisions_0020_superuser_owned_wazuh_mapping_install_level_wazuh_ecosystem_topology",
-      "target": "decisions_0020_superuser_owned_wazuh_mapping_topology_re_configuration"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
-      "source_location": "L183",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "decisions_0020_superuser_owned_wazuh_mapping_organization_level_per_org_wazuh_credentials",
-      "target": "decisions_0020_superuser_owned_wazuh_mapping_credential_rotation"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
-      "source_location": "L157",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "decisions_0020_superuser_owned_wazuh_mapping_organization_level_per_org_wazuh_credentials",
-      "target": "decisions_0020_superuser_owned_wazuh_mapping_per_org_credential_fields"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
-      "source_location": "L166",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "decisions_0020_superuser_owned_wazuh_mapping_organization_level_per_org_wazuh_credentials",
-      "target": "decisions_0020_superuser_owned_wazuh_mapping_runtime_usage"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
-      "source_location": "L203",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "decisions_0020_superuser_owned_wazuh_mapping_gui_surfaces_per_adr_0019",
-      "target": "decisions_0020_superuser_owned_wazuh_mapping_install_level_wazuh_ecosystem_page"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/decisions/0020-superuser-owned-wazuh-mapping.md",
-      "source_location": "L211",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "decisions_0020_superuser_owned_wazuh_mapping_gui_surfaces_per_adr_0019",
-      "target": "decisions_0020_superuser_owned_wazuh_mapping_organization_level_per_org_wazuh_tab"
     },
     {
       "relation": "contains",
@@ -109380,5 +109399,5 @@
       "source_file": "deploy/systemd/system/README.md"
     }
   ],
-  "built_at_commit": "24bcdb913ae0cc95033621055572537a628e9452"
+  "built_at_commit": "c6dc92c34a1f61c2affc29275b16cf83c405cca7"
 }
