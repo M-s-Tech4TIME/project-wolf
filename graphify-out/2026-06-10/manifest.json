@@ -1105,9 +1105,9 @@
     "semantic_hash": "f5fa3d52706ac445a9cd4e9b8ebf0ee5"
   },
   "docs/10-build-roadmap.md": {
-    "mtime": 1780592858.1976433,
-    "ast_hash": "44d0dedb0893bd88e7c4bfd3a33b269a",
-    "semantic_hash": "44d0dedb0893bd88e7c4bfd3a33b269a"
+    "mtime": 1781043044.8381865,
+    "ast_hash": "bce3864b1d2a2b66a8edd2a31c6d61ac",
+    "semantic_hash": ""
   },
   "docs/11-claude-code-instructions.md": {
     "mtime": 1780289542.7426422,
@@ -1150,9 +1150,9 @@
     "semantic_hash": "8f8473d7c57354f727935f0cd7901edb"
   },
   "docs/PROGRESS.md": {
-    "mtime": 1780635584.7734962,
-    "ast_hash": "a5017e2c2a81784cf1e069e5b537f321",
-    "semantic_hash": "a5017e2c2a81784cf1e069e5b537f321"
+    "mtime": 1781043069.7483811,
+    "ast_hash": "d7c53e678748d3f80d5bff6bf493a302",
+    "semantic_hash": ""
   },
   "docs/decisions/0001-model-probe-llama3.2-baseline.md": {
     "mtime": 1780289542.7441635,
@@ -1307,6 +1307,11 @@
   ".github/dependabot.yml": {
     "mtime": 1781022628.3203266,
     "ast_hash": "925e902e41f986dbf07b38a6b644ee97",
+    "semantic_hash": ""
+  },
+  "docs/decisions/0017-wolf-central-brain.md": {
+    "mtime": 1781042964.704291,
+    "ast_hash": "34b4a1a8eb366826021ed7fb303736d3",
     "semantic_hash": ""
   }
 }

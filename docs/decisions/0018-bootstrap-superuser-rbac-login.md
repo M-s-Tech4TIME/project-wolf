@@ -1,13 +1,18 @@
-# ADR 0018 — Bootstrap Superuser + Per-Org RBAC + Login UX + Superuser-owned Wazuh Mapping
+# ADR 0018 — Bootstrap Superuser + Per-Org RBAC + Login UX
 
-**Status:** PROPOSED (2026-06-10)
+**Status:** PROPOSED (2026-06-10) — revised 2026-06-10 to split out the
+Wazuh component mapping decision into its own ADR 0020 (operator
+direction: Wazuh mapping is large + security-sensitive enough to
+deserve a dedicated ADR).
 **Authors:** Wolf Maintainers
 **Extends:** ADR 0010 (multi-organization isolation — currently named "multi-tenancy"
 in the legacy code, see ADR-relative note below), ADR 0016 (component
 architecture)
 **Related:** ADR 0017 (Wolf Central Brain — depends on this for the
 per-organization isolation chain), ADR 0019 (Web-first configurability —
-this ADR specifies WHAT must be configurable; ADR 0019 specifies WHERE)
+this ADR specifies WHAT must be configurable for RBAC; ADR 0019 specifies
+WHERE), ADR 0020 (Superuser-owned Wazuh component mapping — splits out
+the Wazuh-specific decisions originally in this ADR)
 
 ## ADR-relative note on naming
 
@@ -36,14 +41,13 @@ Three coupled concerns that the operator made explicit on 2026-06-10:
    field. Operators shouldn't have to know their organization ID at login
    time. The right flow is: auth → backend returns the user's organization
    memberships → if 1, auto-select; if multiple, show the org-switcher.
-4. **Wazuh component mapping** — who configures the Wazuh ecosystem
-   connection (indexer URLs, manager URLs, dashboard URL)? Today: per-
-   tenant `connection_profiles` table, configured via API only. For MSSP
-   safety + reduced attack surface, this must be Superuser-only + UI-
-   driven.
 
-This ADR resolves all four together because they share an authorization
-model.
+This ADR resolves all three together because they share an authorization
+model. (A fourth coupled concern — **Superuser-owned Wazuh component
+mapping** — was originally part of this ADR but has been split out into
+ADR 0020 per operator direction 2026-06-10. The two ADRs remain tightly
+coupled: ADR 0020 depends on the Superuser role + capability model
+defined here.)
 
 ---
 
@@ -74,9 +78,13 @@ pattern.
 - Create Users
 - Assign Users to Organizations with specific roles
 - Configure + map Wazuh components (the install's Wazuh ecosystem topology
-  + per-org Wazuh API credentials)
+  + per-org Wazuh API credentials) — see **ADR 0020** for the detailed
+  install-level + org-level mapping design
 - Configure install-wide settings (HTTPS certs via wolf-cert, database
   parameters via wolf-database, etc.)
+- Reset any user's password (recovery mechanism; emits an audit event
+  capturing Superuser identity + target user + timestamp; affected user
+  is notified via email on next login)
 - View the audit log across ALL organizations (read-only — for compliance
   + forensics)
 
@@ -85,8 +93,6 @@ pattern.
   history) WITHOUT being explicitly granted UserOrganization membership.
   Even with full admin rights, separation between "manage the install" and
   "access data within an org" is preserved.
-- Modify another user's password without their consent. (Password recovery
-  uses CLI wrappers + on-host audit, not silent admin override.)
 
 ### Bootstrap script (`bootstrap_superuser.sh` wrapper + `.py` core)
 
@@ -226,96 +232,14 @@ the body for one release as a deprecated alias.
 
 ## Decision: Superuser owns Wazuh component mapping
 
-The Superuser is the ONLY role allowed to configure + map Wazuh
-components. This applies BOTH at install level (the Wazuh ecosystem
-topology) AND at organization level (per-org Wazuh API credentials).
-
-### Why centralize this
-
-- **Wazuh credentials are the most sensitive integration point.** They
-  grant access to security telemetry — alerts, agent inventory, rules,
-  decoders. Centralizing credential management in the Superuser reduces
-  the attack surface from "every Engineer in every org" to "one
-  Superuser per install."
-- **MSSP scenario**: the MSSP's central security team configures Wazuh-
-  side RBAC for each customer; the same team configures Wolf-side
-  per-org Wazuh credentials. Single chain of custody.
-- **Audit clarity**: the Superuser is the ONLY identity that touches
-  Wazuh credentials; the audit log for credential changes has exactly
-  one possible actor.
-
-### What gets configured
-
-#### Install-level: Wazuh ecosystem topology
-
-The Superuser configures the install's Wazuh ecosystem ONCE. Two supported
-deployment shapes (per Wazuh's own docs):
-
-**Single-host deployment:**
-
-```
-┌─────────────────────────────────────────┐
-│ One Wazuh host                          │
-│  ├─ Indexer (OpenSearch)                │
-│  ├─ Manager (master, no workers)        │
-│  └─ Dashboard                           │
-└─────────────────────────────────────────┘
-```
-
-Wolf configuration: `indexer_url`, `indexer_admin_user`, `manager_url`,
-`manager_api_user`, `dashboard_url`. Simple form.
-
-**Distributed deployment:**
-
-```
-┌─────────────────┐     ┌──────────────────────────────────┐
-│ Indexer cluster │     │ Manager cluster                  │
-│  (1+ nodes)     │     │  ├─ Master node (cluster head)   │
-│                 │     │  └─ Worker nodes (N)             │
-└────────┬────────┘     └────────────────────┬─────────────┘
-         │                                   │
-         └───────────┬───────────────────────┘
-                     │
-            ┌────────┴────────┐
-            │ Dashboard host  │
-            └─────────────────┘
-```
-
-Wolf configuration: list of indexer nodes (URLs + cluster name), manager
-master URL + manager worker URLs (declared as cluster), dashboard URL.
-
-The Superuser UI (per ADR 0019) presents a topology builder where the
-Superuser picks "Single host" or "Distributed" and fills in the
-appropriate fields. The UI also runs a connection-validation probe
-(re-use the existing `wazuh/probe.py` style) before saving.
-
-#### Organization-level: per-org Wazuh credentials
-
-For each Organization, the Superuser configures the **per-org Wazuh API
-credentials** (NOT the org's Admin, NOT the org's Engineer — only the
-Superuser).
-
-- `wazuh_api_user` — restricted by the MSSP's Wazuh admin to the org's
-  data slice via Wazuh groups + index DLS
-- `wazuh_api_password` — stored in the secrets backend, per-org
-- `wazuh_index_filter` — optional explicit index pattern (for orgs that
-  span multiple Wazuh indices)
-
-When the org's Engineer / Analyst chats with Wolf, Wolf uses the
-per-org Wazuh credentials to query. Wolf never holds a "master" Wazuh
-credential that sees all orgs.
-
-### Why NOT the Engineer role
-
-The Engineer role configures org-level RAG, prompts, model selection,
-wolf-pack deployment, etc. — all things INTERNAL to Wolf. Wazuh
-credentials are EXTERNAL to Wolf (touching the operator's Wazuh
-infrastructure). Concentrating them at the Superuser level:
-- Reduces the blast radius if an Engineer account is compromised
-- Centralizes responsibility for the Wazuh integration
-- Matches how MSSPs typically operate (central security team handles
-  external-system integrations; per-customer engineers handle internal
-  customization)
+**MOVED TO ADR 0020.** Originally a fourth decision section in this ADR;
+split out 2026-06-10 per operator direction. The summary: the Superuser
+is the ONLY role allowed to configure + map Wazuh components, both at
+install level (Wazuh ecosystem topology) and at organization level
+(per-org Wazuh API credentials). The detailed design — single-host vs
+distributed topology UI, per-org credential model, connection
+validation, why-not-Engineer reasoning — lives in
+[ADR 0020](0020-superuser-owned-wazuh-mapping.md).
 
 ---
 
@@ -331,6 +255,7 @@ Sub-slices:
    - `bootstrap_superuser.sh` wrapper + `superuser.py` core
    - `.deb` postinst integration (auto-create on fresh install)
    - Password rotation path via the wrapper
+   - Superuser-driven password reset for any user (audit-emitted)
 2. **6.5-b — Per-org RBAC role enforcement**
    - Define the role enum + capability matrix in code
    - API-layer enforcement for every endpoint (decorator pattern)
@@ -341,19 +266,20 @@ Sub-slices:
      for multi-org users
    - Dashboard: remove org field from login form; add post-login org-
      selector screen
-4. **6.5-d — Superuser-owned Wazuh component mapping (UI)**
-   - Backend: install-level Wazuh ecosystem config table
-   - UI: Settings page with Single/Distributed topology builder
-   - Connection validation + save flow
-5. **6.5-e — Organization management (UI)**
+4. **6.5-d — Organization management (UI)**
    - UI: Superuser-only Organizations page (list/create/edit/delete)
    - UI: per-org page with Admin user creation
-6. **6.5-f — User management (UI)**
+5. **6.5-e — User management (UI)**
    - UI: Org-Admin-only Users page within each org
    - Role assignment dropdowns
    - Audit-event display for role changes
 
-Estimated scope: 4-6 sessions across 6 sub-slices. Should land BEFORE
+(Originally 6 sub-slices; **6.5-d "Wazuh component mapping (UI)"** moved
+to its own phase under ADR 0020 — call it **Phase 6.6**, sequenced
+after 6.5 so the Superuser + RBAC model is in place before the
+Wazuh-mapping UI uses it.)
+
+Estimated scope: 4-5 sessions across 5 sub-slices. Should land BEFORE
 Phase 7.5 (Central Brain memory) since the memory schema uses
 `organization_id` + `user_id` from the role model defined here.
 
@@ -382,9 +308,13 @@ This ADR is **PROPOSED**, not ACCEPTED. Before it can move to ACCEPTED:
 
 1. Operator reviews + answers the 5 open decisions above
 2. Confirms the role names + capability matrix
-3. Confirms the bootstrap Superuser username `Wolf` (fixed)
-4. Confirms the install-level + org-level Wazuh component mapping
-   split
+3. Confirms the bootstrap Superuser username `Wolf` (fixed) + password
+   delivery via stdout-only + zero-org-membership default
+4. Confirms the Superuser-can-reset-any-user-password (audit-emitted)
+   recovery path
+
+Wazuh component mapping is sequenced after this ADR via **ADR 0020** +
+Phase 6.6.
 
 Once ACCEPTED, Phase 6.5 becomes a real work unit. No code ships from this
 commit; design only.

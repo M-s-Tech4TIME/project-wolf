@@ -5,18 +5,21 @@
 **Extends:** ADR 0001 (model abstraction), ADR 0013 (grounding validator),
 ADR 0014 (multi-embedding RAG), ADR 0015 (yellow vs red grounding), ADR 0016
 (component architecture)
-**Related:** ADR 0018 (Bootstrap Superuser + Per-Org RBAC + Login UX +
-Superuser-owns-Wazuh-mapping), ADR 0019 (Web-first configurability mandate)
+**Related:** ADR 0018 (Bootstrap Superuser + Per-Org RBAC + Login UX),
+ADR 0019 (Web-first configurability mandate), ADR 0020 (Superuser-owned
+Wazuh component mapping — install + per-org topology)
 **Supersedes:** None — additive
 **Revision history**:
 - 2026-06-10 v1: initial draft (used "tenant" + "operator_id"); proposed
   separate ADR 0021 for Organizations.
-- 2026-06-10 v2 (this revision): aligned language to "organization" +
-  "user_id" per operator direction. Dropped the ADR 0021 idea (tenant
-  was already the org concept; no separate entity needed). Added explicit
-  §"MSSP scenario worked example" and §"Wazuh access in MSSP" sections.
-  Strengthened the per-organization isolation commitment to a load-bearing
-  top-level section.
+- 2026-06-10 v2: aligned language to "organization" + "user_id" per
+  operator direction. Dropped the ADR 0021 idea (tenant was already the
+  org concept; no separate entity needed). Added explicit §"MSSP scenario
+  worked example" and §"Wazuh access in MSSP" sections. Strengthened the
+  per-organization isolation commitment to a load-bearing top-level section.
+- 2026-06-10 v3 (this revision): Wazuh component mapping split out from
+  ADR 0018 into its own ADR 0020 (Related-list updated; §"Wazuh access
+  in MSSP" forward-ref now points to 0020 not 0018).
 
 ---
 
@@ -180,8 +183,9 @@ multiple orgs in one process.
 ### Wazuh access in MSSP
 
 The Wolf Superuser configures + maps Wazuh components for the whole install
-(single-host OR distributed cluster topology — see ADR 0018 for the
-component-mapping UI). Per-org Wazuh CREDENTIALS are also Superuser-only —
+(single-host OR distributed cluster topology — see ADR 0020 for the
+component-mapping design + UI). Per-org Wazuh CREDENTIALS are also
+Superuser-only —
 the most security-sensitive integration point in Wolf, concentrated in the
 fewest possible identities.
 

@@ -3,10 +3,12 @@
 **Status:** PROPOSED (2026-06-10)
 **Authors:** Wolf Maintainers
 **Related:** ADR 0017 (Wolf Central Brain — new memory surfaces need GUI),
-ADR 0018 (RBAC + Login UX + Wazuh mapping — defines WHO can configure
-WHAT), `shell-wrapper-required-pattern.md` memory (the CLI half of the
-GUI↔CLI duality), `web-first-configurability.md` memory (the standing
-rule this ADR formalizes)
+ADR 0018 (Bootstrap Superuser + RBAC + Login UX — defines WHO can
+configure WHAT for users + roles), ADR 0020 (Superuser-owned Wazuh
+component mapping — the Wazuh-specific WHAT), `shell-wrapper-required-
+pattern.md` memory (the CLI half of the GUI↔CLI duality),
+`web-first-configurability.md` memory (the standing rule this ADR
+formalizes)
 **Supersedes:** None — establishes a forward-looking discipline
 
 ---
@@ -51,7 +53,7 @@ Affected surfaces today (the catalog this ADR commits to delivering):
 | `wolf-database init / start / stop / status / reconfigure` | "Database" page in Superuser settings | Superuser | Future slice |
 | `bootstrap_tenant.sh` (→ `bootstrap_organization.sh`) | "Organizations" page in Superuser settings | Superuser | Phase 6.5-e (per ADR 0018) |
 | `bootstrap_superuser.sh` recovery | "Superuser password rotation" page | Superuser | Phase 6.5-a |
-| Per-org Wazuh component mapping | "Wazuh" page in Superuser settings | Superuser | Phase 6.5-d (per ADR 0018) |
+| Per-org Wazuh component mapping | "Wazuh" page in Superuser settings | Superuser | Phase 6.6 (per ADR 0020) |
 | Per-org RAG corpus management | "Knowledge" page in Engineer settings | Engineer | Future slice (depends on Phase 7.5 memory + Phase 10 knowledge growth) |
 | Per-org model + embedding selection | "AI Models" page in Engineer settings | Engineer | Future slice |
 | Per-org wolf-pack deployment | "Wolf Pack" page in Engineer settings | Engineer | Phase 12 |
@@ -125,7 +127,7 @@ Key consequences:
 ## Anti-patterns this ADR rules IN (enables)
 
 - **Database-backed configuration for everything that CAN be DB-backed.**
-  Auth, RBAC, Wazuh component mapping (per ADR 0018), RAG corpora,
+  Auth, RBAC (per ADR 0018), Wazuh component mapping (per ADR 0020), RAG corpora,
   organization metadata, user roles, model preferences, embedding
   provider, etc.
 - **For file-based things** (TLS certs, OS-level paths, env files): the
@@ -255,9 +257,13 @@ code gets migrated incrementally**.
 
 ## Implementation sequencing
 
-- **Phase 6.5** (per ADR 0018) — partial: implements the API + GUI for
-  RBAC + Login + Org management + Wazuh component mapping + Bootstrap
-  Superuser. New code, follows Rule 2 from start.
+- **Phase 6.5** (per ADR 0018) — implements the API + GUI for Bootstrap
+  Superuser + RBAC + Login + Org management + User management. New code,
+  follows Rule 2 from start.
+- **Phase 6.6** (per ADR 0020) — implements the API + GUI for
+  Superuser-owned Wazuh component mapping (install-level topology +
+  per-org credentials). Sequenced after 6.5 so the Superuser + RBAC
+  model is in place. New code, follows Rule 2 from start.
 - **Phase 5.X-style settings slices** (post-6.5, ahead of v1.0) —
   refactor existing wolf-cert + wolf-database CLI tools to go through
   the API + add their GUI counterparts. Each is its own discrete slice.
