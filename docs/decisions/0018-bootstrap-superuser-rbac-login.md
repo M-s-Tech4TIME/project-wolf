@@ -495,6 +495,56 @@ chosen so foundations land before anything that depends on them:
    - UI: org member notifications (banner + email to all org members
      when Superuser membership granted, revoked, or expired)
 
+9. **6.5-h — Invite-link verification flow + same-network gate**
+   - DB schema: `User.verification_status` enum (`unverified` /
+     `verified`) + `verification_token` (UUID, stored as hash) +
+     `verification_token_expires_at` (default: 7 days from creation)
+   - Backend: `User` rows created via Admin start in `unverified` +
+     auto-generate a single-use token at creation time
+   - Backend: `POST /api/v1/users/{user_id}/regenerate-invite-link`
+     (Admin-only) — invalidates the old token + generates a new one
+     (for the case where the original link is lost)
+   - Backend: `POST /api/v1/auth/verify-invite {token}` (authenticated
+     endpoint) — validates token belongs to current user + token not
+     used + token not expired + **request source is on a Wolf-local
+     network** (see same-network gate below). On success: flip status
+     to `verified` + emit audit event.
+   - Backend: NEW middleware checks `user.verification_status ==
+     verified` on every authenticated endpoint (except the verify
+     endpoint itself + logout). Unverified users get `403
+     Verification required` with hint.
+   - **Same-network gate** (dynamic, no operator config in v1):
+     - At verification time, enumerate Wolf's own network interfaces
+       (via `netifaces` or equivalent), excluding loopback
+     - For each interface: derive its CIDR from IP + netmask (handle
+       both IPv4 + IPv6)
+     - Check whether the request's source IP is in ANY of those CIDRs
+     - If yes → "same network" → verification proceeds
+     - If no → verification fails with `403 "Verification must be
+       completed from inside your organization's network"`
+     - Re-enumerated per-request (negligible overhead; picks up VPN +
+       DHCP changes live)
+     - Reverse-proxy handling: if request source is loopback AND
+       `X-Forwarded-For` header present, use the forwarded IP
+     - Token NOT consumed on network-check failure (user can retry
+       from the right network with the same link)
+   - UI: Admin's user-management page — "Copy invitation link" button
+     next to each unverified user (per the user's vision: link copied
+     to clipboard for out-of-band delivery, NOT email)
+   - UI: post-login screen for unverified users — "Paste your
+     invitation link here" form. Single text field; on submit calls
+     the verify endpoint. Error messages render inline.
+   - UI: status indicator in the user list (verified / unverified +
+     "expires in N days")
+   - Audit events: token generated, token regenerated, verification
+     attempted (success / failure with reason), verification status
+     changed
+   - **Out of scope for 6.5-h** (deferred to later phase):
+     - Operator-configurable additional trusted CIDRs (`WOLF_TRUSTED_
+       ADDITIONAL_CIDRS` env var) — useful for cloud + multi-network
+       deploys but v1 is dynamic-only
+     - SMTP-based invite emails — v1 is copy-link-only by design
+
 ### Out of this ADR's scope (forward refs)
 
 | Capability defined here | Where it actually gets WIRED |
@@ -511,7 +561,7 @@ chosen so foundations land before anything that depends on them:
 Phase 6.4 (tenant→organization rename, 1-2 sessions)
     │
     ▼
-Phase 6.5 (Bootstrap + RBAC + Login UX, 8 sub-slices, 10-12 sessions)
+Phase 6.5 (Bootstrap + RBAC + Login UX, 9 sub-slices, 12-13 sessions)
     │
     ├─→ Phase 6 (wolf-gateway) — wires the propose/approve/execute
     │   capabilities that 6.5-b defines but does not enforce
@@ -526,9 +576,10 @@ Phase 6.5 (Bootstrap + RBAC + Login UX, 8 sub-slices, 10-12 sessions)
 
 ### Estimated scope
 
-**10-12 sessions across 8 sub-slices** (revised from the original "4-5
-sessions" estimate which was unrealistic given the per-tab header
-refactor + Superuser-membership flow added during the review).
+**12-13 sessions across 9 sub-slices** (revised through Rounds 2-5
+review with the operator; original ADR estimate was "4-5 sessions"
+which did not account for: per-tab header refactor, Superuser-
+membership flow, invite-link verification with same-network gate).
 Breakdown:
 - 6.5-a: 1 session (mostly shell-wrapper + .deb integration)
 - 6.5-b: 1-2 sessions (decorator pattern + tests)
@@ -538,6 +589,8 @@ Breakdown:
 - 6.5-d: 1-2 sessions (Superuser dashboard + Org pages)
 - 6.5-e: 1 session (per-org user mgmt page)
 - 6.5-f: 1-2 sessions (Superuser-membership flow + notifications)
+- 6.5-h: 1-2 sessions (invite-link flow + verification gate +
+  same-network detection)
 
 Should land BEFORE Phase 7.5 (Central Brain memory) since the memory
 schema uses `organization_id` + `user_id` from the role model defined
@@ -545,33 +598,112 @@ here.
 
 ---
 
-## Open architectural decisions
+## Resolved architectural decisions (Round 5 review with operator, 2026-06-10)
 
-1. **Self-signup / invite flow** — does Wolf ever allow users to sign up
-   themselves (e.g., an invite link)? Or is Superuser/Admin invitation
-   the only path?
-2. **MFA in v1?** — proposing NO (out of scope for this ADR); can add
-   in a future RBAC slice.
-3. **Session timeout** — current default? Should it differ for Superuser
-   vs Admin vs Analyst?
-4. **Password-policy enforcement** — minimum length / complexity for
-   user-set passwords? Configurable per-install or hardcoded?
-5. **Audit visibility** — Admins see their org's audit log. Does the
-   Superuser see ALL orgs' audit logs combined (one global view) OR
-   per-org views they can switch between?
+All 5 originally-open decisions resolved + 1 new design call surfaced
+during the discussion. Decisions in this section are LOCKED for Phase
+6.5; later changes need a new ADR or an ADR-0018 v2 revision.
+
+1. **Self-signup / invite flow — Direct creation + copy-link
+   verification gate (NEW HYBRID).** Admin creates User with email +
+   password + role; Wolf generates a single-use invitation link;
+   Admin copies the link via the dashboard (no SMTP — link is
+   delivered out-of-band: in-person, paper, Slack, signed Signal, etc.);
+   the new User logs in with the credentials Admin gave them but lands
+   on a locked "Paste your invitation link" screen; Wolf verifies
+   token + same-network gate; on success, user is `verified` and
+   unlocks normal feature access. Defends against credential leak,
+   wrong-recipient link delivery, AND outside-network attack
+   (3-factor: credentials + token + on-network).
+
+2. **MFA in v1 — No** (kept). Hard commitment to ship MFA in **v1.1**
+   as a per-user opt-in TOTP flow + recovery codes; v1.5 commits to
+   "required for Superuser". v1 ships without MFA on the assumption
+   that operators deploy Wolf on a private network behind operator-
+   controlled boundaries. Operators with internet-exposed deployments
+   should defer to v1.1 before going to prod.
+
+3. **Session timeout — 8 hours absolute + 1 hour idle, uniform across
+   roles.** Operator's call for security-conservative defaults.
+   Configurable per-install is deferred to a later slice (general
+   settings configurability per ADR 0019).
+
+4. **Password policy — Hybrid (classical complexity + modern no-
+   rotation).** Locked requirements:
+   - Minimum 12 characters
+   - Mix of letters / digits / symbols required
+   - Rejected if found in a common-password list (implementation:
+     local list of ~10k most-breached passwords, refreshed at release
+     time; NOT a live HIBP API call — keeps Wolf airgap-deployable)
+   - **NO mandatory rotation** (matches modern NIST 800-63B guidance)
+   - Same policy applies to user-set passwords (post-invite-verification
+     password changes) — the bootstrap Superuser password is
+     auto-generated and exempt
+   - NOT configurable per install in v1; can be added in a later
+     "settings configurability" slice if compliance auditors push back
+
+5. **Audit visibility for Superuser — Both global and per-org views.**
+   - "Global view" — one chronological audit log spanning ALL orgs +
+     install-level events; filterable by org / user / event type /
+     timestamp. Use case: "something broke install-wide; correlate
+     across orgs."
+   - "Per-org view" — Superuser picks an org (or selects from the
+     /superuser/dashboard org list); sees that org's audit log. Same
+     UI Admin uses for their own org. Use case: "I'm joint-debugging
+     with the customer; show me their audit log."
+   - Both backed by the same query infrastructure with different
+     filter pre-sets — building both ~= building either alone.
+
+### Trusted-network mechanism (new design call from Q1)
+
+The "same network" check for invite-link verification (and any future
+network-gated check):
+
+- **Dynamic discovery, no operator config in v1.** Wolf enumerates its
+  own network interfaces per-request (microseconds overhead), derives
+  CIDRs from IP + netmask for IPv4 and IPv6, excludes loopback. A
+  request is "same network" if its source IP falls in ANY of those
+  CIDRs.
+- **Multi-homed hosts** work natively (multiple NICs → multiple CIDRs).
+- **VPN / DHCP renewal** picked up live since enumeration is per-request.
+- **Reverse-proxy handling**: if request source is loopback AND
+  `X-Forwarded-For` is present, use the forwarded IP (Wolf-behind-nginx
+  pattern).
+- **Cloud / SaaS deployment**: dynamic detection gives the cloud VPC's
+  CIDR. Users on VPN bridged into the VPC are "same network"; users
+  reaching via public NAT are not. Intended behavior: if Wolf is
+  internet-exposed, this gate is doing exactly its job by rejecting
+  verification from public IPs.
+- **Operator override** (additional trusted CIDRs via env var) —
+  DEFERRED to a later phase. v1 is dynamic-only.
 
 ---
 
 ## Status, sign-off, next steps
 
-This ADR is **PROPOSED**, not ACCEPTED. Before it can move to ACCEPTED:
+This ADR is now **READY for operator ACCEPTED sign-off**. Round 1-5
+review with operator (2026-06-10) closed every previously-open decision:
 
-1. Operator reviews + answers the 5 open decisions above
-2. Confirms the role names + capability matrix
-3. Confirms the bootstrap Superuser username `Wolf` (fixed) + password
-   delivery via stdout-only + zero-org-membership default
-4. Confirms the Superuser-can-reset-any-user-password (audit-emitted)
-   recovery path
+| Round | Topic | Status |
+|---|---|---|
+| 1 | Scope split + bootstrap Superuser properties | ✓ Closed (Wazuh split to ADR 0020; silent-password-reset flipped) |
+| 2 | Per-organization RBAC | ✓ Closed (Approver→Responder rename; org-consent gate; capability matrix finalized) |
+| 3 | Login UX | ✓ Closed (cookie auth-only; per-tab header; Superuser special-case; clean tenant_id drop) |
+| 4 | Implementation sequencing | ✓ Closed (Phase 6.4 pre-req; defer RBAC matrix to Phase 6; 12-13 sessions) |
+| 5 | 5 open architectural decisions | ✓ Closed (this section) + new invite-link flow added |
+
+To mark this ADR ACCEPTED:
+
+1. Operator says "ACCEPTED" (or "ACCEPTED with these final changes: ...")
+2. Status field at the top of this ADR flips from `PROPOSED` to
+   `ACCEPTED` with a revision-history line
+3. PROGRESS.md updates to note the ACCEPTED status + Phase 6.4 ready
+   to start
+4. Phase 6.4 (tenant→organization rename slice) becomes the next
+   real work unit
+
+Once ACCEPTED, the 9 Phase 6.5 sub-slices become tracked work; nothing
+is built before sign-off.
 
 Wazuh component mapping is sequenced after this ADR via **ADR 0020** +
 Phase 6.6.
