@@ -306,7 +306,7 @@
       "label": "Confidence calibration",
       "file_type": "document",
       "source_file": "docs/decisions/0017-wolf-central-brain.md",
-      "source_location": "L441",
+      "source_location": "L462",
       "id": "decisions_0017_wolf_central_brain_confidence_calibration",
       "community": 80,
       "norm_label": "confidence calibration"
@@ -315,7 +315,7 @@
       "label": "Subsystem 4: Continuous learning layer",
       "file_type": "document",
       "source_file": "docs/decisions/0017-wolf-central-brain.md",
-      "source_location": "L450",
+      "source_location": "L473",
       "id": "decisions_0017_wolf_central_brain_subsystem_4_continuous_learning_layer",
       "community": 80,
       "norm_label": "subsystem 4: continuous learning layer"
@@ -324,7 +324,7 @@
       "label": "Worker 1: Knowledge feedback loop (already planned in Phase 10)",
       "file_type": "document",
       "source_file": "docs/decisions/0017-wolf-central-brain.md",
-      "source_location": "L455",
+      "source_location": "L478",
       "id": "decisions_0017_wolf_central_brain_worker_1_knowledge_feedback_loop_already_planned_in_phase_10",
       "community": 80,
       "norm_label": "worker 1: knowledge feedback loop (already planned in phase 10)"
@@ -333,7 +333,7 @@
       "label": "Worker 2: Alert-pattern extraction",
       "file_type": "document",
       "source_file": "docs/decisions/0017-wolf-central-brain.md",
-      "source_location": "L460",
+      "source_location": "L483",
       "id": "decisions_0017_wolf_central_brain_worker_2_alert_pattern_extraction",
       "community": 80,
       "norm_label": "worker 2: alert-pattern extraction"
@@ -342,7 +342,7 @@
       "label": "Worker 3: User feedback signal",
       "file_type": "document",
       "source_file": "docs/decisions/0017-wolf-central-brain.md",
-      "source_location": "L469",
+      "source_location": "L492",
       "id": "decisions_0017_wolf_central_brain_worker_3_user_feedback_signal",
       "community": 80,
       "norm_label": "worker 3: user feedback signal"
@@ -351,7 +351,7 @@
       "label": "Worker 4: Environment fingerprinting",
       "file_type": "document",
       "source_file": "docs/decisions/0017-wolf-central-brain.md",
-      "source_location": "L476",
+      "source_location": "L499",
       "id": "decisions_0017_wolf_central_brain_worker_4_environment_fingerprinting",
       "community": 80,
       "norm_label": "worker 4: environment fingerprinting"
@@ -360,7 +360,7 @@
       "label": "Robust answer posture (push back on point 8)",
       "file_type": "document",
       "source_file": "docs/decisions/0017-wolf-central-brain.md",
-      "source_location": "L485",
+      "source_location": "L508",
       "id": "decisions_0017_wolf_central_brain_robust_answer_posture_push_back_on_point_8",
       "community": 80,
       "norm_label": "robust answer posture (push back on point 8)"
@@ -369,7 +369,7 @@
       "label": "Why \"never say I don't know\" is dangerous",
       "file_type": "document",
       "source_file": "docs/decisions/0017-wolf-central-brain.md",
-      "source_location": "L494",
+      "source_location": "L517",
       "id": "decisions_0017_wolf_central_brain_why_never_say_i_don_t_know_is_dangerous",
       "community": 80,
       "norm_label": "why \"never say i don't know\" is dangerous"
@@ -378,7 +378,7 @@
       "label": "What this ADR commits to instead",
       "file_type": "document",
       "source_file": "docs/decisions/0017-wolf-central-brain.md",
-      "source_location": "L506",
+      "source_location": "L529",
       "id": "decisions_0017_wolf_central_brain_what_this_adr_commits_to_instead",
       "community": 80,
       "norm_label": "what this adr commits to instead"
@@ -387,7 +387,7 @@
       "label": "Pillar 1: Try harder before yielding",
       "file_type": "document",
       "source_file": "docs/decisions/0017-wolf-central-brain.md",
-      "source_location": "L510",
+      "source_location": "L533",
       "id": "decisions_0017_wolf_central_brain_pillar_1_try_harder_before_yielding",
       "community": 80,
       "norm_label": "pillar 1: try harder before yielding"
@@ -396,7 +396,7 @@
       "label": "Pillar 2: Never abdicate without a next step",
       "file_type": "document",
       "source_file": "docs/decisions/0017-wolf-central-brain.md",
-      "source_location": "L515",
+      "source_location": "L538",
       "id": "decisions_0017_wolf_central_brain_pillar_2_never_abdicate_without_a_next_step",
       "community": 80,
       "norm_label": "pillar 2: never abdicate without a next step"
@@ -405,7 +405,7 @@
       "label": "Pillar 3: Transparency over confidence theater",
       "file_type": "document",
       "source_file": "docs/decisions/0017-wolf-central-brain.md",
-      "source_location": "L527",
+      "source_location": "L550",
       "id": "decisions_0017_wolf_central_brain_pillar_3_transparency_over_confidence_theater",
       "community": 80,
       "norm_label": "pillar 3: transparency over confidence theater"
@@ -414,7 +414,7 @@
       "label": "Concrete operator-experience contract",
       "file_type": "document",
       "source_file": "docs/decisions/0017-wolf-central-brain.md",
-      "source_location": "L532",
+      "source_location": "L555",
       "id": "decisions_0017_wolf_central_brain_concrete_operator_experience_contract",
       "community": 80,
       "norm_label": "concrete operator-experience contract"
@@ -423,7 +423,7 @@
       "label": "Phase ordering recommendation",
       "file_type": "document",
       "source_file": "docs/decisions/0017-wolf-central-brain.md",
-      "source_location": "L546",
+      "source_location": "L569",
       "id": "decisions_0017_wolf_central_brain_phase_ordering_recommendation",
       "community": 80,
       "norm_label": "phase ordering recommendation"
@@ -432,7 +432,7 @@
       "label": "Reserved names for future ADRs",
       "file_type": "document",
       "source_file": "docs/decisions/0017-wolf-central-brain.md",
-      "source_location": "L572",
+      "source_location": "L595",
       "id": "decisions_0017_wolf_central_brain_reserved_names_for_future_adrs",
       "community": 80,
       "norm_label": "reserved names for future adrs"
@@ -441,7 +441,7 @@
       "label": "Open architectural decisions",
       "file_type": "document",
       "source_file": "docs/decisions/0017-wolf-central-brain.md",
-      "source_location": "L586",
+      "source_location": "L609",
       "id": "decisions_0017_wolf_central_brain_open_architectural_decisions",
       "community": 80,
       "norm_label": "open architectural decisions"
@@ -450,7 +450,7 @@
       "label": "Memory layer (all 4 RESOLVED \u2014 Round 2 review, 2026-06-11)",
       "file_type": "document",
       "source_file": "docs/decisions/0017-wolf-central-brain.md",
-      "source_location": "L591",
+      "source_location": "L614",
       "id": "decisions_0017_wolf_central_brain_memory_layer_all_4_resolved_round_2_review_2026_06_11",
       "community": 80,
       "norm_label": "memory layer (all 4 resolved \u2014 round 2 review, 2026-06-11)"
@@ -459,43 +459,43 @@
       "label": "Other Round-2 design choices (RESOLVED, embedded in Memory layer description above)",
       "file_type": "document",
       "source_file": "docs/decisions/0017-wolf-central-brain.md",
-      "source_location": "L633",
+      "source_location": "L656",
       "id": "decisions_0017_wolf_central_brain_other_round_2_design_choices_resolved_embedded_in_memory_layer_description_above",
       "community": 80,
       "norm_label": "other round-2 design choices (resolved, embedded in memory layer description above)"
     },
     {
-      "label": "Thinking layer",
+      "label": "Thinking layer (both RESOLVED \u2014 Round 3 review, 2026-06-11)",
       "file_type": "document",
       "source_file": "docs/decisions/0017-wolf-central-brain.md",
-      "source_location": "L650",
-      "id": "decisions_0017_wolf_central_brain_thinking_layer",
+      "source_location": "L673",
+      "id": "decisions_0017_wolf_central_brain_thinking_layer_both_resolved_round_3_review_2026_06_11",
       "community": 80,
-      "norm_label": "thinking layer"
+      "norm_label": "thinking layer (both resolved \u2014 round 3 review, 2026-06-11)"
     },
     {
       "label": "Continuous learning",
       "file_type": "document",
       "source_file": "docs/decisions/0017-wolf-central-brain.md",
-      "source_location": "L656",
+      "source_location": "L692",
       "id": "decisions_0017_wolf_central_brain_continuous_learning",
       "community": 80,
       "norm_label": "continuous learning"
     },
     {
-      "label": "General",
+      "label": "General (RESOLVED \u2014 Round 3 review, 2026-06-11)",
       "file_type": "document",
       "source_file": "docs/decisions/0017-wolf-central-brain.md",
-      "source_location": "L662",
-      "id": "decisions_0017_wolf_central_brain_general",
+      "source_location": "L698",
+      "id": "decisions_0017_wolf_central_brain_general_resolved_round_3_review_2026_06_11",
       "community": 80,
-      "norm_label": "general"
+      "norm_label": "general (resolved \u2014 round 3 review, 2026-06-11)"
     },
     {
       "label": "Implementation sequencing (after this ADR is ACCEPTED)",
       "file_type": "document",
       "source_file": "docs/decisions/0017-wolf-central-brain.md",
-      "source_location": "L670",
+      "source_location": "L724",
       "id": "decisions_0017_wolf_central_brain_implementation_sequencing_after_this_adr_is_accepted",
       "community": 80,
       "norm_label": "implementation sequencing (after this adr is accepted)"
@@ -504,7 +504,7 @@
       "label": "Status, sign-off, next steps",
       "file_type": "document",
       "source_file": "docs/decisions/0017-wolf-central-brain.md",
-      "source_location": "L699",
+      "source_location": "L753",
       "id": "decisions_0017_wolf_central_brain_status_sign_off_next_steps",
       "community": 80,
       "norm_label": "status, sign-off, next steps"
@@ -30925,11 +30925,11 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "docs/decisions/0017-wolf-central-brain.md",
-      "source_location": "L425",
+      "source_location": "L698",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "decisions_0017_wolf_central_brain_open_architectural_decisions",
-      "target": "decisions_0017_wolf_central_brain_general"
+      "target": "decisions_0017_wolf_central_brain_general_resolved_round_3_review_2026_06_11",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -30937,9 +30937,9 @@
       "source_file": "docs/decisions/0017-wolf-central-brain.md",
       "source_location": "L591",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "decisions_0017_wolf_central_brain_open_architectural_decisions",
-      "target": "decisions_0017_wolf_central_brain_memory_layer_all_4_resolved_round_2_review_2026_06_11",
-      "confidence_score": 1.0
+      "target": "decisions_0017_wolf_central_brain_memory_layer_all_4_resolved_round_2_review_2026_06_11"
     },
     {
       "relation": "contains",
@@ -30947,19 +30947,19 @@
       "source_file": "docs/decisions/0017-wolf-central-brain.md",
       "source_location": "L633",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "decisions_0017_wolf_central_brain_open_architectural_decisions",
-      "target": "decisions_0017_wolf_central_brain_other_round_2_design_choices_resolved_embedded_in_memory_layer_description_above",
-      "confidence_score": 1.0
+      "target": "decisions_0017_wolf_central_brain_other_round_2_design_choices_resolved_embedded_in_memory_layer_description_above"
     },
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "docs/decisions/0017-wolf-central-brain.md",
-      "source_location": "L413",
+      "source_location": "L673",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "decisions_0017_wolf_central_brain_open_architectural_decisions",
-      "target": "decisions_0017_wolf_central_brain_thinking_layer"
+      "target": "decisions_0017_wolf_central_brain_thinking_layer_both_resolved_round_3_review_2026_06_11",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -109437,5 +109437,5 @@
       "source_file": "deploy/systemd/system/README.md"
     }
   ],
-  "built_at_commit": "d64eba9172be54d0c7d7c893a43e70bbdb4c7922"
+  "built_at_commit": "372f2ad5844e29fbbdd1214da76920006fd4f460"
 }

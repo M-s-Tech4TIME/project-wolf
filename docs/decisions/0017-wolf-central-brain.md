@@ -1,6 +1,6 @@
 # ADR 0017 — Wolf Central Brain: memory, deep-thinking, continuous learning
 
-**Status:** PROPOSED (2026-06-10)
+**Status:** ACCEPTED (2026-06-11)
 **Authors:** Wolf Maintainers
 **Extends:** ADR 0001 (model abstraction), ADR 0013 (grounding validator),
 ADR 0014 (multi-embedding RAG), ADR 0015 (yellow vs red grounding), ADR 0016
@@ -17,9 +17,40 @@ Wazuh component mapping — install + per-org topology)
   org concept; no separate entity needed). Added explicit §"MSSP scenario
   worked example" and §"Wazuh access in MSSP" sections. Strengthened the
   per-organization isolation commitment to a load-bearing top-level section.
-- 2026-06-10 v3 (this revision): Wazuh component mapping split out from
-  ADR 0018 into its own ADR 0020 (Related-list updated; §"Wazuh access
-  in MSSP" forward-ref now points to 0020 not 0018).
+- 2026-06-10 v3: Wazuh component mapping split out from ADR 0018 into
+  its own ADR 0020 (Related-list updated; §"Wazuh access in MSSP"
+  forward-ref now points to 0020 not 0018).
+- 2026-06-10 v4 (Round 1 of 4 of the operator review): added cross-
+  reference to ADR 0019 "My memory: cross-org, self-only" subsection;
+  clarified storage-vs-UI semantics so a reader of 0017 alone doesn't
+  mis-interpret per-org partitioning as forbidding cross-org self-views.
+- 2026-06-11 v5 (Round 2 of 4): Memory architecture finalized — 4
+  layers (episodic/session/long-term/semantic); fact_type enum expanded
+  to 6 categories (added incident_lesson; renamed relationship →
+  social_context); confidence decay specified (exponential half-life,
+  30d default, auto-prune < 0.1); retrieval timing locked (load-once
+  at conversation start); semantic memory in Postgres tables (Neo4j /
+  Memgraph rejected for v1); 4 memory open decisions RESOLVED
+  (retention policy, opt-in vs always-on, cross-org boundaries,
+  inspection UI scope).
+- 2026-06-11 v6 (Round 3 of 4): Thinking layer + Self-validation
+  layer + point-8 robust-answer-posture all settled. Deep-think
+  trigger: both operator-explicit + auto-escalate. Cost cap: soft
+  with warning. Action validator: hard gate, no bypass, no cost
+  cap, inline rejection + edit-and-retry. Confidence calibration:
+  3 states. Point 8 (the gating decision for the whole ADR):
+  §"Robust answer posture" ACCEPTED as written — Wolf delivers
+  rows 1-2 of the operator-experience contract; rejects rows 3-4
+  to avoid hallucination during incident response.
+- 2026-06-11 **ACCEPTED** (Round 4 of 4): Continuous learning
+  + phase ordering + final decisions. W4 (Environment fingerprinting)
+  scope expanded to include Wazuh log sources (alerts.json + manager
+  logs) per operator direction Round 4; wazuh-indexer remains the
+  canonical store. 2 remaining open decisions RESOLVED (alert-pattern
+  cadence: configurable, default daily; environment fingerprinting:
+  auto at org bootstrap). 5 new phases (7.5, 8.5, 9.5, 11.5, Phase 12
+  rename) confirmed. wolf-hunt / wolf-den / wolf-pack names reserved
+  for future ADRs 0021 / 0022 / 0023. Operator sign-off: ACCEPTED.
 
 ---
 
@@ -497,10 +528,33 @@ Periodic job (e.g., hourly) that:
 - Positive feedback → the reverse (boost those chunks for similar queries)
 
 #### Worker 4: Environment fingerprinting
-- One-shot at tenant bootstrap + periodic refresh
-- Walks the Wazuh API to enumerate: agents, hosts, rules, groups, network
-  topology (where visible)
-- Populates `environment_entities` + `environment_edges`
+- One-shot at organization bootstrap + periodic refresh
+- Walks the Wazuh API + indexer to enumerate (per ADR 0020 per-org
+  credentials):
+  - **Agents** (Wazuh API `/agents`)
+  - **Hosts** (derived from agent metadata; cross-referenced with
+    network topology)
+  - **Rules** (Wazuh API `/rules` + custom rules in `/var/ossec/etc/rules/`)
+  - **Groups** (Wazuh API `/agents/groups`)
+  - **Network topology** (where visible — derived from agent IPs +
+    operator-declared subnets)
+  - **Wazuh log sources** (Round 4 operator addition, 2026-06-11):
+    - `alerts.json` — the realtime alerts log written by the
+      Wazuh manager (default `/var/ossec/logs/alerts/alerts.json`)
+    - `archives.json` — archived events from the manager
+    - Manager logs (`/var/ossec/logs/ossec.log`, agent buffer logs)
+    - Indexer-side indices (`wazuh-alerts-*`, `wazuh-monitoring-*`,
+      `wazuh-statistics-*`)
+    - **NOT replicated into Wolf's DB** — the wazuh-indexer remains
+      the canonical store for log content. Wolf tracks log SOURCES
+      as semantic-memory entities (so Wolf knows "alerts.json lives
+      at <path> on the manager + is mirrored to wazuh-alerts-*
+      indices in the indexer") + queries the indexer for real-time
+      content via the per-org Wazuh API credentials. Avoids storage
+      explosion + duplication of the indexer's role.
+- Populates `environment_entities` + `environment_edges` — log sources
+  become entities of type `log_source` with edges to the agents/hosts
+  they originate from + the indexer indices they land in
 - Operator can review + edit via the dashboard
 
 ---
@@ -596,9 +650,24 @@ this re-sequence of the post-5.10 roadmap:
 
 Per the operator's naming preferences (point 16):
 
-- **wolf-hunt** — Incident Response + Case Management. Future ADR (e.g., 0018) when Phase 7/7.5 opens. Will cover: alert→case correlation algorithm, case data model, timeline construction, eradication-step generation, dashboard UI.
-- **wolf-den** — Cyber Threat Intelligence Platform. Future ADR (e.g., 0019) when Phase 11.5 opens. Will cover: IOC extraction from environment, threat-actor profiling, report generation, intel-share format.
-- **wolf-pack** — Native agents on Wazuh hosts. Future ADR (e.g., 0020) when Phase 12 opens. Will cover: relay daemon architecture, mTLS authentication per agent, bidirectional command channel, health checks, autonomous execution scope.
+- **wolf-hunt** — Incident Response + Case Management. Future ADR
+  (number TBD, expected ~0021) when Phase 7/7.5 opens. Will cover:
+  alert→case correlation algorithm, case data model, timeline
+  construction, eradication-step generation, dashboard UI.
+- **wolf-den** — Cyber Threat Intelligence Platform. Future ADR
+  (number TBD, expected ~0022) when Phase 11.5 opens. Will cover:
+  IOC extraction from environment, threat-actor profiling, report
+  generation, intel-share format.
+- **wolf-pack** — Native agents on Wazuh hosts. Future ADR (number
+  TBD, expected ~0023) when Phase 12 opens. Will cover: relay daemon
+  architecture, mTLS authentication per agent, bidirectional command
+  channel, health checks, autonomous execution scope.
+
+(Numbering note: the original ADR 0017 draft suggested 0018/0019/0020
+for these three names. Those numbers have since been used by Bootstrap
+Superuser/RBAC (0018), Web-first configurability (0019), and Superuser-
+owned Wazuh mapping (0020) respectively. Updated to point at the next
+available block 0021/0022/0023.)
 
 These names are RESERVED in this ADR — they won't be used for anything else.
 The existing `wolf-knowledge-relay.md` memory entry will be renamed to
@@ -689,11 +758,27 @@ implementation work starts on the affected subsystem:
    conversation) is operator-configurable per install via the
    future ADR-0019 settings surface.
 
-### Continuous learning
+### Continuous learning (both RESOLVED — Round 4 review, 2026-06-11)
 
-7. **Alert-pattern extraction cadence** — hourly? Daily? Operator-tunable?
-8. **Environment fingerprinting consent** — does the operator have to
-   explicitly authorize Wolf to walk their Wazuh API for fingerprinting?
+7. **Alert-pattern extraction cadence — RESOLVED: Operator-configurable
+   per org, default daily.** Daily is the right default for most orgs
+   (alert volume + pattern recurrence operate on day-scale cycles);
+   high-volume orgs may want hourly + low-volume orgs may want weekly.
+   Per-org configuration via the future ADR-0019 settings surface
+   (Engineer/Admin can adjust). Default daily so it works out-of-the-box.
+
+8. **Environment fingerprinting consent — RESOLVED: Automatic at org
+   bootstrap + periodic refresh.** Environment fingerprinting is what
+   makes Wolf useful for the org — opt-in default means many orgs run
+   with degraded Wolf. Auto-on delivers the value by default; org
+   Admins can disable via settings if they have a specific
+   compliance/data-classification concern. Also, **scope expansion
+   (Round 4 operator direction)**: W4 also enumerates Wazuh log sources
+   (alerts.json, archives.json, manager logs, indexer indices) as
+   semantic-memory entities of type `log_source`. Wolf does NOT
+   replicate log content into its DB — the wazuh-indexer remains
+   canonical; Wolf is the query + reasoning layer on top. See
+   §"Worker 4: Environment fingerprinting" above for details.
 
 ### General (RESOLVED — Round 3 review, 2026-06-11)
 
@@ -752,17 +837,29 @@ Recommended order if all clusters get green-lit:
 
 ## Status, sign-off, next steps
 
-This ADR is **PROPOSED**, not ACCEPTED. Before it can move to ACCEPTED:
+This ADR is now **ACCEPTED**. Operator sign-off after a 4-round review
+(2026-06-10 to 2026-06-11) closed every previously-open architectural
+decision — see the revision history at the top of this file for the
+round-by-round summary.
 
-1. Operator review (read + push back / approve)
-2. Resolution of the open decisions in §"Open architectural decisions"
-3. Particular attention to §"Robust answer posture" — that section requires
-   explicit operator buy-in before implementation work begins (because the
-   stated requirement and the proposed architecture diverge)
+| Round | Topic | Outcome |
+|---|---|---|
+| 1 | Orientation + 5+1 clustering + cross-ADR consistency | ✓ Closed (clustering confirmed; ADR-0019 "My memory" cross-ref added to per-org isolation section) |
+| 2 | Memory architecture (Subsystem 1) | ✓ Closed (4 decisions + 4 design choices: 6-category fact_type, exponential decay, load-once retrieval, Postgres-tables for semantic memory) |
+| 3 | Thinking + Self-validation + point-8 disagreement | ✓ Closed (deep-think trigger both-paths + soft cost cap; validator hard-gate + 3 confidence states + no cap + inline rejection; §"Robust answer posture" ACCEPTED as-written) |
+| 4 | Continuous learning + phase ordering + sign-off | ✓ Closed (alert-pattern cadence configurable default-daily; environment fingerprinting auto + scope expanded to Wazuh log sources with indexer-as-canonical; 5 new phases + wolf-hunt/den/pack name reservations confirmed; ACCEPTED) |
 
-Once ACCEPTED, the roadmap entries for Phase 7.5 + 8.5 become real work
-units; wolf-hunt / wolf-den / wolf-pack remain reserved-named future
-phases pending their own ADRs.
+With ACCEPTED status, the roadmap entries for Phases 7.5 + 8.5 + 9.5 +
+11.5 + Phase 12 (wolf-pack rename) become real future work units;
+wolf-hunt / wolf-den / wolf-pack remain reserved-named pending their
+own dedicated ADRs (expected ~0021/0022/0023 at open-time).
 
-This ADR is a design proposal, not an implementation commitment. No code
-ships from this commit.
+This ADR is a design contract, not an implementation commitment. No
+code ships from this ADR's close; the 4 subsystems each become their
+own implementation slices when the corresponding phases open.
+
+Implementation will be sequenced AFTER Phase 6.4 (tenant→organization
+rename, per ADR 0018) + Phase 6.5 (Bootstrap + RBAC + Login UX, per
+ADR 0018) + Phase 6.6 (Wazuh component mapping, per ADR 0020), since
+the Central Brain's memory schema uses the `organization_id` + `user_id`
++ `UserOrganization` membership model defined in those ADRs.
