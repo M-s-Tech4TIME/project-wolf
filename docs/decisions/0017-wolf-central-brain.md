@@ -5,7 +5,18 @@
 **Extends:** ADR 0001 (model abstraction), ADR 0013 (grounding validator),
 ADR 0014 (multi-embedding RAG), ADR 0015 (yellow vs red grounding), ADR 0016
 (component architecture)
+**Related:** ADR 0018 (Bootstrap Superuser + Per-Org RBAC + Login UX +
+Superuser-owns-Wazuh-mapping), ADR 0019 (Web-first configurability mandate)
 **Supersedes:** None — additive
+**Revision history**:
+- 2026-06-10 v1: initial draft (used "tenant" + "operator_id"); proposed
+  separate ADR 0021 for Organizations.
+- 2026-06-10 v2 (this revision): aligned language to "organization" +
+  "user_id" per operator direction. Dropped the ADR 0021 idea (tenant
+  was already the org concept; no separate entity needed). Added explicit
+  §"MSSP scenario worked example" and §"Wazuh access in MSSP" sections.
+  Strengthened the per-organization isolation commitment to a load-bearing
+  top-level section.
 
 ---
 
@@ -36,7 +47,7 @@ This ADR does NOT decide:
 - wolf-pack's relay protocol (own ADR at Phase 12 open)
 - UI/UX for the memory layer (separate Phase 5.0c-style slice)
 - Specific embedding model choice for the new memory store (likely re-uses
-  the existing per-tenant choice from ADR 0014)
+  the existing per-organization choice from ADR 0014)
 
 ---
 
@@ -54,7 +65,7 @@ yesterday.
 The **Central Brain** is the proposed integrated cognitive layer that:
 
 1. **Remembers** — across turns within a conversation (session memory) and
-   across conversations within a tenant + operator (long-term memory).
+   across conversations within an organization + user (long-term memory).
 2. **Knows the environment** — accumulates structured facts about the
    operator's Wazuh deployment, network topology, common alert shapes, prior
    incidents, tooling preferences.
@@ -63,17 +74,131 @@ The **Central Brain** is the proposed integrated cognitive layer that:
    with verification between steps.
 4. **Validates itself** — extends the existing grounding validator to also
    verify ACTIONS (not just answers) before they reach wolf-gateway. Plus
-   pre-action sanity checks: "is this the right tenant? Does this action
-   align with operator's stated intent in this conversation?"
+   pre-action sanity checks: "is this the right organization? Does this
+   action align with the user's stated intent in this conversation?"
 5. **Learns continuously** — extracts patterns from the operator's day-to-day
    Wazuh alerts + feedback + closed cases, feeds findings back into the
-   per-tenant knowledge corpus.
+   per-organization knowledge corpus.
 
 **Not the same as making Wolf "smarter"** — the underlying model doesn't
 change. The Central Brain is the SCAFFOLDING around the model: what context
 gets retrieved, what reasoning steps happen, how the model's output is
 verified before it ships. Better scaffolding makes the same model produce
 dramatically better outputs.
+
+---
+
+## Per-organization isolation — non-negotiable (load-bearing section)
+
+**The Central Brain is centralized in CODE but decentralized in DATA.** Same
+process, same agent loop, same set of strategies, same validators — but
+every memory row, every learned fact, every observation is partitioned by
+`organization_id` and forced-filtered at the SQL layer.
+
+This is the SAME pattern Wolf already uses for RAG (ADR 0014) + audit
+events + Wazuh credentials + cache (ADR 0010 / doc 05's four enforcement
+points). This ADR extends the pattern to four new partitioned domains:
+
+| New domain | Partition key | Same pattern as |
+|---|---|---|
+| `operator_memory` (long-term cross-conversation facts) | `(organization_id, user_id)` — BOTH required | `audit_events.organization_id + user_id` |
+| `session_memory` (per-conversation running summary) | `organization_id` via `conversation_id → organization_id` | `conversations.organization_id` |
+| `environment_entities` (semantic-memory knowledge graph) | `organization_id` | `knowledge_chunks.organization_id` |
+| `environment_edges` (knowledge-graph relationships) | inherited via `environment_entities.organization_id` | (new, same forced-filter discipline) |
+
+**Continuous-learning workers**: one worker invocation per organization,
+never a single job that iterates across organizations. Same pattern as
+`bootstrap_tenant.py` (to be renamed `bootstrap_organization.py`) — single-
+org scope per invocation. The orchestrator iterates over orgs + dispatches
+per-org workers.
+
+**Cross-organization isolation test suite**: extends to cover all new
+tables + workers. Currently tracks ~6 enforcement points; the ADR 0017
+implementation grows it to ~10+. The CI gate stays load-bearing — no merge
+to main without the suite passing.
+
+### MSSP scenario worked example
+
+One Wolf install, three customer organizations:
+
+```
+                Wolf install
+        ┌──────────────────────────┐
+        │ Superuser "Wolf" (1 per  │
+        │ install, fixed username) │
+        └────────────┬─────────────┘
+                     │
+        Configures Wazuh component mapping
+        (single-host OR distributed cluster)
+                     │
+                     ▼
+       ┌─────────────┴──────────────┐
+       │  Wazuh ecosystem            │
+       │  (Indexer + Manager(s) +    │
+       │   Dashboard)                │
+       └─────────────┬───────────────┘
+                     │
+   ┌─────────────────┴─────────────────┐
+   │   Per-org Wazuh API credentials   │
+   │   (each org has its own; the      │
+   │   Wazuh-side RBAC restricts each  │
+   │   to its customer's data slice)   │
+   └───────────────────────────────────┘
+                     │
+   ┌─────────────────┼─────────────────┐
+   ▼                 ▼                 ▼
+┌──────┐         ┌──────┐         ┌──────┐
+│Acme  │         │Beta  │         │Gamma │
+│Corp  │         │Inc   │         │Ltd   │
+│      │         │      │         │      │
+│Wolf  │         │Wolf  │         │Wolf  │
+│Org A │         │Org B │         │Org C │
+└──────┘         └──────┘         └──────┘
+   │                 │                 │
+   │  Memory:    Memory:        Memory:
+   │  Acme's     Beta's          Gamma's
+   │  data       data            data
+   │  ONLY       ONLY            ONLY
+   │
+   └─ MSSP analyst Sarah:
+      ├─ UserOrganization (Acme, role=Analyst)
+      ├─ UserOrganization (Beta, role=Analyst)
+      └─ UserOrganization (Gamma, role=Approver)
+
+      At login: backend resolves all three memberships
+      Dashboard: org-switcher lets Sarah switch context
+      Each switch = new OrganizationContext + new
+      memory/brain/knowledge partition. No cross-
+      contamination ever.
+```
+
+**End-to-end isolation = Wazuh RBAC + Wolf per-org partition.** Both layers
+must hold. Wolf never shares a credential across orgs; never queries memory
+without an `organization_id` filter; never lets a worker iterate across
+multiple orgs in one process.
+
+### Wazuh access in MSSP
+
+The Wolf Superuser configures + maps Wazuh components for the whole install
+(single-host OR distributed cluster topology — see ADR 0018 for the
+component-mapping UI). Per-org Wazuh CREDENTIALS are also Superuser-only —
+the most security-sensitive integration point in Wolf, concentrated in the
+fewest possible identities.
+
+For each organization, the Superuser configures the org's Wazuh API
+credentials (restricted by the MSSP's Wazuh admin to that org's data
+slice, typically via Wazuh groups + index DLS). Wolf uses each org's
+credentials when querying Wazuh for that org. Wolf never holds a "master"
+Wazuh credential that sees everything.
+
+Why per-org Wazuh credentials (not a single shared one):
+- **Defense-in-depth**: Wazuh's RBAC is the primary boundary; Wolf's
+  filter is the secondary. Both must hold for isolation to fail.
+- **Audit attribution**: Wazuh's audit log shows the correct
+  `acme-api-user` accessed Acme's data, regardless of which org made the
+  call from Wolf's side.
+- **Industry convention**: every MSSP-shaped SOC tool does this — Wolf
+  surprising operators by departing from the norm is bad UX.
 
 ---
 
@@ -93,8 +218,8 @@ solving a distinct problem:
 │  │   • Episodic (in-conversation turns)                            │  │
 │  │   • Session (current conversation's running summary)            │  │
 │  │   • Long-term (cross-conversation, per operator)                │  │
-│  │   • Semantic (environment facts — knowledge graph per tenant)   │  │
-│  │  All forced-filtered by (tenant_id, operator_id) at SQL layer   │  │
+│  │   • Semantic (environment facts — knowledge graph per org)      │  │
+│  │  All forced-filtered by (organization_id, user_id) at SQL layer   │  │
 │  └─────────────────────────────────────────────────────────────────┘  │
 │                              │                                        │
 │                              ▼                                        │
@@ -110,7 +235,7 @@ solving a distinct problem:
 │                              ▼                                        │
 │  ┌─ 3. SELF-VALIDATION LAYER ──────────────────────────────────────┐  │
 │  │   • Grounding validator (existing, Phase 3) — verifies facts     │  │
-│  │   • NEW: Action validator — pre-action checks (tenant correct?   │  │
+│  │   • NEW: Action validator — pre-action checks (org correct?     │  │
 │  │     intent aligned? blast radius bounded?)                       │  │
 │  │   • NEW: Confidence calibration — Wolf signals certainty         │  │
 │  │     correctly (NOT "never says I don't know" — see §X)           │  │
@@ -160,7 +285,7 @@ Four kinds of memory, each with distinct storage + lifecycle:
   "Operator's primary monitored network is 10.0.0.0/8." "Operator prefers
   active-response actions over pure alerting." "Operator's runbook for
   PowerShell-Empire alerts is X."
-- **Storage**: NEW table `operator_memory(id, tenant_id, operator_id,
+- **Storage**: NEW table `operator_memory(id, organization_id, user_id,
   fact_type, fact_text, embedding, confidence, source_conversation_id,
   created_at, expires_at, deleted_at)`.
   - `fact_type`: enum (preference / environment_fact / runbook /
@@ -182,7 +307,7 @@ Four kinds of memory, each with distinct storage + lifecycle:
 - **What**: structured facts about the operator's Wazuh deployment.
   "Agent 042 monitors host db-prod-01." "Rule 5710 maps to MITRE T1078."
   "Cluster has 3 indexer nodes." Forms a graph of entities + relationships.
-- **Storage**: NEW tables `environment_entities(id, tenant_id, type, name,
+- **Storage**: NEW tables `environment_entities(id, organization_id, type, name,
   attributes_jsonb)` + `environment_edges(from_id, to_id, relation, weight)`.
   Entity types: host / agent / user / rule / mitre_technique / network /
   service / cve.
