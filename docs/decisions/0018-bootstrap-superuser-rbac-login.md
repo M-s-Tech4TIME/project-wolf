@@ -382,43 +382,166 @@ validation, why-not-Engineer reasoning — lives in
 
 ## Implementation sequencing
 
-This ADR's work is a small focused slice — call it **Phase 6.5 (RBAC +
-Login UX + Bootstrap)** since it's logically before Phase 7's case-
-management work but after Phase 6's wolf-gateway needs the role gate.
+### Pre-requisite: Phase 6.4 (tenant → organization codebase rename)
 
-Sub-slices:
+**Lands BEFORE Phase 6.5 as its own discrete slice.** Operator direction
+(Round 4): cleaner to do the rename in isolation than to bundle it with
+6.5 (the bundled diff would be unreviewable).
 
-1. **6.5-a — Bootstrap Superuser**
+Scope: ~40-60 files. The full rename matrix from memory entry
+`tenant-renamed-to-organization`:
+- DB: `tenants` table → `organizations`; `tenant_id` columns →
+  `organization_id`; FK constraint names
+- Alembic migration that renames atomically + backfills any code that
+  reads the old column
+- SQLAlchemy models: `Tenant` → `Organization`; `UserTenant` →
+  `UserOrganization`; `TenantContext` → `OrganizationContext`
+- API routes: `/api/v1/tenants/...` → `/api/v1/organizations/...`
+- Frontend: `tenant-switcher.tsx` → `organization-switcher.tsx`; all
+  TypeScript types + variable names; React contexts
+- Test fixtures + factory helpers
+- Memory entry `tenant-renamed-to-organization.md` flipped from
+  "STANDING RULE" to "COMPLETED" once the slice lands
+
+Single PR, single review session. Estimated scope: **1-2 sessions**.
+
+### Phase 6.5: Bootstrap + RBAC + Login UX (8 sub-slices)
+
+Logically AFTER 6.4 (rename done) and BEFORE Phase 6 (wolf-gateway
+propose-action infrastructure needs the role gate). Sub-slice ordering
+chosen so foundations land before anything that depends on them:
+
+1. **6.5-a — Bootstrap Superuser + org-recovery**
    - `bootstrap_superuser.sh` wrapper + `superuser.py` core
    - `.deb` postinst integration (auto-create on fresh install)
    - Password rotation path via the wrapper
    - Superuser-driven password reset for any user (audit-emitted)
-2. **6.5-b — Per-org RBAC role enforcement**
-   - Define the role enum + capability matrix in code
-   - API-layer enforcement for every endpoint (decorator pattern)
+   - Break-glass / org-recovery API endpoint for zero-Admin orgs
+     (Superuser force-adds a new Admin; still no Superuser data access)
+
+2. **6.5-b — Role enforcement (Phase 6.5 subset only)**
+   - Define the role enum (Superuser / Admin / Engineer / Responder /
+     Analyst) + membership table (`UserOrganization`)
+   - API-layer enforcement (decorator pattern) for the rows in the
+     capability matrix that do NOT depend on Phase 6:
+     - Create / delete orgs (Superuser)
+     - Grant Superuser membership in this org (Admin)
+     - Manage users + roles within own org (Admin)
+     - Configure org settings (Admin, Engineer)
+     - Deploy wolf-pack agents (Admin, Engineer) — gate exists; deploy
+       infrastructure ships with Phase 12
+     - Chat with Wolf (membership check)
+     - View org's audit log (Admin, Responder)
+     - Read alerts / agents / knowledge (membership check)
    - "Last Admin" invariant guard
-3. **6.5-c — Login UX (no org_id at sign-in)**
-   - New endpoint `POST /api/v1/auth/select-organization`
-   - Update `POST /api/v1/auth/login` to return `needs_org_selection`
-     for multi-org users
-   - Dashboard: remove org field from login form; add post-login org-
-     selector screen
-4. **6.5-d — Organization management (UI)**
-   - UI: Superuser-only Organizations page (list/create/edit/delete)
-   - UI: per-org page with Admin user creation
-5. **6.5-e — User management (UI)**
-   - UI: Org-Admin-only Users page within each org
-   - Role assignment dropdowns
-   - Audit-event display for role changes
+   - **DEFERRED TO PHASE 6**: Propose actions / Approve propose-actions /
+     Execute actions directly. The role enum has the values; the
+     capability matrix in the ADR documents the intent; but the
+     decorators + wolf-gateway plumbing that USE these capabilities
+     ship with Phase 6. Operator direction (Round 4): no point wiring
+     enforcement for a system that doesn't exist yet.
 
-(Originally 6 sub-slices; **6.5-d "Wazuh component mapping (UI)"** moved
-to its own phase under ADR 0020 — call it **Phase 6.6**, sequenced
-after 6.5 so the Superuser + RBAC model is in place before the
-Wazuh-mapping UI uses it.)
+3. **6.5-g — Session cookie blacklist infrastructure**
+   - Redis-backed blacklist with TTL matching cookie expiry
+   - Session middleware checks blacklist on every authenticated request
+   - Trigger sites: logout, force-revoke, password reset (Round 1
+     changes — Superuser reset blacklists ALL existing sessions for
+     the target user)
+   - Pre-req for the new `POST /api/v1/auth/logout` endpoint in 6.5-c-ii
 
-Estimated scope: 4-5 sessions across 5 sub-slices. Should land BEFORE
-Phase 7.5 (Central Brain memory) since the memory schema uses
-`organization_id` + `user_id` from the role model defined here.
+4. **6.5-c-i — Backend header-based org context**
+   - Every authenticated endpoint refactored to read org from
+     `X-Organization-Id` header instead of cookie/JWT
+   - Membership + role validation: cookie → user; header → org;
+     decorator (from 6.5-b) → permission
+   - Backward-compat: if header missing, FALL BACK to current behavior
+     for one release (so the dashboard can ship 6.5-c-ii independently)
+   - Once 6.5-c-ii lands, the fallback is removed
+   - **This is the biggest backend change in Phase 6.5** — touches
+     every API endpoint that today reads org context
+
+5. **6.5-c-ii — Frontend login flow + per-tab org state**
+   - Dashboard: remove org field from login form
+   - Dashboard: handle three login responses (Superuser special-case →
+     `/superuser/dashboard`; auto-selected → `/chat`; needs-org-
+     selection → org-switcher)
+   - Per-tab in-memory state for active `organization_id`
+     (sessionStorage; per-tab by browser design)
+   - Every API call sets `X-Organization-Id` header from per-tab state
+   - In-app org-switcher: switching org updates per-tab state only;
+     other tabs untouched
+   - New `POST /api/v1/auth/logout` (calls 6.5-g blacklist)
+
+6. **6.5-d — Organizations + Superuser-dashboard UI**
+   - Superuser-only `/superuser/dashboard` route (install-admin landing)
+   - Organizations page (list / create / edit / delete)
+   - Per-org page with initial Admin user creation
+   - Install-wide audit-log view (read-only)
+
+7. **6.5-e — User management UI (per-org)**
+   - Org-Admin-only Users page within each org
+   - Role assignment dropdowns (Engineer / Responder / Analyst; Admin
+     promote/demote with last-Admin guard)
+   - Audit-event display for role changes (org-scoped)
+
+8. **6.5-f — Superuser-membership-grant flow + UI**
+   - Backend: Superuser request → Admin approve/reject → time-limited
+     membership grant; default 24h expiry
+   - Backend: revoke (Admin-initiated or expiry-driven)
+   - UI: Superuser side — "Request access to <org>" button on the org
+     detail page in the install-admin UI
+   - UI: Admin side — pending Superuser requests visible in their org's
+     Settings → Access page
+   - UI: org member notifications (banner + email to all org members
+     when Superuser membership granted, revoked, or expired)
+
+### Out of this ADR's scope (forward refs)
+
+| Capability defined here | Where it actually gets WIRED |
+|---|---|
+| Responder direct-execute | Phase 6 (wolf-gateway) ships the execute plumbing |
+| Analyst / Engineer / Responder propose / approve | Phase 6 (wolf-gateway) ships the propose-action UI + workflow |
+| Deploy wolf-pack agents | Phase 12 (wolf-pack) ships the deploy infrastructure |
+| Wazuh component mapping | Phase 6.6 / ADR 0020 |
+| Per-user memory dashboard | Phase 7.5 / ADR 0017 |
+
+### Sequencing summary
+
+```
+Phase 6.4 (tenant→organization rename, 1-2 sessions)
+    │
+    ▼
+Phase 6.5 (Bootstrap + RBAC + Login UX, 8 sub-slices, 10-12 sessions)
+    │
+    ├─→ Phase 6 (wolf-gateway) — wires the propose/approve/execute
+    │   capabilities that 6.5-b defines but does not enforce
+    │
+    └─→ Phase 6.6 (Wazuh component mapping, per ADR 0020) — uses the
+        Superuser role from 6.5
+                │
+                ▼
+        Phase 7.5 (Central Brain memory, per ADR 0017) — uses
+        organization_id + user_id from 6.5
+```
+
+### Estimated scope
+
+**10-12 sessions across 8 sub-slices** (revised from the original "4-5
+sessions" estimate which was unrealistic given the per-tab header
+refactor + Superuser-membership flow added during the review).
+Breakdown:
+- 6.5-a: 1 session (mostly shell-wrapper + .deb integration)
+- 6.5-b: 1-2 sessions (decorator pattern + tests)
+- 6.5-g: 1 session (Redis + middleware)
+- 6.5-c-i: 2 sessions (backend refactor touches every endpoint)
+- 6.5-c-ii: 2 sessions (frontend rewrite of login + per-tab state)
+- 6.5-d: 1-2 sessions (Superuser dashboard + Org pages)
+- 6.5-e: 1 session (per-org user mgmt page)
+- 6.5-f: 1-2 sessions (Superuser-membership flow + notifications)
+
+Should land BEFORE Phase 7.5 (Central Brain memory) since the memory
+schema uses `organization_id` + `user_id` from the role model defined
+here.
 
 ---
 
