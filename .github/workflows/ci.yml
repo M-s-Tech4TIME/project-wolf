@@ -483,6 +483,16 @@ jobs:
         # in the repo; operators verify the fingerprint
         # D995 2267 30A6 59B3 B86F  CDE7 3772 3B2D E0AB FD65 against
         # SECURITY.md before importing.
+        #
+        # push-only (2026-06-12): GitHub does not expose repository
+        # secrets to Dependabot- or fork-triggered pull_request runs
+        # (by design — untrusted code must never see the signing key),
+        # so on PRs this step failed with "secret not set" (seen on
+        # Dependabot PR #119). Signing is a release/main guarantee,
+        # not a PR concern: PR runs still build + smoke all four
+        # .debs; the sign + verify steps run on push, where the
+        # hard FAIL-if-unset check keeps Gap 1 enforced.
+        if: github.event_name == 'push'
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
         run: |
@@ -502,6 +512,8 @@ jobs:
         # wolf-server_0.1.0_amd64.deb`. The apt-repo-level Release
         # file signing (different concern) lands with Gap 2 when
         # the hosted apt repo is set up.
+        # push-only: see the key-import step above.
+        if: github.event_name == 'push'
         env:
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: |
@@ -521,6 +533,8 @@ jobs:
         # Sanity check: each .deb's signature must verify against
         # the imported key. Catches the "signed but corrupted" case
         # that would leave operators with broken signatures.
+        # push-only: see the key-import step above.
+        if: github.event_name == 'push'
         run: |
           for deb in packaging/build/debs/wolf*.deb; do
             gpg --verify "${deb}.asc" "${deb}" 2>&1 | tail -2
