@@ -163,7 +163,7 @@ default:
 4. **The deployment moves to different infrastructure** (laptop → server,
    single-host → cluster, on-prem → cloud).
 5. **A new model release** in the recommended families (Qwen 4, GLM-6, etc.).
-6. **A tenant onboards with different capability needs** (e.g. an MSSP adds
+6. **A organization onboards with different capability needs** (e.g. an MSSP adds
    a customer who needs deeper investigation autonomy).
 
 ### What to do when each one happens
@@ -209,8 +209,8 @@ uv run python -m tools.model_probe --provider ollama --model qwen3:8b
 # 6. Re-run the orchestrator integration tests
 # Confirm the new model passes the agent-loop test against real Wazuh.
 
-# 7. Update the per-tenant default if there are tenants whose model is currently set
-# to the old default. Tenants who chose a specific model are untouched.
+# 7. Update the per-organization default if there are organizations whose model is currently set
+# to the old default. Organizations who chose a specific model are untouched.
 ```
 
 ### What CI must enforce regardless of environment

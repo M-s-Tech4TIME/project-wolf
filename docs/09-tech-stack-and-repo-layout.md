@@ -57,7 +57,7 @@ In practice that means:
 
 | Component | Version | Notes |
 |---|---|---|
-| **Next.js** | **16.x LTS** | Released Oct 2025, now Active LTS. Turbopack is the stable default bundler (2-5× faster builds, ~10× faster Fast Refresh), `proxy.ts` replaces `middleware.ts` as the network-boundary entry point (the natural home for tenant context resolution), React Compiler is stable, Node-runtime middleware is stable. All directly relevant to this project. |
+| **Next.js** | **16.x LTS** | Released Oct 2025, now Active LTS. Turbopack is the stable default bundler (2-5× faster builds, ~10× faster Fast Refresh), `proxy.ts` replaces `middleware.ts` as the network-boundary entry point (the natural home for organization context resolution), React Compiler is stable, Node-runtime middleware is stable. All directly relevant to this project. |
 | **React** | **19.x** | Ships with Next 16. No independent choice. |
 | **TypeScript** | **5.x latest** | Strict mode mandatory. |
 | **Tailwind CSS** | **4.x** | Current major; supported by shadcn/ui's current components; well-adopted by mid-2026. |
@@ -72,7 +72,7 @@ In practice that means:
 
 | Component | Version | Notes |
 |---|---|---|
-| **PostgreSQL** | **17.x** | Tenants, users, cases, proposals, configuration, audit. |
+| **PostgreSQL** | **17.x** | Organizations, users, cases, proposals, configuration, audit. |
 | **pgvector** | 0.8.x latest | PostgreSQL extension for vector search. v1 default vector store. |
 
 A `VectorStore` interface sits in front of pgvector so a future swap to
@@ -218,7 +218,7 @@ wolf/
 │   │   │   │   ├── deepseek.py
 │   │   │   │   ├── ollama.py
 │   │   │   │   └── generic_openai.py
-│   │   │   ├── tenancy/          # Tenant context + enforcement helpers
+│   │   │   ├── tenancy/          # Organization context + enforcement helpers
 │   │   │   ├── auth/
 │   │   │   ├── audit/
 │   │   │   ├── rag/              # Knowledge layer, retrieval, ingestion
@@ -238,7 +238,7 @@ wolf/
 │       ├── app/
 │       │   ├── (auth)/           # Login / OIDC callback
 │       │   ├── (app)/            # Authenticated routes
-│       │   │   ├── layout.tsx    # Sidebar, tenant picker
+│       │   │   ├── layout.tsx    # Sidebar, organization picker
 │       │   │   ├── cases/
 │       │   │   ├── approvals/
 │       │   │   ├── reports/
@@ -250,14 +250,14 @@ wolf/
 │       ├── lib/
 │       │   ├── orchestrator-client.ts  # Server-only client to the orchestrator
 │       │   └── session.ts
-│       ├── proxy.ts              # Tenant context + session validation
+│       ├── proxy.ts              # Organization context + session validation
 │       ├── next.config.ts
 │       ├── package.json
 │       └── tsconfig.json
 │
 ├── packages/                     # Shared libraries
 │   ├── schema/                   # Pydantic models, tool schemas, proposal schema
-│   ├── wazuh-client/             # OpenSearch + Server API clients with tenant injection
+│   ├── wazuh-client/             # OpenSearch + Server API clients with organization injection
 │   ├── secrets/                  # Secrets-backend abstraction (OpenBao, file)
 │   └── common/                   # Logging, tracing, error taxonomy
 │
@@ -268,7 +268,7 @@ wolf/
 │
 └── tools/
     ├── model_probe/              # Capability self-test (see 02)
-    ├── tenant_isolation_test/    # Cross-tenant negative test suite (see 05)
+    ├── organization_isolation_test/    # Cross-organization negative test suite (see 05)
     └── seed_knowledge/           # Bootstrap Wazuh docs + ATT&CK into RAG
 ```
 
@@ -280,10 +280,10 @@ request at the network boundary — clearer naming for what is, in this project,
 
 1. The session cookie is validated.
 2. The user identity is resolved.
-3. The active **tenant context** is bound to the request (per `05`).
+3. The active **organization context** is bound to the request (per `05`).
 4. Unauthenticated requests are redirected to `/login`.
 
-Tenant context flows from `proxy.ts` into every Server Component and Server
+Organization context flows from `proxy.ts` into every Server Component and Server
 Action through the Next request context, never read from the model's output and
 never trusted from the client.
 
@@ -297,7 +297,7 @@ For a small single-org deployment:
 - Postgres 17, pgvector, Keycloak, OpenBao, Wolf — all fit comfortably.
 - **Total ongoing software cost: zero.**
 
-For an MSSP with many tenants or detection-engineering-heavy use:
+For an MSSP with many organizations or detection-engineering-heavy use:
 
 - A larger machine or small cluster.
 - Either a stronger local model on better hardware, or paid API access —

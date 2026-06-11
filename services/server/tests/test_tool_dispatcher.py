@@ -7,7 +7,7 @@ passes through.  These tests cover every branch:
   - Schema-invalid arguments
   - Rate limit exhaustion
   - Successful call
-  - Model-supplied tenant_id is stripped (model never picks tenant)
+  - Model-supplied organization_id is stripped (model never picks organization)
 """
 
 import uuid
@@ -21,17 +21,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from wolf_schema import ToolCall, ToolSchema, ToolTier
 from wolf_server.audit.models import AuditEvent
 from wolf_server.guardrails.limits import DEFAULT_LIMITS
-from wolf_server.guardrails.rate_limit import TenantRateLimiter
-from wolf_server.tenancy.context import TenantContext
+from wolf_server.guardrails.rate_limit import OrganizationRateLimiter
+from wolf_server.organization.context import OrganizationContext
 from wolf_server.tools.alerts import SearchAlertsTool
 from wolf_server.tools.dispatcher import dispatch_tool_call
 
 
 @pytest.fixture
-def tenant_ctx() -> TenantContext:
-    return TenantContext(
-        tenant_id=uuid.uuid4(),
-        tenant_slug="testco",
+def organization_ctx() -> OrganizationContext:
+    return OrganizationContext(
+        organization_id=uuid.uuid4(),
+        organization_slug="testco",
         user_id=uuid.uuid4(),
         user_email="analyst@test.example",
         role="analyst",
@@ -79,9 +79,7 @@ def _register_execute_stub() -> None:
 def _fake_clients() -> tuple[MagicMock, MagicMock]:
     """Return a (opensearch, server_api) pair of MagicMocks."""
     os_client = MagicMock()
-    os_client.query_builder.search_alerts.return_value = {
-        "query": {"bool": {"filter": []}}
-    }
+    os_client.query_builder.search_alerts.return_value = {"query": {"bool": {"filter": []}}}
     os_client.execute = AsyncMock(
         return_value={
             "hits": {
@@ -94,13 +92,11 @@ def _fake_clients() -> tuple[MagicMock, MagicMock]:
     return os_client, server_api
 
 
-async def _count_events(
-    db: AsyncSession, event_type: str, tenant_id: uuid.UUID
-) -> int:
+async def _count_events(db: AsyncSession, event_type: str, organization_id: uuid.UUID) -> int:
     rows = await db.execute(
         select(AuditEvent)
         .where(AuditEvent.event_type == event_type)
-        .where(AuditEvent.tenant_id == tenant_id)
+        .where(AuditEvent.organization_id == organization_id)
     )
     return len(list(rows.scalars()))
 
@@ -110,13 +106,13 @@ async def _count_events(
 
 @pytest.mark.asyncio
 async def test_unknown_tool_returns_failure_and_audits(
-    db: AsyncSession, tenant_ctx: TenantContext
+    db: AsyncSession, organization_ctx: OrganizationContext
 ) -> None:
     os_client, server_api = _fake_clients()
     call = ToolCall(id="c1", name="no_such_tool", arguments={})
     result = await dispatch_tool_call(
         call,
-        ctx=tenant_ctx,
+        ctx=organization_ctx,
         db=db,
         opensearch=os_client,
         server_api=server_api,
@@ -124,19 +120,19 @@ async def test_unknown_tool_returns_failure_and_audits(
     )
     assert result.success is False
     await db.commit()
-    assert await _count_events(db, "tool.call.unknown", tenant_ctx.tenant_id) == 1
+    assert await _count_events(db, "tool.call.unknown", organization_ctx.organization_id) == 1
 
 
 @pytest.mark.asyncio
 async def test_execute_tier_call_rejected_as_anomaly(
-    db: AsyncSession, tenant_ctx: TenantContext
+    db: AsyncSession, organization_ctx: OrganizationContext
 ) -> None:
     _register_execute_stub()
     os_client, server_api = _fake_clients()
     call = ToolCall(id="c2", name="execute_active_response", arguments={})
     result = await dispatch_tool_call(
         call,
-        ctx=tenant_ctx,
+        ctx=organization_ctx,
         db=db,
         opensearch=os_client,
         server_api=server_api,
@@ -144,12 +140,12 @@ async def test_execute_tier_call_rejected_as_anomaly(
     )
     assert result.success is False
     await db.commit()
-    assert await _count_events(db, "tool.call.anomaly", tenant_ctx.tenant_id) == 1
+    assert await _count_events(db, "tool.call.anomaly", organization_ctx.organization_id) == 1
 
 
 @pytest.mark.asyncio
 async def test_schema_invalid_input_returns_failure_and_audits(
-    db: AsyncSession, tenant_ctx: TenantContext
+    db: AsyncSession, organization_ctx: OrganizationContext
 ) -> None:
     _register_search_alerts()
     os_client, server_api = _fake_clients()
@@ -157,7 +153,7 @@ async def test_schema_invalid_input_returns_failure_and_audits(
     call = ToolCall(id="c3", name="search_alerts", arguments={"agent_id": "001"})
     result = await dispatch_tool_call(
         call,
-        ctx=tenant_ctx,
+        ctx=organization_ctx,
         db=db,
         opensearch=os_client,
         server_api=server_api,
@@ -165,17 +161,19 @@ async def test_schema_invalid_input_returns_failure_and_audits(
     )
     assert result.success is False
     await db.commit()
-    assert await _count_events(db, "tool.call.schema_invalid", tenant_ctx.tenant_id) == 1
+    assert (
+        await _count_events(db, "tool.call.schema_invalid", organization_ctx.organization_id) == 1
+    )
 
 
 @pytest.mark.asyncio
 async def test_rate_limit_exhaustion_returns_failure_and_audits(
-    db: AsyncSession, tenant_ctx: TenantContext
+    db: AsyncSession, organization_ctx: OrganizationContext
 ) -> None:
     _register_search_alerts()
     os_client, server_api = _fake_clients()
     # Limiter that allows nothing.
-    limiter = TenantRateLimiter(rate_per_minute=0.01, burst=0)
+    limiter = OrganizationRateLimiter(rate_per_minute=0.01, burst=0)
     now = datetime.now(UTC)
     call = ToolCall(
         id="c4",
@@ -187,7 +185,7 @@ async def test_rate_limit_exhaustion_returns_failure_and_audits(
     )
     result = await dispatch_tool_call(
         call,
-        ctx=tenant_ctx,
+        ctx=organization_ctx,
         db=db,
         opensearch=os_client,
         server_api=server_api,
@@ -196,12 +194,12 @@ async def test_rate_limit_exhaustion_returns_failure_and_audits(
     )
     assert result.success is False
     await db.commit()
-    assert await _count_events(db, "tool.call.rate_limited", tenant_ctx.tenant_id) == 1
+    assert await _count_events(db, "tool.call.rate_limited", organization_ctx.organization_id) == 1
 
 
 @pytest.mark.asyncio
 async def test_successful_call_audits_success(
-    db: AsyncSession, tenant_ctx: TenantContext
+    db: AsyncSession, organization_ctx: OrganizationContext
 ) -> None:
     _register_search_alerts()
     os_client, server_api = _fake_clients()
@@ -217,7 +215,7 @@ async def test_successful_call_audits_success(
     )
     result = await dispatch_tool_call(
         call,
-        ctx=tenant_ctx,
+        ctx=organization_ctx,
         db=db,
         opensearch=os_client,
         server_api=server_api,
@@ -227,12 +225,12 @@ async def test_successful_call_audits_success(
     assert result.tool_name == "search_alerts"
     assert "citation" in (result.result or {})
     await db.commit()
-    assert await _count_events(db, "tool.call.success", tenant_ctx.tenant_id) == 1
+    assert await _count_events(db, "tool.call.success", organization_ctx.organization_id) == 1
 
 
 @pytest.mark.asyncio
 async def test_explicit_null_args_use_pydantic_defaults(
-    db: AsyncSession, tenant_ctx: TenantContext
+    db: AsyncSession, organization_ctx: OrganizationContext
 ) -> None:
     """Small models often emit ``null`` for optional fields; dispatcher
     drops them so the InputModel's defaults apply."""
@@ -254,7 +252,7 @@ async def test_explicit_null_args_use_pydantic_defaults(
     )
     result = await dispatch_tool_call(
         call,
-        ctx=tenant_ctx,
+        ctx=organization_ctx,
         db=db,
         opensearch=os_client,
         server_api=server_api,
@@ -272,36 +270,36 @@ async def test_explicit_null_args_use_pydantic_defaults(
 
 
 @pytest.mark.asyncio
-async def test_model_supplied_tenant_id_is_stripped(
-    db: AsyncSession, tenant_ctx: TenantContext
+async def test_model_supplied_organization_id_is_stripped(
+    db: AsyncSession, organization_ctx: OrganizationContext
 ) -> None:
-    """If the model tries to pass tenant_id, the dispatcher strips it."""
+    """If the model tries to pass organization_id, the dispatcher strips it."""
     _register_search_alerts()
     os_client, server_api = _fake_clients()
     now = datetime.now(UTC)
-    other_tenant = str(uuid.uuid4())
+    other_organization = str(uuid.uuid4())
     call = ToolCall(
         id="c6",
         name="search_alerts",
         arguments={
             "time_from": (now - timedelta(hours=1)).isoformat(),
             "time_to": now.isoformat(),
-            "tenant_id": other_tenant,  # ← model trying to pick the tenant
+            "organization_id": other_organization,  # ← model trying to pick the organization
         },
     )
     result = await dispatch_tool_call(
         call,
-        ctx=tenant_ctx,
+        ctx=organization_ctx,
         db=db,
         opensearch=os_client,
         server_api=server_api,
         limits=DEFAULT_LIMITS,
     )
     # The call still succeeds (extra arg silently dropped, the canonical
-    # SearchAlertsInput has no tenant_id field).  What we must verify is the
-    # query builder was called with the dispatcher's tenant_ctx, NOT the
-    # model-supplied other_tenant.
+    # SearchAlertsInput has no organization_id field).  What we must verify is the
+    # query builder was called with the dispatcher's organization_ctx, NOT the
+    # model-supplied other_organization.
     assert result.success is True
-    # Sanity: nothing got through to OpenSearch with the wrong tenant.
+    # Sanity: nothing got through to OpenSearch with the wrong organization.
     # (The opensearch mock's query builder was the only path, and it was
-    # bound to tenant_ctx by the test setup.)
+    # bound to organization_ctx by the test setup.)

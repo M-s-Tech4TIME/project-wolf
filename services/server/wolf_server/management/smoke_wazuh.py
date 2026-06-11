@@ -16,9 +16,9 @@ Two modes:
 
 Usage:
   uv run --package wolf-server python -m wolf_server.management.smoke_wazuh \\
-    --tenant-slug acme
+    --organization-slug acme
   uv run --package wolf-server python -m wolf_server.management.smoke_wazuh \\
-    --tenant-slug acme --all-tools --agent-id 000 --rule-id 5402
+    --organization-slug acme --all-tools --agent-id 000 --rule-id 5402
 """
 
 import argparse
@@ -35,14 +35,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 # Import models so metadata is populated before SQLite create_all.
 import wolf_server.audit.models  # noqa: F401
-import wolf_server.tenancy.models  # noqa: F401
+import wolf_server.organization.models  # noqa: F401
 import wolf_server.wazuh.models  # noqa: F401
 from wolf_server.config import get_settings
 from wolf_server.database import Base
 from wolf_server.guardrails.limits import DEFAULT_LIMITS
+from wolf_server.organization.context import OrganizationContext
+from wolf_server.organization.models import Organization
 from wolf_server.secrets_factory import get_secrets_backend
-from wolf_server.tenancy.context import TenantContext
-from wolf_server.tenancy.models import Tenant
 from wolf_server.tools.agents import (
     GetAgentDetailInput,
     GetAgentDetailTool,
@@ -80,7 +80,7 @@ async def _ensure_schema(database_url: str) -> None:
     await engine.dispose()
 
 
-async def smoke_test(tenant_slug: str, *, hours: int = 24) -> None:
+async def smoke_test(organization_slug: str, *, hours: int = 24) -> None:
     settings = get_settings()
     await _ensure_schema(settings.database_url)
 
@@ -88,15 +88,19 @@ async def smoke_test(tenant_slug: str, *, hours: int = 24) -> None:
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     async with factory() as db:
-        tenant = await db.scalar(select(Tenant).where(Tenant.slug == tenant_slug))
-        if tenant is None:
-            raise SystemExit(f"No tenant with slug {tenant_slug!r}; run bootstrap_tenant first")
+        organization = await db.scalar(
+            select(Organization).where(Organization.slug == organization_slug)
+        )
+        if organization is None:
+            raise SystemExit(
+                f"No organization with slug {organization_slug!r}; run bootstrap_organization first"
+            )
 
-        # Synthesize a TenantContext — this is a system process, not a logged-in user.
+        # Synthesize a OrganizationContext — this is a system process, not a logged-in user.
         # The role is "admin" purely so VALID_ROLES check passes; no auth boundary here.
-        ctx = TenantContext(
-            tenant_id=tenant.id,
-            tenant_slug=tenant.slug,
+        ctx = OrganizationContext(
+            organization_id=organization.id,
+            organization_slug=organization.slug,
             user_id=uuid.UUID(int=0),
             user_email="smoke-test@wolf-server.local",
             role="admin",
@@ -106,7 +110,7 @@ async def smoke_test(tenant_slug: str, *, hours: int = 24) -> None:
         secrets = get_secrets_backend(settings)
         conn = await get_wazuh_connection(ctx, db, secrets)
         sys.stdout.write(
-            f"✓ Resolved Wazuh connection for tenant {tenant.slug!r} "
+            f"✓ Resolved Wazuh connection for organization {organization.slug!r} "
             f"(verify_tls={conn.verify_tls})\n"
         )
 
@@ -119,8 +123,7 @@ async def smoke_test(tenant_slug: str, *, hours: int = 24) -> None:
             sys.stdout.write(f"✓ Server API: {total} agents total (first 5):\n")
             for a in items[:5]:
                 sys.stdout.write(
-                    f"    id={a.get('id'):>3} status={a.get('status'):<10} "
-                    f"name={a.get('name')!r}\n"
+                    f"    id={a.get('id'):>3} status={a.get('status'):<10} name={a.get('name')!r}\n"
                 )
 
         # ── OpenSearch: search_alerts ────────────────────────────────────
@@ -153,7 +156,7 @@ async def smoke_test(tenant_slug: str, *, hours: int = 24) -> None:
 
 
 async def smoke_all_tools(
-    tenant_slug: str,
+    organization_slug: str,
     *,
     hours: int = 24,
     agent_id: str = "000",
@@ -174,18 +177,25 @@ async def smoke_all_tools(
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     async with factory() as db:
-        tenant = await db.scalar(select(Tenant).where(Tenant.slug == tenant_slug))
-        if tenant is None:
-            raise SystemExit(f"No tenant with slug {tenant_slug!r}; run bootstrap_tenant first")
-        ctx = TenantContext(
-            tenant_id=tenant.id, tenant_slug=tenant.slug,
-            user_id=uuid.UUID(int=0), user_email="smoke-test@wolf-server.local",
-            role="admin", session_id=f"smoke-{uuid.uuid4().hex[:8]}",
+        organization = await db.scalar(
+            select(Organization).where(Organization.slug == organization_slug)
+        )
+        if organization is None:
+            raise SystemExit(
+                f"No organization with slug {organization_slug!r}; run bootstrap_organization first"
+            )
+        ctx = OrganizationContext(
+            organization_id=organization.id,
+            organization_slug=organization.slug,
+            user_id=uuid.UUID(int=0),
+            user_email="smoke-test@wolf-server.local",
+            role="admin",
+            session_id=f"smoke-{uuid.uuid4().hex[:8]}",
         )
         secrets = get_secrets_backend(settings)
         conn = await get_wazuh_connection(ctx, db, secrets)
         sys.stdout.write(
-            f"✓ Resolved Wazuh connection for tenant {tenant.slug!r} "
+            f"✓ Resolved Wazuh connection for organization {organization.slug!r} "
             f"(verify_tls={conn.verify_tls})\n\n"
         )
 
@@ -194,40 +204,63 @@ async def smoke_all_tools(
             WazuhServerApiClient(conn) as api,
         ):
             exec_ctx = ToolExecContext(
-                tenant=ctx, limits=DEFAULT_LIMITS,
-                opensearch=os_client, server_api=api,
+                organization=ctx,
+                limits=DEFAULT_LIMITS,
+                opensearch=os_client,
+                server_api=api,
             )
             now = datetime.now(UTC)
             window_from = now - timedelta(hours=hours)
 
             cases: list[tuple[str, ReadTool, BaseModel]] = [
-                ("list_agents", ListAgentsTool(),
-                 ListAgentsInput(limit=5)),
-                ("get_agent_detail", GetAgentDetailTool(),
-                 GetAgentDetailInput(agent_id=agent_id)),
-                ("get_cluster_health", GetClusterHealthTool(),
-                 GetClusterHealthInput()),
-                ("get_rule_definition", GetRuleDefinitionTool(),
-                 GetRuleDefinitionInput(rule_id=rule_id)),
-                ("search_alerts", SearchAlertsTool(),
-                 SearchAlertsInput(time_from=window_from, time_to=now, size=5)),
-                ("aggregate_alerts", AggregateAlertsTool(),
-                 AggregateAlertsInput(
-                     time_from=window_from, time_to=now,
-                     group_by="rule.level", size=20,
-                 )),
-                ("count_alerts_by_severity", CountAlertsBySeverityTool(),
-                 CountAlertsBySeverityInput(time_from=window_from, time_to=now)),
-                ("get_event_timeline", GetEventTimelineTool(),
-                 GetEventTimelineInput(
-                     time_from=window_from, time_to=now,
-                     agent_id=agent_id, size=5,
-                 )),
-                ("get_agent_alert_history", GetAgentAlertHistoryTool(),
-                 GetAgentAlertHistoryInput(
-                     time_from=window_from, time_to=now,
-                     agent_id=agent_id, size=5,
-                 )),
+                ("list_agents", ListAgentsTool(), ListAgentsInput(limit=5)),
+                ("get_agent_detail", GetAgentDetailTool(), GetAgentDetailInput(agent_id=agent_id)),
+                ("get_cluster_health", GetClusterHealthTool(), GetClusterHealthInput()),
+                (
+                    "get_rule_definition",
+                    GetRuleDefinitionTool(),
+                    GetRuleDefinitionInput(rule_id=rule_id),
+                ),
+                (
+                    "search_alerts",
+                    SearchAlertsTool(),
+                    SearchAlertsInput(time_from=window_from, time_to=now, size=5),
+                ),
+                (
+                    "aggregate_alerts",
+                    AggregateAlertsTool(),
+                    AggregateAlertsInput(
+                        time_from=window_from,
+                        time_to=now,
+                        group_by="rule.level",
+                        size=20,
+                    ),
+                ),
+                (
+                    "count_alerts_by_severity",
+                    CountAlertsBySeverityTool(),
+                    CountAlertsBySeverityInput(time_from=window_from, time_to=now),
+                ),
+                (
+                    "get_event_timeline",
+                    GetEventTimelineTool(),
+                    GetEventTimelineInput(
+                        time_from=window_from,
+                        time_to=now,
+                        agent_id=agent_id,
+                        size=5,
+                    ),
+                ),
+                (
+                    "get_agent_alert_history",
+                    GetAgentAlertHistoryTool(),
+                    GetAgentAlertHistoryInput(
+                        time_from=window_from,
+                        time_to=now,
+                        agent_id=agent_id,
+                        size=5,
+                    ),
+                ),
             ]
 
             passed = 0
@@ -270,7 +303,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    p.add_argument("--tenant-slug", required=True)
+    p.add_argument("--organization-slug", required=True)
     p.add_argument("--hours", type=int, default=24, help="Alert time-window in hours (default 24)")
     p.add_argument(
         "--all-tools",
@@ -294,12 +327,16 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv if argv is not None else sys.argv[1:])
     if args.all_tools:
-        asyncio.run(smoke_all_tools(
-            args.tenant_slug, hours=args.hours,
-            agent_id=args.agent_id, rule_id=args.rule_id,
-        ))
+        asyncio.run(
+            smoke_all_tools(
+                args.organization_slug,
+                hours=args.hours,
+                agent_id=args.agent_id,
+                rule_id=args.rule_id,
+            )
+        )
     else:
-        asyncio.run(smoke_test(args.tenant_slug, hours=args.hours))
+        asyncio.run(smoke_test(args.organization_slug, hours=args.hours))
     return 0
 
 

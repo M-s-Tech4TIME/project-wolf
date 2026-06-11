@@ -113,10 +113,12 @@ def generate_ca(
     key with 0600 perms (`write_key_pem` does this automatically).
     """
     key = rsa.generate_private_key(public_exponent=65537, key_size=key_size)
-    subject = issuer = x509.Name([
-        x509.NameAttribute(NameOID.COMMON_NAME, common_name),
-        x509.NameAttribute(NameOID.ORGANIZATION_NAME, organization),
-    ])
+    subject = issuer = x509.Name(
+        [
+            x509.NameAttribute(NameOID.COMMON_NAME, common_name),
+            x509.NameAttribute(NameOID.ORGANIZATION_NAME, organization),
+        ]
+    )
     now = datetime.now(UTC)
     not_after = _bounded_not_after(now, validity_days)
     builder = (
@@ -194,9 +196,11 @@ def sign_leaf(
         )
 
     key = rsa.generate_private_key(public_exponent=65537, key_size=key_size)
-    subject = x509.Name([
-        x509.NameAttribute(NameOID.COMMON_NAME, common_name),
-    ])
+    subject = x509.Name(
+        [
+            x509.NameAttribute(NameOID.COMMON_NAME, common_name),
+        ]
+    )
     san_entries: list[x509.GeneralName] = [x509.DNSName(d) for d in san_dns]
     for ip in san_ip:
         san_entries.append(x509.IPAddress(ipaddress.ip_address(ip)))
@@ -333,8 +337,7 @@ def read_key_pem(path: Path) -> rsa.RSAPrivateKey:
     key = serialization.load_pem_private_key(path.read_bytes(), password=None)
     if not isinstance(key, rsa.RSAPrivateKey):
         raise TypeError(
-            f"{path}: expected an RSA private key, got "
-            f"{type(key).__name__}",
+            f"{path}: expected an RSA private key, got {type(key).__name__}",
         )
     return key
 

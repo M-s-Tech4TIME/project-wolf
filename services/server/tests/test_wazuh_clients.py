@@ -2,8 +2,8 @@
 
 Uses an httpx MockTransport so the tests don't hit a real Wazuh.  Focus is
 on the safety-critical paths:
-  - OpenSearch rejects queries missing the tenant filter (defense in depth)
-  - OpenSearch raises TenantMismatchError when a returned doc has wrong tenant_id
+  - OpenSearch rejects queries missing the organization filter (defense in depth)
+  - OpenSearch raises OrganizationMismatchError when a returned doc has wrong organization_id
   - Server API client is read-only (no POST/PUT/DELETE)
   - Server API client transparently authenticates and refreshes on 401
 """
@@ -13,7 +13,7 @@ from typing import Any
 
 import httpx
 import pytest
-from wolf_common.errors import TenantMismatchError
+from wolf_common.errors import OrganizationMismatchError
 from wolf_server.wazuh.config import WazuhConnection
 from wolf_server.wazuh.opensearch import WazuhOpenSearchClient, WazuhOpenSearchError
 from wolf_server.wazuh.server_api import WazuhServerApiClient, WazuhServerApiError
@@ -22,14 +22,14 @@ from wolf_server.wazuh.server_api import WazuhServerApiClient, WazuhServerApiErr
 
 
 @pytest.fixture
-def tenant_id() -> uuid.UUID:
+def organization_id() -> uuid.UUID:
     return uuid.UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
 
 
 @pytest.fixture
-def connection(tenant_id: uuid.UUID) -> WazuhConnection:
+def connection(organization_id: uuid.UUID) -> WazuhConnection:
     return WazuhConnection(
-        tenant_id=tenant_id,
+        organization_id=organization_id,
         opensearch_url="https://os.example.test:9200",
         opensearch_index_pattern="wazuh-alerts-*",
         opensearch_username="wolf_ro",
@@ -38,7 +38,7 @@ def connection(tenant_id: uuid.UUID) -> WazuhConnection:
         server_api_username="wolf_api",
         server_api_password="secret",  # noqa: S106 — test fixture
         verify_tls=True,
-        inject_tenant_filter=True,
+        inject_organization_filter=True,
     )
 
 
@@ -59,10 +59,10 @@ def _make_os_client(
 
 
 @pytest.mark.asyncio
-async def test_opensearch_rejects_query_missing_tenant_filter(
+async def test_opensearch_rejects_query_missing_organization_filter(
     connection: WazuhConnection,
 ) -> None:
-    """A hand-crafted query without the tenant filter must be rejected."""
+    """A hand-crafted query without the organization filter must be rejected."""
 
     async def _never_called(_req: httpx.Request) -> httpx.Response:
         raise AssertionError("Request must not reach transport")
@@ -70,15 +70,15 @@ async def test_opensearch_rejects_query_missing_tenant_filter(
     transport = httpx.MockTransport(_never_called)
     client = _make_os_client(connection, transport)
     bad_query: dict[str, Any] = {"query": {"bool": {"filter": []}}}
-    with pytest.raises(TenantMismatchError, match="tenant_id filter"):
+    with pytest.raises(OrganizationMismatchError, match="organization_id filter"):
         await client.execute(bad_query)
 
 
 @pytest.mark.asyncio
-async def test_opensearch_rejects_returned_doc_with_wrong_tenant(
-    connection: WazuhConnection, tenant_id: uuid.UUID
+async def test_opensearch_rejects_returned_doc_with_wrong_organization(
+    connection: WazuhConnection, organization_id: uuid.UUID
 ) -> None:
-    """Defense in depth: doc whose _source.tenant_id mismatches must hard-fail."""
+    """Defense in depth: doc whose _source.organization_id mismatches must hard-fail."""
     other = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
 
     async def _handler(request: httpx.Request) -> httpx.Response:
@@ -86,7 +86,7 @@ async def test_opensearch_rejects_returned_doc_with_wrong_tenant(
             "hits": {
                 "total": {"value": 1},
                 "hits": [
-                    {"_id": "doc1", "_source": {"tenant_id": other, "rule": {"id": "5710"}}}
+                    {"_id": "doc1", "_source": {"organization_id": other, "rule": {"id": "5710"}}}
                 ],
             }
         }
@@ -94,20 +94,20 @@ async def test_opensearch_rejects_returned_doc_with_wrong_tenant(
 
     transport = httpx.MockTransport(_handler)
     client = _make_os_client(connection, transport)
-    # Build the query via the tenant builder so the outbound check passes.
+    # Build the query via the organization builder so the outbound check passes.
     from datetime import UTC, datetime, timedelta
 
     q = client.query_builder.search_alerts(
         time_from=datetime.now(UTC) - timedelta(hours=1),
         time_to=datetime.now(UTC),
     )
-    with pytest.raises(TenantMismatchError, match="OpenSearch returned doc"):
+    with pytest.raises(OrganizationMismatchError, match="OpenSearch returned doc"):
         await client.execute(q)
 
 
 @pytest.mark.asyncio
 async def test_opensearch_returns_body_on_success(
-    connection: WazuhConnection, tenant_id: uuid.UUID
+    connection: WazuhConnection, organization_id: uuid.UUID
 ) -> None:
     expected_body = {"hits": {"total": {"value": 0}, "hits": []}}
 
@@ -170,9 +170,7 @@ async def test_server_api_authenticates_and_includes_bearer(
 
     async def _handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/security/user/authenticate":
-            return httpx.Response(
-                200, json={"data": {"token": "test-jwt-token"}}, request=request
-            )
+            return httpx.Response(200, json={"data": {"token": "test-jwt-token"}}, request=request)
         captured["auth_header"] = request.headers.get("authorization")
         return httpx.Response(200, json={"data": {"affected_items": []}}, request=request)
 
@@ -198,9 +196,7 @@ async def test_server_api_refreshes_token_on_401(
         call_count["get"] += 1
         if call_count["get"] == 1:
             return httpx.Response(401, text="expired", request=request)
-        return httpx.Response(
-            200, json={"data": {"affected_items": []}}, request=request
-        )
+        return httpx.Response(200, json={"data": {"affected_items": []}}, request=request)
 
     transport = httpx.MockTransport(_handler)
     client = _make_api_client(connection, transport)

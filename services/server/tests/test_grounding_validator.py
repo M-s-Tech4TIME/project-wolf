@@ -102,10 +102,14 @@ def test_build_evidence_empty_inputs() -> None:
 
 @pytest.mark.asyncio
 async def test_validate_all_supported_leaves_answer_unchanged() -> None:
-    provider = _StubProvider(json.dumps([
-        {"index": 0, "verdict": "supported", "reason": "in evidence"},
-        {"index": 1, "verdict": "supported", "reason": "in evidence"},
-    ]))
+    provider = _StubProvider(
+        json.dumps(
+            [
+                {"index": 0, "verdict": "supported", "reason": "in evidence"},
+                {"index": 1, "verdict": "supported", "reason": "in evidence"},
+            ]
+        )
+    )
     v = GroundingValidator(provider)
     answer = "Rule 5712 fires on 8 failures. The threshold is 120 seconds."
     result = await v.validate(
@@ -126,10 +130,14 @@ async def test_validate_all_supported_leaves_answer_unchanged() -> None:
 @pytest.mark.asyncio
 async def test_validate_marks_unsupported_claim_inline() -> None:
     """Canonical test: the embellishment we saw in Slice 1's mixed-mode."""
-    provider = _StubProvider(json.dumps([
-        {"index": 0, "verdict": "supported", "reason": "in evidence"},
-        {"index": 1, "verdict": "unsupported", "reason": "not in evidence"},
-    ]))
+    provider = _StubProvider(
+        json.dumps(
+            [
+                {"index": 0, "verdict": "supported", "reason": "in evidence"},
+                {"index": 1, "verdict": "unsupported", "reason": "not in evidence"},
+            ]
+        )
+    )
     v = GroundingValidator(provider)
     answer = (
         "Rule 5712 fires on 8 SSH failures within 120 seconds. "
@@ -138,12 +146,13 @@ async def test_validate_marks_unsupported_claim_inline() -> None:
     result = await v.validate(
         answer,
         tool_results=[{"name": "get_rule_definition", "content": {"id": 5712}}],
-        retrieved_chunks=[{
-            "source_type": "runbook",
-            "chunk_metadata": {"title": "ACME"},
-            "content": "Step 1: verify agent. Step 2: block at perimeter for "
-                       "external IPs.",
-        }],
+        retrieved_chunks=[
+            {
+                "source_type": "runbook",
+                "chunk_metadata": {"title": "ACME"},
+                "content": "Step 1: verify agent. Step 2: block at perimeter for external IPs.",
+            }
+        ],
     )
     assert result.ran is True
     assert result.supported_count == 1
@@ -161,15 +170,16 @@ async def test_validate_marks_unsupported_claim_inline() -> None:
 @pytest.mark.asyncio
 async def test_validate_marks_uncertain_claim_yellow() -> None:
     """uncertain → yellow [unverified] marker, NOT red (Slice 5.0b)."""
-    provider = _StubProvider(json.dumps([
-        {"index": 0, "verdict": "supported", "reason": "in evidence"},
-        {"index": 1, "verdict": "uncertain", "reason": "general knowledge"},
-    ]))
-    v = GroundingValidator(provider)
-    answer = (
-        "Rule 5712 fires on 8 SSH failures. "
-        "Brute-force attacks are a common attack vector."
+    provider = _StubProvider(
+        json.dumps(
+            [
+                {"index": 0, "verdict": "supported", "reason": "in evidence"},
+                {"index": 1, "verdict": "uncertain", "reason": "general knowledge"},
+            ]
+        )
     )
+    v = GroundingValidator(provider)
+    answer = "Rule 5712 fires on 8 SSH failures. Brute-force attacks are a common attack vector."
     result = await v.validate(
         answer,
         tool_results=[{"name": "get_rule_definition", "content": {"id": 5712}}],
@@ -186,9 +196,13 @@ async def test_validate_marks_uncertain_claim_yellow() -> None:
 async def test_failed_tool_makes_evidence_and_flags_fabrication() -> None:
     """A failed tool is negative evidence; the validator still runs and a
     fabricated specific is judged unsupported (Slice 5.0b hardening)."""
-    provider = _StubProvider(json.dumps([
-        {"index": 0, "verdict": "unsupported", "reason": "tool failed, no data"},
-    ]))
+    provider = _StubProvider(
+        json.dumps(
+            [
+                {"index": 0, "verdict": "unsupported", "reason": "tool failed, no data"},
+            ]
+        )
+    )
     v = GroundingValidator(provider)
     result = await v.validate(
         "There were 1,478 alerts in the last six months.",
@@ -252,9 +266,12 @@ class _ScriptedProvider:
         content = self._scripted[idx]
         self.call_count += 1
         return ChatResponse(
-            content=content, tool_calls=[],
-            input_tokens=0, output_tokens=0,
-            stop_reason="stop", model_id="stub",
+            content=content,
+            tool_calls=[],
+            input_tokens=0,
+            output_tokens=0,
+            stop_reason="stop",
+            model_id="stub",
         )
 
 
@@ -266,12 +283,16 @@ async def test_partial_judge_response_retries_and_recovers() -> None:
     missing claim. No claim should default to uncertain when the retry
     succeeds. (Slice 5.0b.2)
     """
-    first_partial = json.dumps([
-        {"index": 1, "verdict": "supported", "reason": "in evidence"},
-    ])
-    second_covers_missing = json.dumps([
-        {"index": 0, "verdict": "supported", "reason": "in evidence too"},
-    ])
+    first_partial = json.dumps(
+        [
+            {"index": 1, "verdict": "supported", "reason": "in evidence"},
+        ]
+    )
+    second_covers_missing = json.dumps(
+        [
+            {"index": 0, "verdict": "supported", "reason": "in evidence too"},
+        ]
+    )
     provider = _ScriptedProvider([first_partial, second_covers_missing])
     v = GroundingValidator(provider)
     result = await v.validate(
@@ -289,9 +310,11 @@ async def test_partial_judge_response_retries_and_recovers() -> None:
 async def test_partial_judge_response_falls_back_to_uncertain() -> None:
     """If retry is ALSO partial, missing claims default to uncertain
     (yellow caution) — never silently to no-chip unverifiable."""
-    first_partial = json.dumps([
-        {"index": 1, "verdict": "supported", "reason": "ok"},
-    ])
+    first_partial = json.dumps(
+        [
+            {"index": 1, "verdict": "supported", "reason": "ok"},
+        ]
+    )
     second_also_partial = json.dumps([])  # nothing new
     provider = _ScriptedProvider([first_partial, second_also_partial])
     v = GroundingValidator(provider)
@@ -333,9 +356,12 @@ class _FlakeyProvider:
         if isinstance(item, Exception):
             raise item
         return ChatResponse(
-            content=item, tool_calls=[],
-            input_tokens=0, output_tokens=0,
-            stop_reason="stop", model_id="stub",
+            content=item,
+            tool_calls=[],
+            input_tokens=0,
+            output_tokens=0,
+            stop_reason="stop",
+            model_id="stub",
         )
 
 
@@ -343,9 +369,11 @@ class _FlakeyProvider:
 async def test_judge_recovers_when_first_call_raises() -> None:
     """A transient first-call failure (e.g. ReadTimeout on cold model) is
     retried once; the warm second call succeeds. Slice 5.0b.3 persistence."""
-    second_ok = json.dumps([
-        {"index": 0, "verdict": "supported", "reason": "ok"},
-    ])
+    second_ok = json.dumps(
+        [
+            {"index": 0, "verdict": "supported", "reason": "ok"},
+        ]
+    )
     provider = _FlakeyProvider([RuntimeError("simulated timeout"), second_ok])
     v = GroundingValidator(provider)
     result = await v.validate(
@@ -361,10 +389,12 @@ async def test_judge_recovers_when_first_call_raises() -> None:
 @pytest.mark.asyncio
 async def test_full_judge_response_does_not_retry() -> None:
     """Happy path: every claim was judged → no second call to the judge."""
-    full = json.dumps([
-        {"index": 0, "verdict": "supported", "reason": "a"},
-        {"index": 1, "verdict": "supported", "reason": "b"},
-    ])
+    full = json.dumps(
+        [
+            {"index": 0, "verdict": "supported", "reason": "a"},
+            {"index": 1, "verdict": "supported", "reason": "b"},
+        ]
+    )
     provider = _ScriptedProvider([full])
     v = GroundingValidator(provider)
     result = await v.validate(
@@ -490,9 +520,7 @@ async def test_validate_malformed_json_returns_original_answer() -> None:
 @pytest.mark.asyncio
 async def test_validate_strips_json_codefence_wrapping() -> None:
     """Some small models wrap their JSON in a markdown fence; tolerated."""
-    provider = _StubProvider(
-        "```json\n[{\"index\": 0, \"verdict\": \"supported\", \"reason\": \"ok\"}]\n```"
-    )
+    provider = _StubProvider('```json\n[{"index": 0, "verdict": "supported", "reason": "ok"}]\n```')
     v = GroundingValidator(provider)
     result = await v.validate(
         "One claim only.",
@@ -521,8 +549,7 @@ async def test_validate_clamps_claim_count() -> None:
     user_msg = provider.last_request.messages[1].content
     # Count the numbered claim lines (the prompt format is "N. claim").
     claim_lines = [
-        line for line in user_msg.splitlines()
-        if line and line[0].isdigit() and ". " in line[:5]
+        line for line in user_msg.splitlines() if line and line[0].isdigit() and ". " in line[:5]
     ]
     assert len(claim_lines) == 3
 
@@ -545,10 +572,10 @@ def test_annotate_inserts_one_marker_per_verdict() -> None:
         ClaimVerdict(claim="Claim four.", verdict="unverifiable"),
     ]
     out = GroundingValidator._annotate(answer, verdicts)
-    assert "Claim one. [verified]" in out          # green
-    assert "Claim two. [unsupported]" in out       # red
-    assert "Claim three. [unverified]" in out      # yellow caution
-    assert "Claim four. [non-factual]" in out      # muted (preamble)
+    assert "Claim one. [verified]" in out  # green
+    assert "Claim two. [unsupported]" in out  # red
+    assert "Claim three. [unverified]" in out  # yellow caution
+    assert "Claim four. [non-factual]" in out  # muted (preamble)
 
 
 def test_annotate_marks_supported_with_green_verified() -> None:
@@ -559,9 +586,12 @@ def test_annotate_marks_supported_with_green_verified() -> None:
     from wolf_server.grounding.validator import ClaimVerdict
 
     answer = "Everything is fine."
-    out = GroundingValidator._annotate(answer, [
-        ClaimVerdict(claim="Everything is fine.", verdict="supported"),
-    ])
+    out = GroundingValidator._annotate(
+        answer,
+        [
+            ClaimVerdict(claim="Everything is fine.", verdict="supported"),
+        ],
+    )
     assert out == "Everything is fine. [verified]"
 
 

@@ -4,11 +4,11 @@ Passwords are hashed with bcrypt.  Never store or log plaintext passwords.
 JWT tokens are signed with HS256 and the SECRET_KEY from settings.
 
 Token design:
-  - access token  — short-lived (60 min default), carries user_id + tenant_id + role
+  - access token  — short-lived (60 min default), carries user_id + organization_id + role
   - refresh token — long-lived (7 days), used to get a new access token
 
-The tenant_id in the token is the tenant the user *selected* at login.
-If a user belongs to multiple tenants they log in again to switch.
+The organization_id in the token is the organization the user *selected* at login.
+If a user belongs to multiple organizations they log in again to switch.
 """
 
 import uuid
@@ -47,22 +47,20 @@ def _make_token(data: dict[str, Any], expires_delta: timedelta) -> str:
     # `jose` ships no PEP-561 stubs (see root pyproject's mypy overrides),
     # so `jwt.encode` is typed as `Any`. Cast at the boundary so the `Any`
     # does not leak into call sites.
-    encoded: str = jwt.encode(
-        payload, _settings.secret_key, algorithm=_settings.jwt_algorithm
-    )
+    encoded: str = jwt.encode(payload, _settings.secret_key, algorithm=_settings.jwt_algorithm)
     return encoded
 
 
 def create_access_token(
     user_id: uuid.UUID,
-    tenant_id: uuid.UUID,
+    organization_id: uuid.UUID,
     role: str,
     session_id: str,
 ) -> str:
     return _make_token(
         {
             "sub": str(user_id),
-            "tenant_id": str(tenant_id),
+            "organization_id": str(organization_id),
             "role": role,
             "session_id": session_id,
             "token_type": "access",

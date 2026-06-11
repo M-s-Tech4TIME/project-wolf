@@ -12,7 +12,7 @@ from typing import Protocol, runtime_checkable
 class SecretsBackend(Protocol):
     """Async, key-value secrets store.
 
-    Keys are namespaced by the caller (e.g. ``tenant/{tenant_id}/wazuh_api_key``).
+    Keys are namespaced by the caller (e.g. ``organization/{organization_id}/wazuh_api_key``).
     Values are always strings; callers that need structured data must
     serialise/deserialise themselves.
 

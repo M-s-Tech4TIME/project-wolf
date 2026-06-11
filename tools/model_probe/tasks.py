@@ -268,6 +268,7 @@ async def task_multi_step_reasoning(provider: ModelProvider) -> ProbeTaskResult:
 
 # ── Task 4: grounding discipline ─────────────────────────────────────────────
 
+
 async def task_grounding_discipline(provider: ModelProvider) -> ProbeTaskResult:
     """Grade: does the model refuse to fabricate facts when no data is given?
 

@@ -7,9 +7,9 @@ Flow (matches doc 03 §The dispatch flow):
                 # rejects unknown tools and execute-tier tools, audits anomaly
         runner = runtime_registry.get(call.name)
         args = runner.InputModel(**sanitize(call.arguments))
-                # rejects model-supplied tenant_id; validates argument schema
-        await rate_limiter.take(ctx.tenant_id)
-                # enforce per-tenant rate limit
+                # rejects model-supplied organization_id; validates argument schema
+        await rate_limiter.take(ctx.organization_id)
+                # enforce per-organization rate limit
         result = await runner.run(exec_ctx, args)
         runner.OutputModel.model_validate(result.model_dump())
                 # validate output schema before returning to the model
@@ -36,12 +36,12 @@ from wolf_schema import ToolCall
 
 from wolf_server.audit.log import write_event_from_context
 from wolf_server.guardrails.limits import GuardrailViolation, ResourceLimits
-from wolf_server.guardrails.rate_limit import TenantRateLimiter, default_rate_limiter
+from wolf_server.guardrails.rate_limit import OrganizationRateLimiter, default_rate_limiter
 from wolf_server.models.registry import registry as schema_registry
-from wolf_server.tenancy.context import TenantContext
+from wolf_server.organization.context import OrganizationContext
 from wolf_server.tools.base import (
     ToolExecContext,
-    sanitize_tenant_id_from_args,
+    sanitize_organization_id_from_args,
     strip_explicit_nulls,
 )
 from wolf_server.tools.registry import runtime_registry
@@ -65,12 +65,12 @@ class ToolDispatchResult(BaseModel):
 async def dispatch_tool_call(
     call: ToolCall,
     *,
-    ctx: TenantContext,
+    ctx: OrganizationContext,
     db: AsyncSession,
     opensearch: WazuhOpenSearchClient,
     server_api: WazuhServerApiClient,
     limits: ResourceLimits,
-    rate_limiter: TenantRateLimiter = default_rate_limiter,
+    rate_limiter: OrganizationRateLimiter = default_rate_limiter,
     knowledge_store: Any | None = None,
     cache: Any | None = None,
 ) -> ToolDispatchResult:
@@ -82,31 +82,27 @@ async def dispatch_tool_call(
     agent loop can decide how to surface this to the model (typically: feed
     the error back so the model can correct).
 
-    Re-raises only for catastrophic states (a TenantMismatchError from the
+    Re-raises only for catastrophic states (a OrganizationMismatchError from the
     OpenSearch client, e.g.) — these are security incidents that must bubble.
     """
     start = time.perf_counter()
     sanitized_args = strip_explicit_nulls(
-        sanitize_tenant_id_from_args(call.arguments, ctx.tenant_id)
+        sanitize_organization_id_from_args(call.arguments, ctx.organization_id)
     )
 
     # 1. Schema-registry validation: tool exists and is not execute-tier.
     try:
         tool_schema = schema_registry.validate_model_call(call.name)
     except ToolNotFoundError as exc:
-        return await _audit_failure(
-            db, ctx, call, "tool.call.unknown", str(exc), start
-        )
+        return await _audit_failure(db, ctx, call, "tool.call.unknown", str(exc), start)
     except ToolCapabilityError as exc:
         # Model named an execute-tier tool — a structural anomaly.  Always log loud.
         logger.error(
             "model_attempted_execute_tool",
             tool_name=call.name,
-            tenant_id=str(ctx.tenant_id),
+            organization_id=str(ctx.organization_id),
         )
-        return await _audit_failure(
-            db, ctx, call, "tool.call.anomaly", str(exc), start
-        )
+        return await _audit_failure(db, ctx, call, "tool.call.anomaly", str(exc), start)
 
     # 2. Runtime lookup.
     try:
@@ -114,9 +110,7 @@ async def dispatch_tool_call(
     except ToolNotFoundError as exc:
         # Schema registered without a runner — programming error.
         logger.error("tool_runner_missing", tool_name=call.name)
-        return await _audit_failure(
-            db, ctx, call, "tool.call.runner_missing", str(exc), start
-        )
+        return await _audit_failure(db, ctx, call, "tool.call.runner_missing", str(exc), start)
 
     # 3. Input-schema validation.
     try:
@@ -131,17 +125,15 @@ async def dispatch_tool_call(
             start,
         )
 
-    # 4. Per-tenant rate limit.
+    # 4. Per-organization rate limit.
     try:
-        await rate_limiter.take(ctx.tenant_id)
+        await rate_limiter.take(ctx.organization_id)
     except GuardrailViolation as exc:
-        return await _audit_failure(
-            db, ctx, call, "tool.call.rate_limited", str(exc), start
-        )
+        return await _audit_failure(db, ctx, call, "tool.call.rate_limited", str(exc), start)
 
     # 5. Execute.
     exec_ctx = ToolExecContext(
-        tenant=ctx,
+        organization=ctx,
         limits=limits,
         opensearch=opensearch,
         server_api=server_api,
@@ -151,18 +143,14 @@ async def dispatch_tool_call(
     try:
         result = await runner.run(exec_ctx, args_model)
     except GuardrailViolation as exc:
-        return await _audit_failure(
-            db, ctx, call, "tool.call.guardrail", str(exc), start
-        )
+        return await _audit_failure(db, ctx, call, "tool.call.guardrail", str(exc), start)
     except WolfError:
-        # TenantMismatchError or other security-relevant Wolf errors — bubble.
+        # OrganizationMismatchError or other security-relevant Wolf errors — bubble.
         raise
     except Exception as exc:
         # Unexpected runtime failure — audit and surface as a clean tool error.
         logger.exception("tool_runtime_error", tool_name=call.name)
-        return await _audit_failure(
-            db, ctx, call, "tool.call.runtime_error", str(exc), start
-        )
+        return await _audit_failure(db, ctx, call, "tool.call.runtime_error", str(exc), start)
 
     # 6. Output-schema validation.
     try:
@@ -210,7 +198,7 @@ async def dispatch_tool_call(
 
 async def _audit_failure(
     db: AsyncSession,
-    ctx: TenantContext,
+    ctx: OrganizationContext,
     call: ToolCall,
     event_type: str,
     detail: str,

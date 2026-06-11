@@ -11,7 +11,7 @@ from wolf_server.guardrails.limits import (
     enforce_limits,
     truncate_for_context,
 )
-from wolf_server.guardrails.rate_limit import TenantRateLimiter
+from wolf_server.guardrails.rate_limit import OrganizationRateLimiter
 
 # ─── enforce_limits ──────────────────────────────────────────────────────────
 
@@ -89,9 +89,7 @@ def test_enforce_limits_respects_custom_limits() -> None:
     tight = ResourceLimits(max_time_range=timedelta(hours=1), max_results_per_query=10)
     end = datetime.now(UTC)
     with pytest.raises(GuardrailViolation):
-        enforce_limits(
-            time_from=end - timedelta(hours=2), time_to=end, limits=tight
-        )
+        enforce_limits(time_from=end - timedelta(hours=2), time_to=end, limits=tight)
 
 
 # ─── truncate_for_context ────────────────────────────────────────────────────
@@ -109,49 +107,49 @@ def test_truncate_appends_marker_when_over_limit() -> None:
     assert len(out) > 10  # marker added
 
 
-# ─── TenantRateLimiter ───────────────────────────────────────────────────────
+# ─── OrganizationRateLimiter ───────────────────────────────────────────────────────
 
 
 @pytest.mark.asyncio
 async def test_rate_limiter_allows_within_burst() -> None:
-    limiter = TenantRateLimiter(rate_per_minute=60, burst=10)
-    tenant = uuid.uuid4()
+    limiter = OrganizationRateLimiter(rate_per_minute=60, burst=10)
+    organization = uuid.uuid4()
     for _ in range(10):
-        await limiter.take(tenant)
+        await limiter.take(organization)
 
 
 @pytest.mark.asyncio
 async def test_rate_limiter_rejects_when_bucket_exhausted() -> None:
-    limiter = TenantRateLimiter(rate_per_minute=60, burst=3)
-    tenant = uuid.uuid4()
+    limiter = OrganizationRateLimiter(rate_per_minute=60, burst=3)
+    organization = uuid.uuid4()
     for _ in range(3):
-        await limiter.take(tenant)
+        await limiter.take(organization)
     with pytest.raises(GuardrailViolation, match="Rate limit"):
-        await limiter.take(tenant)
+        await limiter.take(organization)
 
 
 @pytest.mark.asyncio
-async def test_rate_limiter_buckets_are_per_tenant() -> None:
-    limiter = TenantRateLimiter(rate_per_minute=60, burst=2)
-    tenant_a = uuid.uuid4()
-    tenant_b = uuid.uuid4()
+async def test_rate_limiter_buckets_are_per_organization() -> None:
+    limiter = OrganizationRateLimiter(rate_per_minute=60, burst=2)
+    organization_a = uuid.uuid4()
+    organization_b = uuid.uuid4()
     for _ in range(2):
-        await limiter.take(tenant_a)
-        await limiter.take(tenant_b)
+        await limiter.take(organization_a)
+        await limiter.take(organization_b)
     with pytest.raises(GuardrailViolation):
-        await limiter.take(tenant_a)
-    # Tenant B is unaffected by Tenant A's exhaustion.
+        await limiter.take(organization_a)
+    # Organization B is unaffected by Organization A's exhaustion.
     with pytest.raises(GuardrailViolation):
-        await limiter.take(tenant_b)
+        await limiter.take(organization_b)
 
 
 @pytest.mark.asyncio
 async def test_rate_limiter_refills_over_time() -> None:
     # High rate so refill happens within test timeframes.
-    limiter = TenantRateLimiter(rate_per_minute=3000, burst=1)  # ~50/sec
-    tenant = uuid.uuid4()
-    await limiter.take(tenant)
+    limiter = OrganizationRateLimiter(rate_per_minute=3000, burst=1)  # ~50/sec
+    organization = uuid.uuid4()
+    await limiter.take(organization)
     with pytest.raises(GuardrailViolation):
-        await limiter.take(tenant)
+        await limiter.take(organization)
     await asyncio.sleep(0.1)  # > 1/50 second
-    await limiter.take(tenant)  # should succeed after refill
+    await limiter.take(organization)  # should succeed after refill

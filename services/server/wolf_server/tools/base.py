@@ -2,7 +2,7 @@
 
 Every read tool subclasses `ReadTool`, declares its input/output Pydantic
 models, and implements `run()`.  The runtime is bound to a Wazuh connection
-(per request) and the tenant context (per request).
+(per request) and the organization context (per request).
 
 Citation: every tool output carries one or more citation objects.  This is
 the foundation for grounding (doc 06 §Hallucinated grounding): the agent's
@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field
 from wolf_schema import ToolSchema, ToolTier
 
 from wolf_server.guardrails.limits import ResourceLimits
-from wolf_server.tenancy.context import TenantContext
+from wolf_server.organization.context import OrganizationContext
 
 
 class Citation(BaseModel):
@@ -46,11 +46,11 @@ class Citation(BaseModel):
 class ToolExecContext:
     """Per-request execution context passed to every tool.
 
-    Built by the dispatcher from the immutable TenantContext + resolved
+    Built by the dispatcher from the immutable OrganizationContext + resolved
     Wazuh connection.  Never constructed from model output.
     """
 
-    tenant: TenantContext
+    organization: OrganizationContext
     limits: ResourceLimits
     # Wazuh clients are typed as `Any` here so subclasses can opt into the
     # one(s) they need without circular imports.  The dispatcher always
@@ -61,7 +61,7 @@ class ToolExecContext:
     # because Phase 2 read-tool tests and the smoke CLI don't wire it.
     # query_runbook raises a clear error if invoked when this is None.
     knowledge_store: Any | None = None
-    # Phase 4 Slice 3 — tenant-scoped cache. Typed Any to avoid an
+    # Phase 4 Slice 3 — organization-scoped cache. Typed Any to avoid an
     # import cycle. Optional because tests can stub it; chat.py wires
     # the process-wide singleton from wolf_server.caching. Tools that want to
     # cache (e.g. agent_name → agent_id resolution) check for None
@@ -110,15 +110,17 @@ class ReadTool(ABC):
         return Citation(tool=self.name, query=query, result_count=result_count)
 
 
-def sanitize_tenant_id_from_args(args: dict[str, Any], _tenant_id: uuid.UUID) -> dict[str, Any]:
-    """Strip any tenant_id key the model might have included.
+def sanitize_organization_id_from_args(
+    args: dict[str, Any], _organization_id: uuid.UUID
+) -> dict[str, Any]:
+    """Strip any organization_id key the model might have included.
 
-    The model never picks tenant — if the call somehow has one, we drop it
-    silently and rely on the injected TenantContext.  See doc 05 §The core
+    The model never picks organization — if the call somehow has one, we drop it
+    silently and rely on the injected OrganizationContext.  See doc 05 §The core
     mechanism.
     """
-    if "tenant_id" in args:
-        return {k: v for k, v in args.items() if k != "tenant_id"}
+    if "organization_id" in args:
+        return {k: v for k, v in args.items() if k != "organization_id"}
     return args
 
 

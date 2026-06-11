@@ -55,7 +55,7 @@ A supported release line receives:
 - **Critical security patches** — back-ported from `main` as
   needed. Out-of-band releases for severe issues.
 - **Important bugfixes** — including data-integrity issues,
-  cross-tenant isolation regressions, and cases where the
+  cross-organization isolation regressions, and cases where the
   software silently produces wrong answers.
 - **Compatibility fixes** — for breaking changes in Wolf's
   declared dependencies (Postgres, pgvector, Python, Node.js)

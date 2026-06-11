@@ -1,11 +1,11 @@
-"""Resolve a `ModelProvider` for a tenant.
+"""Resolve a `ModelProvider` for a organization.
 
 Phase 2B: returns the process-default model configured via settings.
-Per-tenant model configuration (a `TenantModelConfig` table mirroring
-`TenantWazuhConfig`) is a later-phase enhancement; the function signature
-already accepts a TenantContext so call sites do not need to change.
+Per-organization model configuration (a `OrganizationModelConfig` table mirroring
+`OrganizationWazuhConfig`) is a later-phase enhancement; the function signature
+already accepts a OrganizationContext so call sites do not need to change.
 
-Doc 02 §Per-tenant model choice — each tenant can run a different model;
+Doc 02 §Per-organization model choice — each organization can run a different model;
 that capability is not exercised here yet, but the seam is.
 """
 
@@ -18,7 +18,7 @@ from wolf_server.models.anthropic import AnthropicAdapter
 from wolf_server.models.interface import ModelProvider
 from wolf_server.models.ollama import OllamaAdapter
 from wolf_server.models.openai import OpenAIAdapter
-from wolf_server.tenancy.context import TenantContext
+from wolf_server.organization.context import OrganizationContext
 
 logger = structlog.get_logger(__name__)
 
@@ -44,9 +44,7 @@ async def _build_provider(
     if api_key_ref:
         secret = await secrets.get(api_key_ref)
         if secret is None:
-            raise ModelProviderUnconfiguredError(
-                f"Secret {api_key_ref!r} not found"
-            )
+            raise ModelProviderUnconfiguredError(f"Secret {api_key_ref!r} not found")
         api_key = secret
 
     match provider_name.lower():
@@ -73,19 +71,17 @@ async def _build_provider(
                 num_ctx=ollama_num_ctx,
             )
         case _:
-            raise ModelProviderUnconfiguredError(
-                f"Unknown model provider: {provider_name!r}"
-            )
+            raise ModelProviderUnconfiguredError(f"Unknown model provider: {provider_name!r}")
 
 
-async def get_model_for_tenant(
-    _ctx: TenantContext,
+async def get_model_for_organization(
+    _ctx: OrganizationContext,
     settings: Settings,
     secrets: SecretsBackend,
 ) -> ModelProvider:
     """Return the configured chat ModelProvider for a request.
 
-    The tenant context is accepted (and reserved) so per-tenant model
+    The organization context is accepted (and reserved) so per-organization model
     selection can be added without changing the call site.
     """
     return await _build_provider(
@@ -98,7 +94,7 @@ async def get_model_for_tenant(
 
 
 async def get_grounding_judge_model(
-    _ctx: TenantContext,
+    _ctx: OrganizationContext,
     settings: Settings,
     secrets: SecretsBackend,
     *,
@@ -113,12 +109,8 @@ async def get_grounding_judge_model(
     """
     if not settings.grounding_judge_model_id:
         return fallback_chat_provider
-    judge_provider_name = (
-        settings.grounding_judge_model_provider or settings.default_model_provider
-    )
-    judge_api_key_ref = (
-        settings.grounding_judge_api_key_ref or settings.default_model_api_key_ref
-    )
+    judge_provider_name = settings.grounding_judge_model_provider or settings.default_model_provider
+    judge_api_key_ref = settings.grounding_judge_api_key_ref or settings.default_model_api_key_ref
     return await _build_provider(
         provider_name=judge_provider_name,
         model_id=settings.grounding_judge_model_id,

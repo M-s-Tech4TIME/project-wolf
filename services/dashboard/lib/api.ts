@@ -18,7 +18,7 @@ import type {
   LoginResponse,
   LoopEvent,
   MeResponse,
-  TenantMembership,
+  OrganizationMembership,
 } from "./types";
 
 // All API calls are same-origin under `/api/v1/...`. No `apiBase()`
@@ -88,9 +88,9 @@ export async function fetchMe(): Promise<MeResponse | null> {
   return unwrap<MeResponse>(resp);
 }
 
-export function fetchMyTenants(): Promise<TenantMembership[]> {
-  return apiFetch("/api/v1/auth/me/tenants").then(
-    unwrap<TenantMembership[]>,
+export function fetchMyOrganizations(): Promise<OrganizationMembership[]> {
+  return apiFetch("/api/v1/auth/me/organizations").then(
+    unwrap<OrganizationMembership[]>,
   );
 }
 

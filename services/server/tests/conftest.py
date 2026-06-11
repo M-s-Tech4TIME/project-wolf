@@ -36,15 +36,13 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key-exactly-32-chars!!")
 os.environ.setdefault("ENVIRONMENT", "test")
 os.environ.setdefault("SECRETS_BACKEND", "file")
 os.environ.setdefault("SECRETS_FILE_PATH", "/tmp/wolf_test_secrets.enc")  # noqa: S108
-os.environ.setdefault(
-    "SECRETS_FILE_KEY", "_KRS3GialojQA05LCxS3-JwSds9RBrZ1htT-BDO-I6U="
-)
+os.environ.setdefault("SECRETS_FILE_KEY", "_KRS3GialojQA05LCxS3-JwSds9RBrZ1htT-BDO-I6U=")
 # Phase 5.6-c: pin the mTLS settings to paths that will never exist in
 # the test environment, so MtlsMiddleware does NOT get mounted on the
 # test app. The middleware unit-tests in test_mtls_middleware.py build
 # their own app + middleware directly; that's the layer where its
 # behaviour is verified. The other tests (auth flow, chat endpoints,
-# tenant endpoints) hit the real app via TestClient/AsyncClient, which
+# organization endpoints) hit the real app via TestClient/AsyncClient, which
 # can't present a peer cert — without this override they would all
 # get 401'd by MtlsMiddleware once `.local/certs/` exist on disk.
 os.environ.setdefault("MTLS_CA_PATH", "/nonexistent/wolf-test-no-mtls/ca.pem")
@@ -63,7 +61,7 @@ async def engine() -> AsyncGenerator[AsyncEngine]:
     import wolf_server.audit.models  # noqa: F401
 
     # Import all models so Base.metadata is populated.
-    import wolf_server.tenancy.models  # noqa: F401
+    import wolf_server.organization.models  # noqa: F401
     import wolf_server.wazuh.models  # noqa: F401
     from wolf_server.database import Base
 
@@ -74,13 +72,9 @@ async def engine() -> AsyncGenerator[AsyncEngine]:
         # (pgvector.Vector + JSONB) — skip it under SQLite. Knowledge-
         # path tests stub the store and don't need the table; tests
         # that need real pgvector run against the dev Postgres DB.
-        sqlite_tables = [
-            t for t in Base.metadata.sorted_tables if t.name != "knowledge_chunks"
-        ]
+        sqlite_tables = [t for t in Base.metadata.sorted_tables if t.name != "knowledge_chunks"]
         async with eng.begin() as conn:
-            await conn.run_sync(
-                lambda c: Base.metadata.create_all(c, tables=sqlite_tables)
-            )
+            await conn.run_sync(lambda c: Base.metadata.create_all(c, tables=sqlite_tables))
     else:
         # Postgres: run Alembic migrations.
         import asyncio
@@ -137,18 +131,18 @@ async def client(engine: AsyncEngine) -> AsyncGenerator[AsyncClient]:
 
 
 @pytest_asyncio.fixture
-async def seed_tenant_and_user(db: AsyncSession) -> dict[str, Any]:
-    """Create a tenant, a user, and a user_tenant binding with unique values per test."""
+async def seed_organization_and_user(db: AsyncSession) -> dict[str, Any]:
+    """Create an organization + user + user_organization binding with unique values per test."""
     from datetime import UTC, datetime
 
     from wolf_server.auth.local import hash_password
-    from wolf_server.tenancy.models import Tenant, User, UserTenant
+    from wolf_server.organization.models import Organization, User, UserOrganization
 
     # Use a unique suffix per fixture call to avoid UNIQUE constraint conflicts
     # when multiple tests share the same session-scoped SQLite in-memory DB.
     suffix = uuid.uuid4().hex[:8]
 
-    tenant = Tenant(
+    organization = Organization(
         id=uuid.uuid4(),
         name=f"Test Corp {suffix}",
         slug=f"test-corp-{suffix}",
@@ -156,7 +150,7 @@ async def seed_tenant_and_user(db: AsyncSession) -> dict[str, Any]:
         created_at=datetime.now(UTC),
         updated_at=datetime.now(UTC),
     )
-    db.add(tenant)
+    db.add(organization)
 
     user = User(
         id=uuid.uuid4(),
@@ -170,10 +164,10 @@ async def seed_tenant_and_user(db: AsyncSession) -> dict[str, Any]:
     )
     db.add(user)
 
-    binding = UserTenant(
+    binding = UserOrganization(
         id=uuid.uuid4(),
         user_id=user.id,
-        tenant_id=tenant.id,
+        organization_id=organization.id,
         role="analyst",
         created_at=datetime.now(UTC),
     )
@@ -181,8 +175,8 @@ async def seed_tenant_and_user(db: AsyncSession) -> dict[str, Any]:
     await db.commit()
 
     return {
-        "tenant_id": tenant.id,
-        "tenant_slug": tenant.slug,
+        "organization_id": organization.id,
+        "organization_slug": organization.slug,
         "user_id": user.id,
         "user_email": user.email,
         "role": "analyst",

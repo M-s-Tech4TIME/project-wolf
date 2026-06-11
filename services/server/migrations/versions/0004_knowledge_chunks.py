@@ -82,7 +82,5 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.execute("DROP INDEX IF EXISTS ix_knowledge_chunks_embedding_hnsw")
     op.drop_index("ix_knowledge_chunks_tenant_id", table_name="knowledge_chunks")
-    op.drop_index(
-        "ix_knowledge_chunks_tenant_source", table_name="knowledge_chunks"
-    )
+    op.drop_index("ix_knowledge_chunks_tenant_source", table_name="knowledge_chunks")
     op.drop_table("knowledge_chunks")

@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from wolf_server.guardrails.limits import DEFAULT_LIMITS
-from wolf_server.tenancy.context import TenantContext
+from wolf_server.organization.context import OrganizationContext
 from wolf_server.tools.alerts import SearchAlertsInput, SearchAlertsOutput, SearchAlertsTool
 from wolf_server.tools.base import ToolExecContext
 
@@ -21,12 +21,12 @@ def _ctx(
     opensearch: Any,
     server_api: Any,
     cache: Any = None,
-    tenant_id: uuid.UUID | None = None,
+    organization_id: uuid.UUID | None = None,
 ) -> ToolExecContext:
     return ToolExecContext(
-        tenant=TenantContext(
-            tenant_id=tenant_id or uuid.uuid4(),
-            tenant_slug="acme",
+        organization=OrganizationContext(
+            organization_id=organization_id or uuid.uuid4(),
+            organization_slug="acme",
             user_id=uuid.uuid4(),
             user_email="t@example.com",
             role="analyst",
@@ -54,9 +54,7 @@ def _opensearch_returning(hits: list[Any] | None = None) -> Any:
 
 def _server_api_finding(agent_id: str | None) -> Any:
     server = MagicMock()
-    items: list[dict[str, Any]] = (
-        [{"id": agent_id}] if agent_id is not None else []
-    )
+    items: list[dict[str, Any]] = [{"id": agent_id}] if agent_id is not None else []
     server.get = AsyncMock(return_value={"data": {"affected_items": items}})
     return server
 
@@ -86,9 +84,7 @@ async def test_agent_id_takes_precedence_over_agent_name() -> None:
     os_client = _opensearch_returning()
     server = _server_api_finding(agent_id="999")
     tool = SearchAlertsTool()
-    args = SearchAlertsInput(
-        time_from="now-1h", agent_id="001", agent_name="linux-test-agent"
-    )
+    args = SearchAlertsInput(time_from="now-1h", agent_id="001", agent_name="linux-test-agent")
     await tool.run(_ctx(os_client, server), args)
 
     server.get.assert_not_called()
@@ -139,9 +135,7 @@ def _opensearch_page(hits: list[Any], total: int) -> Any:
     os_client = MagicMock()
     os_client.query_builder = MagicMock()
     os_client.query_builder.search_alerts = MagicMock(return_value={"query": "stub"})
-    os_client.execute = AsyncMock(
-        return_value={"hits": {"hits": hits, "total": {"value": total}}}
-    )
+    os_client.execute = AsyncMock(return_value={"hits": {"hits": hits, "total": {"value": total}}})
     return os_client
 
 
@@ -193,16 +187,16 @@ async def test_cursor_is_forwarded_to_query_builder() -> None:
 @pytest.mark.asyncio
 async def test_agent_name_cache_hit_skips_server_api_call() -> None:
     """Second resolution of the same agent_name re-uses the cached id
-    instead of re-hitting the Server API. The cache is per-tenant by
-    construction (doc 05 §Caching across tenants)."""
-    from wolf_server.caching import InMemoryTenantCache
+    instead of re-hitting the Server API. The cache is per-organization by
+    construction (doc 05 §Caching across organizations)."""
+    from wolf_server.caching import InMemoryOrganizationCache
 
-    cache = InMemoryTenantCache()
-    tenant_id = uuid.uuid4()
+    cache = InMemoryOrganizationCache()
+    organization_id = uuid.uuid4()
 
     os_client = _opensearch_returning()
     server = _server_api_finding(agent_id="001")
-    ctx = _ctx(os_client, server, cache=cache, tenant_id=tenant_id)
+    ctx = _ctx(os_client, server, cache=cache, organization_id=organization_id)
     tool = SearchAlertsTool()
 
     # First call populates the cache.
@@ -210,46 +204,46 @@ async def test_agent_name_cache_hit_skips_server_api_call() -> None:
     await tool.run(ctx, args1)
     assert server.get.await_count == 1
 
-    # Second call with same tenant + same name → cache hit, no extra API call.
+    # Second call with same organization + same name → cache hit, no extra API call.
     args2 = SearchAlertsInput(time_from="now-30m", agent_name="linux-test-agent")
     await tool.run(ctx, args2)
     assert server.get.await_count == 1  # unchanged from the first call
 
 
 @pytest.mark.asyncio
-async def test_agent_name_cache_is_tenant_scoped() -> None:
-    """Tenant A's cached resolution must NOT satisfy tenant B's lookup.
-    Each tenant's cache entry is keyed by its own tenant_id; the same
+async def test_agent_name_cache_is_organization_scoped() -> None:
+    """Organization A's cached resolution must NOT satisfy organization B's lookup.
+    Each organization's cache entry is keyed by its own organization_id; the same
     `agent_name` string can map to different agent_ids in different
     Wazuh deployments."""
-    from wolf_server.caching import InMemoryTenantCache
+    from wolf_server.caching import InMemoryOrganizationCache
 
-    cache = InMemoryTenantCache()
-    tenant_a = uuid.uuid4()
-    tenant_b = uuid.uuid4()
+    cache = InMemoryOrganizationCache()
+    organization_a = uuid.uuid4()
+    organization_b = uuid.uuid4()
 
-    # Two separate server-api stubs because each tenant probes its
+    # Two separate server-api stubs because each organization probes its
     # own Wazuh; we use the same agent_name but different resolved IDs.
     server_a = _server_api_finding(agent_id="001")
     server_b = _server_api_finding(agent_id="999")
     tool = SearchAlertsTool()
 
-    # Tenant A resolves the name → caches "001"
+    # Organization A resolves the name → caches "001"
     await tool.run(
-        _ctx(_opensearch_returning(), server_a, cache=cache, tenant_id=tenant_a),
+        _ctx(_opensearch_returning(), server_a, cache=cache, organization_id=organization_a),
         SearchAlertsInput(time_from="now-1h", agent_name="my-host"),
     )
     assert server_a.get.await_count == 1
 
-    # Tenant B resolves the SAME name → must NOT hit A's cache entry;
+    # Organization B resolves the SAME name → must NOT hit A's cache entry;
     # B's own server-api stub is consulted.
     await tool.run(
-        _ctx(_opensearch_returning(), server_b, cache=cache, tenant_id=tenant_b),
+        _ctx(_opensearch_returning(), server_b, cache=cache, organization_id=organization_b),
         SearchAlertsInput(time_from="now-1h", agent_name="my-host"),
     )
     assert server_b.get.await_count == 1, (
-        "Cross-tenant cache leak: tenant B's agent_name resolution "
-        "satisfied by tenant A's cached entry."
+        "Cross-organization cache leak: organization B's agent_name resolution "
+        "satisfied by organization A's cached entry."
     )
 
 
@@ -257,13 +251,13 @@ async def test_agent_name_cache_is_tenant_scoped() -> None:
 async def test_agent_name_not_found_is_cached_as_sentinel() -> None:
     """Negative results are cached too — re-asking for a non-existent
     name should not re-probe the API."""
-    from wolf_server.caching import InMemoryTenantCache
+    from wolf_server.caching import InMemoryOrganizationCache
 
-    cache = InMemoryTenantCache()
-    tenant_id = uuid.uuid4()
+    cache = InMemoryOrganizationCache()
+    organization_id = uuid.uuid4()
 
     server = _server_api_finding(agent_id=None)
-    ctx = _ctx(_opensearch_returning(), server, cache=cache, tenant_id=tenant_id)
+    ctx = _ctx(_opensearch_returning(), server, cache=cache, organization_id=organization_id)
     tool = SearchAlertsTool()
 
     args = SearchAlertsInput(time_from="now-1h", agent_name="nonexistent")

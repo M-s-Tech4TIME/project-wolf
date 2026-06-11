@@ -27,14 +27,14 @@ def _approx_days_ago(value: object, days: float, tol_seconds: float = 5.0) -> bo
         ("now-7d", 7),
         ("now-30d", 30),
         ("now-3w", 21),
-        ("now-6mo", 180),       # the screenshot failure
-        ("now-1y", 365),        # the screenshot failure
+        ("now-6mo", 180),  # the screenshot failure
+        ("now-1y", 365),  # the screenshot failure
         ("now-2months", 60),
         ("now-1month", 30),
         ("now-12mo", 360),
         ("now-2y", 730),
-        ("now - 6 mo", 180),    # whitespace tolerated
-        ("NOW-1Y", 365),        # case tolerated for the 'now' and unit word
+        ("now - 6 mo", 180),  # whitespace tolerated
+        ("NOW-1Y", 365),  # case tolerated for the 'now' and unit word
     ],
 )
 def test_relative_day_scale_units_parse(expr: str, days: float) -> None:

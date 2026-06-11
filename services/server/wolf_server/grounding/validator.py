@@ -228,8 +228,7 @@ class GroundingValidator:
             source_type = chunk.get("source_type", "<unknown>")
             content = chunk.get("content", "")
             sections.append(
-                f"[KNOWLEDGE {i}: {source_type} — {title}]\n"
-                f"{content[:_EVIDENCE_PER_SOURCE_LIMIT]}"
+                f"[KNOWLEDGE {i}: {source_type} — {title}]\n{content[:_EVIDENCE_PER_SOURCE_LIMIT]}"
             )
         for i, tf in enumerate(tool_failures or [], start=1):
             name = tf.get("name", "<unknown>")
@@ -285,7 +284,8 @@ class GroundingValidator:
             except Exception as exc:
                 level_logger = logger.info if attempt == 0 else logger.warning
                 level_logger(
-                    "grounding_judge_failed" if attempt == 1
+                    "grounding_judge_failed"
+                    if attempt == 1
                     else "grounding_judge_first_attempt_failed",
                     error_type=type(exc).__name__,
                     error_msg=str(exc) or "(no message)",
@@ -451,9 +451,7 @@ class GroundingValidator:
                 if idx >= 0:
                     insertion_point = idx + len(candidate)
                     annotated = (
-                        annotated[:insertion_point]
-                        + f" {marker}"
-                        + annotated[insertion_point:]
+                        annotated[:insertion_point] + f" {marker}" + annotated[insertion_point:]
                     )
                     break
         return annotated

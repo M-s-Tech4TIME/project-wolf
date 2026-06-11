@@ -26,7 +26,7 @@ class StructuredOutput(StrEnum):
 
 class AgentStrategy(StrEnum):
     frontier = "frontier"  # autonomous multi-step
-    guided = "guided"      # checkpoints per sub-task
+    guided = "guided"  # checkpoints per sub-task
     pipeline = "pipeline"  # deterministic, model fills slots
 
 
@@ -38,9 +38,9 @@ class LicenseClass(StrEnum):
     deployments aware of license posture can pick deliberately.
     """
 
-    apache_2_0 = "apache-2.0"    # Qwen, Gemma, Mistral families
-    mit = "mit"                  # GLM, DeepSeek, Kimi
-    restricted = "restricted"    # Llama (community license w/ MAU cap)
+    apache_2_0 = "apache-2.0"  # Qwen, Gemma, Mistral families
+    mit = "mit"  # GLM, DeepSeek, Kimi
+    restricted = "restricted"  # Llama (community license w/ MAU cap)
     proprietary = "proprietary"  # Claude, GPT, Gemini, etc.
 
 

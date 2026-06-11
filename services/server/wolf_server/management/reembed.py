@@ -16,12 +16,12 @@ Usage:
     uv run python -m wolf_server.management.reembed                 # report only
     uv run python -m wolf_server.management.reembed --apply         # actually re-embed
     uv run python -m wolf_server.management.reembed --apply --batch-size 16
-    uv run python -m wolf_server.management.reembed --tenant-slug acme --apply
+    uv run python -m wolf_server.management.reembed --organization-slug acme --apply
 
 Safety:
     - Default is REPORT mode. `--apply` is required to write anything.
-    - Per-tenant scoping via `--tenant-slug` keeps the blast radius small;
-      omit to re-embed across every tenant + shared corpora.
+    - Per-organization scoping via `--organization-slug` keeps the blast radius small;
+      omit to re-embed across every organization + shared corpora.
     - Each batch is its own transaction; partial failure leaves the DB
       in a consistent state (some chunks re-embedded, others not — the
       next run picks up where this one left off).
@@ -45,7 +45,7 @@ from wolf_server.knowledge.embeddings import (
     make_embedding_provider_aux,
 )
 from wolf_server.knowledge.models import KnowledgeChunk
-from wolf_server.tenancy.models import Tenant
+from wolf_server.organization.models import Organization
 
 logger = structlog.get_logger(__name__)
 
@@ -53,7 +53,7 @@ logger = structlog.get_logger(__name__)
 async def _fetch_mismatched(
     session: AsyncSession,
     active_model_id: str,
-    tenant_id_filter: str | None,
+    organization_id_filter: str | None,
     *,
     is_aux: bool,
     limit: int | None = None,
@@ -76,13 +76,11 @@ async def _fetch_mismatched(
             KnowledgeChunk.embedding_v2_model.is_distinct_from(active_model_id)
         )
     else:
-        stmt = select(KnowledgeChunk).where(
-            KnowledgeChunk.embedding_model != active_model_id
-        )
-    if tenant_id_filter == "__shared__":
-        stmt = stmt.where(KnowledgeChunk.tenant_id.is_(None))
-    elif tenant_id_filter is not None:
-        stmt = stmt.where(KnowledgeChunk.tenant_id == tenant_id_filter)
+        stmt = select(KnowledgeChunk).where(KnowledgeChunk.embedding_model != active_model_id)
+    if organization_id_filter == "__shared__":
+        stmt = stmt.where(KnowledgeChunk.organization_id.is_(None))
+    elif organization_id_filter is not None:
+        stmt = stmt.where(KnowledgeChunk.organization_id == organization_id_filter)
     if limit is not None:
         stmt = stmt.limit(limit)
     result = await session.execute(stmt)
@@ -190,11 +188,11 @@ async def main() -> int:
         ),
     )
     parser.add_argument(
-        "--tenant-slug",
+        "--organization-slug",
         default=None,
         help=(
-            "Restrict to one tenant's private chunks. Use '__shared__' for the "
-            "shared corpora (tenant_id IS NULL). Omit to process every chunk."
+            "Restrict to one organization's private chunks. Use '__shared__' for the "
+            "shared corpora (organization_id IS NULL). Omit to process every chunk."
         ),
     )
     parser.add_argument(
@@ -207,9 +205,7 @@ async def main() -> int:
         "--limit",
         type=int,
         default=None,
-        help=(
-            "Process at most N mismatched chunks (debug). Omit for unbounded."
-        ),
+        help=("Process at most N mismatched chunks (debug). Omit for unbounded."),
     )
     args = parser.parse_args()
 
@@ -234,33 +230,28 @@ async def main() -> int:
         embedder = make_embedding_provider(settings)
     active_model_id = embedder.model_id
 
-    tenant_filter: str | None = None
-    if args.tenant_slug == "__shared__":
-        tenant_filter = "__shared__"
-    elif args.tenant_slug is not None:
+    organization_filter: str | None = None
+    if args.organization_slug == "__shared__":
+        organization_filter = "__shared__"
+    elif args.organization_slug is not None:
         async with db_session() as session:
             t = (
                 await session.execute(
-                    select(Tenant).where(Tenant.slug == args.tenant_slug)
+                    select(Organization).where(Organization.slug == args.organization_slug)
                 )
             ).scalar_one_or_none()
             if t is None:
-                sys.stderr.write(
-                    f"ERROR: No tenant with slug={args.tenant_slug!r}\n"
-                )
+                sys.stderr.write(f"ERROR: No organization with slug={args.organization_slug!r}\n")
                 return 3
-            tenant_filter = str(t.id)
+            organization_filter = str(t.id)
 
-    if tenant_filter == "__shared__":
-        scope_text = "__shared__ (tenant_id IS NULL)"
-    elif tenant_filter:
-        scope_text = tenant_filter
+    if organization_filter == "__shared__":
+        scope_text = "__shared__ (organization_id IS NULL)"
+    elif organization_filter:
+        scope_text = organization_filter
     else:
-        scope_text = "all chunks (every tenant + shared)"
-    mode_text = (
-        "APPLY (will re-embed)" if args.apply
-        else "REPORT-ONLY (use --apply to write)"
-    )
+        scope_text = "all chunks (every organization + shared)"
+    mode_text = "APPLY (will re-embed)" if args.apply else "REPORT-ONLY (use --apply to write)"
     sys.stdout.write(f"Active embedder: {active_model_id}\n")
     sys.stdout.write(f"Scope: {scope_text}\n")
     sys.stdout.write(f"Mode:  {mode_text}\n\n")
@@ -272,7 +263,9 @@ async def main() -> int:
     while True:
         async with db_session() as session:
             batch = await _fetch_mismatched(
-                session, active_model_id, tenant_filter,
+                session,
+                active_model_id,
+                organization_filter,
                 is_aux=args.aux,
                 limit=args.batch_size,
             )
@@ -288,8 +281,7 @@ async def main() -> int:
                                 {
                                     "id": str(row.id),
                                     "current_model": (
-                                        row.embedding_v2_model if args.aux
-                                        else row.embedding_model
+                                        row.embedding_v2_model if args.aux else row.embedding_model
                                     ),
                                     "would_become": active_model_id,
                                     "source_type": row.source_type,
@@ -308,13 +300,9 @@ async def main() -> int:
 
             count = await _reembed_batch(session, batch, embedder, is_aux=args.aux)
             total_processed += count
-            sys.stdout.write(
-                f"  re-embedded batch of {count} (total so far: {total_processed})\n"
-            )
+            sys.stdout.write(f"  re-embedded batch of {count} (total so far: {total_processed})\n")
             if args.limit is not None and total_processed >= args.limit:
-                sys.stdout.write(
-                    f"  --limit {args.limit} reached; stopping\n"
-                )
+                sys.stdout.write(f"  --limit {args.limit} reached; stopping\n")
                 break
 
     sys.stdout.write(f"\nDone. Total re-embedded: {total_processed}\n")

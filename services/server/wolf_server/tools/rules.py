@@ -45,9 +45,7 @@ class GetRuleDefinitionTool(ReadTool):
         if not items:
             return GetRuleDefinitionOutput(
                 rule=RuleDefinition(id=args.rule_id),
-                citation=self.make_citation(
-                    args.model_dump(mode="json"), result_count=0
-                ),
+                citation=self.make_citation(args.model_dump(mode="json"), result_count=0),
             )
         item = items[0]
         mitre = item.get("mitre", {})
@@ -68,7 +66,5 @@ class GetRuleDefinitionTool(ReadTool):
         )
         return GetRuleDefinitionOutput(
             rule=rule,
-            citation=self.make_citation(
-                args.model_dump(mode="json"), result_count=1
-            ),
+            citation=self.make_citation(args.model_dump(mode="json"), result_count=1),
         )

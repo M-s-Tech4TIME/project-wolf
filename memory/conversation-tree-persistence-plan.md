@@ -23,12 +23,12 @@ Why: covered in [[branching-architecture]] — each node owns its own `children`
 
 ## Persistence schema (proposed)
 
-**Two tables per tenant** (tenant scoping per the standing rules):
+**Two tables per organization** (organization scoping per the standing rules):
 
 ```
 conversations
   id                 UUID PRIMARY KEY
-  tenant_id          UUID NOT NULL  → multi-tenant scoping
+  organization_id          UUID NOT NULL  → multi-organization scoping
   user_id            UUID NOT NULL  → owner of the chat
   title              VARCHAR
   selected_root_id   UUID NULLABLE  → FK to message_nodes.id (NOT enforced — see deferred constraint)
@@ -67,7 +67,7 @@ message_nodes
 **Indexes:**
 - `message_nodes(conversation_id, parent_id, position)` — drives the children query at load time.
 - `message_nodes(conversation_id)` — load-all-by-conversation for the tree reconstruction.
-- `conversations(tenant_id, updated_at DESC)` — sidebar listing.
+- `conversations(organization_id, updated_at DESC)` — sidebar listing.
 
 ## Critical write rules
 
@@ -93,9 +93,9 @@ Recommend Option A — explicit `position`. Already in the schema above.
 - `selected_child_id` is INTENTIONALLY NOT a FK constraint. Reason: a transaction inserting a new child first writes the child row, then updates the parent's `selected_child_id`. Within the transaction this is fine. But for snapshot-isolation paranoia, having it as a non-FK pointer plus a validation step on read is safer. Validate on load: if `selected_child_id` references a missing row OR doesn't match any actual child, default to `children[0]` rather than crashing. Log the inconsistency.
 - `selected_root_id` on conversations: same treatment. NOT a FK; validated on load.
 
-## Tenant scoping
+## Organization scoping
 
-Per [[integrity-across-the-stack]]: every read query MUST include `tenant_id = :requesting_tenant`. Routes through `TenantScopedQueryBuilder`. Cross-tenant tests in the orchestrator's isolation suite must add cases for the conversation/message_nodes tables.
+Per [[integrity-across-the-stack]]: every read query MUST include `organization_id = :requesting_organization`. Routes through `OrganizationScopedQueryBuilder`. Cross-organization tests in the orchestrator's isolation suite must add cases for the conversation/message_nodes tables.
 
 ## Required round-trip test
 
@@ -114,6 +114,6 @@ When this lands, `chat-shell.tsx`'s in-memory `setConversations` calls become as
 
 ## Cross-references
 
-- [[integrity-across-the-stack]] — every services/ change runs the full cross-tenant isolation gate; this schema's reads must too.
+- [[integrity-across-the-stack]] — every services/ change runs the full cross-organization isolation gate; this schema's reads must too.
 - [[no-unaddressed-errors]] — load-time validators that detect a dangling `selected_child_id` MUST log + heal, not silently drop the subtree.
-- [[quality-secure-coding-discipline]] — DB-side: parameterised queries, no string concatenation; per-tenant scoping at the query-builder level, not at the application layer.
+- [[quality-secure-coding-discipline]] — DB-side: parameterised queries, no string concatenation; per-organization scoping at the query-builder level, not at the application layer.

@@ -1,6 +1,6 @@
 ---
 name: runbook-authoring-and-actionable-runbooks
-description: Future phase — admin-facing markdown editor for runbooks (tenant + shared) and the path to runbook-prescribed propose-actions
+description: Future phase — admin-facing markdown editor for runbooks (organization + shared) and the path to runbook-prescribed propose-actions
 metadata: 
   node_type: memory
   type: project
@@ -12,7 +12,7 @@ User proposed (2026-05-28) a dedicated **Knowledge Management** phase sitting be
 ## (A) Admin UI for runbook CRUD
 - Web page (org-admin role; superuser can also edit shared global corpora `wazuh_doc` + `attack`).
 - Markdown editor — likely **MDXEditor** (Tailwind-themable, modern, lightweight). TipTap with a markdown extension is the fallback.
-- CRUD against the existing `knowledge_chunks` table: tenant-scoped per RBAC.
+- CRUD against the existing `knowledge_chunks` table: organization-scoped per RBAC.
 - Auto-chunk on save (current store accepts pre-chunked input; a server-side splitter respecting markdown structure goes here).
 - Re-embed on save: re-run both Ollama embedders, refresh `embedding`, `embedding_v2`, and let Postgres re-compute `content_tsv`. The `upsert` in [PgvectorKnowledgeStore](file:///home/alsechemist/Codespace/project-wolf/services/orchestrator/app/knowledge/store.py) already does the heavy lifting; an "update" path that deletes old chunks for the same logical doc, then inserts the new ones, is the cleanest semantics (each saved markdown doc = a logical bundle of one or more chunks with a shared `chunk_metadata.doc_id`).
 - Structured metadata exposed in the editor UI: title, rule_id, technique, plus a new `action_type` tag for propose-action mapping (see C).

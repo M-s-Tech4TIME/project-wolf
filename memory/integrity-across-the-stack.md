@@ -19,9 +19,9 @@ The user set this as a standing rule on 2026-05-30 after the verification pass o
    `.venv/bin/python -m pytest services/orchestrator/tests/ -q -p no:cacheprovider`
    The known environmental fail (`test_factory_accepts_sentence_transformers_aliases` — CUDA OOM when Ollama holds the GPU) is acceptable to ignore as long as **it is the only failure** and the reason is confirmed environmental. Everything else must pass.
 
-2. **Cross-tenant isolation gate** — the CI-explicit safety suite.
-   `.venv/bin/python -m pytest services/orchestrator/tests/test_cross_tenant_isolation.py services/orchestrator/tests/test_tenant_scoped_cache.py -v`
-   All 18 must pass. This is non-negotiable; it's the multi-tenancy guarantee.
+2. **Cross-organization isolation gate** — the CI-explicit safety suite.
+   `.venv/bin/python -m pytest services/orchestrator/tests/test_cross_organization_isolation.py services/orchestrator/tests/test_organization_scoped_cache.py -v`
+   All 18 must pass. This is non-negotiable; it's the multi-organization guarantee.
 
 3. **Lint + types.**
    `.venv/bin/ruff check services/` and the CI-exact `uv run mypy …` invocation.
@@ -43,5 +43,5 @@ The user set this as a standing rule on 2026-05-30 after the verification pass o
 
 **What I've explicitly committed to going forward** (from the verification pass that caught the 5.0c-a silent regression):
 - ANY change in `services/` triggers the FULL orchestrator suite, not a subset.
-- I run cross-tenant isolation as a smoke check, even on UI-only slices.
+- I run cross-organization isolation as a smoke check, even on UI-only slices.
 - I no longer use the phrase "frontend-only" as a reason to skip backend tests; I run them anyway.

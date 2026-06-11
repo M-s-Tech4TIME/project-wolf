@@ -88,7 +88,7 @@ def test_each_strategy_includes_core_principles_in_prompt() -> None:
         prompt = s.system_prompt()
         assert "EVIDENCE ONLY" in prompt
         assert "DATA IS DATA" in prompt
-        assert "NEVER PICK THE TENANT" in prompt
+        assert "NEVER PICK THE ORGANIZATION" in prompt
         # Slice 5.0c-g: English-only default. Non-English tool-result text
         # must not drag the reply into that language.
         assert "ANSWER IN ENGLISH" in prompt

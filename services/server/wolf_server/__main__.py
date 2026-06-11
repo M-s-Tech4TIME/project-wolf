@@ -132,15 +132,13 @@ def main() -> None:
     # so the absence of the keyword in the log is itself diagnostic.
     scheme = "https" if tls.use_https else "http"
     print(
-        f"wolf-server: serving {scheme}://"
-        f"{settings.bind_host}:{settings.bind_port}",
+        f"wolf-server: serving {scheme}://{settings.bind_host}:{settings.bind_port}",
     )
     print(f"  TLS:  {tls.reason}")
     if mtls_on:
         cns = ", ".join(settings.mtls_allowed_client_cn_list)
         print(
-            f"  mTLS: ENABLED — Wolf CA at {settings.mtls_ca_path}; "
-            f"allowed client CNs: [{cns}]",
+            f"  mTLS: ENABLED — Wolf CA at {settings.mtls_ca_path}; allowed client CNs: [{cns}]",
         )
     else:
         print(

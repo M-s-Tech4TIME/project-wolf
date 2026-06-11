@@ -23,8 +23,8 @@ By default the CLI manages this tree under `--cert-dir` (default
     key.pem          0600
 ```
 
-Future-relay extension (Phase: Wolf Knowledge Relay): per-tenant
-relay leaves under `<cert-dir>/relay-<tenant>/`. The `_BUILTIN_LEAVES`
+Future-relay extension (Phase: Wolf Knowledge Relay): per-organization
+relay leaves under `<cert-dir>/relay-<organization>/`. The `_BUILTIN_LEAVES`
 tuple below is the single place that decides which leaves get
 minted by `wolf-cert init`; adding a relay subcommand later is
 purely additive.
@@ -169,8 +169,8 @@ class _LeafSpec:
 # all-in-one Wolf install. Distributed deployments still benefit from
 # the same set on the operator's admin workstation; the operator
 # distributes each leaf to the host that runs the matching component.
-# A future `wolf-cert issue-relay <tenant>` subcommand will append
-# tenant-scoped CLIENT-kind leaves alongside these.
+# A future `wolf-cert issue-relay <organization>` subcommand will append
+# organization-scoped CLIENT-kind leaves alongside these.
 _BUILTIN_LEAVES: tuple[_LeafSpec, ...] = (
     _LeafSpec(name="server", common_name="wolf-server", kind=LeafKind.SERVER),
     _LeafSpec(name="dashboard", common_name="wolf-dashboard", kind=LeafKind.SERVER),
@@ -296,8 +296,7 @@ def cmd_export_ca(args: argparse.Namespace) -> int:
             sys.stdout.buffer.write(b"\n")
     else:
         Path(args.out).write_bytes(payload)
-        print(f"→ wrote {args.out} ({args.format.upper()}, "
-              f"{len(payload)} bytes)")
+        print(f"→ wrote {args.out} ({args.format.upper()}, {len(payload)} bytes)")
     return _ExitCode.OK
 
 
@@ -468,8 +467,7 @@ def _build_parser() -> argparse.ArgumentParser:
     # `export-ca`
     p_export = sub.add_parser(
         "export-ca",
-        help="Output the CA certificate for installation in OS/browser "
-        "trust stores",
+        help="Output the CA certificate for installation in OS/browser trust stores",
     )
     _add_cert_dir(p_export)
     p_export.add_argument(

@@ -41,11 +41,7 @@ def _message_to_openai(msg: Message) -> dict[str, Any]:
     if msg.role == MessageRole.tool and msg.tool_results:
         # OpenAI expects one message per tool result with role="tool"
         result = msg.tool_results[0]
-        content = (
-            result.content
-            if isinstance(result.content, str)
-            else json.dumps(result.content)
-        )
+        content = result.content if isinstance(result.content, str) else json.dumps(result.content)
         return {
             "role": "tool",
             "tool_call_id": result.tool_call_id,

@@ -40,8 +40,7 @@ class GetClusterHealthOutput(BaseModel):
     )
     cluster_running: bool = Field(
         description=(
-            "Whether the cluster daemon is running. Only meaningful when "
-            "cluster_enabled is TRUE."
+            "Whether the cluster daemon is running. Only meaningful when cluster_enabled is TRUE."
         ),
     )
     summary: str = Field(
@@ -109,8 +108,7 @@ class GetClusterHealthTool(ReadTool):
             )
         elif cluster_running and nodes:
             summary = (
-                f"Wazuh manager is running. Clustering is enabled with "
-                f"{len(nodes)} node(s) joined."
+                f"Wazuh manager is running. Clustering is enabled with {len(nodes)} node(s) joined."
             )
         else:
             summary = (
@@ -125,8 +123,6 @@ class GetClusterHealthTool(ReadTool):
             summary=summary,
             nodes=nodes,
             indexer_status=status_data.get("indexer"),
-            citation=self.make_citation(
-                args.model_dump(mode="json"), result_count=len(nodes)
-            ),
+            citation=self.make_citation(args.model_dump(mode="json"), result_count=len(nodes)),
             raw=status_body,
         )

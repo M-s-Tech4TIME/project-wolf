@@ -22,15 +22,15 @@ from wolf_schema.capability import (
 from wolf_server.agent.events import LoopEvent
 from wolf_server.agent.loop import AgentLoop
 from wolf_server.agent.strategies import FrontierStrategy
-from wolf_server.tenancy.context import TenantContext
+from wolf_server.organization.context import OrganizationContext
 from wolf_server.tools.alerts import SearchAlertsTool
 
 
 @pytest.fixture
-def tenant_ctx() -> TenantContext:
-    return TenantContext(
-        tenant_id=uuid.uuid4(),
-        tenant_slug="testco",
+def organization_ctx() -> OrganizationContext:
+    return OrganizationContext(
+        organization_id=uuid.uuid4(),
+        organization_slug="testco",
         user_id=uuid.uuid4(),
         user_email="analyst@test.example",
         role="analyst",
@@ -96,12 +96,8 @@ def _response(content: str = "", tool_calls: list[ToolCall] | None = None) -> Ch
 
 def _fake_clients() -> tuple[MagicMock, MagicMock]:
     os_client = MagicMock()
-    os_client.query_builder.search_alerts.return_value = {
-        "query": {"bool": {"filter": []}}
-    }
-    os_client.execute = AsyncMock(
-        return_value={"hits": {"total": {"value": 0}, "hits": []}}
-    )
+    os_client.query_builder.search_alerts.return_value = {"query": {"bool": {"filter": []}}}
+    os_client.execute = AsyncMock(return_value={"hits": {"total": {"value": 0}, "hits": []}})
     return os_client, MagicMock()
 
 
@@ -110,7 +106,7 @@ def _fake_clients() -> tuple[MagicMock, MagicMock]:
 
 @pytest.mark.asyncio
 async def test_immediate_answer_emits_minimum_event_sequence(
-    db: AsyncSession, tenant_ctx: TenantContext
+    db: AsyncSession, organization_ctx: OrganizationContext
 ) -> None:
     events: list[LoopEvent] = []
 
@@ -123,7 +119,7 @@ async def test_immediate_answer_emits_minimum_event_sequence(
 
     await loop.run(
         question="hi",
-        ctx=tenant_ctx,
+        ctx=organization_ctx,
         db=db,
         opensearch=os_client,
         server_api=server_api,
@@ -147,7 +143,7 @@ async def test_immediate_answer_emits_minimum_event_sequence(
 
 @pytest.mark.asyncio
 async def test_tool_call_emits_tool_event_with_summary(
-    db: AsyncSession, tenant_ctx: TenantContext
+    db: AsyncSession, organization_ctx: OrganizationContext
 ) -> None:
     from wolf_server.tools.registry import runtime_registry
 
@@ -161,10 +157,12 @@ async def test_tool_call_emits_tool_event_with_summary(
             "time_to": now.isoformat(),
         },
     )
-    provider = ScriptedProvider([
-        _response(tool_calls=[call]),
-        _response("Found nothing notable."),
-    ])
+    provider = ScriptedProvider(
+        [
+            _response(tool_calls=[call]),
+            _response("Found nothing notable."),
+        ]
+    )
     events: list[LoopEvent] = []
 
     async def collect(event: LoopEvent) -> None:
@@ -175,7 +173,7 @@ async def test_tool_call_emits_tool_event_with_summary(
 
     await loop.run(
         question="any alerts?",
-        ctx=tenant_ctx,
+        ctx=organization_ctx,
         db=db,
         opensearch=os_client,
         server_api=server_api,

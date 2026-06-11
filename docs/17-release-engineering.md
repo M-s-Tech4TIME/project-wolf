@@ -260,7 +260,7 @@ release phase.
 ### Gap 6 — Upgrade testing matrix
 
 **What it is:** CI that installs Wolf v0.1.0 on a clean box,
-creates real data (tenants, sessions, audit events), then
+creates real data (organizations, sessions, audit events), then
 upgrades to v0.2.0 and verifies all data + behaviour is intact.
 
 **Why it matters:** alembic migrations + config-file shape
@@ -485,7 +485,7 @@ Root causes resolved:
   that can't be expressed in standard SQLAlchemy; added an
   `include_object` filter in `env.py` to exclude them from
   comparison.
-- `tenants.slug`, `users.email`, `users.oidc_sub` declared
+- `organizations.slug`, `users.email`, `users.oidc_sub` declared
   uniqueness via `unique=True, index=True` on `mapped_column`,
   generating a single unique Index. Migrations created both a
   named `UniqueConstraint` AND a separate non-unique `Index`.
@@ -507,7 +507,7 @@ re-introduces the `alembic-check` CI job as a permanent gate.
   declaration and what migrations actually created.
 * `audit_events.event_data` — model says JSONB, migrations say
   JSON (or vice versa).
-* `tenants.slug` and `users.email` — uniqueness expressed as
+* `organizations.slug` and `users.email` — uniqueness expressed as
   `UniqueConstraint` in migrations but as `Index(unique=True)`
   in models. Stylistic; both produce the same DB-level outcome
   but autogenerate sees them as different.

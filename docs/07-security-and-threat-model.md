@@ -8,7 +8,7 @@ and the controls that defend against each.
 
 - The **integrity of Wazuh's evidentiary data** (logs and alerts).
 - The **availability of detection** (Wolf must not take Wazuh down).
-- The **confidentiality of tenant data** (especially across MSSP tenants).
+- The **confidentiality of organization data** (especially across MSSP organizations).
 - The **safety of state-changing actions** (no unintended host isolations, IP
   blocks, restarts, or config changes).
 - The **secrets** that grant access to Wazuh deployments.
@@ -17,14 +17,14 @@ and the controls that defend against each.
 
 1. **An external attacker** whose log activity is ingested by Wazuh, trying to
    manipulate the AI through planted text (prompt injection via logs).
-2. **A malicious or compromised tenant user** trying to escalate within their
-   tenant or cross into another tenant.
+2. **A malicious or compromised organization user** trying to escalate within their
+   organization or cross into another organization.
 3. **A malicious or compromised approver** trying to authorize a harmful action.
 4. **A compromised LLM provider** (in the API model case) returning manipulated
    outputs.
 5. **A compromised Wolf host** (an attacker who gains code execution on the
    platform itself).
-6. **Operator error** — misconfiguration, mis-onboarded tenant, mis-scoped role.
+6. **Operator error** — misconfiguration, mis-onboarded organization, mis-scoped role.
 
 ## Threat-by-threat treatment
 
@@ -57,18 +57,18 @@ lives only in the prompt is breakable.
   snippets) so a human reviewer can spot when the rationale is built on
   attacker-planted text.
 
-### T2 — Tenant escalation / cross-tenant data exposure
+### T2 — Organization escalation / cross-organization data exposure
 
-**The threat.** A user in Tenant A accesses Tenant B's data via a missed check, a
+**The threat.** A user in Organization A accesses Organization B's data via a missed check, a
 cache leak, or a connection-pool bleed.
 
-**Defenses:** all of `05-multi-tenancy.md` — credentials, query layer, RAG
-partition, audit-stream scoping, data-layer re-check, continuous cross-tenant
+**Defenses:** all of `05-multi-organization.md` — credentials, query layer, RAG
+partition, audit-stream scoping, data-layer re-check, continuous cross-organization
 testing. The defense is depth: four independent enforcement points plus a re-check.
 
 ### T3 — Malicious/compromised approver
 
-**The threat.** An approver authorizes an action that harms the tenant.
+**The threat.** An approver authorizes an action that harms the organization.
 
 **Defenses:**
 
@@ -121,12 +121,12 @@ evidence in a report.
 
 ### T6 — Operator error
 
-**The threat.** Misconfigured tenant connection, mis-scoped approval role,
+**The threat.** Misconfigured organization connection, mis-scoped approval role,
 forgotten asset tag.
 
 **Defenses:**
 
-- **Provisioning validation.** Tenant creation validates the connection and
+- **Provisioning validation.** Organization creation validates the connection and
   identifies the target deployment before persisting.
 - **Immutable connection profiles** after validation, with changes through an
   audited admin path.
@@ -134,7 +134,7 @@ forgotten asset tag.
   lowest authority by default. Crown-jewel tags suggested by the platform based on
   agent characteristics where possible.
 - **Configuration audit.** Periodic checks that flag misconfigurations (e.g. an
-  approver with cross-tenant authority that should not exist; a tenant pointing at
+  approver with cross-organization authority that should not exist; a organization pointing at
   the same Indexer endpoint as another).
 
 ## Cross-cutting controls
@@ -143,15 +143,15 @@ forgotten asset tag.
 
 - **OIDC / SSO** preferred. Local accounts supported for simple self-hosted
   deployments, with strong password and MFA defaults.
-- **RBAC** with explicit tenant scope. A role grants permissions within a tenant;
-  cross-tenant access requires an MSSP-parent role.
+- **RBAC** with explicit organization scope. A role grants permissions within a organization;
+  cross-organization access requires an MSSP-parent role.
 - **Approver authority is a separate dimension** from general permissions, not
   inferred from "admin."
 - **Session inactivity timeouts**; re-auth for high-authority approvals.
 
 ### Secrets management
 
-- Per-tenant Wazuh credentials in a secrets manager (Vault, OpenBao, AWS Secrets
+- Per-organization Wazuh credentials in a secrets manager (Vault, OpenBao, AWS Secrets
   Manager, or filesystem-backed encrypted store for very simple deployments).
 - Model API keys also in the secrets manager.
 - Never logged. Never in audit records. Redacted from any error surfaced to a user.
@@ -178,16 +178,16 @@ forgotten asset tag.
 
 - Every model call, tool call, proposal transition, approval, and execution
   produces an audit record.
-- Audit records are **append-only**, tenant-tagged, and stored outside the write
+- Audit records are **append-only**, organization-tagged, and stored outside the write
   reach of the agent and gateway.
-- Audit reads are themselves tenant-scoped and authenticated.
+- Audit reads are themselves organization-scoped and authenticated.
 - Operators can stream the audit log to an external SIEM (yes — even to Wazuh
   itself, as a separate index) for long-term retention and external scrutiny.
 
 ### Rate limiting and DoS
 
-- Per-tenant rate limits on queries.
-- Per-tenant query-cost budgets.
+- Per-organization rate limits on queries.
+- Per-organization query-cost budgets.
 - Circuit breakers on tools whose error rate spikes.
 - Backpressure on the agent loop — a runaway agent should not consume unbounded
   resources.
@@ -213,15 +213,15 @@ contact. Security researchers must have a way to report issues.
   reports).
 - **Tool call arguments** without schema validation and resource-guardrail
   enforcement.
-- **A pooled connection** without re-establishing tenant context.
-- **A cache result** without a tenant-prefixed key.
+- **A pooled connection** without re-establishing organization context.
+- **A cache result** without a organization-prefixed key.
 - **An approval** without a signed, hash-bound token.
 - **A successful API return** without a verification read (`04`).
 
 ## What the platform must trust (and how it minimizes that trust)
 
 - **The orchestrator's own code.** Mitigated by code review, tests (including
-  cross-tenant negatives), and defense-in-depth.
+  cross-organization negatives), and defense-in-depth.
 - **The secrets manager.** Mitigated by least-privilege access policies and
   short-TTL secret leases where possible.
 - **The audit store.** Mitigated by append-only configuration and external

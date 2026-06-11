@@ -1,7 +1,7 @@
 """Error taxonomy for Wolf services.
 
 All Wolf errors inherit from WolfError so service boundaries can catch the
-right breadth. Security-relevant errors (tenant mismatch, permission denied)
+right breadth. Security-relevant errors (organization mismatch, permission denied)
 are distinct types to ensure they are logged and handled deliberately.
 """
 
@@ -18,29 +18,29 @@ class WolfError(Exception):
 # ─── Tenancy ──────────────────────────────────────────────────────────────────
 
 
-class TenantContextError(WolfError):
-    """Raised when a tenant context is missing or cannot be established."""
+class OrganizationContextError(WolfError):
+    """Raised when a organization context is missing or cannot be established."""
 
     http_status = HTTPStatus.BAD_REQUEST
-    error_code = "tenant_context_error"
+    error_code = "organization_context_error"
 
 
-class TenantMismatchError(WolfError):
-    """Raised when returned data does not match the request's tenant context.
+class OrganizationMismatchError(WolfError):
+    """Raised when returned data does not match the request's organization context.
 
     This is a security event — it is always logged as a security incident.
     The request must fail closed; no data is returned.
     """
 
     http_status = HTTPStatus.INTERNAL_SERVER_ERROR
-    error_code = "tenant_mismatch"
+    error_code = "organization_mismatch"
 
 
-class TenantNotFoundError(WolfError):
-    """Raised when the requested tenant does not exist or is inactive."""
+class OrganizationNotFoundError(WolfError):
+    """Raised when the requested organization does not exist or is inactive."""
 
     http_status = HTTPStatus.NOT_FOUND
-    error_code = "tenant_not_found"
+    error_code = "organization_not_found"
 
 
 # ─── Authentication / authorisation ───────────────────────────────────────────

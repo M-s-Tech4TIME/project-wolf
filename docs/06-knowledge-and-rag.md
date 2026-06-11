@@ -20,12 +20,12 @@ knowledge store. Stable knowledge is retrieved through RAG, never hardcoded.** D
 not cache live state into the vector store "for convenience" — you will produce a
 confidently-wrong platform.
 
-## The three corpora — and which are tenant-scoped
+## The three corpora — and which are organization-scoped
 
 The stable-knowledge store is three distinct corpora with different ownership and
 update rhythms.
 
-### 1. Wazuh product knowledge — shared across all tenants
+### 1. Wazuh product knowledge — shared across all organizations
 
 The official documentation, rule and decoder syntax, indexer/server/agent
 architecture, configuration semantics. Identical for every customer, so a single
@@ -41,15 +41,15 @@ ATT&CK gets revised — so this corpus needs a refresh pipeline and a **version
 stamp**, because an incident mapped to ATT&CK should be traceable to *which*
 ATT&CK version.
 
-### 3. Tenant-private knowledge — strictly per-tenant; the most sensitive corpus
+### 3. Organization-private knowledge — strictly per-organization; the most sensitive corpus
 
 This customer's runbooks, standard operating procedures, past incident write-ups,
 internal notes on known false positives. This is what makes the agent feel like it
-knows *this* SOC and not a generic one. It is also the corpus a cross-tenant
+knows *this* SOC and not a generic one. It is also the corpus a cross-organization
 retrieval bug would expose catastrophically.
 
-Lives in a per-tenant partition. The tenant-scoping rules from `05` apply without
-exception: a retrieval call can only ever search the requesting tenant's private
+Lives in a per-organization partition. The organization-scoping rules from `05` apply without
+exception: a retrieval call can only ever search the requesting organization's private
 partition.
 
 ## Ingestion — where RAG quality is decided
@@ -69,7 +69,7 @@ procedure per chunk, one technique per chunk where possible.
 Every chunk carries structured metadata:
 
 - `source_type` — `wazuh_doc` / `attack` / `runbook` / `past_incident`.
-- `tenant_id` — for the private corpora.
+- `organization_id` — for the private corpora.
 - `wazuh_version` — when applicable.
 - `attack_version` — for ATT&CK chunks.
 - For runbooks and incident reports: which **rule IDs**, **ATT&CK techniques**, and
@@ -95,7 +95,7 @@ embedding models viable — keyword recall covers their semantic gaps.
 - **Shared corpora** are re-ingested on Wazuh releases and ATT&CK updates.
 - **Private corpora** grow automatically — every closed incident and new runbook
   flows back in (with sanitization, see below), so the agent gets smarter about
-  that tenant's environment over time.
+  that organization's environment over time.
 
 That feedback loop is a genuine moat: the longer a customer uses the platform, the
 better it knows their SOC.
@@ -151,8 +151,8 @@ Example: "Why is web-07 generating brute-force alerts and what should I do?"
   `rule_id=5710`.
 - **RAG over ATT&CK** for the T1110 technique context:
   `query_runbook` with `source_type=attack`, `technique=T1110`.
-- **RAG over the tenant's runbooks** for established response procedure:
-  `query_runbook` with `tenant_id=...`, `source_type=runbook`,
+- **RAG over the organization's runbooks** for established response procedure:
+  `query_runbook` with `organization_id=...`, `source_type=runbook`,
   `rule_id=5710`.
 
 The agent composes one answer that cites all of it. That is "complete knowledge":

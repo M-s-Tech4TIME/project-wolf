@@ -5,14 +5,14 @@
 export type LoginRequest = {
   email: string;
   password: string;
-  tenant_id?: string | null;
+  organization_id?: string | null;
 };
 
 export type LoginResponse = {
   user_id: string;
   email: string;
   display_name: string;
-  tenant_id: string;
+  organization_id: string;
   role: string;
 };
 
@@ -20,11 +20,11 @@ export type MeResponse = {
   user_id: string;
   email: string;
   display_name: string;
-  tenant_id: string;
+  organization_id: string;
   role: string;
 };
 
-export type TenantMembership = {
+export type OrganizationMembership = {
   id: string;
   slug: string;
   name: string;

@@ -27,8 +27,8 @@ Each `<rule>` element becomes one KnowledgeChunk with:
 
 Why this slice ships only the canonical rules in `ruleset/rules/`: those
 are the authoritative Wazuh-shipped rules. Operator-local rules
-(`local_rules.xml`) are out of scope — they're tenant-specific and belong
-in the tenant-private corpus.
+(`local_rules.xml`) are out of scope — they're organization-specific and belong
+in the organization-private corpus.
 """
 
 from __future__ import annotations
@@ -111,9 +111,7 @@ def _chunks_from_file(basename: str, xml_text: str) -> Iterator[ChunkInput]:
         # alerts. Sometimes multiline; collapse whitespace.
         desc_el = rule_el.find("description")
         description = (
-            re.sub(r"\s+", " ", (desc_el.text or "").strip())
-            if desc_el is not None
-            else ""
+            re.sub(r"\s+", " ", (desc_el.text or "").strip()) if desc_el is not None else ""
         )
         if not description:
             continue
@@ -136,9 +134,7 @@ def _chunks_from_file(basename: str, xml_text: str) -> Iterator[ChunkInput]:
         # Compose the content. Rule ID up front for FTS keyword match.
         groups_blob = f" Groups: {', '.join(groups)}." if groups else ""
         mitre_blob = f" MITRE: {', '.join(mitre_ids)}." if mitre_ids else ""
-        content = (
-            f"Rule {rule_id} (level {level}): {description}.{groups_blob}{mitre_blob}"
-        )
+        content = f"Rule {rule_id} (level {level}): {description}.{groups_blob}{mitre_blob}"
 
         metadata: dict = {
             "rule_id": rule_id,
@@ -152,7 +148,7 @@ def _chunks_from_file(basename: str, xml_text: str) -> Iterator[ChunkInput]:
         yield ChunkInput(
             content=content,
             source_type="wazuh_doc",
-            tenant_id=None,
+            organization_id=None,
             chunk_metadata=metadata,
         )
 

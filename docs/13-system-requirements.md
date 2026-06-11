@@ -101,7 +101,7 @@ Q4_K_M.
 (Claude/GPT/Gemini → `frontier`).
 
 **Trade-offs:** cost per token, plus log data leaves the operator's
-infrastructure (matters for MSSP tenants under data-residency obligations —
+infrastructure (matters for MSSP organizations under data-residency obligations —
 see `07`).
 
 ## Quality gate — Profile B must work
@@ -131,13 +131,13 @@ Container images for:
 | `prom/prometheus` + `grafana/grafana` | Observability (optional). |
 
 A single `docker compose up` on Profile B hardware brings the whole stack
-online with a default tenant ready for first login.
+online with a default organization ready for first login.
 
 ## Network and connectivity requirements
 
 The platform requires outbound network access to:
 
-- The configured Wazuh Indexer endpoint (the tenant's OpenSearch).
+- The configured Wazuh Indexer endpoint (the organization's OpenSearch).
 - The configured Wazuh Server API endpoint.
 - The configured LLM endpoint (Ollama on localhost, or a hosted API).
 - Configured threat-intel feeds (optional).

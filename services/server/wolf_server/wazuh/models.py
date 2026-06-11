@@ -1,12 +1,12 @@
-"""SQLAlchemy model for per-tenant Wazuh connection configuration.
+"""SQLAlchemy model for per-organization Wazuh connection configuration.
 
 The connection URLs live here; the credentials live in the secrets backend
-keyed by tenant_id.  See doc 05 (Per-tenant secrets) and doc 07 (Secrets
+keyed by organization_id.  See doc 05 (Per-organization secrets) and doc 07 (Secrets
 management) for the rationale.
 
 A row in this table is treated as **immutable after validation** — changes go
 through an audited admin path.  This is the "immutable connection profiles
-after validation" guarantee from doc 05 §Tenant misconfiguration.
+after validation" guarantee from doc 05 §Organization misconfiguration.
 """
 
 import uuid
@@ -26,21 +26,23 @@ def _uuid() -> uuid.UUID:
     return uuid.uuid4()
 
 
-class TenantWazuhConfig(Base):
-    """One Wazuh connection profile per tenant.
+class OrganizationWazuhConfig(Base):
+    """One Wazuh connection profile per organization.
 
     The `opensearch_credential_key` and `server_api_credential_key` fields name
     the keys in the secrets backend.  Credentials themselves are never stored
     in the database.
     """
 
-    __tablename__ = "tenant_wazuh_configs"
-    __table_args__ = (UniqueConstraint("tenant_id", name="uq_tenant_wazuh_config_tenant"),)
+    __tablename__ = "organization_wazuh_configs"
+    __table_args__ = (
+        UniqueConstraint("organization_id", name="uq_organization_wazuh_config_organization"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=_uuid)
-    tenant_id: Mapped[uuid.UUID] = mapped_column(
+    organization_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True),
-        ForeignKey("tenants.id", ondelete="CASCADE"),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -60,22 +62,18 @@ class TenantWazuhConfig(Base):
     # required to disable for self-signed certs (doc 07 §Transport security).
     verify_tls: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
-    # Whether to inject a `term: {tenant_id: <id>}` clause into every
+    # Whether to inject a `term: {organization_id: <id>}` clause into every
     # OpenSearch query.  Default FALSE because vanilla Wazuh alert
-    # documents do not carry a `tenant_id` field — the filter would
+    # documents do not carry a `organization_id` field — the filter would
     # silently match zero docs.  Set TRUE only for pooled-index multi-
-    # tenant deployments where you have stamped `tenant_id` onto every
-    # alert at ingest time.  For separate-deployment-per-tenant (the
+    # organization deployments where you have stamped `organization_id` onto every
+    # alert at ingest time.  For separate-deployment-per-organization (the
     # common case), the credential alone provides isolation.
-    inject_tenant_filter: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False
-    )
+    inject_organization_filter: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     # Provisioning validation timestamp — null until the platform has connected
     # with the credentials and confirmed the deployment identity (doc 05).
-    validated_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    validated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_now
@@ -86,4 +84,6 @@ class TenantWazuhConfig(Base):
 
     def __repr__(self) -> str:
         validated = self.validated_at is not None
-        return f"<TenantWazuhConfig tenant={self.tenant_id} validated={validated}>"
+        return (
+            f"<OrganizationWazuhConfig organization={self.organization_id} validated={validated}>"
+        )

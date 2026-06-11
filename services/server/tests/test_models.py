@@ -33,9 +33,7 @@ def _mock_response(body: dict[str, Any], status: int = 200) -> httpx.Response:
 
 
 def _simple_request(content: str = "Hello") -> ChatRequest:
-    return ChatRequest(
-        messages=[Message(role=MessageRole.user, content=content)]
-    )
+    return ChatRequest(messages=[Message(role=MessageRole.user, content=content)])
 
 
 def _simple_descriptor() -> CapabilityDescriptor:
@@ -732,8 +730,10 @@ def test_adapters_satisfy_protocol() -> None:
 
     mock_client = MagicMock()
     cases = [
-        (AnthropicAdapter, {"api_key": "k", "model_id": "claude-sonnet-4-6",
-                            "client": mock_client}),
+        (
+            AnthropicAdapter,
+            {"api_key": "k", "model_id": "claude-sonnet-4-6", "client": mock_client},
+        ),
         (OpenAIAdapter, {"api_key": "k", "model_id": "gpt-4o", "client": mock_client}),
         (OllamaAdapter, {"model_id": "llama3.2", "client": mock_client}),
     ]

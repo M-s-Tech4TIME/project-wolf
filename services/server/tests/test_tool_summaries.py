@@ -139,9 +139,7 @@ def test_runbook_summary_groups_by_source_type_and_picks_best_distance() -> None
         _chunk("attack_technique", 0.18),  # closest match
     ]
     s = _compute_runbook_summary(hits)
-    assert s.by_source_type == {
-        "runbook": 2, "past_incident": 1, "attack_technique": 1
-    }
+    assert s.by_source_type == {"runbook": 2, "past_incident": 1, "attack_technique": 1}
     assert s.best_distance == 0.18
 
 

@@ -578,12 +578,12 @@ function ConversationListItem({
 /**
  * Bottom-pinned profile row. Avatar always; when expanded, also displays
  * the user's display name and role. Clicking it opens a dropdown with
- * email, current tenant, user_id prefix, and sign-out.
+ * email, current organization, user_id prefix, and sign-out.
  */
 function SidebarProfileFooter({ collapsed }: { collapsed: boolean }) {
-  const { me, tenants, signOut } = useAuth();
+  const { me, organizations, signOut } = useAuth();
   const initials = initialsOf(me?.display_name, me?.email);
-  const currentTenant = tenants.find((t) => t.id === me?.tenant_id);
+  const currentOrganization = organizations.find((t) => t.id === me?.organization_id);
   const displayName = me?.display_name?.trim() || me?.email || "Signed in";
 
   return (
@@ -609,8 +609,8 @@ function SidebarProfileFooter({ collapsed }: { collapsed: boolean }) {
                 </span>
                 <span className="truncate text-[10px] text-muted-foreground">
                   {me?.role ?? "—"}
-                  {currentTenant
-                    ? ` · ${currentTenant.name ?? currentTenant.slug}`
+                  {currentOrganization
+                    ? ` · ${currentOrganization.name ?? currentOrganization.slug}`
                     : ""}
                 </span>
               </span>
@@ -645,7 +645,7 @@ function SidebarProfileFooter({ collapsed }: { collapsed: boolean }) {
             <div className="flex items-center gap-2 py-1">
               <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
               <span className="truncate">
-                {currentTenant?.name ?? currentTenant?.slug ?? "—"}
+                {currentOrganization?.name ?? currentOrganization?.slug ?? "—"}
               </span>
             </div>
             <div className="flex items-center gap-2 py-1">

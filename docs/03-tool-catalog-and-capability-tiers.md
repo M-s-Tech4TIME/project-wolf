@@ -68,7 +68,7 @@ guardrails**, a second, orthogonal layer:
 - Maximum time range per query.
 - Result-count caps and mandatory pagination.
 - Query-cost limits (reject queries estimated to be too expensive).
-- Per-tenant rate limiting.
+- Per-organization rate limiting.
 - Context-volume limits (cap how much retrieved data enters the model context).
 
 Resource guardrails are enforced by the tool layer before any tool executes.
@@ -129,7 +129,7 @@ enforces the vision's commitment that the AI can never alter or delete a log.
 |------|---------|
 | `lookup_ioc` | Check an IP / hash / domain against configured threat-intel feeds. |
 | `map_to_mitre` | Map an alert or incident to MITRE ATT&CK tactics and techniques. |
-| `query_runbook` | RAG retrieval over Wazuh docs and the tenant's own runbooks and past incidents. |
+| `query_runbook` | RAG retrieval over Wazuh docs and the organization's own runbooks and past incidents. |
 | `enrich_geoip` | Geolocation / ASN for an address. |
 
 ### Execute tools — gateway-only, NOT in the model's schema
@@ -154,9 +154,9 @@ Approval Gateway.
    prose. Structured output resists prompt injection (an attacker can put text in a
    log message field but cannot restructure the tool's typed result) and is reliable
    for weaker models to consume.
-3. **Tenant context is injected, never accepted from the model.** Every tool
-   execution receives the tenant context from the orchestrator. If the model's tool
-   call somehow includes a tenant identifier, it is ignored. See `05`.
+3. **Organization context is injected, never accepted from the model.** Every tool
+   execution receives the organization context from the orchestrator. If the model's tool
+   call somehow includes a organization identifier, it is ignored. See `05`.
 4. **Targets are resolved, not guessed.** Propose tools must receive a resolved,
    unambiguous agent ID — produced by an earlier read step — never a human-readable
    name the model guessed. If resolution is ambiguous, the propose tool fails and
@@ -164,7 +164,7 @@ Approval Gateway.
 5. **Tools reference only real, deployed capabilities.** `propose_active_response`
    may only reference commands returned by `list_active_response_commands`. The agent
    cannot invent an action.
-6. **Every tool call is audited.** Tool name, tier, tenant, inputs (sensitive values
+6. **Every tool call is audited.** Tool name, tier, organization, inputs (sensitive values
    redacted), result summary, timing, and outcome are written to the audit log.
 7. **Tools fail cleanly.** A tool that cannot complete returns a structured error.
    It never returns a fabricated success and never silently returns partial data as
@@ -183,15 +183,15 @@ on model_tool_call(call):
     if tool.tier == EXECUTE:
         audit.anomaly("model attempted execute tool", call); reject()
     validate(call.arguments, tool.input_schema) or reject()
-    enforce_resource_guardrails(tool, call, tenant_context) or reject()
-    inject tenant_context into the execution context  # not from the model
+    enforce_resource_guardrails(tool, call, organization_context) or reject()
+    inject organization_context into the execution context  # not from the model
     if tool.tier == READ:
-        result = tool.run(call.arguments, tenant_context)
+        result = tool.run(call.arguments, organization_context)
         validate(result, tool.output_schema)
         audit.tool_call(...)
         return result_to_model(result)
     if tool.tier == PROPOSE:
-        proposal = tool.run(call.arguments, tenant_context)  # builds proposal object
+        proposal = tool.run(call.arguments, organization_context)  # builds proposal object
         proposal_queue.enqueue(proposal)
         audit.proposal_created(...)
         return proposal_receipt_to_model(proposal)   # model is told a proposal was filed

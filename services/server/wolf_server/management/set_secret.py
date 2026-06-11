@@ -61,7 +61,7 @@ def main(argv: list[str] | None = None) -> int:
     if sys.stdin.isatty():
         sys.stderr.write(
             "Error: secret value must be supplied on stdin.\n"
-            "Usage: echo -n \"$KEY\" | uv run python -m wolf_server.management.set_secret "
+            'Usage: echo -n "$KEY" | uv run python -m wolf_server.management.set_secret '
             "--key <name>\n"
         )
         return 2

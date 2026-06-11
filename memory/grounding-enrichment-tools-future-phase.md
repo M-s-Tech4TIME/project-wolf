@@ -14,7 +14,7 @@ User clarified (2026-05-28) that the idea is *not* a separate "grounding tools" 
 **How to apply:**
 - **Continuously, in any phase:** when scoping a new tool, evaluate it on "what claims does this make verifiable?" alongside the tool's main purpose. Prefer tools whose output is structured + cite-able.
 - **As a dedicated phase (post-RBAC):** focused work prioritising tools by evidence value. Candidate list: `get_agent_details`, `lookup_ip_reputation`, `get_attack_technique` (MITRE), `get_cve_details`, `quote_runbook` (exact-passage retrieval with line numbers), expanded `get_rule_definition` coverage.
-- Each tool tenant-scoped via the existing TenantScopedQueryBuilder/PgvectorKnowledgeStore patterns. External feeds (IP rep, CVE) need an API-key plumbing pattern that respects the secrets backend.
+- Each tool organization-scoped via the existing OrganizationScopedQueryBuilder/PgvectorKnowledgeStore patterns. External feeds (IP rep, CVE) need an API-key plumbing pattern that respects the secrets backend.
 - Update ADR 0015 and the validator prompt once the new evidence-source vocabulary stabilises — the judge needs to know these new source types exist.
 - Related: [[per-slice-web-test-checkpoints]] (per-slice workflow still applies).
 

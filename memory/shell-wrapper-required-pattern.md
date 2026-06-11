@@ -53,7 +53,7 @@ if not os.environ.get("WOLF_WRAPPER_VERSION"):
 
 ## Tools that already follow this pattern (or should)
 
-- `tools/tenant_isolation_test/` — needs a wrapper (currently invoked via `make test-isolation` which is wrapper-equivalent)
+- `tools/organization_isolation_test/` — needs a wrapper (currently invoked via `make test-isolation` which is wrapper-equivalent)
 - `tools/model_probe/` — `make probe` is the de-facto wrapper
 - `tools/seed_knowledge/` — `make smoke-database` etc. are de-facto wrappers
 - (Future) `bootstrap_superuser.sh` → `bootstrap_superuser.py` — per [[wolf-bootstrap-superuser-flow]]

@@ -102,7 +102,7 @@ Your concrete next work, in priority order:
      Postgres unless you have a specific reason not to. Install uv,
      Node 24, Ollama; uv sync --all-packages; npm install in
      /services/dashboard/; generate the two dev secrets and write .env; run
-     alembic migrations; bootstrap a tenant (bootstrap_tenant
+     alembic migrations; bootstrap a organization (bootstrap_organization
      requires Wazuh fields — use the "no Wazuh yet" placeholder
      pattern in §3.9 if you don't have a Wazuh handy); start
      wolf-server and wolf-dashboard. Verify with §4 (make check +

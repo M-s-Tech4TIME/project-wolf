@@ -2,7 +2,7 @@
 
 Wolf doesn't tune Postgres aggressively — the defaults Postgres 17
 ships with are reasonable for Wolf's mixed workload (low-volume
-audit + tenant chats + pgvector retrieval). We override only the
+audit + organization chats + pgvector retrieval). We override only the
 settings we genuinely need:
 
 * `listen_addresses` — wolf-database binds loopback only by default.

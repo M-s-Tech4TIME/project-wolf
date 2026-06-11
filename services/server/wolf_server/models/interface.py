@@ -60,7 +60,7 @@ class ModelProvider(Protocol):
 
 
 # ── Known-model defaults ────────────────────────────────────────────────────
-# Operators may override any field via tenant model config.
+# Operators may override any field via organization model config.
 # Add new entries here as models are empirically graded.
 
 KNOWN_MODELS: dict[str, CapabilityDescriptor] = {
@@ -314,7 +314,6 @@ KNOWN_MODELS: dict[str, CapabilityDescriptor] = {
     # require a small credit deposit on the OpenRouter account because the
     # upstream meters them.  The two entries below were verified as
     # *truly* free (no deposit required) on 2026-05-22.
-
     # DeepSeek V4 Flash — listed by OpenRouter as `:free` but in practice
     # the upstream provider (Crucible) returns 402 unless the OpenRouter
     # account has credits.  Kept here as the canonical DeepSeek slug for

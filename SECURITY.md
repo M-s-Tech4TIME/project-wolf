@@ -80,7 +80,7 @@ In either channel, include:
 - **Steps to reproduce** — minimal reproducer.
 - **Impact** — what an attacker could do with this. Include the
   attacker's required position (network access, authenticated
-  user, tenant administrator, host root, etc.).
+  user, organization administrator, host root, etc.).
 - **Suggested mitigation** (optional but appreciated) — your
   best guess at the fix shape.
 - **Credit preference** — name + handle to credit in the
@@ -97,7 +97,7 @@ Wolf is currently solo-maintained. Realistic, honest commitments:
 | Fix development | 7–30 days (severity-dependent) | A fix lands on a private branch; in-repo tests added; the advisory is updated with the fix plan. |
 | Coordinated release | Aligned with the next release cut | The fix ships in the next stable release; the advisory becomes public; CVE assigned (if applicable). |
 
-**Critical vulnerabilities** (remote code execution, cross-tenant
+**Critical vulnerabilities** (remote code execution, cross-organization
 data leak, authentication bypass, secret-credential exposure)
 fast-track this timeline. We will cut an out-of-band release if
 needed.
@@ -140,9 +140,9 @@ Vulnerability reports in any of these components are in scope:
 - The Debian packaging substrate (`debian/`, `deploy/`,
   `packaging/`) — including the systemd hardening, the
   per-component service users, and the install scripts.
-- Cross-tenant isolation — any way to read or modify Tenant B's
-  data from a Tenant A context is in-scope per ADR 0010's
-  "no cross-tenant access" invariant.
+- Cross-organization isolation — any way to read or modify Organization B's
+  data from a Organization A context is in-scope per ADR 0010's
+  "no cross-organization access" invariant.
 
 ## What's out of scope
 
@@ -191,9 +191,9 @@ high-level guarantees:
   job).
 - `wolf-server`'s dispatch is an allowlist; unknown tool calls
   are rejected and audited.
-- Credentials are scoped per-tenant; the data layer would
-  refuse a forbidden cross-tenant operation even if application
-  logic failed (verified by the cross-tenant isolation test
+- Credentials are scoped per-organization; the data layer would
+  refuse a forbidden cross-organization operation even if application
+  logic failed (verified by the cross-organization isolation test
   suite).
 - The (future) `wolf-gateway` will require a signed,
   hash-bound approval token before executing anything.

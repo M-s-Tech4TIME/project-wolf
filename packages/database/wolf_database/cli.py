@@ -142,24 +142,25 @@ def cmd_init(args: argparse.Namespace) -> int:
         # Belt-and-braces: scram-sha-256 means the password isn't
         # stored in plaintext server-side either.
         run_psql_command(
-            binaries, layout, port=args.port,
-            sql=(
-                f"CREATE ROLE {DB_USER_DEFAULT} WITH LOGIN PASSWORD "
-                f"'{password}';"
-            ),
+            binaries,
+            layout,
+            port=args.port,
+            sql=(f"CREATE ROLE {DB_USER_DEFAULT} WITH LOGIN PASSWORD '{password}';"),
         )
 
         print(f"→ creating database '{DB_NAME_DEFAULT}'")  # noqa: T201
         run_psql_command(
-            binaries, layout, port=args.port,
-            sql=(
-                f"CREATE DATABASE {DB_NAME_DEFAULT} OWNER {DB_USER_DEFAULT};"
-            ),
+            binaries,
+            layout,
+            port=args.port,
+            sql=(f"CREATE DATABASE {DB_NAME_DEFAULT} OWNER {DB_USER_DEFAULT};"),
         )
 
         print(f"→ installing pgvector in '{DB_NAME_DEFAULT}'")  # noqa: T201
         run_psql_command(
-            binaries, layout, port=args.port,
+            binaries,
+            layout,
+            port=args.port,
             dbname=DB_NAME_DEFAULT,
             sql="CREATE EXTENSION vector;",
         )
@@ -230,8 +231,7 @@ def cmd_start(args: argparse.Namespace) -> int:
         return _ExitCode.USER_ERROR
 
     print(  # noqa: T201
-        f"✓ wolf-database started at {layout.data_dir} "
-        f"(socket: {layout.socket_dir})",
+        f"✓ wolf-database started at {layout.data_dir} (socket: {layout.socket_dir})",
     )
     return _ExitCode.OK
 

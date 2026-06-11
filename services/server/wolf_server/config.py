@@ -138,6 +138,7 @@ class Settings(BaseSettings):
         automatically, no env flag.
         """
         from pathlib import Path
+
         return (
             Path(self.mtls_ca_path).is_file()
             and Path(self.tls_cert_path).is_file()
@@ -146,13 +147,9 @@ class Settings(BaseSettings):
 
     @property
     def mtls_allowed_client_cn_list(self) -> list[str]:
-        return [
-            cn.strip()
-            for cn in self.mtls_allowed_client_cns.split(",")
-            if cn.strip()
-        ]
+        return [cn.strip() for cn in self.mtls_allowed_client_cns.split(",") if cn.strip()]
 
-    # ── Model defaults (per-tenant overrides come in a later phase) ────────
+    # ── Model defaults (per-organization overrides come in a later phase) ────────
     default_model_provider: str = "ollama"  # anthropic | openai | ollama
     # Default model: qwen3:4b (Apache 2.0).  Switched from llama3.2 on
     # 2026-05-22 per docs/decisions/0004-model-switch-llama3.2-to-qwen3-4b.md

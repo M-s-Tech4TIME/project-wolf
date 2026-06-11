@@ -31,7 +31,7 @@ class WazuhServerApiError(WolfError):
 
 
 class WazuhServerApiClient:
-    """Tenant-bound, read-only Wazuh Server API client."""
+    """Organization-bound, read-only Wazuh Server API client."""
 
     def __init__(
         self,
@@ -80,9 +80,7 @@ class WazuhServerApiClient:
     ) -> dict[str, Any]:
         if method != "GET":
             # Belt-and-braces: only GET should ever be called on this client.
-            raise WazuhServerApiError(
-                f"WazuhServerApiClient is read-only; {method} not permitted"
-            )
+            raise WazuhServerApiError(f"WazuhServerApiClient is read-only; {method} not permitted")
 
         if self._token is None:
             await self._authenticate()
@@ -101,7 +99,7 @@ class WazuhServerApiClient:
                 "wazuh_server_api_http_error",
                 status_code=response.status_code,
                 path=path,
-                tenant_id=str(self._connection.tenant_id),
+                organization_id=str(self._connection.organization_id),
             )
             raise WazuhServerApiError(
                 f"Server API returned {response.status_code}: {response.text[:200]}"
@@ -120,9 +118,7 @@ class WazuhServerApiClient:
             ),
         )
         if response.status_code >= 400:
-            raise WazuhServerApiError(
-                f"Server API authentication failed: {response.status_code}"
-            )
+            raise WazuhServerApiError(f"Server API authentication failed: {response.status_code}")
         token = response.json().get("data", {}).get("token")
         if not token:
             raise WazuhServerApiError("Server API auth response missing token")

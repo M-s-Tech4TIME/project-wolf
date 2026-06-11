@@ -23,7 +23,7 @@ export function LoginForm() {
   const { refresh } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [tenantId, setTenantId] = useState(searchParams.get("tenant") ?? "");
+  const [organizationId, setOrganizationId] = useState(searchParams.get("organization") ?? "");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -35,7 +35,7 @@ export function LoginForm() {
       await login({
         email,
         password,
-        tenant_id: tenantId.trim() ? tenantId.trim() : null,
+        organization_id: organizationId.trim() ? organizationId.trim() : null,
       });
       await refresh();
       router.push("/chat");
@@ -83,14 +83,14 @@ export function LoginForm() {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="tenant" className="text-muted-foreground">
-              Tenant ID (optional if you belong to one)
+            <Label htmlFor="organization" className="text-muted-foreground">
+              Organization ID (optional if you belong to one)
             </Label>
             <Input
-              id="tenant"
+              id="organization"
               placeholder="leave blank to auto-select"
-              value={tenantId}
-              onChange={(e) => setTenantId(e.target.value)}
+              value={organizationId}
+              onChange={(e) => setOrganizationId(e.target.value)}
               className="font-mono text-xs"
             />
           </div>

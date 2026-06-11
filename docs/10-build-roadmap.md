@@ -17,7 +17,7 @@ see `docs/CHANGELOG.md` for the full slice-by-slice history and
 **Phases 0–4 + 5.0–5.10: CLOSED.** Wolf has a working agent loop
 against a real Wazuh, three-component architecture (wolf-server /
 wolf-dashboard / wolf-database) per ADR 0016, mTLS substrate,
-RAG + grounding validator, multi-tenancy with cross-tenant
+RAG + grounding validator, multi-organization with cross-organization
 isolation suite, systemd-deployable daemons, and APT packaging
 that builds + installs cleanly on Ubuntu/Debian.
 
@@ -32,7 +32,7 @@ ACCEPTED after multi-round operator reviews:
 - **ADR 0020** — Superuser-owned Wazuh component mapping — drives
   Phase 6.6
 
-**Phase 6.4 (tenant→organization codebase rename): the next active
+**Phase 6.4 (organization→organization codebase rename): the next active
 slice.** The unblocked pre-req for all Phase 6.5+ work. ~40-60
 files, single PR, 1-2 sessions.
 
@@ -51,7 +51,7 @@ original plan` below.
   wolf-server (then "orchestrator") process.
 - Auth scaffolding: local-account login flow + OIDC adapter (SSO
   configuration deferred to the operator).
-- Tenant data model (`tenants`, `users`, `user_tenants`, `roles`)
+- Organization data model (`organizations`, `users`, `user_organizations`, `roles`)
   + the immutable request-context construct.
 - Secrets-backend interface with an encrypted-file backend.
 - Structured logging, OpenTelemetry tracing, audit-log skeleton.
@@ -82,7 +82,7 @@ strategy (frontier/guided/pipeline).
 
 Delivers the first real user value and proves the agent loop works.
 
-- Wazuh OpenSearch client with **forced tenant filter** in the
+- Wazuh OpenSearch client with **forced organization filter** in the
   query layer.
 - Wazuh Server API client (read endpoints only).
 - Tool registry with strict input/output schemas (Pydantic).
@@ -111,28 +111,28 @@ answer. Verified on a frontier model (Nemotron 120B via OpenRouter)
   arguments.
 - Grounding validator (`wolf_server/grounding/`) — rejects
   ungrounded factual claims in answers.
-- Per-tenant private corpus partition (foundation for tenant
+- Per-organization private corpus partition (foundation for organization
   runbooks, even though uploads come later).
 
 **Exit criteria (met):** asking about Wazuh behavior produces an
 answer that cites doc chunks; asking about ATT&CK techniques cites
 versioned ATT&CK content.
 
-## Phase 4 — Multi-tenancy hardening ✅ CLOSED
+## Phase 4 — Multi-organization hardening ✅ CLOSED
 
 Crucial before any MSSP-targeted feature.
 
-- Tenant onboarding with connection validation and immutable
+- Organization onboarding with connection validation and immutable
   profiles.
-- Per-tenant credential storage in the secrets backend.
-- Connection pooling per tenant (stateless checkout-and-establish).
-- Cache wrapper with mandatory tenant-prefix keys.
-- **Cross-tenant test suite** (`tools/tenant_isolation_test`)
+- Per-organization credential storage in the secrets backend.
+- Connection pooling per organization (stateless checkout-and-establish).
+- Cache wrapper with mandatory organization-prefix keys.
+- **Cross-organization test suite** (`tools/organization_isolation_test`)
   running in CI.
-- Audit-stream tenant scoping verified by the test suite.
+- Audit-stream organization scoping verified by the test suite.
 
 **Exit criteria (met):** isolation suite passes for every read
-tool, RAG retrieval, audit query, and cache path. Two tenants
+tool, RAG retrieval, audit query, and cache path. Two organizations
 operate side-by-side with verifiable separation.
 
 ---
@@ -279,7 +279,7 @@ own client cert (`wolf-gateway-client`, parallel to
 - Proposal data model and state machine.
 - Propose tools: `propose_active_response`, `propose_rule_tuning`,
   `propose_agent_action`, `propose_config_change`.
-- Approval authority model: tenant, action class + severity,
+- Approval authority model: organization, action class + severity,
   target sensitivity.
 - Crown-jewel tagging.
 - Approval queue UI: shows evidence, resolved target, rationale.
@@ -300,31 +300,31 @@ different analyst with the right authority approves, wolf-gateway
 executes it against a real Wazuh deployment, verification read
 confirms the actual state. Every step audited.
 
-## Phase 6.4 — tenant → organization codebase rename
+## Phase 6.4 — organization → organization codebase rename
 
 **Per ADR 0018 (ACCEPTED 2026-06-10).** Pre-requisite for Phase 6.5
 and all subsequent phases. The entire codebase migrates from the
-"tenant" terminology to "organization":
+"organization" terminology to "organization":
 
-- DB: `tenants` table → `organizations`; `tenant_id` columns →
+- DB: `organizations` table → `organizations`; `organization_id` columns →
   `organization_id`; foreign-key constraint names
 - Alembic migration that renames atomically + backfills any code
   paths that touch the old column
-- SQLAlchemy models: `Tenant` → `Organization`; `UserTenant` →
-  `UserOrganization`; `TenantContext` → `OrganizationContext`
-- API routes: `/api/v1/tenants/...` → `/api/v1/organizations/...`
-- Frontend: `tenant-switcher.tsx` → `organization-switcher.tsx`;
+- SQLAlchemy models: `Organization` → `Organization`; `UserOrganization` →
+  `UserOrganization`; `OrganizationContext` → `OrganizationContext`
+- API routes: `/api/v1/organizations/...` → `/api/v1/organizations/...`
+- Frontend: `organization-switcher.tsx` → `organization-switcher.tsx`;
   all TypeScript types + variable names + React contexts
 - Test fixtures + factory helpers
-- Memory entry `tenant-renamed-to-organization.md` flips from
+- Memory entry `organization-renamed-to-organization.md` flips from
   STANDING RULE to COMPLETED
 
 Single PR, single review session. Estimated scope: **1-2 sessions**.
 
-**Exit criteria:** every reference to `tenant`/`tenant_id`/`Tenant`
+**Exit criteria:** every reference to `organization`/`organization_id`/`Organization`
 in the codebase is renamed to `organization`/`organization_id`/
 `Organization`. All tests pass. Cross-organization isolation suite
-(formerly cross-tenant isolation suite) green.
+(formerly cross-organization isolation suite) green.
 
 ## Phase 6.5 — Bootstrap Superuser + Per-Org RBAC + Login UX
 
@@ -587,7 +587,7 @@ agent can query them via the indexer.
   explicit checkpoints (`08`).
 - Starter library of playbooks for common scenarios.
 - Shift-handover report generated from open cases.
-- Cross-case analytics dashboards (per-tenant + MSSP-parent-scope).
+- Cross-case analytics dashboards (per-organization + MSSP-parent-scope).
 
 ## Phase 9.5 — wolf-hunt: Incident Response + Case Management platform
 
@@ -615,7 +615,7 @@ wolf-hunt ADR when Phase 9.5 opens.
 ## Phase 10 — Knowledge feedback and growth
 
 - Case-close summary: analyst-reviewed, structured.
-- Auto-ingest of reviewed summaries into the tenant's private
+- Auto-ingest of reviewed summaries into the organization's private
   corpus, with audit and reversibility.
 - Operator controls over what auto-ingests and from where.
 - Periodic re-evaluation of retrieval quality.
@@ -680,7 +680,7 @@ phase-open time.
 
 Only consider after the platform has months of safe operation +
 data showing the agent's proposals are consistently sound.
-Conditions defined in `04`. Default off, opted-in per tenant,
+Conditions defined in `04`. Default off, opted-in per organization,
 narrowly scoped, circuit-broken, fully audited.
 
 ---
@@ -719,7 +719,7 @@ sub-phases between the existing Phase 6 work and Phase 7:
 
 | Phase | Driver | Why this position |
 |---|---|---|
-| **6.4** | ADR 0018 | tenant → organization codebase rename. Pre-req for every Phase 6.5+ slice that references the new naming. Single PR, ~1-2 sessions. |
+| **6.4** | ADR 0018 | organization → organization codebase rename. Pre-req for every Phase 6.5+ slice that references the new naming. Single PR, ~1-2 sessions. |
 | **6.5** | ADR 0018 | Bootstrap Superuser + Per-Org RBAC + Login UX. 9 sub-slices, ~12-13 sessions. Land BEFORE Phase 7's case-management work since cases attach to an organization + a user with a role. |
 | **6** | (existing) | Wolf-gateway — the Approval Gateway. After 6.5 because the gateway uses 6.5's role-decorator pattern + needs the organization + role model from 6.5-b. |
 | **6.6** | ADR 0020 | Superuser-owned Wazuh component mapping. After Phase 6.5 because the UI requires the Superuser identity + per-tab header model. Sequenced after Phase 6 because it touches the same wolf-server settings APIs. |
@@ -750,14 +750,14 @@ These are non-negotiable; the coding agent must enforce them at
 all times.
 
 1. **Strict typed schemas** on every tool input and output.
-2. **Tenant context injected by wolf-server**, never read from the
+2. **Organization context injected by wolf-server**, never read from the
    model.
 3. **Capability tiers enforced** by the registry and dispatch
    logic.
 4. **Audit every event** that matters.
 5. **No execute tool in wolf-server**; they exist only in
    wolf-gateway.
-6. **The cross-tenant isolation test suite must pass** in CI for
+6. **The cross-organization isolation test suite must pass** in CI for
    any change to touch main.
 7. **Grounding validator runs** on any final answer that makes
    factual claims.
@@ -769,7 +769,7 @@ all times.
    (Phase 5.7-d), `make smoke-systemd` (Phase 5.8-d).
 10. **Integrity across the stack** — every change preserves
     integrity across frontend / backend / DB / libraries / UI;
-    full backend suite + cross-tenant gate on every services/
+    full backend suite + cross-organization gate on every services/
     change.
 11. **No unaddressed errors** — never leave errors / warnings /
     silent diagnostics unaddressed; "pre-existing baseline" is

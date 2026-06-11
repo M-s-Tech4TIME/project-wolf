@@ -38,7 +38,7 @@ project-wolf/
 │   ├── server/            # wolf-server — FastAPI brain (agent loop, tools, auth, audit)
 │   └── gateway/           # wolf-gateway — Phase 6 propose/execute path (stub today)
 ├── bin/                   # Shipped operator CLIs (wolf-cert; future wolf-status, wolf-backup)
-├── tools/                 # Dev-internal CLIs (model_probe, seed_knowledge, tenant_isolation_test)
+├── tools/                 # Dev-internal CLIs (model_probe, seed_knowledge, organization_isolation_test)
 ├── deploy/                # Dockerfiles, Compose, future systemd units + packaging
 └── .github/workflows/     # CI (lint / typecheck / test / safety / local-model-check)
 ```
@@ -76,7 +76,7 @@ them costs you more time than reading them.
 
 - Touching the agent loop or models? → [`docs/02-model-abstraction.md`](docs/02-model-abstraction.md), [`docs/14-model-recommendations.md`](docs/14-model-recommendations.md), [`docs/15-supported-model-matrix.md`](docs/15-supported-model-matrix.md).
 - Touching tools? → [`docs/03-tool-catalog-and-capability-tiers.md`](docs/03-tool-catalog-and-capability-tiers.md).
-- Touching tenancy or auth? → [`docs/05-multi-tenancy.md`](docs/05-multi-tenancy.md), [`docs/07-security-and-threat-model.md`](docs/07-security-and-threat-model.md).
+- Touching tenancy or auth? → [`docs/05-multi-organization.md`](docs/05-multi-organization.md), [`docs/07-security-and-threat-model.md`](docs/07-security-and-threat-model.md).
 - Starting Phase 3 (RAG)? → [`docs/06-knowledge-and-rag.md`](docs/06-knowledge-and-rag.md), [`docs/10-build-roadmap.md`](docs/10-build-roadmap.md) §"Phase 3".
 - Setting up new hardware? → [`docs/13-system-requirements.md`](docs/13-system-requirements.md).
 - Working on distribution / packaging (post-Phase 4)? → [`docs/16-distribution-and-packaging.md`](docs/16-distribution-and-packaging.md), [ADR 0007](docs/decisions/0007-native-distribution-via-system-packages-and-install-script.md).
@@ -339,7 +339,7 @@ uv run alembic upgrade head
 cd ../..
 ```
 
-You should see migrations `0001_initial_schema`, `0002_tenant_wazuh_config`, `0003_inject_tenant_filter` apply cleanly.
+You should see migrations `0001_initial_schema`, `0002_organization_wazuh_config`, `0003_inject_organization_filter` apply cleanly.
 
 ### 3.8 Install Ollama + pull the default model
 
@@ -359,19 +359,19 @@ For the broader supported-model matrix, see
 On a GPU-equipped machine, also pull the larger sizes you intend to
 exercise (e.g. `ollama pull qwen3:32b`, `ollama pull glm-5.1`).
 
-### 3.9 Bootstrap a tenant, admin user, and Wazuh connection
+### 3.9 Bootstrap a organization, admin user, and Wazuh connection
 
-A single command creates the tenant, admin user, the
-`TenantWazuhConfig` row, and stashes the Wazuh credentials in the
+A single command creates the organization, admin user, the
+`OrganizationWazuhConfig` row, and stashes the Wazuh credentials in the
 encrypted secrets backend. **All Wazuh fields are required** — the
-CLI cannot create a tenant without them. If you don't have a Wazuh
+CLI cannot create a organization without them. If you don't have a Wazuh
 handy yet, see "If you don't have a Wazuh yet" below.
 
 ```bash
 cd services/server
-uv run python -m wolf_server.management.bootstrap_tenant \
-    --tenant-slug acme \
-    --tenant-name "Acme SecOps" \
+uv run python -m wolf_server.management.bootstrap_organization \
+    --organization-slug acme \
+    --organization-name "Acme SecOps" \
     --admin-email admin@example.com \
     --admin-password 'choose-a-strong-password' \
     --opensearch-url https://wazuh.example:9200 \
@@ -387,22 +387,22 @@ cd ../..
 **Notes:**
 
 - The command is **fully idempotent**. Re-running with the same
-  `--tenant-slug` updates URLs and re-stashes credentials in place;
+  `--organization-slug` updates URLs and re-stashes credentials in place;
   user/role bindings are preserved. This is also the supported way
-  to *update* a tenant's Wazuh config later — see §5 "Update an
-  existing tenant's Wazuh config."
+  to *update* a organization's Wazuh config later — see §5 "Update an
+  existing organization's Wazuh config."
 - `--no-verify-tls` is correct for typical Wazuh deployments
   (self-signed certs from the default install). Use `--verify-tls`
   in production with proper PKI.
 - Wazuh credentials are written to the secrets backend; they are
   never persisted to the database. The DB stores only the secret-key
   *reference* the resolver looks up at request time.
-- Full flag reference: `uv run python -m wolf_server.management.bootstrap_tenant --help`,
+- Full flag reference: `uv run python -m wolf_server.management.bootstrap_organization --help`,
   or read the docstring at the top of
-  [`services/server/wolf_server/management/bootstrap_tenant.py`](services/server/wolf_server/management/bootstrap_tenant.py).
+  [`services/server/wolf_server/management/bootstrap_organization.py`](services/server/wolf_server/management/bootstrap_organization.py).
 
 **If you don't have a Wazuh yet:** pass placeholder values that satisfy
-arg validation. The tenant + auth + agent loop will all work; only
+arg validation. The organization + auth + agent loop will all work; only
 tool calls that actually hit Wazuh will fail at request time:
 
 ```bash
@@ -709,7 +709,7 @@ with a `wolf-gateway-client` leaf cert (parallel to
 `MTLS_ALLOWED_CLIENT_CNS` allowlist. Same pattern, one more CN.
 The relay daemons (the planned "wolf-relay" component that ships
 events from Wazuh hosts to wolf-server) will follow the same
-pattern with one `wolf-relay-<tenant>` cert per relay.
+pattern with one `wolf-relay-<organization>` cert per relay.
 
 #### Production distributed deployment via `.deb` packages
 
@@ -893,7 +893,7 @@ Run these in order. If any fails, fix it before moving on.
 
 ```bash
 make test                # full backend suite
-make test-isolation      # the cross-tenant isolation suite alone
+make test-isolation      # the cross-organization isolation suite alone
 make test-cov            # with coverage report; gates at 80%
 ```
 
@@ -909,7 +909,7 @@ make check               # lint + typecheck + test
 
 ```bash
 cd services/server
-uv run python -m wolf_server.management.smoke_wazuh --tenant-slug acme --all-tools
+uv run python -m wolf_server.management.smoke_wazuh --organization-slug acme --all-tools
 ```
 
 This exercises every registered read tool against the live deployment.
@@ -966,15 +966,15 @@ npm run dev -- --hostname 0.0.0.0 --port 3000 &
 cd ..
 ```
 
-### Add a new tenant
+### Add a new organization
 
-Same command as §3.9 — `bootstrap_tenant` is the entry point.
-Substitute the new tenant's values:
+Same command as §3.9 — `bootstrap_organization` is the entry point.
+Substitute the new organization's values:
 
 ```bash
 cd services/server
-uv run python -m wolf_server.management.bootstrap_tenant \
-    --tenant-slug <slug> --tenant-name "<Display Name>" \
+uv run python -m wolf_server.management.bootstrap_organization \
+    --organization-slug <slug> --organization-name "<Display Name>" \
     --admin-email <email> --admin-password <password> \
     --opensearch-url <url> --opensearch-username <user> --opensearch-password <pw> \
     --server-api-url <url> --server-api-username <user> --server-api-password <pw> \
@@ -982,26 +982,26 @@ uv run python -m wolf_server.management.bootstrap_tenant \
 cd ../..
 ```
 
-### Update an existing tenant's Wazuh config
+### Update an existing organization's Wazuh config
 
-Re-run `bootstrap_tenant` with the same `--tenant-slug` and the changed
+Re-run `bootstrap_organization` with the same `--organization-slug` and the changed
 fields (all required flags must still be passed — the CLI does not
 accept partial updates). It will:
 
-- Update the tenant row's URLs / TLS flag / `inject_tenant_filter` flag.
+- Update the organization row's URLs / TLS flag / `inject_organization_filter` flag.
 - Re-stash both Wazuh credential blobs in the secrets backend.
 - Re-hash and overwrite the admin user's password (if you pass a new one).
-- Preserve the user↔tenant role binding.
+- Preserve the user↔organization role binding.
 
 The docstring at the top of
-[`bootstrap_tenant.py`](services/server/wolf_server/management/bootstrap_tenant.py)
+[`bootstrap_organization.py`](services/server/wolf_server/management/bootstrap_organization.py)
 documents this contract. A smaller-surface "update only" CLI is a
 welcome future ergonomic improvement; today, re-running
-`bootstrap_tenant` is the supported path.
+`bootstrap_organization` is the supported path.
 
-### Rotate a tenant's Wazuh credentials
+### Rotate a organization's Wazuh credentials
 
-Re-run `bootstrap_tenant` with the same `--tenant-slug`, the same URLs,
+Re-run `bootstrap_organization` with the same `--organization-slug`, the same URLs,
 and the new credentials in `--opensearch-password` / `--server-api-password`.
 The secrets backend is overwritten in place; the resolver will pick up
 the new values on its next lookup (per-request, no caching).
@@ -1042,7 +1042,7 @@ The full verification pattern is documented in ADR 0005.
 
 ```bash
 cd services/server
-uv run alembic revision --autogenerate -m "add column foo to tenants"
+uv run alembic revision --autogenerate -m "add column foo to organizations"
 $EDITOR migrations/versions/<new_file>.py     # review the autogen output
 uv run alembic upgrade head
 cd ../..
@@ -1079,15 +1079,15 @@ and a 404. Correct: `https://openrouter.ai/api`. Documented inline on
 the OpenRouter `KNOWN_MODELS` entries in
 [`services/server/wolf_server/models/interface.py`](services/server/wolf_server/models/interface.py).
 
-### Gotcha #3 — `inject_tenant_filter` is opt-in for a reason
+### Gotcha #3 — `inject_organization_filter` is opt-in for a reason
 
-A stock Wazuh deployment does not stamp `tenant_id` on documents.
-If you set `TenantWazuhConfig.inject_tenant_filter=True` against a
+A stock Wazuh deployment does not stamp `organization_id` on documents.
+If you set `OrganizationWazuhConfig.inject_organization_filter=True` against a
 vanilla Wazuh, every read tool returns zero results — Wolf is
 filtering correctly, the data just doesn't carry the field. Leave it
-`False` (the default) for single-tenant / standalone deployments;
+`False` (the default) for single-organization / standalone deployments;
 turn it on for MSSP deployments where ingestion stamps the field at
-indexing time. See [`docs/05-multi-tenancy.md`](docs/05-multi-tenancy.md).
+indexing time. See [`docs/05-multi-organization.md`](docs/05-multi-organization.md).
 
 ### Gotcha #4 — LAN access has mostly become a non-issue
 
@@ -1140,38 +1140,38 @@ the Indexer may not exist on the Server API — and vice versa.
 Typical example from the Wazuh OVA install: `admin` works for the
 Indexer; `wazuh-wui` (or a generated password) is the Server API admin.
 
-Phase 4 Slice 2's `bootstrap_tenant` now probes BOTH endpoints with the
-supplied credentials before persisting the tenant. The error message on
+Phase 4 Slice 2's `bootstrap_organization` now probes BOTH endpoints with the
+supplied credentials before persisting the organization. The error message on
 a Server-API 401 explicitly names this gotcha — but knowing it ahead of
 time saves a debugging session. When in doubt, run `sudo
 /var/ossec/bin/wazuh-passwords-tool.sh -a -A` on the Wazuh host to dump
 the actual Server-API credentials.
 
-### Gotcha #8 — Phase 4 multi-tenancy: two tenants are required for full coverage
+### Gotcha #8 — Phase 4 multi-organization: two organizations are required for full coverage
 
-The cross-tenant isolation suite (`tools/tenant_isolation_test`) needs
-TWO tenants bootstrapped to be meaningful — a single-tenant deployment
+The cross-organization isolation suite (`tools/organization_isolation_test`) needs
+TWO organizations bootstrapped to be meaningful — a single-organization deployment
 has nothing to leak against. The dev pattern:
 
 ```bash
-# 1. Bootstrap acme (the primary dev tenant)
-uv run python -m wolf_server.management.bootstrap_tenant --tenant-slug acme \
-    --tenant-name "Acme SecOps" ... --no-verify-tls
+# 1. Bootstrap acme (the primary dev organization)
+uv run python -m wolf_server.management.bootstrap_organization --organization-slug acme \
+    --organization-name "Acme SecOps" ... --no-verify-tls
 
 # 2. Bootstrap beta against the SAME Wazuh (bridge model — application-
 #    layer isolation is what we test, not Wazuh-instance separation)
-uv run python -m wolf_server.management.bootstrap_tenant --tenant-slug beta \
-    --tenant-name "Beta InfoSec" ... --no-verify-tls
+uv run python -m wolf_server.management.bootstrap_organization --organization-slug beta \
+    --organization-name "Beta InfoSec" ... --no-verify-tls
 
-# 3. Seed each tenant's private corpus
-uv run python -m wolf_server.management.seed_dev_knowledge --tenant-slug acme
-uv run python -m wolf_server.management.seed_dev_knowledge --tenant-slug beta
+# 3. Seed each organization's private corpus
+uv run python -m wolf_server.management.seed_dev_knowledge --organization-slug acme
+uv run python -m wolf_server.management.seed_dev_knowledge --organization-slug beta
 
 # 4. Run the live isolation suite
 make test-isolation-live
 ```
 
-Per ADR-pending `docs/05-multi-tenancy.md` §Test isolation as a
+Per ADR-pending `docs/05-multi-organization.md` §Test isolation as a
 first-class continuous practice, run this suite **constantly** — in CI
 on every PR (covered by `make test-isolation`) AND as a periodic probe
 against the dev / staging / production DB (the `test-isolation-live`
@@ -1217,7 +1217,7 @@ and a hosted frontier-tier model (`nvidia/nemotron-3-super-120b-a12b:free`
 via OpenRouter). 9 of 9 read tools verified live. 128 backend tests
 passing. mypy strict clean on 33 safety-critical files. wolf-dashboard
 (Next.js 16; package was `frontend/` at this snapshot date) renders
-chat, citations, multi-turn, tenant switcher.
+chat, citations, multi-turn, organization switcher.
 
 **Next phase: Phase 3** — RAG + grounding validator per
 [`docs/06-knowledge-and-rag.md`](docs/06-knowledge-and-rag.md) and
@@ -1271,7 +1271,7 @@ In rough order of "what to try first":
 |---|---|---|
 | `/api/v1/auth/login` returns 404 | uvicorn picked up gateway's `app/` | Gotcha #1; `cd services/server` first |
 | Chat returns "no tools called" or empty answer | Model entry in `KNOWN_MODELS` says `recommended_strategy='pipeline'` for a model that can actually do native tool calls | Re-probe; amend entry; see commit `14cc727` for the pattern |
-| Read tools return 0 results | `inject_tenant_filter=True` on a vanilla Wazuh | Gotcha #3; flip to False |
+| Read tools return 0 results | `inject_organization_filter=True` on a vanilla Wazuh | Gotcha #3; flip to False |
 | Hosted API returns 404 | `OPENAI_BASE_URL` includes `/v1` | Gotcha #2 |
 | LAN browser can't load wolf-dashboard | One of three things misconfigured | Gotcha #4 |
 | `loop_error` mid-conversation | Model adapter raised; check the audit table for the captured exception type + traceback (commit `e09b4e5`) | `services/server/wolf_server/agent/loop.py` |
@@ -1280,7 +1280,7 @@ In rough order of "what to try first":
 
 If none of the above match, the audit log table (`audit_log` in
 Postgres) records every model call and tool call with arguments and
-results. Read the last few rows for the failing tenant — the answer
+results. Read the last few rows for the failing organization — the answer
 is almost always in there.
 
 ---

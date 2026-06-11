@@ -1,7 +1,7 @@
 """Resolved Wazuh connection profile — what the clients are constructed with.
 
 Built by `resolver.get_wazuh_connection()` per request.  Never cached across
-tenants — fetched fresh each time to avoid the connection-pool bleed risk
+organizations — fetched fresh each time to avoid the connection-pool bleed risk
 from doc 05.
 """
 
@@ -13,11 +13,11 @@ from dataclasses import dataclass
 class WazuhConnection:
     """Resolved, ready-to-use Wazuh connection profile.
 
-    Frozen so a downstream caller cannot accidentally swap the tenant out.
+    Frozen so a downstream caller cannot accidentally swap the organization out.
     Created by `resolver.get_wazuh_connection()` and passed to the clients.
     """
 
-    tenant_id: uuid.UUID
+    organization_id: uuid.UUID
     opensearch_url: str
     opensearch_index_pattern: str
     opensearch_username: str
@@ -26,4 +26,4 @@ class WazuhConnection:
     server_api_username: str
     server_api_password: str
     verify_tls: bool
-    inject_tenant_filter: bool = False
+    inject_organization_filter: bool = False

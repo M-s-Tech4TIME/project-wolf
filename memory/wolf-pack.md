@@ -26,8 +26,8 @@ OUTBOUND from Wolf via the wolf-gateway approval flow (the new scope).
   agent is `wolf-pack`. References below to "wolf-relay" can be
   read as "wolf-pack" — the body of this memory is preserved as the
   original brainstorm + research that fed into ADR 0017's Phase 12.
-- **Terminology**: this file pre-dates the 2026-06-10 tenant →
-  organization rename. References to `tenant_id` / "per-tenant"
+- **Terminology**: this file pre-dates the 2026-06-10 organization →
+  organization rename. References to `organization_id` / "per-organization"
   should be read as `organization_id` / "per-organization" in any
   forward-looking implementation. Code-side rename happens in
   Phase 6.4 (per ADR 0018).
@@ -58,9 +58,9 @@ User clarified (2026-05-30) that the initial list was a starter, not the catalog
 | Source | Path | Records | Priority | Why Wolf wants it |
 |---|---|---|---|---|
 | Built-in rules | `/var/ossec/ruleset/rules/*.xml` | ~3500 | **MVP** | Grounds rule semantics ("rule 5710 triggers on …", chaining via `if_sid`, `frequency`, `timeframe`) |
-| Custom rules | `/var/ossec/etc/rules/*.xml` | per tenant | **MVP** | Tenant-private — operator-authored detection logic |
+| Custom rules | `/var/ossec/etc/rules/*.xml` | per organization | **MVP** | Organization-private — operator-authored detection logic |
 | Built-in decoders | `/var/ossec/ruleset/decoders/*.xml` | ~400 | **MVP** | Grounds field-extraction claims |
-| Custom decoders | `/var/ossec/etc/decoders/*.xml` | per tenant | **MVP** | Tenant-private |
+| Custom decoders | `/var/ossec/etc/decoders/*.xml` | per organization | **MVP** | Organization-private |
 | MITRE / compliance tags inside rule XML | embedded in rule tags (`<mitre>`, `<group>` containing `pci_dss_…`, `gdpr_…`, `hipaa_…`, `nist_800_53_…`, `tsc_…`) | per-rule | **MVP** | Falls out of rule ingest; grounds framework claims |
 | SCA policies + checks | `/var/ossec/ruleset/sca/*.yml` | ~30 × hundreds | **Full** | Grounds CIS / hardening posture with check id, rationale, remediation |
 | CDB lists | `/var/ossec/etc/lists/*.cdb` + `.txt` source | varies | **Full** | Operator IP / hash / user allow- and block-lists; explains "why didn't this alert fire?" |
@@ -113,7 +113,7 @@ User clarified (2026-05-30) that the initial list was a starter, not the catalog
 
 | Source | Note |
 |---|---|
-| Saved searches + saved visualisations | Could ground "you already have a dashboard for X" claims; opt-in per tenant |
+| Saved searches + saved visualisations | Could ground "you already have a dashboard for X" claims; opt-in per organization |
 | Index patterns | Mostly redundant with Indexer mappings |
 | Reports configuration | Useful for "scheduled report contains X" claims; opt-in |
 
@@ -180,7 +180,7 @@ This matters because future Wazuh versions add new indices and new config sectio
 │      ↓                                      │
 │  parse → chunk → embed → upsert into        │
 │  knowledge_chunks (new source_types,        │
-│  carries tenant_id, idempotent)             │
+│  carries organization_id, idempotent)             │
 │                                             │
 │  → grounding judge's evidence pool grows    │
 │    by orders of magnitude                   │
@@ -194,17 +194,17 @@ This matters because future Wazuh versions add new indices and new config sectio
 | **Single-instance** | One relay on the all-in-one host. Reads local files + local indexer. |
 | **Cluster** | One relay per server node (each reads its local custom rules) + one relay per indexer node (for state indices). Wolf-side dedupe via stable chunk hash so the same built-in rule isn't embedded N times. |
 
-User-configurable through the Wolf Settings → **Wolf Configuration** panel (currently stubbed in the chat-header gear menu): per-tenant deployment shape, server node list (with master/worker role), indexer node list, ingestion cadence, which source types to enable.
+User-configurable through the Wolf Settings → **Wolf Configuration** panel (currently stubbed in the chat-header gear menu): per-organization deployment shape, server node list (with master/worker role), indexer node list, ingestion cadence, which source types to enable.
 
 ## Hard dependency on Phase 5.4
 
 The relay ships sensitive security data (rule logic, vulnerability state, inventory, compliance posture) over the network. **It must use mTLS, not plain HTTP**, even on a trusted LAN — a security tool that ships its data in cleartext is a contradiction.
 
-This makes Phase 5.4 (Native HTTPS + `wolf-cert`) a hard prerequisite, with one small addition: `wolf-cert` gains a `wolf-cert issue-relay <tenant>` subcommand that mints a relay client cert + bundles the Wolf root CA for the relay to trust the orchestrator.
+This makes Phase 5.4 (Native HTTPS + `wolf-cert`) a hard prerequisite, with one small addition: `wolf-cert` gains a `wolf-cert issue-relay <organization>` subcommand that mints a relay client cert + bundles the Wolf root CA for the relay to trust the orchestrator.
 
 **Recommended phase order:** 5.0c-f → Phase 5.4 (HTTPS + relay-cert provisioning) → **this Knowledge Relay phase** → Phase 5 (RBAC, which gates the Settings UI for relay enrollment) → Phase 5.5 (Knowledge Management UI for hand-authored runbooks, complementing the auto-fed knowledge) → grounding-enrichment tools → Phase 6.
 
-**LOCKED 2026-05-30:** user picked this order. Phase 5.4 grows by one subcommand (`wolf-cert issue-relay <tenant>`) to mint relay client certs; no rework needed when the Relay phase starts.
+**LOCKED 2026-05-30:** user picked this order. Phase 5.4 grows by one subcommand (`wolf-cert issue-relay <organization>`) to mint relay client certs; no rework needed when the Relay phase starts.
 
 ## MVP vs full
 
@@ -212,16 +212,16 @@ To keep this from becoming a one-year project, split it:
 
 | Phase | Scope |
 |---|---|
-| **MVP** | Relay reads rules + decoders + MITRE / compliance maps from local XML. Ships via mTLS to Wolf. Wolf ingests into `wazuh_rule` and `wazuh_decoder` source types. Two new tools: `lookup_rule(rule_id)`, `lookup_decoder(name)`. Single-instance Wazuh only. One tenant. CLI-driven enrollment (`wolf-relay enroll --tenant acme --token …`). |
+| **MVP** | Relay reads rules + decoders + MITRE / compliance maps from local XML. Ships via mTLS to Wolf. Wolf ingests into `wazuh_rule` and `wazuh_decoder` source types. Two new tools: `lookup_rule(rule_id)`, `lookup_decoder(name)`. Single-instance Wazuh only. One organization. CLI-driven enrollment (`wolf-relay enroll --organization acme --token …`). |
 | **Full** | + SCA policies / checks · + vulnerability + inventory ingestion from indexer · + cluster awareness with dedupe · + new tools (`find_rules_by_compliance`, `find_rules_by_mitre`, `lookup_cve`, etc.) · + Settings UI panel for visual enrollment + deployment topology · + delta-shipping with inotify · + per-source ingestion cadence config |
 
 ## Risks to design around (not blockers, but real)
 
 1. **Wazuh version coupling** — rule / decoder / SCA formats can shift across Wazuh major versions. Relay needs a version-aware parser strategy (per-major-version parsing module, declared compatibility range).
-2. **Volume** — full Wazuh ruleset (~3500 rules × embedding-vector size) + SCA + vuln + inventory = significant storage and embedding cost. Plan: tenant-private chunks (default) so shared content doesn't bloat per-tenant indices; for built-in rules, consider storing once with `tenant_id NULL` (shared) and only tenant-stamping custom rules + state data.
+2. **Volume** — full Wazuh ruleset (~3500 rules × embedding-vector size) + SCA + vuln + inventory = significant storage and embedding cost. Plan: organization-private chunks (default) so shared content doesn't bloat per-organization indices; for built-in rules, consider storing once with `organization_id NULL` (shared) and only organization-stamping custom rules + state data.
 3. **Live updates** — operators add custom rules. Use inotify on `/var/ossec/etc/`. Throttle: re-embed at most every 30s per file to absorb rapid edits.
-4. **Per-tenant isolation** — every shipped chunk carries `tenant_id`; the relay's mTLS cert binds it to exactly one tenant; the ingest endpoint refuses cross-tenant writes. Mirror the same defence-in-depth from doc 05.
-5. **CVE feed scale** — NVD has ~250K CVEs. Don't embed them all upfront; only embed CVEs that are currently *flagged on this tenant's agents* (the indexer already filters). Re-evaluate if grounding needs general CVE lookup.
+4. **Per-organization isolation** — every shipped chunk carries `organization_id`; the relay's mTLS cert binds it to exactly one organization; the ingest endpoint refuses cross-organization writes. Mirror the same defence-in-depth from doc 05.
+5. **CVE feed scale** — NVD has ~250K CVEs. Don't embed them all upfront; only embed CVEs that are currently *flagged on this organization's agents* (the indexer already filters). Re-evaluate if grounding needs general CVE lookup.
 6. **Cluster dedupe** — stable chunk hash = SHA-256 of `(source_type, normalised_content, chunk_metadata.canonical_id)`. Upsert by hash. Built-in rule shipped from 3 cluster nodes lands once.
 7. **Failure modes** — relay must be resilient to Wolf being down: local queue with disk-backed retry (e.g. SQLite spool). Don't lose data, don't OOM the host.
 8. **Telemetry of the relay itself** — its own health (last ingest time, queue depth, parse failures) should be visible in Wolf, so an operator can see if a relay went silent.

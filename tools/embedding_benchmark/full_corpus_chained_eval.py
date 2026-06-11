@@ -24,30 +24,30 @@ from wolf_server.knowledge.embeddings import (
     make_embedding_provider_aux,
 )
 from wolf_server.knowledge.store import PgvectorKnowledgeStore
-from wolf_server.tenancy.models import Tenant
+from wolf_server.organization.models import Organization
 
 # Same 20-query battery as full_corpus_v2_eval.py.
 KEYED_QUERIES: list[tuple[str, str, str]] = [
-    ("What does Wazuh rule 5712 do?",                  "rule_id",   "5712"),
-    ("Explain Wazuh rule 5710",                        "rule_id",   "5710"),
-    ("rule 31100 details",                             "rule_id",   "31100"),
-    ("What is rule 80700",                             "rule_id",   "80700"),
-    ("Wazuh sshd authentication failure rule",         "rule_id",   "5710"),
-    ("brute force composite rule",                     "rule_id",   "5712"),
-    ("What is ATT&CK T1110?",                          "technique", "T1110"),
-    ("ATT&CK technique T1078 Valid Accounts",          "technique", "T1078"),
-    ("MITRE T1059.001 PowerShell",                     "technique", "T1059.001"),
-    ("Spearphishing attachment ATT&CK technique",      "technique", "T1566.001"),
-    ("Process Injection ATT&CK",                       "technique", "T1055"),
-    ("T1003 OS Credential Dumping",                    "technique", "T1003"),
-    ("Scheduled Task technique",                       "technique", "T1053"),
-    ("ATT&CK Data from Local System",                  "technique", "T1005"),
-    ("password spraying technique",                    "technique", "T1110.003"),
-    ("DNS tunneling MITRE technique",                  "technique", "T1071.004"),
-    ("Pass the Hash ATT&CK",                           "technique", "T1550.002"),
-    ("Domain Trust Discovery",                         "technique", "T1482"),
-    ("ATT&CK exfiltration over web service",           "technique", "T1567"),
-    ("MITRE T1547 Boot or Logon Autostart Execution",  "technique", "T1547"),
+    ("What does Wazuh rule 5712 do?", "rule_id", "5712"),
+    ("Explain Wazuh rule 5710", "rule_id", "5710"),
+    ("rule 31100 details", "rule_id", "31100"),
+    ("What is rule 80700", "rule_id", "80700"),
+    ("Wazuh sshd authentication failure rule", "rule_id", "5710"),
+    ("brute force composite rule", "rule_id", "5712"),
+    ("What is ATT&CK T1110?", "technique", "T1110"),
+    ("ATT&CK technique T1078 Valid Accounts", "technique", "T1078"),
+    ("MITRE T1059.001 PowerShell", "technique", "T1059.001"),
+    ("Spearphishing attachment ATT&CK technique", "technique", "T1566.001"),
+    ("Process Injection ATT&CK", "technique", "T1055"),
+    ("T1003 OS Credential Dumping", "technique", "T1003"),
+    ("Scheduled Task technique", "technique", "T1053"),
+    ("ATT&CK Data from Local System", "technique", "T1005"),
+    ("password spraying technique", "technique", "T1110.003"),
+    ("DNS tunneling MITRE technique", "technique", "T1071.004"),
+    ("Pass the Hash ATT&CK", "technique", "T1550.002"),
+    ("Domain Trust Discovery", "technique", "T1482"),
+    ("ATT&CK exfiltration over web service", "technique", "T1567"),
+    ("MITRE T1547 Boot or Logon Autostart Execution", "technique", "T1547"),
 ]
 
 
@@ -61,20 +61,22 @@ def _correct(retrieved: list, kind: str, expected: str) -> bool:
             tech = str(hit.chunk_metadata.get("technique", ""))
             if not tech:
                 continue
-            if (tech == expected
+            if (
+                tech == expected
                 or tech.startswith(expected + ".")
-                or expected.startswith(tech + ".")):
+                or expected.startswith(tech + ".")
+            ):
                 return True
     return False
 
 
-async def _eval(label: str, store: PgvectorKnowledgeStore, tenant_id: uuid.UUID) -> None:
+async def _eval(label: str, store: PgvectorKnowledgeStore, organization_id: uuid.UUID) -> None:
     p1 = p5 = 0
     latencies: list[float] = []
     misses_at_5: list[str] = []
     for q, kind, expected in KEYED_QUERIES:
         t0 = time.perf_counter()
-        hits = await store.search(tenant_id=tenant_id, query_text=q, limit=5)
+        hits = await store.search(organization_id=organization_id, query_text=q, limit=5)
         latencies.append((time.perf_counter() - t0) * 1000)
         if not hits:
             misses_at_5.append(q)
@@ -87,11 +89,13 @@ async def _eval(label: str, store: PgvectorKnowledgeStore, tenant_id: uuid.UUID)
             misses_at_5.append(q)
     n = len(KEYED_QUERIES)
     print(f"\n=== {label} ===")
-    print(f"  precision@1: {p1}/{n} ({100*p1/n:.0f}%)")
-    print(f"  precision@5: {p5}/{n} ({100*p5/n:.0f}%)")
-    print(f"  latency:     mean={statistics.mean(latencies):.0f}ms  "
-          f"p50={statistics.median(latencies):.0f}ms  "
-          f"max={max(latencies):.0f}ms")
+    print(f"  precision@1: {p1}/{n} ({100 * p1 / n:.0f}%)")
+    print(f"  precision@5: {p5}/{n} ({100 * p5 / n:.0f}%)")
+    print(
+        f"  latency:     mean={statistics.mean(latencies):.0f}ms  "
+        f"p50={statistics.median(latencies):.0f}ms  "
+        f"max={max(latencies):.0f}ms"
+    )
     if misses_at_5:
         print(f"  missed @5:   {', '.join(repr(m) for m in misses_at_5)}")
 
@@ -99,10 +103,10 @@ async def _eval(label: str, store: PgvectorKnowledgeStore, tenant_id: uuid.UUID)
 async def main() -> int:
     settings = get_settings()
     async with db_session() as session:
-        tenant = (
-            await session.execute(select(Tenant).where(Tenant.slug == "acme"))
+        organization = (
+            await session.execute(select(Organization).where(Organization.slug == "acme"))
         ).scalar_one()
-        tenant_id = tenant.id
+        organization_id = organization.id
 
     primary = make_embedding_provider(settings)
     aux = make_embedding_provider_aux(settings)
@@ -118,11 +122,11 @@ async def main() -> int:
     # for the duration of the eval (search() opens/closes per call).
     async with db_session() as session_a:
         store_single = PgvectorKnowledgeStore(session_a, primary, embedder_aux=None)
-        await _eval("Single-leg (BM25 + v1.5)", store_single, tenant_id)
+        await _eval("Single-leg (BM25 + v1.5)", store_single, organization_id)
 
     async with db_session() as session_b:
         store_chained = PgvectorKnowledgeStore(session_b, primary, embedder_aux=aux)
-        await _eval("Chained (BM25 + v1.5 + v2-moe)", store_chained, tenant_id)
+        await _eval("Chained (BM25 + v1.5 + v2-moe)", store_chained, organization_id)
     return 0
 
 

@@ -57,7 +57,7 @@ analyst's words, and the design target of this project.
 - Case management and documentation.
 - **Proposing** active response and configuration changes for human approval.
 - A human-in-the-loop approval gateway that **executes** approved actions.
-- Multi-tenancy for MSSP and single-org use.
+- Multi-organization for MSSP and single-org use.
 - A model-agnostic LLM layer supporting hosted and local models.
 
 ## Out of scope (deliberately)

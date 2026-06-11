@@ -71,7 +71,7 @@ function usePersistedState<T>(key: string, initial: T): [T, (next: T) => void] {
 /**
  * The chat UI:
  *  ┌────────────────────────────────────────────────────────────┐
- *  │ Header: app + tenant switcher + user-avatar dropdown        │
+ *  │ Header: app + organization switcher + user-avatar dropdown        │
  *  ├──────────┬──────────────────────────────────────────────────┤
  *  │ Sidebar  │  Message thread (scrolls)                        │
  *  │ (collapsible) │                                              │

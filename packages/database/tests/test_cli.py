@@ -19,7 +19,8 @@ from wolf_database.process import PgCtlStatus
 
 @pytest.fixture(autouse=True)
 def _isolated_layout(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> Path:
     """Point every wolf-database path env var at tmp_path.
 
@@ -137,6 +138,7 @@ def test_status_returns_binary_missing_exit_code(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """When pg_ctl isn't on PATH, status reports + exits cleanly."""
+
     def raiser() -> None:
         raise PostgresBinaryNotFoundError(tool="pg_ctl", searched=[])
 
@@ -209,7 +211,8 @@ def test_start_refuses_when_not_initialized(
 
 
 def test_reconfigure_writes_config_without_starting_postgres(
-    capsys: pytest.CaptureFixture[str], _isolated_layout: Path,
+    capsys: pytest.CaptureFixture[str],
+    _isolated_layout: Path,
 ) -> None:
     """`reconfigure` regenerates conf files but doesn't touch pg_ctl."""
     rc = main(["reconfigure"])
@@ -232,9 +235,7 @@ def test_reconfigure_preserves_existing_port_when_no_flag(
     cfg = _isolated_layout / "cfg"
     cfg.mkdir(parents=True)
     (cfg / "postgresql.conf").write_text(
-        "data_directory = '/tmp/x'\n"
-        "port = 17860\n"
-        "listen_addresses = 'localhost'\n",
+        "data_directory = '/tmp/x'\nport = 17860\nlisten_addresses = 'localhost'\n",
     )
 
     rc = main(["reconfigure"])

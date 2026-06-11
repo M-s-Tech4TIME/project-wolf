@@ -42,7 +42,9 @@ class _FakeConn:
 
 
 def _engine_factory(
-    *, fail_n_times: int, then_succeed: bool = True,
+    *,
+    fail_n_times: int,
+    then_succeed: bool = True,
 ) -> tuple[MagicMock, list[int]]:
     """Build a mock create_async_engine that fails N times then OK.
 
@@ -86,7 +88,8 @@ async def test_db_reachable_on_first_try_returns_immediately(
     """No retries needed; one engine constructed; one SELECT executed."""
     engine_fn, counter = _engine_factory(fail_n_times=0)
     monkeypatch.setattr(
-        "sqlalchemy.ext.asyncio.create_async_engine", engine_fn,
+        "sqlalchemy.ext.asyncio.create_async_engine",
+        engine_fn,
     )
     sleep_mock = AsyncMock()
     monkeypatch.setattr("asyncio.sleep", sleep_mock)
@@ -107,7 +110,8 @@ async def test_retries_until_db_becomes_reachable(
     three sleeps between attempts."""
     engine_fn, counter = _engine_factory(fail_n_times=3)
     monkeypatch.setattr(
-        "sqlalchemy.ext.asyncio.create_async_engine", engine_fn,
+        "sqlalchemy.ext.asyncio.create_async_engine",
+        engine_fn,
     )
     sleep_mock = AsyncMock()
     monkeypatch.setattr("asyncio.sleep", sleep_mock)
@@ -128,7 +132,8 @@ async def test_raises_after_timeout(
     """When DB never comes back, we eventually give up and re-raise."""
     engine_fn, counter = _engine_factory(fail_n_times=999, then_succeed=False)
     monkeypatch.setattr(
-        "sqlalchemy.ext.asyncio.create_async_engine", engine_fn,
+        "sqlalchemy.ext.asyncio.create_async_engine",
+        engine_fn,
     )
     # Real-ish sleeps so the elapsed accounting matches.
     monkeypatch.setattr("asyncio.sleep", AsyncMock())
@@ -152,7 +157,8 @@ async def test_backoff_schedule_cycles_when_exhausted(
     schedule cycles. itertools.cycle is the contract."""
     engine_fn, _counter = _engine_factory(fail_n_times=5)
     monkeypatch.setattr(
-        "sqlalchemy.ext.asyncio.create_async_engine", engine_fn,
+        "sqlalchemy.ext.asyncio.create_async_engine",
+        engine_fn,
     )
     sleeps: list[float] = []
 

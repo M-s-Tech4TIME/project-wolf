@@ -119,7 +119,9 @@ def main() -> None:
             print(f"Extracted v{version} section from CHANGELOG.md ({len(notes)} chars)")
         else:
             notes = fallback_notes(version)
-            print(f"No v{version} section found in CHANGELOG.md — using fallback ({len(notes)} chars)")
+            print(
+                f"No v{version} section found in CHANGELOG.md — using fallback ({len(notes)} chars)"
+            )
 
     output_path = pathlib.Path("/tmp/release-notes.md")
     output_path.write_text(notes, encoding="utf-8")

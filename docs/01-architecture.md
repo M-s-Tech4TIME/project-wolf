@@ -16,20 +16,20 @@ boundary with its neighbors.
 +-----------------------------------------------------------+
 |  User & Identity layer                                    |
 |  - Authentication (SSO / OIDC), users, roles               |
-|  - Tenant binding: a session is bound to one tenant        |
+|  - Organization binding: a session is bound to one organization        |
 +-----------------------------------------------------------+
                           |
 +-----------------------------------------------------------+
 |  Tenancy layer                                             |
-|  - Tenant registry: connection profiles, scoped creds      |
-|  - Establishes the immutable tenant context per request    |
+|  - Organization registry: connection profiles, scoped creds      |
+|  - Establishes the immutable organization context per request    |
 +-----------------------------------------------------------+
                           |
 +-----------------------------------------------------------+
 |  Agent Orchestrator (the core service)                     |
 |  - Runs the agent loop: plan -> call tools -> observe       |
 |  - Owns the tool catalog and capability-tier dispatch       |
-|  - Injects tenant context into every tool call             |
+|  - Injects organization context into every tool call             |
 |  - Talks to the LLM via the Model Abstraction layer         |
 +-----------------------------------------------------------+
         |                    |                    |
@@ -66,28 +66,28 @@ boundary with its neighbors.
 
 Authenticates users (prefer OIDC / SSO; support local accounts for self-hosted
 simplicity). Each user has one or more **roles** and is bound to one or more
-**tenants**. A session, once established, is bound to exactly one active tenant. The
-AI never selects the tenant — see `05-multi-tenancy.md`.
+**organizations**. A session, once established, is bound to exactly one active organization. The
+AI never selects the organization — see `05-multi-organization.md`.
 
 In the Next.js 16 frontend, the **network-boundary entry point is `proxy.ts`**
 (the successor to `middleware.ts`), which runs before every request. This is
 where session validity is checked, the user identity is resolved, and the
-tenant context is bound to the request before any page, Server Action, or
-internal API route executes. Tenant context flows from `proxy.ts` outward; no
+organization context is bound to the request before any page, Server Action, or
+internal API route executes. Organization context flows from `proxy.ts` outward; no
 downstream code is permitted to derive tenancy from anywhere else.
 
 ### Tenancy layer
 
-Holds the **tenant registry**. Each tenant record contains:
+Holds the **organization registry**. Each organization record contains:
 
-- A connection profile to that tenant's Wazuh Indexer (OpenSearch endpoint).
-- A connection profile to that tenant's Wazuh Server API.
+- A connection profile to that organization's Wazuh Indexer (OpenSearch endpoint).
+- A connection profile to that organization's Wazuh Server API.
 - **Scoped credentials** for both, stored in a secrets manager, never in plaintext
   config.
-- The tenant's RAG partition identifier.
-- The tenant's policy settings (approval levels, auto-execute opt-ins, rate limits).
+- The organization's RAG partition identifier.
+- The organization's policy settings (approval levels, auto-execute opt-ins, rate limits).
 
-It produces the **immutable tenant context** that is stamped onto every request and
+It produces the **immutable organization context** that is stamped onto every request and
 carried, unmodifiable, through every downstream layer.
 
 ### Agent Orchestrator
@@ -95,13 +95,13 @@ carried, unmodifiable, through every downstream layer.
 The core service and the "brain wiring." It does **not** contain intelligence — the
 LLM does — but it controls everything around the LLM:
 
-- Receives an analyst request with its tenant context.
+- Receives an analyst request with its organization context.
 - Runs the **agent loop**: send state to the model, receive a tool call or an
   answer, dispatch the tool call, feed the result back, repeat until done.
 - Owns the **tool catalog** and enforces **capability-tier dispatch** (read tools
   auto-run; propose tools emit a proposal; execute tools are not reachable by the
   model at all — see `03`).
-- Injects tenant context into every tool call. The model's output is untrusted for
+- Injects organization context into every tool call. The model's output is untrusted for
   tenancy.
 - Holds **all conversation and investigation state**. The LLM is stateless; the
   orchestrator is the memory.
@@ -149,13 +149,13 @@ everything. Fully detailed in `04`.
 ### Knowledge / RAG layer
 
 Splits knowledge into **live state** (fetched fresh through read tools, never
-cached) and **stable knowledge** (Wazuh docs, ATT&CK, the tenant's runbooks and past
+cached) and **stable knowledge** (Wazuh docs, ATT&CK, the organization's runbooks and past
 incidents — retrieved through a partitioned vector store). Fully detailed in `06`.
 
 ### Audit & Provenance layer
 
 Cross-cutting. Every model call, tool call, proposal, state transition, approval,
-and execution is written here as an immutable, tenant-tagged record. The audit store
+and execution is written here as an immutable, organization-tagged record. The audit store
 is append-only and outside the write reach of the agent and the gateway, so nothing
 in the system can rewrite its own history.
 
@@ -180,12 +180,12 @@ separate audit categories pays off across the whole system.
 ### Journey A — an investigation (read-only, ~90% of usage)
 
 1. Analyst asks: "Why did agent web-07 trigger a brute-force alert at 02:00?"
-2. Orchestrator stamps the tenant context, starts the agent loop.
+2. Orchestrator stamps the organization context, starts the agent loop.
 3. The model plans and calls read tools: `search_alerts`, `get_event_timeline`,
    `get_agent_status`, `get_rule_definition`.
-4. The orchestrator dispatches each, injecting tenant context, enforcing resource
+4. The orchestrator dispatches each, injecting organization context, enforcing resource
    guardrails, returning results to the model.
-5. The model calls `query_runbook` (RAG) for relevant docs and the tenant's
+5. The model calls `query_runbook` (RAG) for relevant docs and the organization's
    procedures.
 6. The model composes an evidence-grounded answer; every claim cites a tool result
    or a retrieved chunk.
@@ -216,9 +216,9 @@ Wolf is containerized and self-hostable end to end. A reference deployment:
 
 - The Orchestrator service (stateless app tier, horizontally scalable).
 - The Approval Gateway service (separate service, separate credentials).
-- A relational database for tenants, users, proposals, cases, audit.
+- A relational database for organizations, users, proposals, cases, audit.
 - A vector store for the RAG layer.
-- A secrets manager for per-tenant credentials.
+- A secrets manager for per-organization credentials.
 - An optional bundled model runtime (Ollama) for fully-free, fully-local operation.
 
 All components must be runnable on a single machine for a small single-org

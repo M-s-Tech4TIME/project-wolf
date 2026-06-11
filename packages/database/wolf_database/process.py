@@ -90,11 +90,16 @@ def run_initdb(
 
     cmd = [
         str(binaries.initdb),
-        "--pgdata", str(layout.data_dir),
-        "--auth-host", "scram-sha-256",
-        "--auth-local", "peer",
-        "--encoding", "UTF8",
-        "--locale", "C.UTF-8",
+        "--pgdata",
+        str(layout.data_dir),
+        "--auth-host",
+        "scram-sha-256",
+        "--auth-local",
+        "peer",
+        "--encoding",
+        "UTF8",
+        "--locale",
+        "C.UTF-8",
         # initdb defaults the cluster superuser to the OS user
         # running it. That's exactly what we want for dev (operator
         # IS the superuser via local socket). Production's systemd
@@ -104,8 +109,7 @@ def run_initdb(
     result = subprocess.run(cmd, check=False)  # noqa: S603
     if result.returncode != 0:
         raise WolfDatabaseError(
-            f"`initdb` failed with exit {result.returncode}. "
-            "See output above.",
+            f"`initdb` failed with exit {result.returncode}. See output above.",
         )
 
 
@@ -131,8 +135,10 @@ def _pg_ctl(
     cmd = [
         str(binaries.pg_ctl),
         subcommand,
-        "-D", str(layout.data_dir),
-        "-o", f"--config-file={layout.postgresql_conf_path}",
+        "-D",
+        str(layout.data_dir),
+        "-o",
+        f"--config-file={layout.postgresql_conf_path}",
     ]
     cmd.extend(extra_args)
     return subprocess.run(cmd, check=check)  # noqa: S603
@@ -246,11 +252,16 @@ def run_psql_command(
     """
     cmd = [
         str(binaries.psql),
-        "-h", str(layout.socket_dir),
-        "-p", str(port),
-        "-d", dbname,
-        "-v", "ON_ERROR_STOP=1",
-        "-c", sql,
+        "-h",
+        str(layout.socket_dir),
+        "-p",
+        str(port),
+        "-d",
+        dbname,
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-c",
+        sql,
     ]
     if user is not None:
         cmd.extend(["-U", user])
@@ -277,14 +288,21 @@ def is_pgvector_installed(
     """
     cmd = [
         str(binaries.psql),
-        "-h", str(layout.socket_dir),
-        "-p", str(port),
-        "-d", "postgres",
+        "-h",
+        str(layout.socket_dir),
+        "-p",
+        str(port),
+        "-d",
+        "postgres",
         "-tA",  # tuples-only, unaligned — clean output for parsing
-        "-c", "SELECT 1 FROM pg_available_extensions WHERE name = 'vector';",
+        "-c",
+        "SELECT 1 FROM pg_available_extensions WHERE name = 'vector';",
     ]
     result = subprocess.run(  # noqa: S603
-        cmd, capture_output=True, text=True, check=False,
+        cmd,
+        capture_output=True,
+        text=True,
+        check=False,
     )
     if result.returncode != 0:
         return False
@@ -304,5 +322,3 @@ def data_dir_is_initialized(layout: DatabaseLayout) -> bool:
     when running).
     """
     return (layout.data_dir / "PG_VERSION").is_file()
-
-

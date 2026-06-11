@@ -2,16 +2,16 @@
 
 Slice-1 scope: ~10 hand-written chunks covering one Wazuh rule (5710 — SSH
 brute force) and one ATT&CK technique (T1110 — Brute Force) plus a couple
-of tenant-private runbook chunks. Just enough to exercise the full vertical
+of organization-private runbook chunks. Just enough to exercise the full vertical
 (chat → query_runbook → vector retrieval → cited answer) and to give the
-cross-tenant isolation test real content to discriminate on.
+cross-organization isolation test real content to discriminate on.
 
 Slice-3 replaces this with real scrapers in tools/seed_knowledge.
 
 Usage:
     set -a && source .env && set +a
     cd services/server
-    uv run python -m wolf_server.management.seed_dev_knowledge --tenant-slug acme
+    uv run python -m wolf_server.management.seed_dev_knowledge --organization-slug acme
 
 Idempotent only in the trivial sense: re-running inserts a fresh copy of
 every seed chunk. To reset, delete the rows and re-run. (A real seed CLI
@@ -31,12 +31,12 @@ from wolf_server.config import get_settings
 from wolf_server.database import db_session
 from wolf_server.knowledge.embeddings import make_embedding_provider
 from wolf_server.knowledge.store import ChunkInput, PgvectorKnowledgeStore
-from wolf_server.tenancy.models import Tenant
+from wolf_server.organization.models import Organization
 
 logger = structlog.get_logger(__name__)
 
 
-# Shared corpora (visible to every tenant) — tenant_id=None.
+# Shared corpora (visible to every organization) — organization_id=None.
 SHARED_CHUNKS: list[tuple[str, dict[str, object], str]] = [
     (
         "wazuh_doc",
@@ -99,24 +99,24 @@ SHARED_CHUNKS: list[tuple[str, dict[str, object], str]] = [
 ]
 
 
-# Tenant-private chunks — these are seeded under the named tenant only.
-# The cross-tenant isolation test seeds the other tenant with different
+# Organization-private chunks — these are seeded under the named organization only.
+# The cross-organization isolation test seeds the other organization with different
 # content so a leak is observable.
-def runbook_chunks_for(tenant_slug: str) -> list[tuple[str, dict[str, object], str]]:
+def runbook_chunks_for(organization_slug: str) -> list[tuple[str, dict[str, object], str]]:
     return [
         (
             "runbook",
             {
                 "rule_id": "5712",
-                "title": f"{tenant_slug.upper()} SOC — SSH brute-force response",
+                "title": f"{organization_slug.upper()} SOC — SSH brute-force response",
             },
-            f"[{tenant_slug.upper()} SOC] SSH brute-force runbook (rule 5712):\n"
+            f"[{organization_slug.upper()} SOC] SSH brute-force runbook (rule 5712):\n"
             "1. Confirm the agent is reachable via list_agents.\n"
             "2. Use get_event_timeline to gather all 5710/5712 events "
             "from the source IP in the last hour.\n"
             "3. If the source IP is external and non-business: block at "
             f"the perimeter firewall (escalate to network ops for "
-            f"{tenant_slug.upper()}).\n"
+            f"{organization_slug.upper()}).\n"
             "4. If the source IP is internal: open a P2 ticket and "
             "investigate which host is initiating the connections.\n"
             "5. Never auto-disable_account on rule 5712 alone — too many "
@@ -126,9 +126,9 @@ def runbook_chunks_for(tenant_slug: str) -> list[tuple[str, dict[str, object], s
             "runbook",
             {
                 "technique": "T1110",
-                "title": f"{tenant_slug.upper()} SOC — Brute-force triage",
+                "title": f"{organization_slug.upper()} SOC — Brute-force triage",
             },
-            f"[{tenant_slug.upper()} SOC] T1110 triage guidance: prioritize "
+            f"[{organization_slug.upper()} SOC] T1110 triage guidance: prioritize "
             "by source-IP reputation, target account sensitivity, and "
             "presence of subsequent T1078 (Valid Accounts) signals on the "
             "same agent. A successful brute force followed by lateral "
@@ -137,8 +137,8 @@ def runbook_chunks_for(tenant_slug: str) -> list[tuple[str, dict[str, object], s
         ),
         (
             "past_incident",
-            {"title": f"INC-2026-0042 — {tenant_slug.upper()} SSH sweep"},
-            f"[{tenant_slug.upper()} past incident INC-2026-0042, "
+            {"title": f"INC-2026-0042 — {organization_slug.upper()} SSH sweep"},
+            f"[{organization_slug.upper()} past incident INC-2026-0042, "
             "2026-04-12]: external IP 198.51.100.42 ran SSH brute force "
             "against jump-host bastion-03 for 2 hours, triggering 47 "
             "instances of rule 5712. No accounts were compromised "
@@ -154,9 +154,9 @@ async def main() -> int:
         description="Seed Wolf's knowledge corpora with a tiny dev set."
     )
     parser.add_argument(
-        "--tenant-slug",
+        "--organization-slug",
         required=True,
-        help="Slug of the tenant whose private corpus will receive the runbook chunks.",
+        help="Slug of the organization whose private corpus will receive the runbook chunks.",
     )
     args = parser.parse_args()
 
@@ -173,45 +173,43 @@ async def main() -> int:
     embedder = make_embedding_provider(settings)
 
     async with db_session() as session:
-        tenant_q = await session.execute(
-            select(Tenant).where(Tenant.slug == args.tenant_slug)
+        organization_q = await session.execute(
+            select(Organization).where(Organization.slug == args.organization_slug)
         )
-        tenant = tenant_q.scalar_one_or_none()
-        if tenant is None:
+        organization = organization_q.scalar_one_or_none()
+        if organization is None:
             sys.stderr.write(
-                f"ERROR: No tenant with slug={args.tenant_slug!r}. "
+                f"ERROR: No organization with slug={args.organization_slug!r}. "
                 f"Bootstrap one first.\n"
             )
             return 3
 
         store = PgvectorKnowledgeStore(session, embedder)
-        # Shared corpora — tenant_id=None.
+        # Shared corpora — organization_id=None.
         shared_inputs = [
             ChunkInput(
                 content=content,
                 source_type=source_type,
-                tenant_id=None,
+                organization_id=None,
                 chunk_metadata=metadata,
             )
             for source_type, metadata, content in SHARED_CHUNKS
         ]
-        # Tenant-private corpora — tenant_id set.
+        # Organization-private corpora — organization_id set.
         private_inputs = [
             ChunkInput(
                 content=content,
                 source_type=source_type,
-                tenant_id=tenant.id,
+                organization_id=organization.id,
                 chunk_metadata=metadata,
             )
-            for source_type, metadata, content in runbook_chunks_for(
-                args.tenant_slug
-            )
+            for source_type, metadata, content in runbook_chunks_for(args.organization_slug)
         ]
         all_inputs = shared_inputs + private_inputs
         ids = await store.upsert(all_inputs)
         result = {
-            "tenant_slug": args.tenant_slug,
-            "tenant_id": str(tenant.id),
+            "organization_slug": args.organization_slug,
+            "organization_id": str(organization.id),
             "shared_chunks_added": len(shared_inputs),
             "private_chunks_added": len(private_inputs),
             "chunk_ids": [str(i) for i in ids],

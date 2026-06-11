@@ -5,10 +5,10 @@ query content." Source type and entity filters (rule_id, technique) are
 proper Pydantic fields the agent must populate explicitly; this keeps
 retrieval deterministic and lets the agent narrow precisely.
 
-Tenant scoping is enforced inside the KnowledgeStore — this tool passes
-the tenant_id from the immutable TenantContext and never lets the model
-override it (the dispatcher's sanitize_tenant_id_from_args strips any
-model-supplied tenant_id before this code runs).
+Organization scoping is enforced inside the KnowledgeStore — this tool passes
+the organization_id from the immutable OrganizationContext and never lets the model
+override it (the dispatcher's sanitize_organization_id_from_args strips any
+model-supplied organization_id before this code runs).
 """
 
 from typing import Any
@@ -25,7 +25,7 @@ class QueryRunbookInput(BaseModel):
     query: str = Field(
         description=(
             "Natural-language question to embed and search against the "
-            "knowledge corpora (Wazuh docs, ATT&CK, tenant runbooks)."
+            "knowledge corpora (Wazuh docs, ATT&CK, organization runbooks)."
         ),
         min_length=1,
     )
@@ -34,7 +34,7 @@ class QueryRunbookInput(BaseModel):
         description=(
             "Optional filter: restrict to specific corpora. Allowed values: "
             "'wazuh_doc', 'attack', 'runbook', 'past_incident'. Omit to "
-            "search every corpus the tenant can see."
+            "search every corpus the organization can see."
         ),
     )
     rule_id: int | None = Field(
@@ -109,9 +109,9 @@ class QueryRunbookTool(ReadTool):
     name = "query_runbook"
     description = (
         "Retrieve relevant stable-knowledge chunks (Wazuh docs, ATT&CK "
-        "techniques, tenant runbooks and past-incident write-ups) for a "
+        "techniques, organization runbooks and past-incident write-ups) for a "
         "question. Use this for product-knowledge or procedural questions "
-        "(\"what does rule X do\", \"how do we respond to brute force\"). "
+        '("what does rule X do", "how do we respond to brute force"). '
         "Do NOT use this for live state — for current alerts or agent "
         "status, use the dedicated Wazuh read tools."
     )
@@ -131,13 +131,10 @@ class QueryRunbookTool(ReadTool):
         # Validate source_types up-front so the agent gets a useful Pydantic
         # error rather than a 500 from the store layer.
         if args.source_types:
-            unknown = [
-                st for st in args.source_types if st not in ALL_SOURCE_TYPES
-            ]
+            unknown = [st for st in args.source_types if st not in ALL_SOURCE_TYPES]
             if unknown:
                 raise ValueError(
-                    f"Unknown source_type(s): {unknown}; allowed: "
-                    f"{sorted(ALL_SOURCE_TYPES)}"
+                    f"Unknown source_type(s): {unknown}; allowed: {sorted(ALL_SOURCE_TYPES)}"
                 )
 
         metadata_filters: dict[str, Any] = {}
@@ -147,7 +144,7 @@ class QueryRunbookTool(ReadTool):
             metadata_filters["technique"] = args.technique
 
         retrieved = await exec_ctx.knowledge_store.search(
-            tenant_id=exec_ctx.tenant.tenant_id,
+            organization_id=exec_ctx.organization.organization_id,
             query_text=args.query,
             source_types=args.source_types,
             metadata_filters=metadata_filters or None,

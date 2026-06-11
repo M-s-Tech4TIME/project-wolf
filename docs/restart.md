@@ -172,10 +172,10 @@ These keep running and rarely need a reset:
 
 ## Test credentials
 
-Two pre-seeded tenant admins (dev only — see `docs/CHANGELOG.md` for
+Two pre-seeded organization admins (dev only — see `docs/CHANGELOG.md` for
 provenance):
 
-| Tenant | Email | Password |
+| Organization | Email | Password |
 |---|---|---|
 | Acme SecOps | `admin@example.com` | `wolf_admin_dev_password` |
 | Beta InfoSec | `beta-admin@example.com` | `beta_admin_dev_password` |
@@ -236,7 +236,7 @@ The full per-slice cycle (referenced from
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | `login HTTP 502` / connection refused | wolf-server hasn't finished starting | Wait 5 s and retry (the `--retry` flags in the curl command above handle this for the first 60 s). |
-| `login HTTP 401` | DB user gone, password reset, or wrong creds | Verify `admin@example.com` exists in `users`; re-run `bootstrap_tenant` if needed. |
+| `login HTTP 401` | DB user gone, password reset, or wrong creds | Verify `admin@example.com` exists in `users`; re-run `bootstrap_organization` if needed. |
 | `login HTTP 500` | Backend exception | `tail -50 /tmp/wolf-server.log` — usually a DB or secrets-backend misconfiguration. |
 | `ollama ps` shows a model stuck `Stopping…` | Daemon mid-shutdown | Wait or `ollama stop <model>` again; if persistent, `systemctl restart ollama`. |
 | Port 7860 already bound after `pkill` | A child process survived | `lsof -i :7860` to find PID, `kill <pid>`. |

@@ -157,9 +157,7 @@ class AnthropicAdapter:
         if system_text:
             payload["system"] = system_text
         if request.tools:
-            payload["tools"] = [
-                _canonical_to_anthropic_tool(t) for t in request.tools
-            ]
+            payload["tools"] = [_canonical_to_anthropic_tool(t) for t in request.tools]
 
         response = await self._client.post("/v1/messages", json=payload)
         response.raise_for_status()

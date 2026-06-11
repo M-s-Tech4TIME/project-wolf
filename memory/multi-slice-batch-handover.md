@@ -18,7 +18,7 @@ you think that any feedback that has been fully served then you can
 hand it over to me for a test."*
 
 **How to apply:**
-  - Run the full integrity gate (backend suite + cross-tenant gate +
+  - Run the full integrity gate (backend suite + cross-organization gate +
     ruff + mypy strict on CI-scoped + frontend tsc + eslint + restart +
     Claude self-validate) at the end of every slice. Non-negotiable.
   - Commit per slice. The git history stays granular even when

@@ -5,12 +5,12 @@ for the login."
 
 Tests here verify:
   1. A valid login returns HTTP 200 and sets the session cookie.
-  2. A login audit event is written with the correct type and tenant.
+  2. A login audit event is written with the correct type and organization.
   3. A failed login returns HTTP 401 and writes a failure audit event.
   4. Logout clears the cookie.
   5. The /healthz endpoint is publicly reachable.
   6. Authenticated requests to protected routes work.
-  7. A wrong-tenant request is rejected (cross-tenant check).
+  7. A wrong-organization request is rejected (cross-organization check).
 """
 
 import uuid
@@ -35,20 +35,20 @@ async def test_healthz(client: AsyncClient) -> None:
 
 async def test_login_success_sets_cookie(
     client: AsyncClient,
-    seed_tenant_and_user: dict[str, Any],
+    seed_organization_and_user: dict[str, Any],
 ) -> None:
     """Successful login returns 200 and sets the wolf_access_token cookie."""
     resp = await client.post(
         "/api/v1/auth/login",
         json={
-            "email": seed_tenant_and_user["user_email"],
+            "email": seed_organization_and_user["user_email"],
             "password": "password123",
-            "tenant_id": str(seed_tenant_and_user["tenant_id"]),
+            "organization_id": str(seed_organization_and_user["organization_id"]),
         },
     )
     assert resp.status_code == 200
     data = resp.json()
-    assert data["email"] == seed_tenant_and_user["user_email"]
+    assert data["email"] == seed_organization_and_user["user_email"]
     assert data["role"] == "analyst"
     assert "wolf_access_token" in resp.cookies
 
@@ -56,42 +56,42 @@ async def test_login_success_sets_cookie(
 async def test_login_success_writes_audit_event(
     client: AsyncClient,
     db: AsyncSession,
-    seed_tenant_and_user: dict[str, Any],
+    seed_organization_and_user: dict[str, Any],
 ) -> None:
     """Phase 0 exit criterion: login writes an auth.login.success audit event."""
     await client.post(
         "/api/v1/auth/login",
         json={
-            "email": seed_tenant_and_user["user_email"],
+            "email": seed_organization_and_user["user_email"],
             "password": "password123",
-            "tenant_id": str(seed_tenant_and_user["tenant_id"]),
+            "organization_id": str(seed_organization_and_user["organization_id"]),
         },
     )
 
     result = await db.execute(
         select(AuditEvent)
         .where(AuditEvent.event_type == "auth.login.success")
-        .where(AuditEvent.tenant_id == seed_tenant_and_user["tenant_id"])
+        .where(AuditEvent.organization_id == seed_organization_and_user["organization_id"])
     )
     event = result.scalar_one_or_none()
 
     assert event is not None, "Login audit event was not written"
-    assert event.tenant_id == seed_tenant_and_user["tenant_id"]
-    assert event.user_id == seed_tenant_and_user["user_id"]
+    assert event.organization_id == seed_organization_and_user["organization_id"]
+    assert event.user_id == seed_organization_and_user["user_id"]
     assert event.event_data is not None
     assert event.event_data.get("method") == "local"
 
 
 async def test_login_wrong_password_returns_401(
     client: AsyncClient,
-    seed_tenant_and_user: dict[str, Any],
+    seed_organization_and_user: dict[str, Any],
 ) -> None:
     resp = await client.post(
         "/api/v1/auth/login",
         json={
-            "email": seed_tenant_and_user["user_email"],
+            "email": seed_organization_and_user["user_email"],
             "password": "wrong-password",
-            "tenant_id": str(seed_tenant_and_user["tenant_id"]),
+            "organization_id": str(seed_organization_and_user["organization_id"]),
         },
     )
     assert resp.status_code == 401
@@ -100,21 +100,21 @@ async def test_login_wrong_password_returns_401(
 async def test_login_wrong_password_writes_failure_audit(
     client: AsyncClient,
     db: AsyncSession,
-    seed_tenant_and_user: dict[str, Any],
+    seed_organization_and_user: dict[str, Any],
 ) -> None:
     await client.post(
         "/api/v1/auth/login",
         json={
-            "email": seed_tenant_and_user["user_email"],
+            "email": seed_organization_and_user["user_email"],
             "password": "wrong-password",
-            "tenant_id": str(seed_tenant_and_user["tenant_id"]),
+            "organization_id": str(seed_organization_and_user["organization_id"]),
         },
     )
 
     result = await db.execute(
         select(AuditEvent)
         .where(AuditEvent.event_type == "auth.login.failure")
-        .where(AuditEvent.user_id == seed_tenant_and_user["user_id"])
+        .where(AuditEvent.user_id == seed_organization_and_user["user_id"])
     )
     event = result.scalar_one_or_none()
     assert event is not None, "Login failure audit event was not written"
@@ -132,18 +132,18 @@ async def test_login_unknown_email_returns_401(
     assert resp.status_code == 401
 
 
-async def test_login_wrong_tenant_rejected(
+async def test_login_wrong_organization_rejected(
     client: AsyncClient,
-    seed_tenant_and_user: dict[str, Any],
+    seed_organization_and_user: dict[str, Any],
 ) -> None:
-    """User cannot log into a tenant they are not a member of."""
-    other_tenant_id = str(uuid.uuid4())
+    """User cannot log into a organization they are not a member of."""
+    other_organization_id = str(uuid.uuid4())
     resp = await client.post(
         "/api/v1/auth/login",
         json={
-            "email": seed_tenant_and_user["user_email"],
+            "email": seed_organization_and_user["user_email"],
             "password": "password123",
-            "tenant_id": other_tenant_id,
+            "organization_id": other_organization_id,
         },
     )
     assert resp.status_code == 403
@@ -154,15 +154,15 @@ async def test_login_wrong_tenant_rejected(
 
 async def test_logout_clears_cookie(
     client: AsyncClient,
-    seed_tenant_and_user: dict[str, Any],
+    seed_organization_and_user: dict[str, Any],
 ) -> None:
     # Log in first.
     login_resp = await client.post(
         "/api/v1/auth/login",
         json={
-            "email": seed_tenant_and_user["user_email"],
+            "email": seed_organization_and_user["user_email"],
             "password": "password123",
-            "tenant_id": str(seed_tenant_and_user["tenant_id"]),
+            "organization_id": str(seed_organization_and_user["organization_id"]),
         },
     )
     assert login_resp.status_code == 200

@@ -1,7 +1,7 @@
 """Auth middleware — validates JWT from cookie and populates request.state.session.
 
 This middleware runs on every request.  Unauthenticated requests leave
-`request.state.session` empty; the `require_tenant_context` dependency
+`request.state.session` empty; the `require_organization_context` dependency
 then returns HTTP 401.
 
 Cookie name: `wolf_access_token` (HTTP-only, Secure in production, SameSite=Lax).
@@ -52,7 +52,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         request.state.session = {
             "user_id": payload.get("sub"),
-            "tenant_id": payload.get("tenant_id"),
+            "organization_id": payload.get("organization_id"),
             "role": payload.get("role"),
             "session_id": payload.get("session_id"),
         }

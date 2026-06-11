@@ -10,9 +10,9 @@ Usage:
 
 Idempotency: by default the CLI keeps existing chunks and skips any whose
 SHA-256(content) is already in the DB. `--replace-shared` first deletes
-every shared-corpus chunk (tenant_id IS NULL) before re-ingesting — the
+every shared-corpus chunk (organization_id IS NULL) before re-ingesting — the
 right choice when the source has materially changed (a new ATT&CK
-version, a new Wazuh release). Tenant-private chunks are never touched.
+version, a new Wazuh release). Organization-private chunks are never touched.
 """
 
 # ruff: noqa: T201
@@ -44,20 +44,20 @@ async def _existing_shared_hashes() -> set[str]:
     """All SHA-256(content) of currently-indexed SHARED chunks.
 
     Idempotency leans on this: if a hash is already in the table, skip
-    the new chunk. Tenant-private chunks are excluded from the scan
-    because they're owned by the tenant lifecycle, not this CLI.
+    the new chunk. Organization-private chunks are excluded from the scan
+    because they're owned by the organization lifecycle, not this CLI.
     """
     async with db_session() as session:
-        stmt = select(KnowledgeChunk.content).where(KnowledgeChunk.tenant_id.is_(None))
+        stmt = select(KnowledgeChunk.content).where(KnowledgeChunk.organization_id.is_(None))
         rows = await session.execute(stmt)
         return {_content_hash(content) for (content,) in rows.all()}
 
 
 async def _replace_shared() -> int:
-    """Delete every shared (tenant_id IS NULL) chunk. Returns row count."""
+    """Delete every shared (organization_id IS NULL) chunk. Returns row count."""
     async with db_session() as session:
         result = await session.execute(
-            delete(KnowledgeChunk).where(KnowledgeChunk.tenant_id.is_(None))
+            delete(KnowledgeChunk).where(KnowledgeChunk.organization_id.is_(None))
         )
         await session.commit()
         return result.rowcount or 0
@@ -115,7 +115,7 @@ async def main() -> int:
         "--replace-shared",
         action="store_true",
         help=(
-            "Delete every shared (tenant_id IS NULL) chunk first. Required "
+            "Delete every shared (organization_id IS NULL) chunk first. Required "
             "after a corpus version bump; otherwise re-running just appends "
             "new content via the content-hash idempotency check."
         ),

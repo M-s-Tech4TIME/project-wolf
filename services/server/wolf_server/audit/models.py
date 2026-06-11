@@ -44,8 +44,8 @@ class AuditEvent(Base):
 
     __tablename__ = "audit_events"
     __table_args__ = (
-        # Fast lookup by tenant + time (most common query pattern)
-        Index("ix_audit_events_tenant_created", "tenant_id", "created_at"),
+        # Fast lookup by organization + time (most common query pattern)
+        Index("ix_audit_events_organization_created", "organization_id", "created_at"),
         # Fast lookup by user
         Index("ix_audit_events_user", "user_id"),
         # Fast lookup by event type (useful for security monitoring)
@@ -53,9 +53,9 @@ class AuditEvent(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=_uuid)
-    # tenant_id is nullable to allow system-level events (startup, health checks).
-    # Any event touching tenant data MUST have tenant_id set.
-    tenant_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
+    # organization_id is nullable to allow system-level events (startup, health checks).
+    # Any event touching organization data MUST have organization_id set.
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
     # user_id is nullable for system-initiated events.
     user_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
     # Dotted event type, e.g. "auth.login.success", "auth.login.failure", "tool.call.read"
@@ -77,5 +77,5 @@ class AuditEvent(Base):
     def __repr__(self) -> str:
         return (
             f"<AuditEvent id={self.id} type={self.event_type!r} "
-            f"tenant={self.tenant_id} at={self.created_at}>"
+            f"organization={self.organization_id} at={self.created_at}>"
         )

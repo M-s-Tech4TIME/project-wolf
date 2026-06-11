@@ -26,7 +26,7 @@ from wolf_server.config import get_settings
 # / index names that our hand-written migrations already use. Without
 # this, `alembic check` reports false-positive drift on every named
 # constraint (model has unnamed UniqueConstraint, migration has
-# "uq_tenants_slug" — both produce the same DB outcome but autogenerate
+# "uq_organizations_slug" — both produce the same DB outcome but autogenerate
 # sees them as different). Standard alembic recommendation.
 NAMING_CONVENTION: dict[str, str] = {
     "ix": "ix_%(column_0_label)s",

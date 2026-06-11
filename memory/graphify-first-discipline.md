@@ -20,7 +20,7 @@ When the question is "How does X work?", "What calls Y?", "Trace Z through the c
 
 For cross-session catch-up at session start:
 - Read `graphify-out/GRAPH_REPORT.md` for god nodes + community structure + hyperedges. Faster than re-reading 53 planning docs.
-- The graph's god nodes are the load-bearing abstractions: `TenantContext`, `NativeToolCalling`, `WolfError`, `Citation`, `Message`, `ToolExecContext`, `AgentStrategy`, etc.
+- The graph's god nodes are the load-bearing abstractions: `OrganizationContext`, `NativeToolCalling`, `WolfError`, `Citation`, `Message`, `ToolExecContext`, `AgentStrategy`, etc.
 
 For drift detection (pairs with [[periodic-plan-sync]]):
 - Compare graph communities + hyperedges against `docs/10-build-roadmap.md` + `docs/17-release-engineering.md` after major slices.

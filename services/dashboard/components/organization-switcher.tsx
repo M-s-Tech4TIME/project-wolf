@@ -16,20 +16,20 @@ import {
 import { logout } from "@/lib/api";
 
 /**
- * Tenant switcher.  The JWT cookie pins tenant at login time, so switching
- * tenants requires a re-login.  Selecting a different tenant signs out,
- * then sends the user to /login with the desired tenant prefilled.
+ * Organization switcher.  The JWT cookie pins organization at login time, so switching
+ * organizations requires a re-login.  Selecting a different organization signs out,
+ * then sends the user to /login with the desired organization prefilled.
  */
-export function TenantSwitcher() {
-  const { me, tenants, refresh } = useAuth();
+export function OrganizationSwitcher() {
+  const { me, organizations, refresh } = useAuth();
   const router = useRouter();
-  const current = tenants.find((t) => t.id === me?.tenant_id);
+  const current = organizations.find((t) => t.id === me?.organization_id);
 
-  const handleSwitch = async (tenantId: string) => {
-    if (tenantId === me?.tenant_id) return;
+  const handleSwitch = async (organizationId: string) => {
+    if (organizationId === me?.organization_id) return;
     await logout();
     await refresh();
-    router.push(`/login?tenant=${tenantId}`);
+    router.push(`/login?organization=${organizationId}`);
   };
 
   return (
@@ -39,19 +39,19 @@ export function TenantSwitcher() {
           <span className="flex items-center gap-2 truncate">
             <Building2 className="h-4 w-4" />
             <span className="truncate">
-              {current?.name ?? "Select tenant"}
+              {current?.name ?? "Select organization"}
             </span>
           </span>
           <ChevronsUpDown className="h-4 w-4 opacity-60" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-72">
-        <DropdownMenuLabel>Your tenants</DropdownMenuLabel>
+        <DropdownMenuLabel>Your organizations</DropdownMenuLabel>
         <DropdownMenuSeparator />
-        {tenants.length === 0 ? (
+        {organizations.length === 0 ? (
           <DropdownMenuItem disabled>(no memberships)</DropdownMenuItem>
         ) : (
-          tenants.map((t) => (
+          organizations.map((t) => (
             <DropdownMenuItem
               key={t.id}
               onSelect={() => void handleSwitch(t.id)}
@@ -59,7 +59,7 @@ export function TenantSwitcher() {
             >
               <div className="flex w-full items-center justify-between">
                 <span className="font-medium">{t.name}</span>
-                {t.id === me?.tenant_id ? (
+                {t.id === me?.organization_id ? (
                   <Check className="h-4 w-4 text-primary" />
                 ) : null}
               </div>

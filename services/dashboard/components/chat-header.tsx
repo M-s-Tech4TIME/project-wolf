@@ -3,7 +3,7 @@
 import { Cog, Settings as SettingsIcon, ShieldCheck, Sliders, UserCircle } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
-import { TenantSwitcher } from "@/components/tenant-switcher";
+import { OrganizationSwitcher } from "@/components/organization-switcher";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -21,12 +21,12 @@ import { Input } from "@/components/ui/input";
  *   middle — Active conversation title (Slice 5.0c-g). Click to rename
  *            (Slice 5.0c-i). Empty when no conversation is selected
  *            (the greeting screen is showing).
- *   right  — Tenant switcher · Settings gear (placeholder menu for the
+ *   right  — Organization switcher · Settings gear (placeholder menu for the
  *            future User Settings + Wolf Configuration panels).
  *
  * The signed-in user's identity now lives in the sidebar footer (see
  * `ChatSidebar`) so the header's right side can be reserved for org-wide
- * controls — tenant choice and the configuration surface that will grow
+ * controls — organization choice and the configuration surface that will grow
  * as Wolf gains operator-tunable knobs.
  */
 export function ChatHeader({
@@ -51,12 +51,12 @@ export function ChatHeader({
       {/* Centered title — absolute-positioned so it lines up with the
           window centre regardless of left/right cluster widths. Truncates
           past ~50% of the bar width so it never collides with the
-          tenant switcher on narrow screens. */}
+          organization switcher on narrow screens. */}
       {title ? (
         <HeaderTitle title={title} onRename={onRename} />
       ) : null}
       <div className="flex items-center gap-2">
-        <TenantSwitcher />
+        <OrganizationSwitcher />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button

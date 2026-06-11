@@ -48,18 +48,13 @@ def _canonical_to_ollama_tool(tool: ToolSchema) -> dict[str, Any]:
 def _message_to_ollama(msg: Message) -> dict[str, Any]:
     if msg.role == MessageRole.tool and msg.tool_results:
         result = msg.tool_results[0]
-        content = (
-            result.content
-            if isinstance(result.content, str)
-            else str(result.content)
-        )
+        content = result.content if isinstance(result.content, str) else str(result.content)
         return {"role": "tool", "content": content}
 
     if msg.role == MessageRole.assistant and msg.tool_calls:
         # Ollama expects tool_calls as a list of objects with a "function" key
         calls = [
-            {"function": {"name": tc.name, "arguments": tc.arguments}}
-            for tc in msg.tool_calls
+            {"function": {"name": tc.name, "arguments": tc.arguments}} for tc in msg.tool_calls
         ]
         out: dict[str, Any] = {"role": "assistant", "tool_calls": calls}
         if msg.content:
@@ -164,9 +159,7 @@ class OllamaAdapter:
 
         return _gen()
 
-    async def chat_stream(
-        self, request: ChatRequest
-    ) -> AsyncIterator[ChatStreamEvent]:
+    async def chat_stream(self, request: ChatRequest) -> AsyncIterator[ChatStreamEvent]:
         """Stream a chat completion as token deltas + a final done event.
 
         Uses Ollama's native ``stream: true`` mode. Each newline-delimited
@@ -198,9 +191,7 @@ class OllamaAdapter:
         eval_count = 0
         saw_done = False
 
-        async with self._client.stream(
-            "POST", "/api/chat", json=payload
-        ) as response:
+        async with self._client.stream("POST", "/api/chat", json=payload) as response:
             response.raise_for_status()
             async for line in response.aiter_lines():
                 if not line.strip():

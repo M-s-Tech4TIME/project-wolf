@@ -4,7 +4,7 @@ POST /api/v1/chat          — request-response; returns the final answer
 POST /api/v1/chat/stream   — Server-Sent Events; yields loop events as
                               they happen, ending with the final answer
 
-Both endpoints share the same setup (auth → tenant context → wazuh +
+Both endpoints share the same setup (auth → organization context → wazuh +
 model + strategy → AgentLoop).  The streaming variant additionally hands
 the loop an `event_callback` that pushes each transition onto an
 asyncio.Queue consumed by the SSE response generator.
@@ -28,11 +28,11 @@ from wolf_secrets import SecretsBackend
 from wolf_server.agent import (
     AgentLoop,
     get_grounding_judge_model,
-    get_model_for_tenant,
+    get_model_for_organization,
     strategy_for,
 )
 from wolf_server.agent.events import LoopEvent
-from wolf_server.caching import InMemoryTenantCache, TenantScopedCache
+from wolf_server.caching import InMemoryOrganizationCache, OrganizationScopedCache
 from wolf_server.config import get_settings
 from wolf_server.database import get_db
 from wolf_server.grounding import GroundingValidator
@@ -41,8 +41,8 @@ from wolf_server.knowledge.embeddings import (
     make_embedding_provider_aux,
 )
 from wolf_server.knowledge.store import PgvectorKnowledgeStore
+from wolf_server.organization.context import OrganizationContext, require_organization_context
 from wolf_server.secrets_factory import get_secrets_backend
-from wolf_server.tenancy.context import TenantContext, require_tenant_context
 from wolf_server.tools.base import Citation
 from wolf_server.wazuh.opensearch import WazuhOpenSearchClient
 from wolf_server.wazuh.resolver import get_wazuh_connection
@@ -51,13 +51,13 @@ from wolf_server.wazuh.server_api import WazuhServerApiClient
 logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
 _settings = get_settings()
-# Phase 4 Slice 3 — process-wide tenant-scoped cache.
+# Phase 4 Slice 3 — process-wide organization-scoped cache.
 # Module-level singleton, shared across all requests in this wolf-server
-# process. Tenant-scoped at the key level so two tenants on the same
+# process. Organization-scoped at the key level so two organizations on the same
 # wolf-server cannot collide. Future multi-process wolf-server would swap
-# InMemoryTenantCache for a Redis-backed implementation of the same
+# InMemoryOrganizationCache for a Redis-backed implementation of the same
 # protocol; no other code needs to change.
-_TENANT_CACHE: TenantScopedCache = InMemoryTenantCache()
+_ORGANIZATION_CACHE: OrganizationScopedCache = InMemoryOrganizationCache()
 
 
 class ConversationTurn(BaseModel):
@@ -121,19 +121,19 @@ def _secrets_dep() -> SecretsBackend:
 @router.post("", response_model=ChatResponseBody)
 async def chat(
     body: ChatRequestBody,
-    ctx: Annotated[TenantContext, Depends(require_tenant_context)],
+    ctx: Annotated[OrganizationContext, Depends(require_organization_context)],
     db: Annotated[AsyncSession, Depends(get_db)],
     secrets: Annotated[SecretsBackend, Depends(_secrets_dep)],
 ) -> ChatResponseBody:
     """Run the agent loop and return a grounded, cited answer."""
     logger.info(
         "chat_request_received",
-        tenant_id=str(ctx.tenant_id),
+        organization_id=str(ctx.organization_id),
         user_id=str(ctx.user_id),
         question_chars=len(body.question),
     )
 
-    provider = await get_model_for_tenant(ctx, _settings, secrets)
+    provider = await get_model_for_organization(ctx, _settings, secrets)
     capability = provider.capability()
     strategy = strategy_for(capability)
 
@@ -149,8 +149,8 @@ async def chat(
     grounding_validator = GroundingValidator(judge_provider)
     # Reuse the process-wide cache; lookups inside this request will
     # hit it (e.g. agent_name → agent_id resolution from Phase 3 Slice 3,
-    # now cached per-tenant per Phase 4 Slice 3).
-    cache = _TENANT_CACHE
+    # now cached per-organization per Phase 4 Slice 3).
+    cache = _ORGANIZATION_CACHE
 
     async with (
         WazuhOpenSearchClient(connection) as opensearch,
@@ -200,7 +200,7 @@ def _sse_format(event: LoopEvent) -> str:
 @router.post("/stream")
 async def chat_stream(
     body: ChatRequestBody,
-    ctx: Annotated[TenantContext, Depends(require_tenant_context)],
+    ctx: Annotated[OrganizationContext, Depends(require_organization_context)],
     db: Annotated[AsyncSession, Depends(get_db)],
     secrets: Annotated[SecretsBackend, Depends(_secrets_dep)],
 ) -> StreamingResponse:
@@ -216,12 +216,12 @@ async def chat_stream(
     """
     logger.info(
         "chat_stream_request_received",
-        tenant_id=str(ctx.tenant_id),
+        organization_id=str(ctx.organization_id),
         user_id=str(ctx.user_id),
         question_chars=len(body.question),
     )
 
-    provider = await get_model_for_tenant(ctx, _settings, secrets)
+    provider = await get_model_for_organization(ctx, _settings, secrets)
     capability = provider.capability()
     strategy = strategy_for(capability)
     connection = await get_wazuh_connection(ctx, db, secrets)
@@ -236,8 +236,8 @@ async def chat_stream(
     grounding_validator = GroundingValidator(judge_provider)
     # Reuse the process-wide cache; lookups inside this request will
     # hit it (e.g. agent_name → agent_id resolution from Phase 3 Slice 3,
-    # now cached per-tenant per Phase 4 Slice 3).
-    cache = _TENANT_CACHE
+    # now cached per-organization per Phase 4 Slice 3).
+    cache = _ORGANIZATION_CACHE
 
     queue: asyncio.Queue[LoopEvent | None] = asyncio.Queue()
 

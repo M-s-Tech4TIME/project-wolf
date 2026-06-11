@@ -3,7 +3,7 @@
 The loop is provider- and strategy-agnostic.  It is given:
   - a ModelProvider (any adapter that satisfies the protocol)
   - a Strategy (frontier / guided / pipeline)
-  - the request's TenantContext + DB + resolved Wazuh clients
+  - the request's OrganizationContext + DB + resolved Wazuh clients
 
 It calls the model, dispatches any tool calls through the Phase 2A dispatcher,
 feeds the structured results back, and terminates when the model returns a
@@ -43,7 +43,7 @@ from wolf_server.models.interface import (
     ModelProvider,
 )
 from wolf_server.models.registry import registry as schema_registry
-from wolf_server.tenancy.context import TenantContext
+from wolf_server.organization.context import OrganizationContext
 from wolf_server.tools.base import Citation
 from wolf_server.tools.dispatcher import ToolDispatchResult, dispatch_tool_call
 from wolf_server.wazuh.opensearch import WazuhOpenSearchClient
@@ -133,7 +133,7 @@ class AgentLoop:
         self,
         *,
         question: str,
-        ctx: TenantContext,
+        ctx: OrganizationContext,
         db: AsyncSession,
         opensearch: WazuhOpenSearchClient,
         server_api: WazuhServerApiClient,
@@ -162,9 +162,7 @@ class AgentLoop:
         # re-submits the original question with retry_nudge=True.
         # wolf-dashboard includes the previous Q→A pair in history, so
         # the model has its previous attempt to compare against.
-        effective_question = (
-            f"{question}\n\n{RETRY_NUDGE}" if retry_nudge else question
-        )
+        effective_question = f"{question}\n\n{RETRY_NUDGE}" if retry_nudge else question
         messages.append(Message(role=MessageRole.user, content=effective_question))
         citations: list[Citation] = []
         # Per-call evidence accumulators for the Slice-2B grounding validator.
@@ -184,19 +182,23 @@ class AgentLoop:
         logger.info(
             "agent_loop_started",
             loop_id=loop_id,
-            tenant_id=str(ctx.tenant_id),
+            organization_id=str(ctx.organization_id),
             strategy=self.strategy.name,
             model_id=capability.model_id,
             step_budget=budget,
             tool_catalog_size=len(tools),
         )
-        await _emit(event_callback, "loop.started", {
-            "loop_id": loop_id,
-            "strategy": self.strategy.name,
-            "model_id": capability.model_id,
-            "provider": capability.provider,
-            "step_budget": budget,
-        })
+        await _emit(
+            event_callback,
+            "loop.started",
+            {
+                "loop_id": loop_id,
+                "strategy": self.strategy.name,
+                "model_id": capability.model_id,
+                "provider": capability.provider,
+                "step_budget": budget,
+            },
+        )
 
         for step in range(budget):
             await _emit(event_callback, "step.started", {"step": step})
@@ -204,7 +206,9 @@ class AgentLoop:
 
             try:
                 response = await self._chat_or_stream(
-                    request, step=step, event_callback=event_callback,
+                    request,
+                    step=step,
+                    event_callback=event_callback,
                 )
             except WolfError:
                 raise
@@ -226,11 +230,21 @@ class AgentLoop:
                     traceback=tb,
                 )
                 await self._audit_model_failure(
-                    db, ctx, loop_id, step, detail, traceback=tb,
+                    db,
+                    ctx,
+                    loop_id,
+                    step,
+                    detail,
+                    traceback=tb,
                 )
-                await _emit(event_callback, "model.call.failed", {
-                    "step": step, "detail": detail,
-                })
+                await _emit(
+                    event_callback,
+                    "model.call.failed",
+                    {
+                        "step": step,
+                        "detail": detail,
+                    },
+                )
                 answer = AgentAnswer(
                     content=f"Model call failed ({exc_type}): {exc_msg}",
                     citations=citations,
@@ -247,13 +261,17 @@ class AgentLoop:
             total_input_tokens += response.input_tokens
             total_output_tokens += response.output_tokens
             await self._audit_model_success(db, ctx, loop_id, step, response)
-            await _emit(event_callback, "model.call.completed", {
-                "step": step,
-                "input_tokens": response.input_tokens,
-                "output_tokens": response.output_tokens,
-                "stop_reason": response.stop_reason,
-                "tool_call_count": len(response.tool_calls),
-            })
+            await _emit(
+                event_callback,
+                "model.call.completed",
+                {
+                    "step": step,
+                    "input_tokens": response.input_tokens,
+                    "output_tokens": response.output_tokens,
+                    "stop_reason": response.stop_reason,
+                    "tool_call_count": len(response.tool_calls),
+                },
+            )
 
             messages.append(
                 Message(
@@ -300,7 +318,9 @@ class AgentLoop:
                     tool_results=all_tool_results,
                     retrieved_chunks=all_retrieved_chunks,
                     tool_failures=all_tool_failures,
-                    db=db, ctx=ctx, event_callback=event_callback,
+                    db=db,
+                    ctx=ctx,
+                    event_callback=event_callback,
                 )
                 await _emit(event_callback, "answer", answer.model_dump(mode="json"))
                 return answer
@@ -312,14 +332,22 @@ class AgentLoop:
                 # BEFORE dispatch so the UI can narrate "Searching Wazuh
                 # for …" instead of staying on the previous status line
                 # for the whole tool call.
-                await _emit(event_callback, "tool.call.started", {
-                    "tool_name": call.name,
-                    "tool_call_id": call.id,
-                    "arguments": call.arguments,
-                })
+                await _emit(
+                    event_callback,
+                    "tool.call.started",
+                    {
+                        "tool_name": call.name,
+                        "tool_call_id": call.id,
+                        "arguments": call.arguments,
+                    },
+                )
                 dispatch_result = await dispatch_tool_call(
-                    call, ctx=ctx, db=db, opensearch=opensearch,
-                    server_api=server_api, limits=self.limits,
+                    call,
+                    ctx=ctx,
+                    db=db,
+                    opensearch=opensearch,
+                    server_api=server_api,
+                    limits=self.limits,
                     knowledge_store=knowledge_store,
                     cache=cache,
                 )
@@ -340,28 +368,39 @@ class AgentLoop:
                             if isinstance(hit, dict):
                                 all_retrieved_chunks.append(hit)
                     else:
-                        all_tool_results.append({
-                            "name": call.name,
-                            "content": dispatch_result.result,
-                        })
-                    tool_results.append(ToolResult(
-                        tool_call_id=call.id, name=call.name,
-                        content=dispatch_result.result,
-                    ))
+                        all_tool_results.append(
+                            {
+                                "name": call.name,
+                                "content": dispatch_result.result,
+                            }
+                        )
+                    tool_results.append(
+                        ToolResult(
+                            tool_call_id=call.id,
+                            name=call.name,
+                            content=dispatch_result.result,
+                        )
+                    )
                 else:
                     error_msg = dispatch_result.error or "tool call failed"
                     all_tool_failures.append({"name": call.name, "error": error_msg})
-                    tool_results.append(ToolResult(
-                        tool_call_id=call.id, name=call.name, content="",
-                        error=error_msg,
-                    ))
+                    tool_results.append(
+                        ToolResult(
+                            tool_call_id=call.id,
+                            name=call.name,
+                            content="",
+                            error=error_msg,
+                        )
+                    )
 
             messages.append(Message(role=MessageRole.tool, tool_results=tool_results))
 
         # Budget exhausted without final answer.
         logger.warning(
             "agent_loop_budget_exhausted",
-            loop_id=loop_id, steps=budget, tool_calls=tool_call_count,
+            loop_id=loop_id,
+            steps=budget,
+            tool_calls=tool_call_count,
         )
         last_assistant = next(
             (m.content for m in reversed(messages) if m.role == MessageRole.assistant),
@@ -385,7 +424,9 @@ class AgentLoop:
             tool_results=all_tool_results,
             retrieved_chunks=all_retrieved_chunks,
             tool_failures=all_tool_failures,
-            db=db, ctx=ctx, event_callback=event_callback,
+            db=db,
+            ctx=ctx,
+            event_callback=event_callback,
         )
         await _emit(event_callback, "answer", answer.model_dump(mode="json"))
         return answer
@@ -421,10 +462,14 @@ class AgentLoop:
         async for event in chat_stream(request):
             if isinstance(event, ChatStreamDelta):
                 if event.content_delta:
-                    await _emit(event_callback, "model.delta", {
-                        "step": step,
-                        "content_delta": event.content_delta,
-                    })
+                    await _emit(
+                        event_callback,
+                        "model.delta",
+                        {
+                            "step": step,
+                            "content_delta": event.content_delta,
+                        },
+                    )
             elif isinstance(event, ChatStreamDone):
                 response = event.response
         if response is None:
@@ -464,7 +509,7 @@ class AgentLoop:
         retrieved_chunks: list[dict[str, Any]],
         tool_failures: list[dict[str, Any]] | None = None,
         db: AsyncSession,
-        ctx: TenantContext,
+        ctx: OrganizationContext,
         event_callback: EventCallback | None,
     ) -> AgentAnswer:
         """Run the grounding validator (if configured) on the draft answer.
@@ -490,10 +535,14 @@ class AgentLoop:
         # starting BEFORE the (potentially multi-minute) judge call so
         # the UI can narrate "Asking the grounding judge…" instead of
         # appearing stuck.
-        await _emit(event_callback, "grounding.started", {
-            "loop_id": answer.loop_id,
-            "claim_count_estimate": len(answer.content.split(".")),
-        })
+        await _emit(
+            event_callback,
+            "grounding.started",
+            {
+                "loop_id": answer.loop_id,
+                "claim_count_estimate": len(answer.content.split(".")),
+            },
+        )
         validation = await validator.validate(
             answer.content,
             tool_results=tool_results,
@@ -503,7 +552,8 @@ class AgentLoop:
         )
 
         await write_event_from_context(
-            db, ctx,
+            db,
+            ctx,
             event_type="grounding.validation.completed",
             event_data={
                 "loop_id": answer.loop_id,
@@ -515,33 +565,40 @@ class AgentLoop:
                 "total_claims": len(validation.claims),
             },
         )
-        await _emit(event_callback, "grounding.completed", {
-            "loop_id": answer.loop_id,
-            "ran": validation.ran,
-            "supported": validation.supported_count,
-            "unsupported": validation.unsupported_count,
-            "uncertain": validation.uncertain_count,
-            "unverifiable": validation.unverifiable_count,
-        })
+        await _emit(
+            event_callback,
+            "grounding.completed",
+            {
+                "loop_id": answer.loop_id,
+                "ran": validation.ran,
+                "supported": validation.supported_count,
+                "unsupported": validation.unsupported_count,
+                "uncertain": validation.uncertain_count,
+                "unverifiable": validation.unverifiable_count,
+            },
+        )
 
-        return answer.model_copy(update={
-            "content": validation.annotated_answer,
-            "grounding_supported": validation.supported_count if validation.ran else None,
-            "grounding_unsupported": validation.unsupported_count if validation.ran else None,
-            "grounding_uncertain": validation.uncertain_count if validation.ran else None,
-            "grounding_unverifiable": validation.unverifiable_count if validation.ran else None,
-        })
+        return answer.model_copy(
+            update={
+                "content": validation.annotated_answer,
+                "grounding_supported": validation.supported_count if validation.ran else None,
+                "grounding_unsupported": validation.unsupported_count if validation.ran else None,
+                "grounding_uncertain": validation.uncertain_count if validation.ran else None,
+                "grounding_unverifiable": validation.unverifiable_count if validation.ran else None,
+            }
+        )
 
     async def _audit_model_success(
         self,
         db: AsyncSession,
-        ctx: TenantContext,
+        ctx: OrganizationContext,
         loop_id: str,
         step: int,
         response: ChatResponse,
     ) -> None:
         await write_event_from_context(
-            db, ctx,
+            db,
+            ctx,
             event_type="model.call.success",
             event_data={
                 "loop_id": loop_id,
@@ -559,7 +616,7 @@ class AgentLoop:
     async def _audit_model_failure(
         self,
         db: AsyncSession,
-        ctx: TenantContext,
+        ctx: OrganizationContext,
         loop_id: str,
         step: int,
         detail: str,
@@ -576,5 +633,8 @@ class AgentLoop:
             # the relevant frames survive.
             event_data["traceback"] = traceback[:4000]
         await write_event_from_context(
-            db, ctx, event_type="model.call.failure", event_data=event_data,
+            db,
+            ctx,
+            event_type="model.call.failure",
+            event_data=event_data,
         )

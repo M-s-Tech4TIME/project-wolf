@@ -21,10 +21,10 @@ starts a serious investigation (or is opened explicitly) and accumulates:
 - **Communications** — notes added by the analyst, hand-offs between shifts.
 - **Final disposition** — closed-resolved, closed-false-positive, escalated, etc.
 - **Lessons learned** — optional analyst-written summary that, on close, can
-  auto-ingest into the tenant's private knowledge corpus (see `06`) so the next
+  auto-ingest into the organization's private knowledge corpus (see `06`) so the next
   similar case benefits.
 
-The case is **tenant-scoped** like everything else. It is the central object the
+The case is **organization-scoped** like everything else. It is the central object the
 analyst sees in the UI; the agent is a participant in the case, not the owner.
 
 ## Report types
@@ -124,7 +124,7 @@ Example: "Suspected brute-force on a public-facing host."
 - Step 2 (auto): check the IP against threat-intel.
 - Step 3 (auto): pull the host's authentication events.
 - Step 4 (auto): map to ATT&CK and identify the relevant rules.
-- Step 5 (auto): retrieve the tenant's runbook for this scenario.
+- Step 5 (auto): retrieve the organization's runbook for this scenario.
 - Step 6 (analyst checkpoint): present the synthesis; analyst confirms direction.
 - Step 7 (propose): produce response proposals (block IP, increase logging,
   tighten rule).
@@ -138,7 +138,7 @@ to operate within when consistency matters more than creativity. See
 
 ## Cross-case analytics
 
-The platform should expose, **per tenant**, analytics over closed cases:
+The platform should expose, **per organization**, analytics over closed cases:
 
 - Mean time to triage, to first response, to closure.
 - Most-frequent rule IDs in true positives vs false positives (a detection-tuning
@@ -148,19 +148,19 @@ The platform should expose, **per tenant**, analytics over closed cases:
 - Auto-execution policy hit rates (when enabled).
 
 For MSSPs, the **parent-scope** view (`05`) aggregates these across the MSSP's
-owned tenants, still tagged per tenant.
+owned organizations, still tagged per organization.
 
 ## Knowledge feedback loop
 
 On case close, the platform offers to ingest the case's structured summary into
-the tenant's private RAG corpus (`06`). This is gated:
+the organization's private RAG corpus (`06`). This is gated:
 
 - The analyst can edit the summary before ingestion.
 - The raw evidence is **not** auto-ingested (per the poisoning concern in `06`);
   only the analyst-reviewed structured summary is.
 - Ingestion is auditable and reversible (the chunk can be removed).
 
-Over time, this turns the platform into something that *knows the tenant's
+Over time, this turns the platform into something that *knows the organization's
 environment* and improves with use. This is the most important feature for long-
 term value, and the discipline around what auto-ingests is what keeps it safe.
 

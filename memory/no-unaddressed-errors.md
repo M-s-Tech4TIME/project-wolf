@@ -19,7 +19,7 @@ This sits alongside [[integrity-across-the-stack]] and [[quality-secure-coding-d
 - silently-suppressed import errors, missing type stubs, `# type: ignore` without justification
 - error-handling integrity: handlers that swallow exceptions, broad `except:`, returns that fail silently, missing structured error logging on security-relevant paths
 
-**Why:** Wolf is a security tool. Silent typing blind spots like the Phase-0 missing `py.typed` markers meant mypy was giving us 56 errors' worth of false-confidence across the orchestrator for the entire project lifetime. Leaving diagnostics unfixed compounds — each one trains the eye to ignore the next one until none of them mean anything. For a tool whose users will trust it with multi-tenant security data, that posture is not acceptable.
+**Why:** Wolf is a security tool. Silent typing blind spots like the Phase-0 missing `py.typed` markers meant mypy was giving us 56 errors' worth of false-confidence across the orchestrator for the entire project lifetime. Leaving diagnostics unfixed compounds — each one trains the eye to ignore the next one until none of them mean anything. For a tool whose users will trust it with multi-organization security data, that posture is not acceptable.
 
 **How to apply:**
 - After every integrity gate, *every* non-zero count gets either a fix in this slice OR a one-line entry in the deferred backlog with a concrete plan.

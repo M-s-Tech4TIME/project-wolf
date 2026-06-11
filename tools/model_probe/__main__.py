@@ -79,9 +79,7 @@ def main() -> int:
         kwargs = {}
         if args.base_url:
             kwargs["base_url"] = args.base_url
-        provider_obj = OpenAIAdapter(
-            api_key=api_key or "local", model_id=args.model, **kwargs
-        )
+        provider_obj = OpenAIAdapter(api_key=api_key or "local", model_id=args.model, **kwargs)
 
     elif args.provider == "ollama":
         from wolf_server.models.ollama import OllamaAdapter

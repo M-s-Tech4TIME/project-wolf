@@ -97,7 +97,9 @@ def test_wolf_database_production_env_var_enables_prod_layout(
 def test_layout_is_frozen_dataclass() -> None:
     """DatabaseLayout is immutable — callers can't mutate a resolved layout."""
     layout = DatabaseLayout(
-        data_dir=Path("/a"), config_dir=Path("/b"), socket_dir=Path("/c"),
+        data_dir=Path("/a"),
+        config_dir=Path("/b"),
+        socket_dir=Path("/c"),
     )
     with pytest.raises((AttributeError, TypeError)):
         layout.data_dir = Path("/x")  # type: ignore[misc]
@@ -105,7 +107,9 @@ def test_layout_is_frozen_dataclass() -> None:
 
 def test_layout_postgresql_conf_path_is_inside_config_dir() -> None:
     layout = DatabaseLayout(
-        data_dir=Path("/a"), config_dir=Path("/b"), socket_dir=Path("/c"),
+        data_dir=Path("/a"),
+        config_dir=Path("/b"),
+        socket_dir=Path("/c"),
     )
     assert layout.postgresql_conf_path == Path("/b/postgresql.conf")
     assert layout.pg_hba_conf_path == Path("/b/pg_hba.conf")
@@ -114,6 +118,8 @@ def test_layout_postgresql_conf_path_is_inside_config_dir() -> None:
 def test_layout_pid_file_is_inside_data_dir() -> None:
     """pg_ctl writes postmaster.pid into the data dir, never elsewhere."""
     layout = DatabaseLayout(
-        data_dir=Path("/data"), config_dir=Path("/cfg"), socket_dir=Path("/sock"),
+        data_dir=Path("/data"),
+        config_dir=Path("/cfg"),
+        socket_dir=Path("/sock"),
     )
     assert layout.pid_file_path == Path("/data/postmaster.pid")

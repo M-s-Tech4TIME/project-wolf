@@ -41,8 +41,7 @@ def upgrade() -> None:
         "GENERATED ALWAYS AS (to_tsvector('english', content)) STORED"
     )
     op.execute(
-        "CREATE INDEX ix_knowledge_chunks_content_tsv "
-        "ON knowledge_chunks USING gin (content_tsv)"
+        "CREATE INDEX ix_knowledge_chunks_content_tsv ON knowledge_chunks USING gin (content_tsv)"
     )
 
 

@@ -120,9 +120,7 @@ class ListAgentsTool(ReadTool):
             agents=agents,
             summary=_compute_agent_fleet_summary(agents),
             total=total,
-            citation=self.make_citation(
-                args.model_dump(mode="json"), result_count=len(agents)
-            ),
+            citation=self.make_citation(args.model_dump(mode="json"), result_count=len(agents)),
         )
 
 
@@ -152,9 +150,7 @@ class GetAgentDetailTool(ReadTool):
         if not items:
             return GetAgentDetailOutput(
                 agent=AgentDetail(id=args.agent_id, name="", status="not_found"),
-                citation=self.make_citation(
-                    args.model_dump(mode="json"), result_count=0
-                ),
+                citation=self.make_citation(args.model_dump(mode="json"), result_count=0),
             )
         item = items[0]
         groups = item.get("group") or []
@@ -176,7 +172,5 @@ class GetAgentDetailTool(ReadTool):
         )
         return GetAgentDetailOutput(
             agent=agent,
-            citation=self.make_citation(
-                args.model_dump(mode="json"), result_count=1
-            ),
+            citation=self.make_citation(args.model_dump(mode="json"), result_count=1),
         )

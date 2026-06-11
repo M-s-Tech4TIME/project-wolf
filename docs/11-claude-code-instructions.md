@@ -121,7 +121,7 @@ the project depends on.
 1. **Type everything.** Pydantic models for tool I/O, typed function signatures,
    no `Any` in load-bearing code.
 2. **Test the negative path.** For every safety-relevant feature, include a test
-   that confirms the bad thing **cannot** happen. Cross-tenant access tests,
+   that confirms the bad thing **cannot** happen. Cross-organization access tests,
    execute-tool-from-orchestrator tests, ungrounded-claim tests.
 3. **Don't optimize prematurely.** Get the boring, correct version working.
    Performance comes later. Safety comes first, always.
@@ -132,7 +132,7 @@ the project depends on.
 
 ### After you finish a slice
 
-1. **Run the full test suite** — including the cross-tenant isolation suite.
+1. **Run the full test suite** — including the cross-organization isolation suite.
 2. **Update the docs** if your implementation revealed something the planning
    bundle missed. The bundle is not sacred; it is the best snapshot of what was
    known when it was written. If reality teaches you something, document it.
@@ -150,11 +150,11 @@ execute tool. Execute tools are physically in the `services/gateway/` package an
 the orchestrator has no code path to them. If you find yourself writing
 `execute_active_response` in the orchestrator, stop. You are off the path.
 
-### Rule 2 — The model never picks the tenant
+### Rule 2 — The model never picks the organization
 
-The `tenant_id` is taken from the authenticated session and injected by the
+The `organization_id` is taken from the authenticated session and injected by the
 orchestrator into every tool call. If a tool's input schema contains a
-`tenant_id` field that comes from the model's output, that is a bug. Tenant ID
+`organization_id` field that comes from the model's output, that is a bug. Organization ID
 is not in the model-facing schema.
 
 ### Rule 3 — All factual claims must be grounded
@@ -224,9 +224,9 @@ respond:
 
 - *"Just let the model execute things directly, it's faster."* — No. The split
   between propose and execute is the entire safety story. Decline and explain.
-- *"Skip the cross-tenant tests, they slow CI down."* — No. They are the only
+- *"Skip the cross-organization tests, they slow CI down."* — No. They are the only
   honest defense against a class of catastrophic bug. Decline and explain.
-- *"Just hardcode the tenant for now, we'll fix it later."* — No. Tenant
+- *"Just hardcode the organization for now, we'll fix it later."* — No. Organization
   context being session-bound is structural. Hardcoding is a foothold for a bug
   that won't be found until production. Decline and explain.
 - *"Drop the grounding validator, the answers are fine."* — No. Ungrounded
@@ -259,7 +259,7 @@ alternative. The plan should evolve; the principles in `00` should not.
   `test:`, `refactor:`).
 - **Branches:** trunk-based with short-lived feature branches; `main` is
   always releasable.
-- **PRs:** must include tests, must pass CI (including the cross-tenant
+- **PRs:** must include tests, must pass CI (including the cross-organization
   isolation suite), must reference the doc/phase they implement, must not
   introduce a paid-only dependency.
 

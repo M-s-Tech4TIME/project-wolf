@@ -6,9 +6,9 @@ against the dev DB; testing pgvector behavior in pytest would require
 either a Postgres test fixture or skipping under SQLite, neither of which
 buys us much over a real seed run.
 
-Cross-tenant isolation at the store query level is enforced by the SQL
+Cross-organization isolation at the store query level is enforced by the SQL
 WHERE clause in PgvectorKnowledgeStore.search() and asserted at the
-end-to-end level via test_cross_tenant_isolation (extended in a later
+end-to-end level via test_cross_organization_isolation (extended in a later
 slice once the agent-loop call path through query_runbook is exercised
 in tests).
 """
@@ -20,8 +20,8 @@ import pytest
 from pydantic import ValidationError
 from wolf_server.knowledge.store import (
     ALL_SOURCE_TYPES,
+    ORGANIZATION_SOURCE_TYPES,
     SHARED_SOURCE_TYPES,
-    TENANT_SOURCE_TYPES,
     ChunkInput,
     PgvectorKnowledgeStore,
 )
@@ -30,25 +30,25 @@ from wolf_server.tools.knowledge import QueryRunbookInput, QueryRunbookTool
 # ─── ChunkInput validation rules ─────────────────────────────────────────────
 
 
-def test_shared_chunk_must_have_null_tenant() -> None:
+def test_shared_chunk_must_have_null_organization() -> None:
     chunk = ChunkInput(
         content="Wazuh rule 5710 is...",
         source_type="wazuh_doc",
-        tenant_id=uuid.uuid4(),  # invalid — shared corpora must have None
+        organization_id=uuid.uuid4(),  # invalid — shared corpora must have None
         chunk_metadata={},
     )
     with pytest.raises(ValueError, match="must be None"):
         PgvectorKnowledgeStore._validate_chunk(chunk)
 
 
-def test_tenant_chunk_requires_tenant_id() -> None:
+def test_organization_chunk_requires_organization_id() -> None:
     chunk = ChunkInput(
         content="Acme runbook...",
         source_type="runbook",
-        tenant_id=None,  # invalid — tenant-private corpora require a tenant_id
+        organization_id=None,  # invalid — organization-private corpora require a organization_id
         chunk_metadata={},
     )
-    with pytest.raises(ValueError, match="tenant_id is required"):
+    with pytest.raises(ValueError, match="organization_id is required"):
         PgvectorKnowledgeStore._validate_chunk(chunk)
 
 
@@ -56,7 +56,7 @@ def test_unknown_source_type_rejected() -> None:
     chunk = ChunkInput(
         content="something",
         source_type="not_a_real_corpus",
-        tenant_id=None,
+        organization_id=None,
         chunk_metadata={},
     )
     with pytest.raises(ValueError, match="Unknown source_type"):
@@ -67,35 +67,35 @@ def test_empty_content_rejected() -> None:
     chunk = ChunkInput(
         content="   ",  # whitespace-only
         source_type="wazuh_doc",
-        tenant_id=None,
+        organization_id=None,
         chunk_metadata={},
     )
     with pytest.raises(ValueError, match="content cannot be empty"):
         PgvectorKnowledgeStore._validate_chunk(chunk)
 
 
-def test_shared_corpora_set_is_disjoint_from_tenant_corpora_set() -> None:
-    # Sanity: a chunk cannot be classified both shared and tenant-private.
-    assert SHARED_SOURCE_TYPES.isdisjoint(TENANT_SOURCE_TYPES)
-    assert SHARED_SOURCE_TYPES | TENANT_SOURCE_TYPES == ALL_SOURCE_TYPES
+def test_shared_corpora_set_is_disjoint_from_organization_corpora_set() -> None:
+    # Sanity: a chunk cannot be classified both shared and organization-private.
+    assert SHARED_SOURCE_TYPES.isdisjoint(ORGANIZATION_SOURCE_TYPES)
+    assert SHARED_SOURCE_TYPES | ORGANIZATION_SOURCE_TYPES == ALL_SOURCE_TYPES
 
 
 def test_valid_shared_chunk_passes() -> None:
     chunk = ChunkInput(
         content="Wazuh rule 5710 explanation.",
         source_type="wazuh_doc",
-        tenant_id=None,
+        organization_id=None,
         chunk_metadata={"rule_id": "5710"},
     )
     # Should not raise.
     PgvectorKnowledgeStore._validate_chunk(chunk)
 
 
-def test_valid_tenant_chunk_passes() -> None:
+def test_valid_organization_chunk_passes() -> None:
     chunk = ChunkInput(
         content="Acme runbook step 1.",
         source_type="runbook",
-        tenant_id=uuid.uuid4(),
+        organization_id=uuid.uuid4(),
         chunk_metadata={"rule_id": "5712"},
     )
     PgvectorKnowledgeStore._validate_chunk(chunk)
@@ -128,15 +128,15 @@ def test_query_runbook_input_accepts_minimal_args() -> None:
 async def test_query_runbook_raises_when_store_not_configured() -> None:
     """If exec_ctx.knowledge_store is None the tool must fail loud, not silent."""
     from wolf_server.guardrails.limits import DEFAULT_LIMITS
-    from wolf_server.tenancy.context import TenantContext
+    from wolf_server.organization.context import OrganizationContext
     from wolf_server.tools.base import ToolExecContext
 
     tool = QueryRunbookTool()
     args = QueryRunbookInput(query="anything")
     exec_ctx = ToolExecContext(
-        tenant=TenantContext(
-            tenant_id=uuid.uuid4(),
-            tenant_slug="test",
+        organization=OrganizationContext(
+            organization_id=uuid.uuid4(),
+            organization_slug="test",
             user_id=uuid.uuid4(),
             user_email="t@example.com",
             role="analyst",
@@ -175,7 +175,7 @@ def test_retrieved_chunk_carries_rrf_score() -> None:
         id=uuid.uuid4(),
         content="x",
         source_type="wazuh_doc",
-        tenant_id=None,
+        organization_id=None,
         chunk_metadata={},
         distance=0.5,
         rrf_score=0.0325,
@@ -186,7 +186,7 @@ def test_retrieved_chunk_carries_rrf_score() -> None:
         id=uuid.uuid4(),
         content="x",
         source_type="wazuh_doc",
-        tenant_id=None,
+        organization_id=None,
         chunk_metadata={},
         distance=0.5,
     )
@@ -213,7 +213,7 @@ async def test_rrf_fusion_three_legs_chunk_in_all_wins() -> None:
             self.id = chunk_id
             self.content = "test"
             self.source_type = source_type
-            self.tenant_id = None
+            self.organization_id = None
             self.chunk_metadata = {}
 
     rows = {
@@ -248,6 +248,7 @@ async def test_rrf_fusion_three_legs_chunk_in_all_wins() -> None:
                         (rows[fts_only], 0.50),
                         (rows[aux_only], 0.30),
                     ]
+
             return _Result()
 
     store = PgvectorKnowledgeStore(
@@ -274,7 +275,7 @@ async def test_rrf_fusion_three_legs_chunk_in_all_wins() -> None:
         ) as aux_mock,
     ):
         results = await store.search(
-            tenant_id=uuid.uuid4(),
+            organization_id=uuid.uuid4(),
             query_text="anything",
             limit=10,
         )
@@ -304,7 +305,7 @@ async def test_rrf_fusion_skips_aux_leg_when_no_aux_embedder() -> None:
             self.id = chunk_id
             self.content = "x"
             self.source_type = "wazuh_doc"
-            self.tenant_id = None
+            self.organization_id = None
             self.chunk_metadata = {}
 
     class _StubEmbedder:
@@ -320,6 +321,7 @@ async def test_rrf_fusion_skips_aux_leg_when_no_aux_embedder() -> None:
                 @staticmethod
                 def all() -> list[tuple[Any, float]]:
                     return [(_Row(), 0.10)]
+
             return _Result()
 
     store = PgvectorKnowledgeStore(_StubSession(), _StubEmbedder())  # no aux
@@ -328,9 +330,7 @@ async def test_rrf_fusion_skips_aux_leg_when_no_aux_embedder() -> None:
         patch.object(store, "_fts_candidates", AsyncMock(return_value={})),
         patch.object(store, "_vector_aux_candidates", AsyncMock()) as aux_mock,
     ):
-        results = await store.search(
-            tenant_id=uuid.uuid4(), query_text="x", limit=5
-        )
+        results = await store.search(organization_id=uuid.uuid4(), query_text="x", limit=5)
     assert len(results) == 1
     # Aux leg helper was NOT invoked.
     aux_mock.assert_not_called()
@@ -360,7 +360,7 @@ async def test_rrf_fusion_combines_both_legs_correctly() -> None:
             self.id = chunk_id
             self.content = "test"
             self.source_type = source_type
-            self.tenant_id = None
+            self.organization_id = None
             self.chunk_metadata = {}
 
     rows = {
@@ -407,7 +407,7 @@ async def test_rrf_fusion_combines_both_legs_correctly() -> None:
         ),
     ):
         results = await store.search(
-            tenant_id=uuid.uuid4(),
+            organization_id=uuid.uuid4(),
             query_text="anything",
             limit=10,
         )
@@ -464,6 +464,11 @@ def test_factory_accepts_sentence_transformers_aliases(
     CPU keeps the test environment-independent. Captured 2026-06-02
     while landing Phase 5.4-a.
     """
+    # Optional dep per ADR 0007 — skip cleanly when the operator hasn't
+    # opted into `uv sync --extra embeddings-local`. Captured 2026-06-11
+    # while establishing Phase 6.4 baseline.
+    pytest.importorskip("sentence_transformers")
+
     monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "")
 
     from wolf_server.config import Settings
@@ -495,7 +500,7 @@ def test_factory_accepts_sentence_transformers_aliases(
 async def test_query_runbook_passes_filters_to_store() -> None:
     """Tool builds metadata_filters from rule_id/technique and forwards to store."""
     from wolf_server.guardrails.limits import DEFAULT_LIMITS
-    from wolf_server.tenancy.context import TenantContext
+    from wolf_server.organization.context import OrganizationContext
     from wolf_server.tools.base import ToolExecContext
 
     captured: dict[str, Any] = {}
@@ -513,11 +518,11 @@ async def test_query_runbook_passes_filters_to_store() -> None:
         technique="T1110",
         limit=3,
     )
-    tenant_id = uuid.uuid4()
+    organization_id = uuid.uuid4()
     exec_ctx = ToolExecContext(
-        tenant=TenantContext(
-            tenant_id=tenant_id,
-            tenant_slug="acme",
+        organization=OrganizationContext(
+            organization_id=organization_id,
+            organization_slug="acme",
             user_id=uuid.uuid4(),
             user_email="t@example.com",
             role="analyst",
@@ -530,7 +535,7 @@ async def test_query_runbook_passes_filters_to_store() -> None:
     )
     result = await tool.run(exec_ctx, args)
 
-    assert captured["tenant_id"] == tenant_id
+    assert captured["organization_id"] == organization_id
     assert captured["query_text"] == "brute force"
     assert captured["source_types"] == ["wazuh_doc", "runbook"]
     assert captured["metadata_filters"] == {"rule_id": "5712", "technique": "T1110"}

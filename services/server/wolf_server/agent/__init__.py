@@ -9,7 +9,7 @@ from wolf_server.agent.loop import AgentAnswer, AgentLoop
 from wolf_server.agent.model_resolver import (
     ModelProviderUnconfiguredError,
     get_grounding_judge_model,
-    get_model_for_tenant,
+    get_model_for_organization,
 )
 from wolf_server.agent.strategies import (
     FrontierStrategy,
@@ -28,6 +28,6 @@ __all__ = [
     "PipelineStrategy",
     "Strategy",
     "get_grounding_judge_model",
-    "get_model_for_tenant",
+    "get_model_for_organization",
     "strategy_for",
 ]

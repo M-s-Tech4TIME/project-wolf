@@ -15,10 +15,10 @@ secure coding are applied AS THE CODE IS WRITTEN, not deferred to a
 separate hardening sweep.
 
 **While building any slice — non-negotiable disciplines:**
-  - Tenant scoping enforced on every new data path. If a query
-    touches `tenant_id`, it goes through the existing scoping layer.
-    If a new endpoint reads / writes tenant-bound data, it derives
-    `tenant_id` from `TenantContext`, never from the request body.
+  - Organization scoping enforced on every new data path. If a query
+    touches `organization_id`, it goes through the existing scoping layer.
+    If a new endpoint reads / writes organization-bound data, it derives
+    `organization_id` from `OrganizationContext`, never from the request body.
   - Input validation via Pydantic schemas at every API boundary.
     No raw `dict[str, Any]` from request bodies into business logic.
   - SQL via SQLAlchemy ORM / parameterised statements. NEVER string-

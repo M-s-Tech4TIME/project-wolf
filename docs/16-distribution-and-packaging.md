@@ -79,8 +79,8 @@ The script:
    generates `SECRET_KEY` and the Fernet secrets key, writes
    `/etc/wolf/wolf.env` with sane defaults.
 7. Enables and starts the systemd units.
-8. Prints next-steps text: "Run `sudo wolf bootstrap-tenant ...` to
-   create your first tenant, then visit http://localhost:3000."
+8. Prints next-steps text: "Run `sudo wolf bootstrap-organization ...` to
+   create your first organization, then visit http://localhost:3000."
 
 Operator total: **one command, ~3 minutes, no Docker required.**
 
@@ -89,9 +89,9 @@ Operator total: **one command, ~3 minutes, no Docker required.**
 ```
 $ sudo systemctl status wolf-orchestrator
 $ sudo journalctl -u wolf-orchestrator -f
-$ sudo wolf bootstrap-tenant --slug acme ...
+$ sudo wolf bootstrap-organization --slug acme ...
 $ sudo wolf set-secret --key model.openrouter.api_key
-$ sudo wolf smoke-wazuh --tenant-slug acme --all-tools
+$ sudo wolf smoke-wazuh --organization-slug acme --all-tools
 ```
 
 The `wolf` CLI is a thin wrapper around the existing
@@ -181,9 +181,9 @@ version):
 
 | Command | Wraps | Purpose |
 |---|---|---|
-| `wolf bootstrap-tenant ...` | `python -m app.management.bootstrap_tenant` | Create or update a tenant + admin + Wazuh config |
+| `wolf bootstrap-organization ...` | `python -m app.management.bootstrap_organization` | Create or update a organization + admin + Wazuh config |
 | `wolf set-secret --key K` (reads value from stdin) | `python -m app.management.set_secret` | Stash a secret in the encrypted backend |
-| `wolf smoke-wazuh ...` | `python -m app.management.smoke_wazuh` | Live-test a tenant's read tools against its Wazuh |
+| `wolf smoke-wazuh ...` | `python -m app.management.smoke_wazuh` | Live-test a organization's read tools against its Wazuh |
 | `wolf status` | `systemctl is-active wolf-*` | One-shot health of the three units |
 | `wolf logs [unit]` | `journalctl -u wolf-{unit} -f` | Convenience tail |
 | `wolf reconfigure` | regenerate `/etc/wolf/wolf.env` derivatives, run migrations, restart units | Used by the upgrade hook; can be called manually |
@@ -260,7 +260,7 @@ When the implementation slot arrives (post-Phase 4, per ADR 0007
    metapackage install, post-install bootstrap. ~3 days including
    testing against fresh VMs of each supported distro.
 6. **Upgrade-test suite.** A reproducible test that installs an
-   old release, upgrades to the new one, confirms data + tenants
+   old release, upgrades to the new one, confirms data + organizations
    survive. ~3 days.
 7. **Documentation.** Update `docs/09` and `docs/13` with the new
    channel as a peer to containers; new ONBOARDING section for

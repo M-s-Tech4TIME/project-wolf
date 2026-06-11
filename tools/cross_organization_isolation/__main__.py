@@ -1,20 +1,20 @@
-"""CLI entry point: live two-tenant isolation smoke suite.
+"""CLI entry point: live two-organization isolation smoke suite.
 
 Per doc 05 §Test isolation as a first-class, continuous practice:
-"Don't treat 'tenants are isolated' as something verified once. Build
-an automated cross-tenant test suite that runs constantly... in CI
+"Don't treat 'organizations are isolated' as something verified once. Build
+an automated cross-organization test suite that runs constantly... in CI
 **and** as a synthetic probe in production."
 
 This CLI is the "synthetic probe" path. It exercises the actual
 deployed PgvectorKnowledgeStore + audit-log code paths against the
 live dev DB (or any DB the operator points DATABASE_URL at), with
-two known-distinct tenants seeded, and asserts that:
+two known-distinct organizations seeded, and asserts that:
 
-  1. Tenant A's RAG retrieval returns ONLY acme + shared chunks
+  1. Organization A's RAG retrieval returns ONLY acme + shared chunks
      (never beta's private content).
-  2. Tenant B's RAG retrieval returns ONLY beta + shared chunks.
+  2. Organization B's RAG retrieval returns ONLY beta + shared chunks.
   3. Audit writes for A do NOT appear in B's audit query.
-  4. The TenantScopedCache wrapper refuses unprefixed keys.
+  4. The OrganizationScopedCache wrapper refuses unprefixed keys.
 
 Exit code 0 if every check passes; non-zero on any failure (the
 caller — CI workflow or production-probe cron — reads this as a
@@ -24,9 +24,9 @@ Run:
     cd services/server
     set -a && source ../../.env && set +a
     cd ../..
-    uv run python -m tools.tenant_isolation_test
+    uv run python -m tools.organization_isolation_test
 
-The dev DB must already have `acme` and `beta` tenants bootstrapped
+The dev DB must already have `acme` and `beta` organizations bootstrapped
 (Phase 4 Slice 1's setup). The suite is read-only in spirit — it
 writes its own audit events with a "isolation-probe" event_type
 prefix, but never deletes or modifies existing data.
@@ -44,7 +44,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from wolf_server.audit.log import write_event
 from wolf_server.audit.models import AuditEvent
-from wolf_server.caching import InMemoryTenantCache, UnprefixedKeyError
+from wolf_server.caching import InMemoryOrganizationCache, UnprefixedKeyError
 from wolf_server.caching.cache import _compose_storage_key
 from wolf_server.config import get_settings
 from wolf_server.database import db_session
@@ -54,7 +54,7 @@ from wolf_server.knowledge.embeddings import (
 )
 from wolf_server.knowledge.models import KnowledgeChunk
 from wolf_server.knowledge.store import PgvectorKnowledgeStore
-from wolf_server.tenancy.models import Tenant
+from wolf_server.organization.models import Organization
 
 
 @dataclass
@@ -70,63 +70,70 @@ class Check:
 
 async def check_rag_isolation(
     label: str,
-    asker: Tenant,
-    other: Tenant,
+    asker: Organization,
+    other: Organization,
     store: PgvectorKnowledgeStore,
 ) -> Check:
     """As `asker`, run a query that would semantically match either
-    tenant's runbook content. Assert none of the returned chunks are
+    organization's runbook content. Assert none of the returned chunks are
     owned by `other`."""
     hits = await store.search(
-        tenant_id=asker.id,
+        organization_id=asker.id,
         query_text="SSH brute-force runbook steps",
         source_types=["runbook", "past_incident"],
         limit=10,
     )
     leaks = [
-        h.chunk_metadata.get("title", str(h.id))
-        for h in hits
-        if h.tenant_id == other.id
+        h.chunk_metadata.get("title", str(h.id)) for h in hits if h.organization_id == other.id
     ]
     if leaks:
         return Check(
-            label, False,
+            label,
+            False,
             f"LEAKED chunks owned by {other.slug!r}: {leaks}",
         )
     return Check(
-        label, True,
+        label,
+        True,
         f"{len(hits)} hits returned, all owned by {asker.slug} or shared",
     )
 
 
-async def check_audit_isolation(asker: Tenant, other: Tenant) -> Check:
+async def check_audit_isolation(asker: Organization, other: Organization) -> Check:
     """Write an audit event as `asker`, query as `other`, assert empty."""
     event_marker = f"isolation-probe-{uuid.uuid4().hex[:8]}"
     async with db_session() as s:
         await write_event(
-            s, event_type=event_marker,
+            s,
+            event_type=event_marker,
             event_data={"probe": True, "asker": asker.slug},
-            tenant_id=asker.id,
+            organization_id=asker.id,
         )
         await s.commit()
 
     async with db_session() as s:
         other_rows = (
-            await s.execute(
-                select(AuditEvent).where(
-                    AuditEvent.tenant_id == other.id,
-                    AuditEvent.event_type == event_marker,
+            (
+                await s.execute(
+                    select(AuditEvent).where(
+                        AuditEvent.organization_id == other.id,
+                        AuditEvent.event_type == event_marker,
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
     if other_rows:
         return Check(
-            "audit write isolation", False,
-            f"LEAKED: {other.slug!r}'s tenant-scoped audit query "
+            "audit write isolation",
+            False,
+            f"LEAKED: {other.slug!r}'s organization-scoped audit query "
             f"returned {len(other_rows)} rows written by {asker.slug!r}",
         )
     return Check(
-        "audit write isolation", True,
+        "audit write isolation",
+        True,
         f"event {event_marker!r} from {asker.slug} not visible to {other.slug}",
     )
 
@@ -136,47 +143,53 @@ def check_cache_unprefixed_rejected() -> Check:
         _compose_storage_key(None, "ns", "k")  # type: ignore[arg-type]
     except UnprefixedKeyError:
         return Check(
-            "cache rejects unprefixed key", True,
+            "cache rejects unprefixed key",
+            True,
             "UnprefixedKeyError raised as designed",
         )
     return Check(
-        "cache rejects unprefixed key", False,
-        "UnprefixedKeyError was NOT raised — the wrapper's tenant-prefix "
+        "cache rejects unprefixed key",
+        False,
+        "UnprefixedKeyError was NOT raised — the wrapper's organization-prefix "
         "enforcement is broken",
     )
 
 
-async def check_cache_cross_tenant_isolation() -> Check:
-    cache = InMemoryTenantCache()
+async def check_cache_cross_organization_isolation() -> Check:
+    cache = InMemoryOrganizationCache()
     a = uuid.uuid4()
     b = uuid.uuid4()
     await cache.set(a, "ns", "k", "value-from-a")
     if await cache.get(b, "ns", "k") is not None:
         return Check(
-            "cache cross-tenant isolation", False,
-            "LEAK: tenant B's get satisfied by tenant A's cached entry",
+            "cache cross-organization isolation",
+            False,
+            "LEAK: organization B's get satisfied by organization A's cached entry",
         )
     return Check(
-        "cache cross-tenant isolation", True,
-        "tenant B sees a miss for tenant A's cached entry",
+        "cache cross-organization isolation",
+        True,
+        "organization B sees a miss for organization A's cached entry",
     )
 
 
 async def main() -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Live two-tenant isolation smoke suite. Exit 0 on full pass; "
+            "Live two-organization isolation smoke suite. Exit 0 on full pass; "
             "non-zero on any check failure (CI / production-probe consumers "
             "read this as a binary signal)."
         ),
     )
     parser.add_argument(
-        "--tenant-a", default="acme",
-        help="Slug of the first tenant (default 'acme').",
+        "--organization-a",
+        default="acme",
+        help="Slug of the first organization (default 'acme').",
     )
     parser.add_argument(
-        "--tenant-b", default="beta",
-        help="Slug of the second tenant (default 'beta').",
+        "--organization-b",
+        default="beta",
+        help="Slug of the second organization (default 'beta').",
     )
     args = parser.parse_args()
 
@@ -189,54 +202,58 @@ async def main() -> int:
 
     settings = get_settings()
 
-    # Load both tenants.
+    # Load both organizations.
     async with db_session() as s:
         rows = (
-            await s.execute(
-                select(Tenant).where(
-                    Tenant.slug.in_([args.tenant_a, args.tenant_b])
+            (
+                await s.execute(
+                    select(Organization).where(
+                        Organization.slug.in_([args.organization_a, args.organization_b])
+                    )
                 )
             )
-        ).scalars().all()
-    tenants = {t.slug: t for t in rows}
+            .scalars()
+            .all()
+        )
+    organizations = {t.slug: t for t in rows}
     missing = [
-        slug for slug in (args.tenant_a, args.tenant_b) if slug not in tenants
+        slug for slug in (args.organization_a, args.organization_b) if slug not in organizations
     ]
     if missing:
         sys.stderr.write(
-            f"ERROR: missing tenant(s): {missing}. Bootstrap them first via "
-            f"`uv run python -m wolf_server.management.bootstrap_tenant ...`.\n"
+            f"ERROR: missing organization(s): {missing}. Bootstrap them first via "
+            f"`uv run python -m wolf_server.management.bootstrap_organization ...`.\n"
         )
         return 3
 
-    a = tenants[args.tenant_a]
-    b = tenants[args.tenant_b]
+    a = organizations[args.organization_a]
+    b = organizations[args.organization_b]
 
-    # Verify each tenant has at least one private chunk so the probe is
-    # meaningful (a tenant with zero private chunks can't be leaked from).
+    # Verify each organization has at least one private chunk so the probe is
+    # meaningful (a organization with zero private chunks can't be leaked from).
     async with db_session() as s:
         a_private = (
             await s.execute(
-                select(KnowledgeChunk).where(KnowledgeChunk.tenant_id == a.id).limit(1)
+                select(KnowledgeChunk).where(KnowledgeChunk.organization_id == a.id).limit(1)
             )
         ).scalar_one_or_none()
         b_private = (
             await s.execute(
-                select(KnowledgeChunk).where(KnowledgeChunk.tenant_id == b.id).limit(1)
+                select(KnowledgeChunk).where(KnowledgeChunk.organization_id == b.id).limit(1)
             )
         ).scalar_one_or_none()
     if a_private is None or b_private is None:
         sys.stderr.write(
-            "ERROR: one or both tenants have no private chunks. Run "
+            "ERROR: one or both organizations have no private chunks. Run "
             "`uv run python -m wolf_server.management.seed_dev_knowledge "
-            f"--tenant-slug {args.tenant_a}` (and again for the other) "
+            f"--organization-slug {args.organization_a}` (and again for the other) "
             "before this probe.\n"
         )
         return 4
 
     print(
-        f"Probing tenants {args.tenant_a!r} (id={a.id}) vs "
-        f"{args.tenant_b!r} (id={b.id})"
+        f"Probing organizations {args.organization_a!r} (id={a.id}) vs "
+        f"{args.organization_b!r} (id={b.id})"
     )
 
     checks: list[Check] = []
@@ -248,16 +265,24 @@ async def main() -> int:
     aux = make_embedding_provider_aux(settings)
     async with db_session() as s_a:
         store_a = PgvectorKnowledgeStore(s_a, primary, embedder_aux=aux)
-        checks.append(await check_rag_isolation(
-            f"RAG: {args.tenant_a} cannot see {args.tenant_b}'s chunks",
-            a, b, store_a,
-        ))
+        checks.append(
+            await check_rag_isolation(
+                f"RAG: {args.organization_a} cannot see {args.organization_b}'s chunks",
+                a,
+                b,
+                store_a,
+            )
+        )
     async with db_session() as s_b:
         store_b = PgvectorKnowledgeStore(s_b, primary, embedder_aux=aux)
-        checks.append(await check_rag_isolation(
-            f"RAG: {args.tenant_b} cannot see {args.tenant_a}'s chunks",
-            b, a, store_b,
-        ))
+        checks.append(
+            await check_rag_isolation(
+                f"RAG: {args.organization_b} cannot see {args.organization_a}'s chunks",
+                b,
+                a,
+                store_b,
+            )
+        )
 
     # Audit checks — both directions.
     checks.append(await check_audit_isolation(a, b))
@@ -265,7 +290,7 @@ async def main() -> int:
 
     # Cache checks — no DB needed.
     checks.append(check_cache_unprefixed_rejected())
-    checks.append(await check_cache_cross_tenant_isolation())
+    checks.append(await check_cache_cross_organization_isolation())
 
     # Report.
     print("\nResults:")

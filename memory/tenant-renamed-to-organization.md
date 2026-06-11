@@ -1,13 +1,19 @@
 ---
 name: tenant-renamed-to-organization
-description: "STANDING RULE (2026-06-10) — refer to tenants as Organizations EVERYWHERE going forward (frontend, backend, database, docs, conversation). The codebase rename is a planned slice; new ADRs + memories use \"organization\" from now on."
+description: "COMPLETED 2026-06-11 (Phase 6.4) — the codebase rename from tenant to organization landed in one PR. \"Organization\" is now the canonical name everywhere: frontend, backend, database, docs, conversation. This entry is a historical record of the rename arc, not an active rule."
 metadata: 
   node_type: memory
   type: feedback
   originSessionId: 5cd03513-6614-4694-a862-5bd7c8534b36
 ---
 
-**Cross-ref (2026-06-11):** this rename is now **scheduled as Phase 6.4** in the roadmap — the unblocked pre-req for all Phase 6.5+ work. See [ADR 0018 — Bootstrap Superuser + Per-Org RBAC + Login UX](../docs/decisions/0018-bootstrap-superuser-rbac-login.md) §"Implementation sequencing" → "Pre-requisite: Phase 6.4". The full rename matrix is captured below; Phase 6.4 is a single PR (~40-60 files, 1-2 sessions). This memory entry FLIPS FROM STANDING RULE TO COMPLETED at the end of Phase 6.4 — `tenant-renamed-to-organization` will then be a historical record, not an active rule.
+**STATUS: COMPLETED 2026-06-11 (Phase 6.4).** The rename shipped in one PR. Scope ended up larger than the 40-60-file estimate: ~144 Python files swept with ~1500 substitutions (two passes — word-boundary then snake/CamelCase compound), 8 backend files renamed via `git mv`, 8 dashboard TS/TSX files updated, 27 living docs updated, 10 memory files updated, debian/control updated, Makefile updated. Migration `0007_rename_tenant_to_organization.py` does the schema rename via Postgres-native `ALTER ... RENAME ...` (preserves indexes/constraints in place). Integrity gates green: 396 passed + 1 skipped, isolation suite 18 passed, mypy strict 44 files no issues, ruff lint all checks passed. This memory remains a historical artifact — the rule is no longer active because there is nothing left to rename.
+
+**Cross-ref:** the design decision was captured in [ADR 0018 — Bootstrap Superuser + Per-Org RBAC + Login UX](../docs/decisions/0018-bootstrap-superuser-rbac-login.md) §"Implementation sequencing" → "Pre-requisite: Phase 6.4".
+
+---
+
+**HISTORICAL — the original standing rule (2026-06-10) preserved verbatim below:**
 
 STANDING RULE (2026-06-10): the operator made the explicit decision that **tenant = organization** is the canonical naming. There is no separate Organization entity; the existing Tenant model IS the org. Going forward:
 

@@ -49,7 +49,8 @@ def _make_fake_executable(path: Path, body: str = "") -> Path:
 
 
 def test_find_one_uses_env_override(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     fake = _make_fake_executable(tmp_path / "my_pg_ctl")
     monkeypatch.setenv("WOLF_DATABASE_PG_CTL", str(fake))
@@ -61,7 +62,8 @@ def test_find_one_uses_env_override(
 
 
 def test_find_one_falls_through_to_path_when_no_known_dir(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     """No env override + no /usr/lib/postgresql/17/... → uses PATH."""
     fake = _make_fake_executable(tmp_path / "psql")
@@ -73,7 +75,8 @@ def test_find_one_falls_through_to_path_when_no_known_dir(
 
 
 def test_find_one_raises_when_nothing_resolves(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     """Nothing on PATH, no env override → PostgresBinaryNotFoundError."""
     monkeypatch.setenv("PATH", str(tmp_path))  # empty dir
@@ -88,7 +91,8 @@ def test_find_one_raises_when_nothing_resolves(
 
 
 def test_find_one_env_override_pointing_at_nonexistent_path_still_searches(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     """A bad env override doesn't short-circuit — we keep looking at
     distro paths + PATH. Operators with a stale env value still get a
@@ -167,7 +171,8 @@ def test_verify_postgres_supported_rejects_older_major(
 
 
 def test_find_postgres_binaries_returns_all_four(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     """When all four binaries exist on PATH, the helper returns them."""
     for tool in ("pg_ctl", "initdb", "psql", "postgres"):

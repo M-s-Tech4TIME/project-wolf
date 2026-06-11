@@ -37,6 +37,7 @@ from pathlib import Path
 DB_NAME_DEFAULT = "wolf"
 DB_USER_DEFAULT = "wolf"
 
+
 # Repo-anchor for dev layouts. Resolves at function-call time (not
 # import time) so tests can stub it via environment.
 def _repo_root() -> Path:

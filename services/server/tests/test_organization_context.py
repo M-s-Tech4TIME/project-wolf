@@ -1,7 +1,7 @@
-"""Tests for the immutable TenantContext.
+"""Tests for the immutable OrganizationContext.
 
 Key invariants:
-  - TenantContext is frozen — fields cannot be mutated after creation.
+  - OrganizationContext is frozen — fields cannot be mutated after creation.
   - An invalid role raises immediately on construction.
   - All fields must be set; partial construction fails type-checking and at runtime.
 """
@@ -9,20 +9,20 @@ Key invariants:
 import uuid
 
 import pytest
-from wolf_server.tenancy.context import TenantContext
+from wolf_server.organization.context import OrganizationContext
 
 
-def _make_ctx(**overrides: object) -> TenantContext:
+def _make_ctx(**overrides: object) -> OrganizationContext:
     defaults: dict[str, object] = {
-        "tenant_id": uuid.uuid4(),
-        "tenant_slug": "test-corp",
+        "organization_id": uuid.uuid4(),
+        "organization_slug": "test-corp",
         "user_id": uuid.uuid4(),
         "user_email": "analyst@test.example",
         "role": "analyst",
         "session_id": str(uuid.uuid4()),
     }
     defaults.update(overrides)
-    return TenantContext(**defaults)  # type: ignore[arg-type]
+    return OrganizationContext(**defaults)  # type: ignore[arg-type]
 
 
 def test_context_is_frozen() -> None:
@@ -42,7 +42,7 @@ def test_invalid_role_raises() -> None:
         _make_ctx(role="hacker")
 
 
-def test_tenant_id_is_preserved() -> None:
+def test_organization_id_is_preserved() -> None:
     tid = uuid.uuid4()
-    ctx = _make_ctx(tenant_id=tid)
-    assert ctx.tenant_id == tid
+    ctx = _make_ctx(organization_id=tid)
+    assert ctx.organization_id == tid

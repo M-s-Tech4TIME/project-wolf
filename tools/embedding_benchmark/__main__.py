@@ -182,7 +182,7 @@ async def main() -> int:
     )
     args = parser.parse_args()
 
-    # Build the same corpus the seed CLI would have inserted for tenant 'acme'.
+    # Build the same corpus the seed CLI would have inserted for organization 'acme'.
     corpus = list(SHARED_CHUNKS) + runbook_chunks_for("acme")
 
     print(f"Benchmarking against {len(corpus)} dev-corpus chunks.")

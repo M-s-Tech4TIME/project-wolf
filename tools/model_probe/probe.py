@@ -37,9 +37,7 @@ class ProbeReport:
     provider: str
     measured_capability: CapabilityDescriptor
     task_results: list[ProbeTaskResult]
-    probe_timestamp: datetime = field(
-        default_factory=lambda: datetime.now(tz=UTC)
-    )
+    probe_timestamp: datetime = field(default_factory=lambda: datetime.now(tz=UTC))
 
     @property
     def overall_score(self) -> float:

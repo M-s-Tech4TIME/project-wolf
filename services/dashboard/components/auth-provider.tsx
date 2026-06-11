@@ -10,13 +10,13 @@ import {
   type ReactNode,
 } from "react";
 
-import { fetchMe, fetchMyTenants, logout as apiLogout } from "@/lib/api";
-import type { MeResponse, TenantMembership } from "@/lib/types";
+import { fetchMe, fetchMyOrganizations, logout as apiLogout } from "@/lib/api";
+import type { MeResponse, OrganizationMembership } from "@/lib/types";
 
 type AuthState = {
   isLoading: boolean;
   me: MeResponse | null;
-  tenants: TenantMembership[];
+  organizations: OrganizationMembership[];
   refresh: () => Promise<void>;
   signOut: () => Promise<void>;
 };
@@ -26,7 +26,7 @@ const AuthContext = createContext<AuthState | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [me, setMe] = useState<MeResponse | null>(null);
-  const [tenants, setTenants] = useState<TenantMembership[]>([]);
+  const [organizations, setOrganizations] = useState<OrganizationMembership[]>([]);
   const router = useRouter();
 
   const refresh = useCallback(async () => {
@@ -35,10 +35,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const fetched = await fetchMe();
       setMe(fetched);
       if (fetched) {
-        const memberships = await fetchMyTenants();
-        setTenants(memberships);
+        const memberships = await fetchMyOrganizations();
+        setOrganizations(memberships);
       } else {
-        setTenants([]);
+        setOrganizations([]);
       }
     } finally {
       setIsLoading(false);
@@ -48,7 +48,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = useCallback(async () => {
     await apiLogout();
     setMe(null);
-    setTenants([]);
+    setOrganizations([]);
     router.push("/login");
   }, [router]);
 
@@ -60,7 +60,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [refresh]);
 
   return (
-    <AuthContext.Provider value={{ isLoading, me, tenants, refresh, signOut }}>
+    <AuthContext.Provider value={{ isLoading, me, organizations, refresh, signOut }}>
       {children}
     </AuthContext.Provider>
   );

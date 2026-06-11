@@ -115,7 +115,8 @@ def test_rejects_cert_without_common_name() -> None:
     on)."""
     weird = {"subject": ((("organizationName", "Some Org"),),)}
     client = _build_app(
-        allowed_cns=["wolf-dashboard-client"], peer_cert=weird,
+        allowed_cns=["wolf-dashboard-client"],
+        peer_cert=weird,
     )
     resp = client.get("/api/v1/test")
     assert resp.status_code == 401

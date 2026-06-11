@@ -44,9 +44,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["tenant_id"], ["tenants.id"], ondelete="CASCADE"),
         sa.UniqueConstraint("tenant_id", name="uq_tenant_wazuh_config_tenant"),
     )
-    op.create_index(
-        "ix_tenant_wazuh_configs_tenant_id", "tenant_wazuh_configs", ["tenant_id"]
-    )
+    op.create_index("ix_tenant_wazuh_configs_tenant_id", "tenant_wazuh_configs", ["tenant_id"])
 
 
 def downgrade() -> None:

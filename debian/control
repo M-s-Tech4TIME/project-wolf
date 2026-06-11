@@ -47,7 +47,7 @@ Depends:
  adduser,
 Description: Wolf agent loop and API service
  wolf-server is the brain component: FastAPI app running the agent
- loop, tool dispatch, tenant context enforcement, audit log,
+ loop, tool dispatch, organization context enforcement, audit log,
  grounding validator, and the read tools that drive Wazuh queries.
  .
  Connects to wolf-database via DATABASE_URL (asyncpg over TCP). In

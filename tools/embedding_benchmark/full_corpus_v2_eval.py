@@ -31,26 +31,26 @@ from wolf_server.knowledge.models import KnowledgeChunk
 # Multiple chunks can satisfy (e.g. a parent technique + its sub-techniques).
 KEYED_QUERIES: list[tuple[str, str, str]] = [
     # (query, kind, expected_value)
-    ("What does Wazuh rule 5712 do?",                  "rule_id",   "5712"),
-    ("Explain Wazuh rule 5710",                        "rule_id",   "5710"),
-    ("rule 31100 details",                             "rule_id",   "31100"),
-    ("What is rule 80700",                             "rule_id",   "80700"),
-    ("Wazuh sshd authentication failure rule",         "rule_id",   "5710"),
-    ("brute force composite rule",                     "rule_id",   "5712"),
-    ("What is ATT&CK T1110?",                          "technique", "T1110"),
-    ("ATT&CK technique T1078 Valid Accounts",          "technique", "T1078"),
-    ("MITRE T1059.001 PowerShell",                     "technique", "T1059.001"),
-    ("Spearphishing attachment ATT&CK technique",      "technique", "T1566.001"),
-    ("Process Injection ATT&CK",                       "technique", "T1055"),
-    ("T1003 OS Credential Dumping",                    "technique", "T1003"),
-    ("Scheduled Task technique",                       "technique", "T1053"),
-    ("ATT&CK Data from Local System",                  "technique", "T1005"),
-    ("password spraying technique",                    "technique", "T1110.003"),
-    ("DNS tunneling MITRE technique",                  "technique", "T1071.004"),
-    ("Pass the Hash ATT&CK",                           "technique", "T1550.002"),
-    ("Domain Trust Discovery",                         "technique", "T1482"),
-    ("ATT&CK exfiltration over web service",           "technique", "T1567"),
-    ("MITRE T1547 Boot or Logon Autostart Execution",  "technique", "T1547"),
+    ("What does Wazuh rule 5712 do?", "rule_id", "5712"),
+    ("Explain Wazuh rule 5710", "rule_id", "5710"),
+    ("rule 31100 details", "rule_id", "31100"),
+    ("What is rule 80700", "rule_id", "80700"),
+    ("Wazuh sshd authentication failure rule", "rule_id", "5710"),
+    ("brute force composite rule", "rule_id", "5712"),
+    ("What is ATT&CK T1110?", "technique", "T1110"),
+    ("ATT&CK technique T1078 Valid Accounts", "technique", "T1078"),
+    ("MITRE T1059.001 PowerShell", "technique", "T1059.001"),
+    ("Spearphishing attachment ATT&CK technique", "technique", "T1566.001"),
+    ("Process Injection ATT&CK", "technique", "T1055"),
+    ("T1003 OS Credential Dumping", "technique", "T1003"),
+    ("Scheduled Task technique", "technique", "T1053"),
+    ("ATT&CK Data from Local System", "technique", "T1005"),
+    ("password spraying technique", "technique", "T1110.003"),
+    ("DNS tunneling MITRE technique", "technique", "T1071.004"),
+    ("Pass the Hash ATT&CK", "technique", "T1550.002"),
+    ("Domain Trust Discovery", "technique", "T1482"),
+    ("ATT&CK exfiltration over web service", "technique", "T1567"),
+    ("MITRE T1547 Boot or Logon Autostart Execution", "technique", "T1547"),
 ]
 
 # Conceptual queries — qualitative side-by-side, no objective correct answer.
@@ -81,7 +81,11 @@ def _correct_chunk_ids_for(
             tech = str(meta.get("technique", ""))
             if not tech:
                 continue
-            if tech == expected or tech.startswith(expected + ".") or expected.startswith(tech + "."):
+            if (
+                tech == expected
+                or tech.startswith(expected + ".")
+                or expected.startswith(tech + ".")
+            ):
                 correct.add(chunk_id)
     return correct
 
@@ -121,13 +125,9 @@ async def main() -> int:
         ).all()
     print(f"  Loaded {len(rows)} chunks")
 
-    all_chunks: list[tuple[str, str, dict]] = [
-        (str(r[0]), r[2], r[3]) for r in rows
-    ]
+    all_chunks: list[tuple[str, str, dict]] = [(str(r[0]), r[2], r[3]) for r in rows]
     chunk_contents: dict[str, str] = {str(r[0]): r[1] for r in rows}
-    v1_vectors: dict[str, list[float]] = {
-        str(r[0]): list(r[4]) for r in rows
-    }
+    v1_vectors: dict[str, list[float]] = {str(r[0]): list(r[4]) for r in rows}
 
     print("\n=== Embedding the same 5173 chunks with v2-moe (in memory) ===")
     # v2-moe has a 512-token context limit. Long ATT&CK descriptions
@@ -138,9 +138,7 @@ async def main() -> int:
     # This is the realistic v2-moe-in-production behaviour we should
     # measure, not an artificial "everything embeds" scenario.
     V2_CHAR_LIMIT = 1800
-    v2_adapter = OllamaEmbeddingAdapter(
-        "http://localhost:11434", model="nomic-embed-text-v2-moe"
-    )
+    v2_adapter = OllamaEmbeddingAdapter("http://localhost:11434", model="nomic-embed-text-v2-moe")
     v2_vectors: dict[str, list[float]] = {}
     t0 = time.perf_counter()
     chunk_ids = list(chunk_contents.keys())
@@ -167,15 +165,17 @@ async def main() -> int:
                 f"({elapsed:.0f}s elapsed, truncated={truncated_count}, errors={error_count})"
             )
     v2_corpus_seconds = time.perf_counter() - t0
-    print(f"  v2-moe corpus embed: {v2_corpus_seconds:.1f}s "
-          f"({v2_corpus_seconds * 1000 / len(chunk_ids):.0f}ms/chunk)")
-    print(f"  truncated (>1800 chars): {truncated_count} chunks "
-          f"({100*truncated_count/len(chunk_ids):.1f}%)")
+    print(
+        f"  v2-moe corpus embed: {v2_corpus_seconds:.1f}s "
+        f"({v2_corpus_seconds * 1000 / len(chunk_ids):.0f}ms/chunk)"
+    )
+    print(
+        f"  truncated (>1800 chars): {truncated_count} chunks "
+        f"({100 * truncated_count / len(chunk_ids):.1f}%)"
+    )
     print(f"  errors after truncation:  {error_count} chunks")
 
-    v1_adapter = OllamaEmbeddingAdapter(
-        "http://localhost:11434", model="nomic-embed-text"
-    )
+    v1_adapter = OllamaEmbeddingAdapter("http://localhost:11434", model="nomic-embed-text")
 
     print("\n=== Scoring keyed queries (precision@1, precision@5) ===")
     per_query: list[dict] = []
@@ -197,18 +197,27 @@ async def main() -> int:
         p1_v2 += int(hit1_v2)
         p5_v1 += int(hit5_v1)
         p5_v2 += int(hit5_v2)
-        per_query.append({
-            "q": q, "expected": expected,
-            "v1_hit1": hit1_v1, "v2_hit1": hit1_v2,
-            "v1_hit5": hit5_v1, "v2_hit5": hit5_v2,
-        })
+        per_query.append(
+            {
+                "q": q,
+                "expected": expected,
+                "v1_hit1": hit1_v1,
+                "v2_hit1": hit1_v2,
+                "v1_hit5": hit5_v1,
+                "v2_hit5": hit5_v2,
+            }
+        )
 
     n = len(per_query)
     print(f"\n  Keyed queries: {n}")
-    print(f"  precision@1   v1.5: {p1_v1}/{n} ({100*p1_v1/n:.0f}%)  "
-          f"v2-moe: {p1_v2}/{n} ({100*p1_v2/n:.0f}%)")
-    print(f"  precision@5   v1.5: {p5_v1}/{n} ({100*p5_v1/n:.0f}%)  "
-          f"v2-moe: {p5_v2}/{n} ({100*p5_v2/n:.0f}%)")
+    print(
+        f"  precision@1   v1.5: {p1_v1}/{n} ({100 * p1_v1 / n:.0f}%)  "
+        f"v2-moe: {p1_v2}/{n} ({100 * p1_v2 / n:.0f}%)"
+    )
+    print(
+        f"  precision@5   v1.5: {p5_v1}/{n} ({100 * p5_v1 / n:.0f}%)  "
+        f"v2-moe: {p5_v2}/{n} ({100 * p5_v2 / n:.0f}%)"
+    )
 
     print("\n=== Per-query results (where v1.5 and v2-moe disagree on top-1) ===")
     for r in per_query:
@@ -247,11 +256,15 @@ async def main() -> int:
             t = time.perf_counter()
             await v2_adapter.embed([q])
             v2_lats.append((time.perf_counter() - t) * 1000)
-    print(f"  v1.5    mean={statistics.mean(v1_lats):5.1f}ms  "
-          f"p50={statistics.median(v1_lats):5.1f}ms")
-    print(f"  v2-moe  mean={statistics.mean(v2_lats):5.1f}ms  "
-          f"p50={statistics.median(v2_lats):5.1f}ms")
-    print(f"  v2-moe is {statistics.mean(v2_lats)/statistics.mean(v1_lats):.1f}x slower per query")
+    print(
+        f"  v1.5    mean={statistics.mean(v1_lats):5.1f}ms  p50={statistics.median(v1_lats):5.1f}ms"
+    )
+    print(
+        f"  v2-moe  mean={statistics.mean(v2_lats):5.1f}ms  p50={statistics.median(v2_lats):5.1f}ms"
+    )
+    print(
+        f"  v2-moe is {statistics.mean(v2_lats) / statistics.mean(v1_lats):.1f}x slower per query"
+    )
     return 0
 
 

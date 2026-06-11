@@ -1,6 +1,6 @@
 """Alert-tier read tools: search, aggregate, timeline, agent history.
 
-These tools query the Wazuh OpenSearch (Indexer) tier through the tenant-
+These tools query the Wazuh OpenSearch (Indexer) tier through the organization-
 scoped query builder.  Every tool result carries a citation so downstream
 grounding validation can verify factual claims.
 """
@@ -61,12 +61,10 @@ def _hit_to_alert(hit: dict[str, Any]) -> AlertHit:
 
 _AGENT_NAME_CACHE_NS = "agent_name_lookup"
 _AGENT_NAME_CACHE_TTL = 60.0  # seconds; short enough that agent fleet
-                              # changes converge within ~1 minute.
+# changes converge within ~1 minute.
 
 
-async def _resolve_agent_name_to_id(
-    agent_name: str, exec_ctx: ToolExecContext
-) -> str | None:
+async def _resolve_agent_name_to_id(agent_name: str, exec_ctx: ToolExecContext) -> str | None:
     """Look up a Wazuh agent's numeric id by its human-readable name.
 
     Uses the Server API's `/agents?name=<n>` filter (case-insensitive).
@@ -75,13 +73,13 @@ async def _resolve_agent_name_to_id(
     not exist; the caller will then run an unfiltered or no-results
     query and the validator will catch the resulting under-grounding).
 
-    Phase 4 Slice 3: result is now CACHED per-tenant via the tenant-
+    Phase 4 Slice 3: result is now CACHED per-organization via the organization-
     scoped cache (60-second TTL). Within a single chat loop the same
     agent_name is often resolved multiple times — caching turns N
-    Server-API GETs into 1. The cache key includes the tenant_id by
-    construction (doc 05 §Caching across tenants), so tenant A's cache
-    of "linux-test-agent → 001" cannot satisfy tenant B's lookup of
-    the same name — each tenant probes its own Wazuh deployment.
+    Server-API GETs into 1. The cache key includes the organization_id by
+    construction (doc 05 §Caching across organizations), so organization A's cache
+    of "linux-test-agent → 001" cannot satisfy organization B's lookup of
+    the same name — each organization probes its own Wazuh deployment.
 
     A short TTL bounds the staleness risk: if an agent is deleted +
     re-registered with a different ID, the cache converges within
@@ -89,7 +87,7 @@ async def _resolve_agent_name_to_id(
     """
     if exec_ctx.cache is not None:
         cached = await exec_ctx.cache.get(
-            exec_ctx.tenant.tenant_id, _AGENT_NAME_CACHE_NS, agent_name
+            exec_ctx.organization.organization_id, _AGENT_NAME_CACHE_NS, agent_name
         )
         if cached is not None:
             # Cache stores either the resolved id (str) OR the marker
@@ -106,7 +104,7 @@ async def _resolve_agent_name_to_id(
 
     if exec_ctx.cache is not None:
         await exec_ctx.cache.set(
-            exec_ctx.tenant.tenant_id,
+            exec_ctx.organization.organization_id,
             _AGENT_NAME_CACHE_NS,
             agent_name,
             resolved if resolved is not None else "__NOT_FOUND__",
@@ -127,8 +125,7 @@ class SearchAlertsInput(BaseModel):
     time_to: datetime = Field(
         default_factory=default_time_to,
         description=(
-            "Inclusive end of the time window. Defaults to 'now' if omitted. "
-            f"{_TIME_FIELD_HELP}"
+            f"Inclusive end of the time window. Defaults to 'now' if omitted. {_TIME_FIELD_HELP}"
         ),
     )
     agent_id: str | None = Field(
@@ -321,9 +318,7 @@ class SearchAlertsTool(ReadTool):
             # Small models routinely pass the name where the API needs
             # the ID; this resolution short-circuits the silent 0-hits
             # failure that confused the Slice 3 end-to-end retest.
-            resolved_agent_id = await _resolve_agent_name_to_id(
-                args.agent_name, exec_ctx
-            )
+            resolved_agent_id = await _resolve_agent_name_to_id(args.agent_name, exec_ctx)
         query = exec_ctx.opensearch.query_builder.search_alerts(
             time_from=args.time_from,
             time_to=args.time_to,
@@ -344,9 +339,7 @@ class SearchAlertsTool(ReadTool):
         # array of the last hit, fed straight back as search_after. A short
         # page (or empty) means the walk is complete.
         has_more = len(hits_raw) == args.size
-        next_cursor = (
-            hits_raw[-1].get("sort") if has_more and hits_raw else None
-        )
+        next_cursor = hits_raw[-1].get("sort") if has_more and hits_raw else None
         # Never advertise more without a usable cursor to continue with.
         if next_cursor is None:
             has_more = False
@@ -427,9 +420,7 @@ class AggregateAlertsTool(ReadTool):
             size=args.size,
         )
         body = await exec_ctx.opensearch.execute(query)
-        raw_buckets = (
-            body.get("aggregations", {}).get("buckets", {}).get("buckets", [])
-        )
+        raw_buckets = body.get("aggregations", {}).get("buckets", {}).get("buckets", [])
         buckets = [
             AggregateBucket(key=str(b["key"]), count=int(b.get("doc_count", 0)))
             for b in raw_buckets
@@ -561,9 +552,7 @@ class CountAlertsBySeverityInput(BaseModel):
         default_factory=default_time_to,
         description=f"Window end; defaults to 'now'. {_TIME_FIELD_HELP}",
     )
-    agent_id: str | None = Field(
-        default=None, description="Optional: filter to one agent."
-    )
+    agent_id: str | None = Field(default=None, description="Optional: filter to one agent.")
 
     @field_validator("time_from", "time_to", mode="before")
     @classmethod
@@ -608,9 +597,7 @@ class CountAlertsBySeverityTool(ReadTool):
             size=20,
         )
         body = await exec_ctx.opensearch.execute(query)
-        raw_buckets = (
-            body.get("aggregations", {}).get("buckets", {}).get("buckets", [])
-        )
+        raw_buckets = body.get("aggregations", {}).get("buckets", {}).get("buckets", [])
         critical = high = medium = low = 0
         for b in raw_buckets:
             try:

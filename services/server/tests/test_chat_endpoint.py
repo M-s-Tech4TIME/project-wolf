@@ -1,7 +1,7 @@
 """End-to-end test for POST /api/v1/chat.
 
 Exercises the full request path:
-  cookie auth → tenant context → secrets/wazuh/model resolution → agent loop
+  cookie auth → organization context → secrets/wazuh/model resolution → agent loop
   → response payload with citations.
 
 The Wazuh + model resolution paths are monkey-patched so the test can run
@@ -72,11 +72,11 @@ class _MockProvider:
         raise NotImplementedError
 
 
-def _fake_wazuh_connection(tenant_id: uuid.UUID) -> Any:
+def _fake_wazuh_connection(organization_id: uuid.UUID) -> Any:
     from wolf_server.wazuh.config import WazuhConnection
 
     return WazuhConnection(
-        tenant_id=tenant_id,
+        organization_id=organization_id,
         opensearch_url="https://os.example.test:9200",
         opensearch_index_pattern="wazuh-alerts-*",
         opensearch_username="ro",
@@ -92,7 +92,7 @@ def _patch_chat_module(
     monkeypatch: pytest.MonkeyPatch,
     *,
     provider: _MockProvider,
-    tenant_id: uuid.UUID,
+    organization_id: uuid.UUID,
 ) -> None:
     """Swap out the chat endpoint's external resolvers with hermetic fakes."""
 
@@ -100,16 +100,12 @@ def _patch_chat_module(
         return provider
 
     async def _wazuh(*_args: Any, **_kwargs: Any) -> Any:
-        return _fake_wazuh_connection(tenant_id)
+        return _fake_wazuh_connection(organization_id)
 
     def _os_client(*_args: Any, **_kwargs: Any) -> MagicMock:
         client = MagicMock()
-        client.query_builder.search_alerts.return_value = {
-            "query": {"bool": {"filter": []}}
-        }
-        client.execute = AsyncMock(
-            return_value={"hits": {"total": {"value": 0}, "hits": []}}
-        )
+        client.query_builder.search_alerts.return_value = {"query": {"bool": {"filter": []}}}
+        client.execute = AsyncMock(return_value={"hits": {"total": {"value": 0}, "hits": []}})
         client.__aenter__ = AsyncMock(return_value=client)
         client.__aexit__ = AsyncMock(return_value=None)
         return client
@@ -121,7 +117,7 @@ def _patch_chat_module(
         client.__aexit__ = AsyncMock(return_value=None)
         return client
 
-    monkeypatch.setattr("wolf_server.api.chat.get_model_for_tenant", _resolver)
+    monkeypatch.setattr("wolf_server.api.chat.get_model_for_organization", _resolver)
     monkeypatch.setattr("wolf_server.api.chat.get_wazuh_connection", _wazuh)
     monkeypatch.setattr("wolf_server.api.chat.WazuhOpenSearchClient", _os_client)
     monkeypatch.setattr("wolf_server.api.chat.WazuhServerApiClient", _api_client)
@@ -149,7 +145,7 @@ async def _login(client: AsyncClient, seed: dict[str, Any]) -> None:
         json={
             "email": seed["user_email"],
             "password": "password123",
-            "tenant_id": str(seed["tenant_id"]),
+            "organization_id": str(seed["organization_id"]),
         },
     )
     assert resp.status_code == 200
@@ -167,7 +163,7 @@ async def test_chat_unauthenticated_returns_401(client: AsyncClient) -> None:
 @pytest.mark.asyncio
 async def test_chat_returns_grounded_answer_with_citations(
     client: AsyncClient,
-    seed_tenant_and_user: dict[str, Any],
+    seed_organization_and_user: dict[str, Any],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     call = ToolCall(
@@ -217,11 +213,13 @@ async def test_chat_returns_grounded_answer_with_citations(
         ]
     )
     _patch_chat_module(
-        monkeypatch, provider=provider, tenant_id=seed_tenant_and_user["tenant_id"]
+        monkeypatch,
+        provider=provider,
+        organization_id=seed_organization_and_user["organization_id"],
     )
     monkeypatch.setattr("wolf_server.api.chat._secrets_dep", lambda: _StubSecrets())
 
-    await _login(client, seed_tenant_and_user)
+    await _login(client, seed_organization_and_user)
 
     resp = await client.post("/api/v1/chat", json={"question": "anything today?"})
     assert resp.status_code == 200, resp.text
@@ -245,7 +243,7 @@ async def test_chat_returns_grounded_answer_with_citations(
 @pytest.mark.asyncio
 async def test_chat_validates_request_body(
     client: AsyncClient,
-    seed_tenant_and_user: dict[str, Any],
+    seed_organization_and_user: dict[str, Any],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     provider = _MockProvider(
@@ -261,11 +259,13 @@ async def test_chat_validates_request_body(
         ]
     )
     _patch_chat_module(
-        monkeypatch, provider=provider, tenant_id=seed_tenant_and_user["tenant_id"]
+        monkeypatch,
+        provider=provider,
+        organization_id=seed_organization_and_user["organization_id"],
     )
     monkeypatch.setattr("wolf_server.api.chat._secrets_dep", lambda: _StubSecrets())
 
-    await _login(client, seed_tenant_and_user)
+    await _login(client, seed_organization_and_user)
 
     # Empty question rejected by Pydantic min_length=1.
     resp = await client.post("/api/v1/chat", json={"question": ""})
@@ -282,9 +282,9 @@ def _parse_sse(text: str) -> list[tuple[str, str]]:
     data_lines: list[str] = []
     for raw_line in text.splitlines():
         if raw_line.startswith("event:"):
-            name = raw_line[len("event:"):].strip()
+            name = raw_line[len("event:") :].strip()
         elif raw_line.startswith("data:"):
-            data_lines.append(raw_line[len("data:"):].strip())
+            data_lines.append(raw_line[len("data:") :].strip())
         elif raw_line == "":
             if name is not None:
                 events.append((name, "\n".join(data_lines)))
@@ -304,7 +304,7 @@ async def test_chat_stream_unauthenticated_returns_401(client: AsyncClient) -> N
 @pytest.mark.asyncio
 async def test_chat_stream_emits_events_then_answer_then_done(
     client: AsyncClient,
-    seed_tenant_and_user: dict[str, Any],
+    seed_organization_and_user: dict[str, Any],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import json
@@ -322,14 +322,14 @@ async def test_chat_stream_emits_events_then_answer_then_done(
         ]
     )
     _patch_chat_module(
-        monkeypatch, provider=provider, tenant_id=seed_tenant_and_user["tenant_id"]
+        monkeypatch,
+        provider=provider,
+        organization_id=seed_organization_and_user["organization_id"],
     )
     monkeypatch.setattr("wolf_server.api.chat._secrets_dep", lambda: _StubSecrets())
-    await _login(client, seed_tenant_and_user)
+    await _login(client, seed_organization_and_user)
 
-    async with client.stream(
-        "POST", "/api/v1/chat/stream", json={"question": "all good?"}
-    ) as resp:
+    async with client.stream("POST", "/api/v1/chat/stream", json={"question": "all good?"}) as resp:
         assert resp.status_code == 200
         assert resp.headers["content-type"].startswith("text/event-stream")
         body = await resp.aread()

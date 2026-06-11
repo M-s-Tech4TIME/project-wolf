@@ -187,9 +187,7 @@ async def test_task_grounding_discipline_passes() -> None:
 async def test_task_grounding_discipline_fabrication_fails() -> None:
     from tools.model_probe.tasks import task_grounding_discipline
 
-    provider = MockProvider(
-        grounding_refusal="192.168.1.45 made 347 failed login attempts"
-    )
+    provider = MockProvider(grounding_refusal="192.168.1.45 made 347 failed login attempts")
     result = await task_grounding_discipline(provider)
     assert not result.passed
     assert result.score == 0.0

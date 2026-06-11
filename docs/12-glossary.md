@@ -14,7 +14,7 @@ When ambiguous in code or docs, prefix: `wazuh_agent` vs `ai_agent`.
 that the gateway requires before executing the action. Issued only by the
 approval service on a human action.
 
-**Audit log** — The append-only, tenant-tagged record of every event in the
+**Audit log** — The append-only, organization-tagged record of every event in the
 system. Outside the write reach of the orchestrator and gateway. Authoritative
 for "what happened."
 
@@ -26,7 +26,7 @@ strategy to apply.
 `execute`. A property of the tool, fixed at registration.
 
 **Case** — The unit of orchestration: a structured record of an investigation
-or incident response. Tenant-scoped. The analyst's view of an ongoing or closed
+or incident response. Organization-scoped. The analyst's view of an ongoing or closed
 piece of work.
 
 **Content hash** — A hash over a proposal's immutable fields. The human approves
@@ -60,8 +60,8 @@ claims are removed or flagged.
 **Indexer (Wazuh)** — Wazuh's OpenSearch-backed data store of alerts and events.
 The read tier of the platform.
 
-**MSSP parent scope** — A logical scope above tenants for MSSPs that own multiple
-tenants. Cross-tenant queries are permitted only within an MSSP's owned set, with
+**MSSP parent scope** — A logical scope above organizations for MSSPs that own multiple
+organizations. Cross-organization queries are permitted only within an MSSP's owned set, with
 the set resolved server-side from the account.
 
 **Orchestrator** — The core service that runs the agent loop and dispatches tool
@@ -96,11 +96,11 @@ guided with checkpoints (mid), deterministic pipeline with model-in-the-slots
 **Target sensitivity** — One of the three axes of approval authority. Crown-
 jewel assets escalate the required level.
 
-**Tenancy / tenant** — A tenant is one isolated customer of the platform. A
-single-org deployment has exactly one tenant. An MSSP has many. Every piece of
-code threads tenant context; there is no untenanted code path.
+**Tenancy / organization** — A organization is one isolated customer of the platform. A
+single-org deployment has exactly one organization. An MSSP has many. Every piece of
+code threads organization context; there is no unorganizationed code path.
 
-**Tenant context** — The immutable per-request data carrying the active tenant
+**Organization context** — The immutable per-request data carrying the active organization
 ID. Stamped by the orchestrator from the authenticated session. Injected into
 every tool call. The model cannot influence it.
 

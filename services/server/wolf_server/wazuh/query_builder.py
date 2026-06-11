@@ -1,20 +1,20 @@
-"""Tenant-scoped OpenSearch query builder.
+"""Organization-scoped OpenSearch query builder.
 
 The single guarantee of this module: **every query built here carries the
-tenant filter.**  There is no method that produces a query without it.
+organization filter.**  There is no method that produces a query without it.
 
 The forced filter is two-layered, matching doc 05 §Four enforcement points:
 
-  1. Credential isolation: the connection itself uses tenant-A credentials,
+  1. Credential isolation: the connection itself uses organization-A credentials,
      so the cluster physically rejects a misrouted query.
   2. Query layer: even with shared credentials (pooled-index deployments),
-     the builder injects `term: {tenant_id: <ctx.tenant_id>}` into every
-     query.  Tenants that do not stamp a `tenant_id` field on alerts will
+     the builder injects `term: {organization_id: <ctx.organization_id>}` into every
+     query.  Organizations that do not stamp a `organization_id` field on alerts will
      simply have an extra filter against a field that does not exist — which
-     yields zero results, fail-closed, never cross-tenant exposure.
+     yields zero results, fail-closed, never cross-organization exposure.
 
 Callers pass *what* to search; the builder decides *where*, and "where"
-always includes the tenant wall.
+always includes the organization wall.
 """
 
 import uuid
@@ -22,22 +22,22 @@ from datetime import datetime
 from typing import Any
 
 
-class TenantScopedQueryBuilder:
-    """Build OpenSearch queries that always include the tenant filter.
+class OrganizationScopedQueryBuilder:
+    """Build OpenSearch queries that always include the organization filter.
 
-    Construct one per request, bound to the request's tenant context.
-    Reusing a builder across tenants is a bug — there is no setter for
-    `tenant_id`.
+    Construct one per request, bound to the request's organization context.
+    Reusing a builder across organizations is a bug — there is no setter for
+    `organization_id`.
     """
 
     def __init__(
         self,
-        tenant_id: uuid.UUID,
+        organization_id: uuid.UUID,
         *,
-        inject_tenant_filter: bool = False,
+        inject_organization_filter: bool = False,
     ) -> None:
-        self._tenant_id = str(tenant_id)
-        self._inject_tenant_filter = inject_tenant_filter
+        self._organization_id = str(organization_id)
+        self._inject_organization_filter = inject_organization_filter
 
     # ── Public query constructors ─────────────────────────────────────────
 
@@ -191,25 +191,25 @@ class TenantScopedQueryBuilder:
     # ── Internal builders ─────────────────────────────────────────────────
 
     @property
-    def inject_tenant_filter(self) -> bool:
-        """Whether this builder adds the term:{tenant_id} filter to queries."""
-        return self._inject_tenant_filter
+    def inject_organization_filter(self) -> bool:
+        """Whether this builder adds the term:{organization_id} filter to queries."""
+        return self._inject_organization_filter
 
     def _mandatory_filters(self) -> list[dict[str, Any]]:
         """The forced filter clauses prepended to every query.
 
-        When `inject_tenant_filter` is TRUE, contains the `tenant_id`
-        term filter — required for pooled-index multi-tenant deployments
-        where every alert is stamped with `tenant_id` at ingest.
+        When `inject_organization_filter` is TRUE, contains the `organization_id`
+        term filter — required for pooled-index multi-organization deployments
+        where every alert is stamped with `organization_id` at ingest.
 
         When FALSE (default), returns an empty list.  Vanilla Wazuh
-        alerts do NOT carry a `tenant_id` field, so the filter would
+        alerts do NOT carry a `organization_id` field, so the filter would
         silently match zero docs — fail-closed is wrong here because the
-        per-tenant *credential* is the actual isolation boundary.
+        per-organization *credential* is the actual isolation boundary.
         """
-        if not self._inject_tenant_filter:
+        if not self._inject_organization_filter:
             return []
-        return [{"term": {"tenant_id": self._tenant_id}}]
+        return [{"term": {"organization_id": self._organization_id}}]
 
     def _timestamp_range(self, time_from: datetime, time_to: datetime) -> dict[str, Any]:
         return {

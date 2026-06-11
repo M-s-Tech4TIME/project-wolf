@@ -128,12 +128,8 @@ async def chat_with_fallback(
             continue
 
         if tool_call:
-            return response.model_copy(
-                update={"tool_calls": [tool_call], "content": ""}
-            )
-        return response.model_copy(
-            update={"content": answer or "", "tool_calls": []}
-        )
+            return response.model_copy(update={"tool_calls": [tool_call], "content": ""})
+        return response.model_copy(update={"content": answer or "", "tool_calls": []})
 
     raise WolfError(
         f"Model failed structured-output fallback after {MAX_RETRIES} attempts: {last_error}"

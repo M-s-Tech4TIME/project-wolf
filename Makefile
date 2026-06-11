@@ -49,13 +49,13 @@ revision: ## Create a new Alembic migration (MSG="description")
 test: ## Run the full test suite
 	uv run pytest services/server/tests packages/ -v --tb=short
 
-test-isolation: ## Run cross-tenant isolation test suite (unit-level — runs in CI)
-	uv run pytest services/server/tests/test_cross_tenant_isolation.py services/server/tests/test_tenant_scoped_cache.py -v --tb=short
+test-isolation: ## Run cross-organization isolation test suite (unit-level — runs in CI)
+	uv run pytest services/server/tests/test_cross_organization_isolation.py services/server/tests/test_organization_scoped_cache.py -v --tb=short
 
-test-isolation-live: ## Live two-tenant smoke (Phase 4 Slice 4). Requires DATABASE_URL + bootstrapped 'acme' + 'beta'.
-	@bash -c 'set -a && source .env && set +a && uv run python -m tools.tenant_isolation_test'
+test-isolation-live: ## Live two-organization smoke (Phase 4 Slice 4). Requires DATABASE_URL + bootstrapped 'acme' + 'beta'.
+	@bash -c 'set -a && source .env && set +a && uv run python -m tools.cross_organization_isolation'
 
-test-cov: ## Run tests with coverage (targets: tenancy, audit, auth, models, schema)
+test-cov: ## Run tests with coverage (targets: organization, audit, auth, models, schema)
 	uv run pytest services/server/tests packages/ \
 		--cov=services/server/wolf_server \
 		--cov=packages/common/wolf_common \
@@ -77,7 +77,7 @@ typecheck: ## Type-check safety-critical packages with mypy (strict)
 	           packages/secrets/wolf_secrets \
 	           packages/schema/wolf_schema \
 	           packages/cert/wolf_cert \
-	           services/server/wolf_server/tenancy \
+	           services/server/wolf_server/organization \
 	           services/server/wolf_server/audit \
 	           services/server/wolf_server/models \
 	           services/server/wolf_server/wazuh \

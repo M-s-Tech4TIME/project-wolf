@@ -72,9 +72,7 @@ def _technique_id_from(obj: dict) -> str | None:
 
 def _kill_chain_phases(obj: dict) -> list[str]:
     return [
-        p.get("phase_name", "")
-        for p in obj.get("kill_chain_phases", [])
-        if p.get("phase_name")
+        p.get("phase_name", "") for p in obj.get("kill_chain_phases", []) if p.get("phase_name")
     ]
 
 
@@ -115,7 +113,7 @@ def _chunks_from_bundle(bundle: dict, attack_version: str) -> Iterator[ChunkInpu
         yield ChunkInput(
             content=content,
             source_type="attack",
-            tenant_id=None,
+            organization_id=None,
             chunk_metadata=metadata,
         )
 
@@ -144,10 +142,7 @@ def ingest_attack(
             break
 
     chunks = list(_chunks_from_bundle(bundle, attack_version))
-    print(
-        f"  Parsed {len(chunks)} active techniques "
-        f"(ATT&CK matrix version: {attack_version})"
-    )
+    print(f"  Parsed {len(chunks)} active techniques (ATT&CK matrix version: {attack_version})")
     if limit is not None:
         chunks = chunks[:limit]
         print(f"  --limit applied: {len(chunks)} chunks will be ingested")

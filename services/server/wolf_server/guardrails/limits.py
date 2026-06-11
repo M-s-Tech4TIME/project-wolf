@@ -16,11 +16,11 @@ The window cap is a backstop against a pathological single-page request, not
 the primary volume guard.
 
 Limits are dataclass-configurable so an operator can tighten or loosen them
-per deployment, but the defaults are safe for typical tenants.
+per deployment, but the defaults are safe for typical organizations.
 
-Per-tenant overrides could live in a future `tenant_resource_limits` table;
+Per-organization overrides could live in a future `organization_resource_limits` table;
 the function signature already accepts a `ResourceLimits` so the dispatcher
-can swap in a tenant-specific instance without changing the call site.
+can swap in a organization-specific instance without changing the call site.
 """
 
 from dataclasses import dataclass, field
@@ -78,9 +78,7 @@ def enforce_limits(
             raise GuardrailViolation("time_to is before time_from")
         span = time_to - time_from
         if enforce_time_window and span > limits.max_time_range + _TIME_RANGE_GRACE:
-            raise GuardrailViolation(
-                f"Query spans {span} > maximum {limits.max_time_range}"
-            )
+            raise GuardrailViolation(f"Query spans {span} > maximum {limits.max_time_range}")
 
     if requested_size is not None and requested_size > limits.max_results_per_query:
         raise GuardrailViolation(

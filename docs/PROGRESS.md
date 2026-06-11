@@ -6,7 +6,7 @@
 >
 > For history of what changed when, see `CHANGELOG.md` (append-only).
 
-**Last updated:** 2026-06-11 by claude-code (ALL FOUR ADRs 0017 + 0018 + 0019 + 0020 ACCEPTED after multi-round operator reviews — entire design arc locked; Phase 6.4 tenant→organization rename is the next real work unit; memory/ moved into the repo)
+**Last updated:** 2026-06-11 by claude-code (ALL FOUR ADRs 0017 + 0018 + 0019 + 0020 ACCEPTED after multi-round operator reviews — entire design arc locked; Phase 6.4 organization→organization rename is the next real work unit; memory/ moved into the repo)
 
 ---
 
@@ -60,7 +60,7 @@ since the last update:
      `X-Organization-Id` header); session cookie blacklist
      (Redis); invite-link verification flow with same-network gate
      (no SMTP — copy-link out-of-band delivery). Phase 6.4
-     (tenant→organization rename) is the unblocked pre-req. Phase
+     (organization→organization rename) is the unblocked pre-req. Phase
      6.5 = 9 sub-slices, 12-13 sessions. Propose/approve/execute
      enforcement decorators defer to Phase 6 (wolf-gateway). MFA
      deferred to v1.1.
@@ -99,7 +99,7 @@ since the last update:
    standing rules saved this session:
    - `wolf-bootstrap-superuser-flow.md`
    - `shell-wrapper-required-pattern.md`
-   - `tenant-renamed-to-organization.md`
+   - `organization-renamed-to-organization.md`
    - `web-first-configurability.md`
    Full memory index at `memory/MEMORY.md`.
 
@@ -429,7 +429,7 @@ Phase 5.6 closeout state:
 * Audit log records every mTLS accept/reject decision via
   structlog (`grep mtls_` in the journal).
 * All quality gates green: 87 mypy files, 0 ruff, 0 tsc, 0
-  eslint, **321/321 backend tests**, 6/6 tenant-isolation.
+  eslint, **321/321 backend tests**, 6/6 organization-isolation.
 
 APT / DNF packaging (Phases 5.9 / 5.10) remain deferred to the
 official-release phase per the 2026-06-03 operator direction.
@@ -455,14 +455,14 @@ one shipped CLI bug (`wolf-cert --leaf` help advertising leaf
 names that no longer existed), the `package-lock.json` name
 field, six dead `_ORCH = "services/orchestrator"` `sys.path`
 bootstrap blocks (`tools/embedding_benchmark/*`, `tools/
-seed_knowledge`, `tools/tenant_isolation_test`, `services/server/
+seed_knowledge`, `tools/organization_isolation_test`, `services/server/
 tests/test_seed_knowledge_ingesters.py`), 14 broken `services/
 server/app/…` markdown links in `ONBOARDING.md`, ~30 in-source
 comments narrating current behaviour with old names (including
-the LLM-visible system prompt's "the orchestrator stamps tenant
+the LLM-visible system prompt's "the orchestrator stamps organization
 scope" rule), and shipped-package docstrings in `wolf_cert`,
 `wolf_secrets`, `wolf_gateway`. Final gate: mypy 0 / ruff clean
-/ tsc 0 / eslint clean / 311 backend tests / 6/6 tenant-isolation.
+/ tsc 0 / eslint clean / 311 backend tests / 6/6 organization-isolation.
 
 The planning bundle (`docs/00`–`docs/16`) deliberately retains
 its pre-rename language as descriptive specs — see §6 below.
@@ -520,7 +520,7 @@ narrative in CHANGELOG 2026-05-31).
 **Standing rules active across the project** (cross-session memory):
 - *Integrity across the stack* (2026-05-30) — every change preserves
   integrity across frontend / backend / DB / libraries / UI; full
-  backend suite + cross-tenant gate on every `services/` change.
+  backend suite + cross-organization gate on every `services/` change.
 - *Quality + secure coding discipline* (2026-05-31) — features-first;
   quality + secure coding applied inline as each slice is built;
   dedicated hardening + audit pass deferred to a later phase but
@@ -529,13 +529,13 @@ narrative in CHANGELOG 2026-05-31).
   warnings / silent diagnostics unaddressed; "pre-existing baseline"
   is not a pass; fix or track-with-plan, never just report-and-move-on.
 
-**Phase 4 — multi-tenancy hardening — CLOSED 2026-05-27.** Four slices
-shipped: two-tenant live DB + RAG isolation tests (4.1, `338413f`),
-`bootstrap_tenant` validates + `--update` flag (4.2, `1da9e1c`),
-`TenantScopedCache` + agent_name caching + audit-write isolation
-(4.3, `3ff751c`), and the runnable `tools/tenant_isolation_test` live
+**Phase 4 — multi-organization hardening — CLOSED 2026-05-27.** Four slices
+shipped: two-organization live DB + RAG isolation tests (4.1, `338413f`),
+`bootstrap_organization` validates + `--update` flag (4.2, `1da9e1c`),
+`OrganizationScopedCache` + agent_name caching + audit-write isolation
+(4.3, `3ff751c`), and the runnable `tools/organization_isolation_test` live
 smoke + ONBOARDING gotchas + close-out (4.4). Live isolation suite:
-6/6 checks pass against the dev two-tenant state.
+6/6 checks pass against the dev two-organization state.
 
 **Phase status:** **Phase 3 shipped end-to-end** (Slices 1, 1.5, 2A, 2B,
 and 3). Phase 2 closed (ADR 0005). Phase 3 vertical:
@@ -545,7 +545,7 @@ markers on unsupported claims. Slice 3 added the production-grade
 ingesters under `tools/seed_knowledge/`: MITRE ATT&CK STIX (697
 techniques, matrix v19.1) and the Wazuh ruleset XML (4473 rules from
 v4.9.2). The dev DB now carries **5170 shared chunks + 3
-tenant-private** = 5173 total. `make check` 174 passed (128 prior +
+organization-private** = 5173 total. `make check` 174 passed (128 prior +
 19 knowledge + 16 validator + 11 ingester tests). End-to-end verified
 against a brand-new dedicated agent at 192.168.245.129
 (`linux-test-agent`, id 001): SSH brute-force triggered 9× rule 5710
@@ -557,14 +557,14 @@ grounding validator caught a false-negative claim in one run
 returned malformed JSON on a harder run.
 
 **Phase 2 exit criteria progress** (from `docs/10-build-roadmap.md`):
-- [x] Wazuh OpenSearch client with forced tenant filter (opt-in per tenant)
+- [x] Wazuh OpenSearch client with forced organization filter (opt-in per organization)
 - [x] Wazuh Server API client (read endpoints only)
 - [x] Tool registry with strict input/output Pydantic schemas
 - [x] First read tools: **9 of 9 verified live** against real Wazuh
 - [x] Agent loop with three strategies (frontier / guided / pipeline)
-- [x] Resource guardrails (time window, result count, per-tenant rate limit)
+- [x] Resource guardrails (time window, result count, per-organization rate limit)
 - [x] Audit logging on every model call and every tool call
-- [x] Minimal UI: login, tenant picker, ask question, see cited answer
+- [x] Minimal UI: login, organization picker, ask question, see cited answer
 - [x] Analyst question end-to-end on **both** a frontier model AND a local
       Ollama model.  Local-Ollama: `qwen3:4b` in `guided` mode, ~76s
       cold, grounded cited answer.  Frontier-API: `nvidia/nemotron-3-
@@ -581,7 +581,7 @@ Status legend: ✅ working, 🟡 partial, ❌ broken/disabled, ⏳ planned only.
 ### Orchestrator (`services/orchestrator/`)
 - ✅ FastAPI app, lifespan-driven Alembic migrations on startup
 - ✅ Auth: bcrypt local accounts, JWT HS256 cookies, OIDC adapter stub
-- ✅ Immutable `TenantContext`, AuthMiddleware, append-only audit log
+- ✅ Immutable `OrganizationContext`, AuthMiddleware, append-only audit log
 - ✅ Model abstraction layer (`app/models/`): Anthropic, OpenAI, Ollama adapters (httpx-based, no SDK deps)
 - ✅ `CapabilityDescriptor` + `KNOWN_MODELS` registry
 - ✅ Tool registry + dispatcher (`app/tools/`): tier enforcement,
@@ -599,7 +599,7 @@ Status legend: ✅ working, 🟡 partial, ❌ broken/disabled, ⏳ planned only.
       opt-in via the `embeddings-local` extra; recorded in ADR 0012);
       `make_embedding_provider` factory selects via env
       (`EMBEDDING_PROVIDER=ollama|sentence-transformers`).
-      `KnowledgeStore` protocol + `PgvectorKnowledgeStore` (tenant-
+      `KnowledgeStore` protocol + `PgvectorKnowledgeStore` (organization-
       scoped retrieval enforced at the SQL clause); `KnowledgeChunk`
       SQLAlchemy model with `chunk_metadata` JSONB + `embedding`
       `Vector(768)` + `embedding_model` stamp for re-embedding triggers.
@@ -612,9 +612,9 @@ Status legend: ✅ working, 🟡 partial, ❌ broken/disabled, ⏳ planned only.
 - ✅ Agent loop with three strategies (`app/agent/`): frontier / guided /
       pipeline; `LoopEvent` emission for SSE; multi-turn `history` support
 - ✅ Endpoints: `POST /api/v1/auth/{login,logout}`, `GET /me`,
-      `GET /me/tenants`, `POST /api/v1/chat`, `POST /api/v1/chat/stream`
-- ✅ Per-tenant Wazuh resolver + secrets backend (encrypted-file)
-- ✅ Bootstrap CLI (`app.management.bootstrap_tenant`) and smoke-test CLI
+      `GET /me/organizations`, `POST /api/v1/chat`, `POST /api/v1/chat/stream`
+- ✅ Per-organization Wazuh resolver + secrets backend (encrypted-file)
+- ✅ Bootstrap CLI (`app.management.bootstrap_organization`) and smoke-test CLI
       (`app.management.smoke_wazuh`)
 
 ### Gateway (`services/gateway/`)
@@ -625,7 +625,7 @@ Status legend: ✅ working, 🟡 partial, ❌ broken/disabled, ⏳ planned only.
 - ✅ Next.js 16 (Turbopack) + React 19 + Tailwind 4
 - ✅ shadcn/ui primitives, Lucide icons
 - ✅ Auth flow: login page, cookie-credentialed fetch, protected routes
-- ✅ Tenant switcher (consumes `/me/tenants`)
+- ✅ Organization switcher (consumes `/me/organizations`)
 - ✅ Multi-turn conversations: sidebar shows conversations, message thread
       replays the active conversation, `history` sent with every submit
 - ✅ SSE streaming: consumes `/api/v1/chat/stream`, renders LoopEvents
@@ -649,8 +649,8 @@ Status legend: ✅ working, 🟡 partial, ❌ broken/disabled, ⏳ planned only.
       hardware on 2026-05-22** — see ADRs 0001/0002/0003.  sys.path
       bootstrap added to `__main__.py` to resolve the two-`app/`-packages
       collision that blocked the CLI invocation (commit `e9cc316`).
-- ⏳ `tenant_isolation_test/`: stub only; the live isolation tests live in
-      `services/orchestrator/tests/test_cross_tenant_isolation.py`
+- ⏳ `organization_isolation_test/`: stub only; the live isolation tests live in
+      `services/orchestrator/tests/test_cross_organization_isolation.py`
 - ⏳ `seed_knowledge/`: stub only (Phase 3 RAG work)
 
 ### Infrastructure
@@ -690,11 +690,11 @@ Status legend: ✅ working, 🟡 partial, ❌ broken/disabled, ⏳ planned only.
 - `llama3.2` remains in `KNOWN_MODELS` for operator opt-in via
   `DEFAULT_MODEL_ID=llama3.2`.
 
-**Wazuh connection** (per `TenantWazuhConfig` for tenant `acme`):
+**Wazuh connection** (per `OrganizationWazuhConfig` for organization `acme`):
 - Indexer: `https://192.168.76.129:9200` (self-signed; `verify_tls=False`)
 - Server API: `https://192.168.76.129:55000`
 - Credentials: in encrypted-file secrets backend at `.local/secrets.enc`
-- `inject_tenant_filter=False` (standalone Wazuh deployment, no per-doc tenant_id)
+- `inject_organization_filter=False` (standalone Wazuh deployment, no per-doc organization_id)
 
 **Service ports (dev, bound `0.0.0.0` for LAN access):**
 - wolf-server: `7860` (running)
@@ -703,10 +703,10 @@ Status legend: ✅ working, 🟡 partial, ❌ broken/disabled, ⏳ planned only.
 - Postgres: `127.0.0.1:5432` (system Postgres per ADR 0008)
 - wolf-gateway: `8001` (not yet running)
 
-**Wazuh tenant 'acme' on this machine** — bootstrapped 2026-05-24:
+**Wazuh organization 'acme' on this machine** — bootstrapped 2026-05-24:
 - Indexer: `https://192.168.245.128:9200`
 - Server API: `https://192.168.245.128:55000`
-- `verify_tls=False`, `inject_tenant_filter=False`
+- `verify_tls=False`, `inject_organization_filter=False`
 - Verified end-to-end: chat → guided strategy → `count_alerts_by_severity` tool
   → grounded answer ("325 alerts in 24h, 143 medium + 182 low") in 20.8s
   (vs ~76s cold on previous CPU-only VM — the GPU win materialized).
@@ -773,7 +773,7 @@ who want to build their own images.
    maintain separate user databases; the operator's initial credential
    drop only provisioned the `wolf` user in the Indexer. Operator
    supplied the Server API admin (`wazuh-wui` / generated password).
-   `bootstrap_tenant` re-run with per-endpoint credentials. End-to-end
+   `bootstrap_organization` re-run with per-endpoint credentials. End-to-end
    `/api/v1/chat` now verified with both pure-RAG (model picks
    `query_runbook`, retrieves ACME SOC runbook, cited answer in 60s)
    and mixed-mode (`get_rule_definition` + `query_runbook` in one
@@ -790,7 +790,7 @@ who want to build their own images.
 - Hybrid retrieval (vector + BM25)
 - The `query_runbook` tool with metadata filters as first-class args
 - The grounding validator: rejects ungrounded factual claims
-- Per-tenant private corpus partition (storage-level isolation per
+- Per-organization private corpus partition (storage-level isolation per
   doc 05's "RAG store" enforcement layer)
 
 **Blocked / waiting:**
@@ -802,7 +802,7 @@ who want to build their own images.
   qwen3:4b's grounding-fabrication probe result makes Phase 3 *more*
   important if/when qwen becomes the default, not less.
 - Phase 6 (gateway service + propose/execute tools) — structural, separate
-  service; not until Phases 4 (multi-tenancy hardening) and 5 (cases) ship.
+  service; not until Phases 4 (multi-organization hardening) and 5 (cases) ship.
 - Docker Compose stack as the primary dev path — current `nohup` flow is
   fine; revisit when adding more services.
 - Refactor of the two-`app/`-packages collision (services/gateway/app/ and
@@ -847,7 +847,7 @@ to `CHANGELOG.md` as ADRs.
   for stable sibling order, atomic version-add transaction
   (INSERT new node + UPDATE parent's `selected_child_id` in one
   tx), no path flattening on save, lossless round-trip test,
-  tenant scoping via `TenantScopedQueryBuilder`. Land this when
+  organization scoping via `OrganizationScopedQueryBuilder`. Land this when
   the project's general DB-storage phase begins; do not flatten
   to the active path on serialise — that would silently drop
   every off-branch subtree.
@@ -894,11 +894,11 @@ to `CHANGELOG.md` as ADRs.
   closed in `bf00c01` (2026-06-01). Workspace packages now ship
   `py.typed` markers; mypy resolves their imports correctly end-
   to-end.
-- **Cross-tenant unit suite:** 8/8 passing
-  (`services/orchestrator/tests/test_cross_tenant_isolation.py`,
+- **Cross-organization unit suite:** 8/8 passing
+  (`services/orchestrator/tests/test_cross_organization_isolation.py`,
   runs as part of the main suite).
-- **Live tenant-isolation probe** (`tools/tenant_isolation_test`):
-  6/6 checks pass against the dev two-tenant state. Run after every
+- **Live organization-isolation probe** (`tools/organization_isolation_test`):
+  6/6 checks pass against the dev two-organization state. Run after every
   `services/` change per the *integrity-across-the-stack* standing
   rule.
 - **Frontend:** `tsc --noEmit` clean, `eslint` clean. No frontend
@@ -953,7 +953,7 @@ level (ADR 0005).  The default-model switch is done (`qwen3:4b`,
 Apache 2.0, ADR 0004).  End-to-end re-verified on the user's real
 Wazuh (192.168.76.129): qwen3:4b in `guided` mode, one tool call to
 `count_alerts_by_severity`, grounded cited answer.  Multi-turn,
-markdown, citations, tenant switcher all work in the Next.js 16
+markdown, citations, organization switcher all work in the Next.js 16
 frontend at `http://192.168.76.128:3000`.
 
 **This session (2026-05-23) added two product-direction artifacts and
@@ -995,7 +995,7 @@ Operator notes (unchanged from 2026-05-22 session):
   (DEFAULT_MODEL_PROVIDER=openai, DEFAULT_MODEL_ID=nvidia/nemotron-3-
   super-120b-a12b:free, OPENAI_BASE_URL=https://openrouter.ai/api),
   restart orchestrator, run the chat.  No key re-share needed.
-- Run `uv run python -m app.management.smoke_wazuh --tenant-slug acme
+- Run `uv run python -m app.management.smoke_wazuh --organization-slug acme
   --all-tools` any time you want to re-verify every read tool against
   the live deployment (e.g. after a Wazuh upgrade).
 

@@ -10,7 +10,7 @@ from logging.config import fileConfig
 
 import wolf_server.audit.models  # noqa: F401
 import wolf_server.knowledge.models  # noqa: F401
-import wolf_server.tenancy.models  # noqa: F401
+import wolf_server.organization.models  # noqa: F401
 import wolf_server.wazuh.models  # noqa: F401
 from alembic import context
 from sqlalchemy import pool
@@ -51,11 +51,13 @@ def run_migrations_offline() -> None:
 # expressed in standard SQLAlchemy Index() syntax. They're intentionally
 # defined only in the migration, not in the model. alembic-check would
 # report spurious drift on them unless filtered out.
-_INDEXES_DECLARED_IN_MIGRATIONS_ONLY: frozenset[str] = frozenset({
-    "ix_knowledge_chunks_embedding_hnsw",      # HNSW pgvector index (0004)
-    "ix_knowledge_chunks_embedding_v2_hnsw",   # HNSW pgvector index (later)
-    "ix_knowledge_chunks_content_tsv",         # TSVECTOR full-text index
-})
+_INDEXES_DECLARED_IN_MIGRATIONS_ONLY: frozenset[str] = frozenset(
+    {
+        "ix_knowledge_chunks_embedding_hnsw",  # HNSW pgvector index (0004)
+        "ix_knowledge_chunks_embedding_v2_hnsw",  # HNSW pgvector index (later)
+        "ix_knowledge_chunks_content_tsv",  # TSVECTOR full-text index
+    }
+)
 
 
 def _include_object(
@@ -66,9 +68,7 @@ def _include_object(
     compare_to: object,  # SchemaItem | None
 ) -> bool:
     """Filter callback: skip indexes that can't be modelled in SQLA."""
-    return not (
-        type_ == "index" and name in _INDEXES_DECLARED_IN_MIGRATIONS_ONLY
-    )
+    return not (type_ == "index" and name in _INDEXES_DECLARED_IN_MIGRATIONS_ONLY)
 
 
 def do_run_migrations(connection: Connection) -> None:

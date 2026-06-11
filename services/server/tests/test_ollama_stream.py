@@ -83,9 +83,7 @@ async def test_chat_stream_carries_tool_calls_through_to_done() -> None:
         {
             "message": {
                 "content": "",
-                "tool_calls": [
-                    {"function": {"name": "search_alerts", "arguments": {"size": 5}}}
-                ],
+                "tool_calls": [{"function": {"name": "search_alerts", "arguments": {"size": 5}}}],
             },
             "done": False,
         },
@@ -125,7 +123,7 @@ async def test_chat_stream_skips_malformed_lines() -> None:
     body = (
         b'{"message": {"content": "ok"}, "done": false}\n'
         b"this is not json at all\n"
-        b'\n'  # blank line
+        b"\n"  # blank line
         b'{"message": {"content": "!"}, "done": true, '
         b'"prompt_eval_count": 1, "eval_count": 2}\n'
     )

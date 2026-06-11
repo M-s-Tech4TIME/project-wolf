@@ -27,15 +27,15 @@ from wolf_schema.capability import (
 from wolf_server.agent.loop import AgentLoop
 from wolf_server.agent.strategies import FrontierStrategy, PipelineStrategy
 from wolf_server.audit.models import AuditEvent
-from wolf_server.tenancy.context import TenantContext
+from wolf_server.organization.context import OrganizationContext
 from wolf_server.tools.alerts import SearchAlertsTool
 
 
 @pytest.fixture
-def tenant_ctx() -> TenantContext:
-    return TenantContext(
-        tenant_id=uuid.uuid4(),
-        tenant_slug="testco",
+def organization_ctx() -> OrganizationContext:
+    return OrganizationContext(
+        organization_id=uuid.uuid4(),
+        organization_slug="testco",
         user_id=uuid.uuid4(),
         user_email="analyst@test.example",
         role="analyst",
@@ -65,9 +65,7 @@ def _register_search_alerts() -> None:
 def _fake_clients() -> tuple[MagicMock, MagicMock]:
     """OpenSearch + Server API mocks suitable for SearchAlertsTool."""
     os_client = MagicMock()
-    os_client.query_builder.search_alerts.return_value = {
-        "query": {"bool": {"filter": []}}
-    }
+    os_client.query_builder.search_alerts.return_value = {"query": {"bool": {"filter": []}}}
     os_client.execute = AsyncMock(
         return_value={
             "hits": {
@@ -158,7 +156,7 @@ def _response(
 
 @pytest.mark.asyncio
 async def test_loop_returns_immediate_answer_when_no_tool_calls(
-    db: AsyncSession, tenant_ctx: TenantContext
+    db: AsyncSession, organization_ctx: OrganizationContext
 ) -> None:
     provider = MockProvider([_response("The answer is 42.")])
     loop = AgentLoop(provider=provider, strategy=FrontierStrategy())
@@ -166,7 +164,7 @@ async def test_loop_returns_immediate_answer_when_no_tool_calls(
 
     answer = await loop.run(
         question="hello",
-        ctx=tenant_ctx,
+        ctx=organization_ctx,
         db=db,
         opensearch=os_client,
         server_api=server_api,
@@ -181,12 +179,16 @@ async def test_loop_returns_immediate_answer_when_no_tool_calls(
 
     await db.commit()
     rows = (
-        await db.execute(
-            select(AuditEvent)
-            .where(AuditEvent.event_type == "model.call.success")
-            .where(AuditEvent.tenant_id == tenant_ctx.tenant_id)
+        (
+            await db.execute(
+                select(AuditEvent)
+                .where(AuditEvent.event_type == "model.call.success")
+                .where(AuditEvent.organization_id == organization_ctx.organization_id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert len(rows) == 1
 
 
@@ -195,7 +197,7 @@ async def test_loop_returns_immediate_answer_when_no_tool_calls(
 
 @pytest.mark.asyncio
 async def test_loop_recovers_empty_answer_via_synthesis_retry(
-    db: AsyncSession, tenant_ctx: TenantContext
+    db: AsyncSession, organization_ctx: OrganizationContext
 ) -> None:
     """An empty final answer triggers one no-tools re-prompt that recovers."""
     provider = MockProvider([_response(""), _response("Recovered summary.")])
@@ -203,8 +205,11 @@ async def test_loop_recovers_empty_answer_via_synthesis_retry(
     os_client, server_api = _fake_clients()
 
     answer = await loop.run(
-        question="hello", ctx=tenant_ctx, db=db,
-        opensearch=os_client, server_api=server_api,
+        question="hello",
+        ctx=organization_ctx,
+        db=db,
+        opensearch=os_client,
+        server_api=server_api,
     )
     assert answer.content == "Recovered summary."
     assert provider.call_count == 2  # original + one synthesis retry
@@ -218,7 +223,7 @@ async def test_loop_recovers_empty_answer_via_synthesis_retry(
 
 @pytest.mark.asyncio
 async def test_loop_empty_answer_falls_back_when_retry_also_empty(
-    db: AsyncSession, tenant_ctx: TenantContext
+    db: AsyncSession, organization_ctx: OrganizationContext
 ) -> None:
     """If the recovery re-prompt is also empty, show an honest message, never blank."""
     from wolf_server.agent.loop import _EMPTY_ANSWER_FALLBACK
@@ -228,8 +233,11 @@ async def test_loop_empty_answer_falls_back_when_retry_also_empty(
     os_client, server_api = _fake_clients()
 
     answer = await loop.run(
-        question="hello", ctx=tenant_ctx, db=db,
-        opensearch=os_client, server_api=server_api,
+        question="hello",
+        ctx=organization_ctx,
+        db=db,
+        opensearch=os_client,
+        server_api=server_api,
     )
     assert answer.content == _EMPTY_ANSWER_FALLBACK
     assert answer.content.strip()  # never blank
@@ -241,7 +249,7 @@ async def test_loop_empty_answer_falls_back_when_retry_also_empty(
 
 @pytest.mark.asyncio
 async def test_loop_handles_tool_call_then_final_answer(
-    db: AsyncSession, tenant_ctx: TenantContext
+    db: AsyncSession, organization_ctx: OrganizationContext
 ) -> None:
     _register_search_alerts()
     now = datetime.now(UTC)
@@ -264,7 +272,7 @@ async def test_loop_handles_tool_call_then_final_answer(
 
     answer = await loop.run(
         question="any failed logins?",
-        ctx=tenant_ctx,
+        ctx=organization_ctx,
         db=db,
         opensearch=os_client,
         server_api=server_api,
@@ -278,19 +286,27 @@ async def test_loop_handles_tool_call_then_final_answer(
 
     await db.commit()
     model_calls = (
-        await db.execute(
-            select(AuditEvent)
-            .where(AuditEvent.event_type == "model.call.success")
-            .where(AuditEvent.tenant_id == tenant_ctx.tenant_id)
+        (
+            await db.execute(
+                select(AuditEvent)
+                .where(AuditEvent.event_type == "model.call.success")
+                .where(AuditEvent.organization_id == organization_ctx.organization_id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     tool_calls = (
-        await db.execute(
-            select(AuditEvent)
-            .where(AuditEvent.event_type == "tool.call.success")
-            .where(AuditEvent.tenant_id == tenant_ctx.tenant_id)
+        (
+            await db.execute(
+                select(AuditEvent)
+                .where(AuditEvent.event_type == "tool.call.success")
+                .where(AuditEvent.organization_id == organization_ctx.organization_id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert len(model_calls) == 2
     assert len(tool_calls) == 1
 
@@ -300,7 +316,7 @@ async def test_loop_handles_tool_call_then_final_answer(
 
 @pytest.mark.asyncio
 async def test_loop_returns_budget_exhausted_when_model_keeps_calling_tools(
-    db: AsyncSession, tenant_ctx: TenantContext
+    db: AsyncSession, organization_ctx: OrganizationContext
 ) -> None:
     _register_search_alerts()
     now = datetime.now(UTC)
@@ -321,7 +337,7 @@ async def test_loop_returns_budget_exhausted_when_model_keeps_calling_tools(
 
     answer = await loop.run(
         question="loop forever?",
-        ctx=tenant_ctx,
+        ctx=organization_ctx,
         db=db,
         opensearch=os_client,
         server_api=server_api,
@@ -336,7 +352,7 @@ async def test_loop_returns_budget_exhausted_when_model_keeps_calling_tools(
 
 @pytest.mark.asyncio
 async def test_loop_returns_loop_error_when_provider_raises(
-    db: AsyncSession, tenant_ctx: TenantContext
+    db: AsyncSession, organization_ctx: OrganizationContext
 ) -> None:
     provider = MockProvider([], raise_on_call=0)
     loop = AgentLoop(provider=provider, strategy=FrontierStrategy())
@@ -344,7 +360,7 @@ async def test_loop_returns_loop_error_when_provider_raises(
 
     answer = await loop.run(
         question="boom",
-        ctx=tenant_ctx,
+        ctx=organization_ctx,
         db=db,
         opensearch=os_client,
         server_api=server_api,
@@ -354,12 +370,16 @@ async def test_loop_returns_loop_error_when_provider_raises(
 
     await db.commit()
     rows = (
-        await db.execute(
-            select(AuditEvent)
-            .where(AuditEvent.event_type == "model.call.failure")
-            .where(AuditEvent.tenant_id == tenant_ctx.tenant_id)
+        (
+            await db.execute(
+                select(AuditEvent)
+                .where(AuditEvent.event_type == "model.call.failure")
+                .where(AuditEvent.organization_id == organization_ctx.organization_id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert len(rows) == 1
 
 
@@ -368,7 +388,7 @@ async def test_loop_returns_loop_error_when_provider_raises(
 
 @pytest.mark.asyncio
 async def test_pipeline_strategy_runs_one_step_with_no_tools_in_request(
-    db: AsyncSession, tenant_ctx: TenantContext
+    db: AsyncSession, organization_ctx: OrganizationContext
 ) -> None:
     provider = MockProvider(
         [_response("Based on the context provided, no anomalies are evident.")],
@@ -379,7 +399,7 @@ async def test_pipeline_strategy_runs_one_step_with_no_tools_in_request(
 
     answer = await loop.run(
         question="summarize",
-        ctx=tenant_ctx,
+        ctx=organization_ctx,
         db=db,
         opensearch=os_client,
         server_api=server_api,
@@ -395,7 +415,7 @@ async def test_pipeline_strategy_runs_one_step_with_no_tools_in_request(
 
 @pytest.mark.asyncio
 async def test_retry_nudge_appends_critique_hint_to_user_message(
-    db: AsyncSession, tenant_ctx: TenantContext
+    db: AsyncSession, organization_ctx: OrganizationContext
 ) -> None:
     """Slice 5.0c-g: Retry-on-Wolf-response flips retry_nudge=True on the
     chat request. The loop must append the RETRY_NUDGE text to the
@@ -409,7 +429,7 @@ async def test_retry_nudge_appends_critique_hint_to_user_message(
 
     await loop.run(
         question="any failed logins?",
-        ctx=tenant_ctx,
+        ctx=organization_ctx,
         db=db,
         opensearch=os_client,
         server_api=server_api,
@@ -421,16 +441,14 @@ async def test_retry_nudge_appends_critique_hint_to_user_message(
     )
 
     assert provider.last_request is not None
-    last_user = next(
-        m for m in reversed(provider.last_request.messages) if m.role == "user"
-    )
+    last_user = next(m for m in reversed(provider.last_request.messages) if m.role == "user")
     assert "any failed logins?" in last_user.content
     assert RETRY_NUDGE.strip() in last_user.content
 
 
 @pytest.mark.asyncio
 async def test_retry_nudge_default_false_leaves_user_message_unchanged(
-    db: AsyncSession, tenant_ctx: TenantContext
+    db: AsyncSession, organization_ctx: OrganizationContext
 ) -> None:
     """Sanity check: without retry_nudge, the user message is the bare
     question — no nudge text leaks into the normal path."""
@@ -442,15 +460,13 @@ async def test_retry_nudge_default_false_leaves_user_message_unchanged(
 
     await loop.run(
         question="any failed logins?",
-        ctx=tenant_ctx,
+        ctx=organization_ctx,
         db=db,
         opensearch=os_client,
         server_api=server_api,
     )
 
     assert provider.last_request is not None
-    last_user = next(
-        m for m in reversed(provider.last_request.messages) if m.role == "user"
-    )
+    last_user = next(m for m in reversed(provider.last_request.messages) if m.role == "user")
     assert last_user.content == "any failed logins?"
     assert RETRY_NUDGE.strip() not in last_user.content

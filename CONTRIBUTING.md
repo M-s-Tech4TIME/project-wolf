@@ -26,8 +26,8 @@ make test
 ## Hard rules for contributors
 
 1. No execute tools in wolf-server.
-2. Tenant context is always session-bound, never from model output.
-3. The cross-tenant isolation test suite must pass before any PR merges.
+2. Organization context is always session-bound, never from model output.
+3. The cross-organization isolation test suite must pass before any PR merges.
 4. No paid external dependency may be required.
 5. Every factual claim must be grounded; the grounding validator must not be weakened.
 

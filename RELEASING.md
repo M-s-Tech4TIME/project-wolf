@@ -177,7 +177,7 @@ format:
 * All three components (wolf-database / wolf-server /
   wolf-dashboard) installable via signed `.debs`.
 * mTLS substrate for inter-component traffic.
-* RBAC + tenant isolation (see [doc 05](docs/05-multi-tenancy.md)).
+* RBAC + organization isolation (see [doc 05](docs/05-multi-organization.md)).
 
 ### Breaking changes
 * (None for v0.1.0; document for future majors.)

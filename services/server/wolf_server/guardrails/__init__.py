@@ -9,11 +9,11 @@ See doc 03 §Resource guardrails for the rationale.
 """
 
 from wolf_server.guardrails.limits import GuardrailViolation, ResourceLimits, enforce_limits
-from wolf_server.guardrails.rate_limit import TenantRateLimiter
+from wolf_server.guardrails.rate_limit import OrganizationRateLimiter
 
 __all__ = [
     "GuardrailViolation",
     "ResourceLimits",
-    "TenantRateLimiter",
+    "OrganizationRateLimiter",
     "enforce_limits",
 ]

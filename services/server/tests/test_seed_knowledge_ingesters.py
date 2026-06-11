@@ -61,7 +61,7 @@ def test_attack_extracts_techniques() -> None:
     assert len(chunks) == 1
     chunk = chunks[0]
     assert chunk.source_type == "attack"
-    assert chunk.tenant_id is None
+    assert chunk.organization_id is None
     assert "T1110" in chunk.content
     assert "Brute Force" in chunk.content
     assert chunk.chunk_metadata["technique"] == "T1110"
@@ -153,7 +153,7 @@ def test_wazuh_extracts_rules_with_metadata() -> None:
 
     r5710 = by_id["5710"]
     assert r5710.source_type == "wazuh_doc"
-    assert r5710.tenant_id is None
+    assert r5710.organization_id is None
     assert "Rule 5710" in r5710.content
     assert "non-existent user" in r5710.content.lower()
     assert r5710.chunk_metadata["level"] == 5

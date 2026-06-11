@@ -50,7 +50,10 @@ def fake_binaries(tmp_path: Path) -> PostgresBinaries:
 
 def _mock_completed(returncode: int = 0, stdout: str = "") -> subprocess.CompletedProcess[bytes]:
     return subprocess.CompletedProcess(
-        args=[], returncode=returncode, stdout=stdout.encode(), stderr=b"",
+        args=[],
+        returncode=returncode,
+        stdout=stdout.encode(),
+        stderr=b"",
     )
 
 
@@ -232,7 +235,10 @@ def test_run_pg_ctl_status_returns_stopped_on_exit_3(
         subprocess,
         "run",
         lambda *_, **__: subprocess.CompletedProcess(
-            args=[], returncode=3, stdout="", stderr="",
+            args=[],
+            returncode=3,
+            stdout="",
+            stderr="",
         ),
     )
     status = run_pg_ctl_status(fake_binaries, layout)
@@ -259,7 +265,10 @@ def test_run_pg_ctl_status_returns_data_dir_bad_on_exit_4(
         subprocess,
         "run",
         lambda *_, **__: subprocess.CompletedProcess(
-            args=[], returncode=4, stdout="", stderr="",
+            args=[],
+            returncode=4,
+            stdout="",
+            stderr="",
         ),
     )
     status = run_pg_ctl_status(fake_binaries, layout)
@@ -353,8 +362,14 @@ def test_is_pgvector_installed_passes_port_to_psql(
     monkeypatch.setattr(
         subprocess,
         "run",
-        lambda cmd, **_: captured.extend(cmd) or subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="1\n", stderr="",
+        lambda cmd, **_: (
+            captured.extend(cmd)
+            or subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout="1\n",
+                stderr="",
+            )
         ),
     )
     assert is_pgvector_installed(fake_binaries, layout, port=17860) is True
@@ -374,7 +389,10 @@ def test_is_pgvector_installed_returns_true_when_psql_prints_1(
         subprocess,
         "run",
         lambda *_, **__: subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="1\n", stderr="",
+            args=[],
+            returncode=0,
+            stdout="1\n",
+            stderr="",
         ),
     )
     assert is_pgvector_installed(fake_binaries, layout) is True
@@ -389,7 +407,10 @@ def test_is_pgvector_installed_returns_false_when_psql_prints_empty(
         subprocess,
         "run",
         lambda *_, **__: subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="", stderr="",
+            args=[],
+            returncode=0,
+            stdout="",
+            stderr="",
         ),
     )
     assert is_pgvector_installed(fake_binaries, layout) is False
@@ -405,7 +426,10 @@ def test_is_pgvector_installed_returns_false_on_psql_error(
         subprocess,
         "run",
         lambda *_, **__: subprocess.CompletedProcess(
-            args=[], returncode=1, stdout="", stderr="error",
+            args=[],
+            returncode=1,
+            stdout="",
+            stderr="error",
         ),
     )
     assert is_pgvector_installed(fake_binaries, layout) is False

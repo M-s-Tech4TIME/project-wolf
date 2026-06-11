@@ -16,7 +16,7 @@ A propose tool's output is not free text. It is a strict, typed object — becau
 human reviews it and the gateway acts on it. Required fields:
 
 - `proposal_id` — unique identifier.
-- `tenant_id` — the tenant, from the request context, never from the model.
+- `organization_id` — the organization, from the request context, never from the model.
 - `action_class` — e.g. `active_response`, `rule_tuning`, `agent_action`,
   `config_change`.
 - `target` — a **resolved** target: the unambiguous agent ID (or manager/group ID),
@@ -74,10 +74,10 @@ A flat "approvers approve anything" model fails the moment there is an MSSP or a
 real SOC. Approval authority is scoped along **three axes**, and a proposal must
 clear **all three**:
 
-### Axis 1 — tenant
+### Axis 1 — organization
 
-An approver is bound to specific tenants. An MSSP analyst for Client A cannot
-approve a proposal for Client B. Same tenant boundary as `05`, applied to the
+An approver is bound to specific organizations. An MSSP analyst for Client A cannot
+approve a proposal for Client B. Same organization boundary as `05`, applied to the
 approval act.
 
 ### Axis 2 — action class and severity
@@ -122,7 +122,7 @@ outage instead of a remediation.
 ### Wrong-target resolution
 
 The agent means one host and the resolver picks another (duplicate hostnames across
-tenants, substring matches).
+organizations, substring matches).
 
 **Mitigations:**
 - The agent never passes a human-readable name to a propose tool. Target resolution
@@ -180,7 +180,7 @@ disciplined. Auto-execute is a proposal that skips the human, so it is allowed
   restart a manager — never).
 - It is **low-severity and low-blast-radius** by the same severity map.
 - It targets **non-sensitive assets** — never a tagged crown jewel.
-- It is **explicitly opted into per tenant**, scoped to a named action class and
+- It is **explicitly opted into per organization**, scoped to a named action class and
   ideally a named agent group. Off by default.
 - It is **rate-limited and circuit-broken** — if auto-execute fires more than N
   times in a window, it disables itself and pages a human, because that pattern is
@@ -204,7 +204,7 @@ but it may carry a streamlined approval path since it restores a prior state.
 
 ## The audit obligation
 
-Every transition in the state machine is an immutable, tenant-tagged audit record:
+Every transition in the state machine is an immutable, organization-tagged audit record:
 who or what caused it, when, the proposal content hash, the approver identity and
 their authority level, the freshness re-check result, and the verification read
 result. For a SOC this is the incident-response record of the response itself, and

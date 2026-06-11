@@ -90,10 +90,7 @@ class MtlsMiddleware(BaseHTTPMiddleware):
         # the same box probe wolf-server without distributing the
         # dashboard-client cert. Non-loopback /healthz still needs
         # a valid cert, so the bypass can't be abused over the LAN.
-        if (
-            request.method == "GET"
-            and request.url.path == _HEALTHZ_PATH
-        ):
+        if request.method == "GET" and request.url.path == _HEALTHZ_PATH:
             client = request.client
             if client is not None and client.host in _LOOPBACK_IPS:
                 return await call_next(request)

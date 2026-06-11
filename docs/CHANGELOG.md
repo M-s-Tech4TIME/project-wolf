@@ -73,7 +73,7 @@ review):
 - Round 3: Cookie carries auth ONLY; per-tab `X-Organization-Id`
   header for org context; Superuser special-case login redirect to
   `/superuser/dashboard`; cookie blacklist for logout / force-revoke /
-  password-reset; clean drop of `tenant_id` field on login (no
+  password-reset; clean drop of `organization_id` field on login (no
   backward-compat alias)
 - Round 4: Implementation sequencing — Phase 6.4 (codebase rename) as
   pre-req; Phase 6.5 with 8 sub-slices; defer propose/approve/execute
@@ -151,7 +151,7 @@ review):
   `wolf-pack.md`; MEMORY.md index entry updated; ADR-ACCEPTED
   cross-ref preambles added to `wolf-bootstrap-superuser-flow.md`
   (refs ADR 0018 + 0020), `web-first-configurability.md` (refs ADR
-  0019), `tenant-renamed-to-organization.md` (refs ADR 0018 +
+  0019), `organization-renamed-to-organization.md` (refs ADR 0018 +
   notes Phase 6.4 schedule). Commit `7939c79`.
 - This CHANGELOG entry.
 
@@ -160,7 +160,7 @@ review):
 - Wolf is multi-organization-ready by design before any
   multi-organization code ships. The 4 ADRs together define the
   contract.
-- Phase 6.4 (tenant→organization codebase rename) is the next real
+- Phase 6.4 (organization→organization codebase rename) is the next real
   work unit. Single PR, ~40-60 files, 1-2 sessions. Unblocks
   Phase 6.5 (9 sub-slices, 12-13 sessions) and Phase 6.6 (5
   sub-slices, 3-5 sessions).
@@ -170,7 +170,7 @@ review):
   Wolf WILL say "uncertain" / "insufficient evidence" when honest,
   to avoid SOC-incident hallucination.
 - The four memory entries from this arc (wolf-bootstrap-superuser-
-  flow, shell-wrapper-required-pattern, tenant-renamed-to-organization,
+  flow, shell-wrapper-required-pattern, organization-renamed-to-organization,
   web-first-configurability) are now in `memory/` in the repo, not
   in `~/.claude/projects/`. Memory travels with the code via git
   history.
@@ -180,10 +180,10 @@ review):
 
 ### What's next
 
-- **Phase 6.4 — tenant → organization codebase rename.** Single PR,
+- **Phase 6.4 — organization → organization codebase rename.** Single PR,
   ~40-60 files. Mechanical rename across DB schema (Alembic
   migration) + SQLAlchemy models + API routes + frontend +
-  TypeScript types + tests. Memory entry `tenant-renamed-to-
+  TypeScript types + tests. Memory entry `organization-renamed-to-
   organization.md` flips to COMPLETED at end.
 - Phase 6.5 (Bootstrap + RBAC + Login UX, per ADR 0018) follows;
   then Phase 6 (wolf-gateway), then Phase 6.6 (per ADR 0020).
@@ -406,7 +406,7 @@ Integrity gate (whole-phase, all green)
 * tsc + eslint (services/dashboard): untouched, both clean
 * backend pytest: 397 / 397 (was 393 at Phase 5.7 close; +4
   retry-loop tests in 5.8-a)
-* live tenant-isolation probe: 6 / 6
+* live organization-isolation probe: 6 / 6
 * All three pre-push smokes pass live + in CI: `smoke-mtls`,
   `smoke-database`, `smoke-systemd`
 
@@ -725,7 +725,7 @@ Files changed:
 * eslint (services/dashboard): clean (untouched)
 * backend pytest: 388 / 388 (unchanged — this slice is docs +
   Makefile only)
-* live tenant-isolation probe: 6 / 6
+* live organization-isolation probe: 6 / 6
 * live `make wolf-database-status`: dispatches correctly
 
 ### What's next
@@ -885,7 +885,7 @@ Also verified the simpler subcommands:
 * eslint (services/dashboard): clean (untouched)
 * backend pytest: **388 / 388** (was 355; +33 wolf-database
   tests)
-* live tenant-isolation probe: 6 / 6
+* live organization-isolation probe: 6 / 6
 * live `wolf-database init` smoke: every path verified up to
   the pgvector check; correct error + exit code; clean
   shutdown
@@ -1023,7 +1023,7 @@ Workspace wiring:
 * eslint (services/dashboard): clean (untouched)
 * backend pytest: **355 / 355** (was 321; +34 wolf-database
   tests)
-* live tenant-isolation probe: 6 / 6
+* live organization-isolation probe: 6 / 6
 
 ### What's next
 **Slice 5.7-b — `wolf-database` CLI.** Parallel to `wolf-cert`'s
@@ -1071,7 +1071,7 @@ Files changed:
   listed; now it's the full set).
 * **`.github/workflows/ci.yml`** — new `smoke-mtls` job. Spins
   up Postgres as a service container, installs deps, runs
-  migrations (the smoke doesn't need a tenant or user, but
+  migrations (the smoke doesn't need a organization or user, but
   wolf-server's startup runs `alembic upgrade head` and would
   fail without a schema), mints all four cert pairs via
   `wolf-cert init` with explicit `localhost` SANs, starts
@@ -1136,7 +1136,7 @@ Integrity gate (across all five slices):
 * eslint (services/dashboard): clean
 * backend pytest: **321 / 321** (was 311 at Phase 5.6 start;
   +10 across 5.6-b, 5.6-c)
-* live tenant-isolation probe: 6 / 6
+* live organization-isolation probe: 6 / 6
 * `make smoke-mtls`: passes against a fresh wolf-server start
 * CI `smoke-mtls` job: configured to run on every PR
 
@@ -1257,7 +1257,7 @@ without scanning prose.
 * tsc (services/dashboard): 0 errors
 * eslint (services/dashboard): clean
 * backend pytest: 321 / 321 in 89.36s
-* live tenant-isolation probe: 6 / 6
+* live organization-isolation probe: 6 / 6
 
 ### What's next
 **Slice 5.6-e — `make smoke-mtls` recurring integrity check.**
@@ -1403,7 +1403,7 @@ Integrity gate (all green)
 * eslint (services/dashboard): clean
 * backend pytest: **321 / 321** in 89.63s (was 312; +9 new mTLS
   middleware tests)
-* live tenant-isolation probe: 6 / 6
+* live organization-isolation probe: 6 / 6
 
 ### What's next
 **Slice 5.6-d — Launcher wiring polish + operator-doc walkthrough.**
@@ -1507,7 +1507,7 @@ Key file mode is 0600, cert 0644.
 * tsc (services/dashboard): 0 errors
 * eslint (services/dashboard): clean
 * backend pytest: **312 / 312** in 125.53s
-* live tenant-isolation probe: 6 / 6
+* live organization-isolation probe: 6 / 6
 
 ### What's next
 **Slice 5.6-c — mTLS middleware on wolf-server.** Two changes:
@@ -1602,8 +1602,8 @@ Files changed:
      initial `forEach(set)` collapsed multi-Set-Cookie; fixed
      using `getSetCookie()` + `append()`).
    - `GET /api/v1/auth/me` with the cookie jar from login →
-     HTTP 200, full user/tenant/role payload.
-   - `GET /api/v1/auth/me/tenants` → HTTP 200, tenant list.
+     HTTP 200, full user/organization/role payload.
+   - `GET /api/v1/auth/me/organizations` → HTTP 200, organization list.
    - `POST /api/v1/chat/stream` (SSE) → token-by-token
      streaming verified: `loop.started` arrives first, then
      `step.started`, then per-token `model.delta` events
@@ -1676,7 +1676,7 @@ wolf-server will answer.
 - **C. Six dead `_ORCH = "services/orchestrator"` sys.path
   bootstrap blocks deleted** from `tools/embedding_benchmark/*`
   (three files), `tools/seed_knowledge/__main__.py`,
-  `tools/tenant_isolation_test/__main__.py`, and
+  `tools/organization_isolation_test/__main__.py`, and
   `services/server/tests/test_seed_knowledge_ingesters.py`. The
   guard `if _ORCH.is_dir():` had made them silent no-ops; the
   workspace install handled actual imports.
@@ -1706,8 +1706,8 @@ wolf-server will answer.
   `hooks/use-conversation-streams.ts`. Tests: three test
   docstrings. Workspace `pyproject.toml`. `tools/model_probe/__init__.py`.
   Notably, the **LLM-visible system prompt** (Rule 3) was
-  updated: "The orchestrator stamps tenant scope onto every
-  request" → "wolf-server stamps tenant scope onto every
+  updated: "The orchestrator stamps organization scope onto every
+  request" → "wolf-server stamps organization scope onto every
   request" — the model now sees consistent component naming.
 
 ### Final integrity gate (all green)
@@ -1716,7 +1716,7 @@ wolf-server will answer.
 - tsc (services/dashboard): **0 errors**
 - eslint (services/dashboard): **clean**
 - backend pytest: **311 / 311** passed in 74.23s
-- live tenant-isolation probe: **6 / 6**
+- live organization-isolation probe: **6 / 6**
 - wolf-cert CLI smoke: `--leaf` help reads `'all', 'server',
   'dashboard'` as designed
 
@@ -1996,7 +1996,7 @@ runs locally" to "deployable security tool."
   `ExtendedKeyUsage` via `LeafKind` (SERVER / CLIENT / DUAL),
   `SubjectAlternativeName` (DNS + IP), Subject + Authority
   Key Identifiers. **`LeafKind.CLIENT` is the hook for the
-  future `wolf-cert issue-relay <tenant>` subcommand** —
+  future `wolf-cert issue-relay <organization>` subcommand** —
   Wolf Knowledge Relay phase will mint relay client certs
   via this exact code path with no library change.
 - `write_cert_pem` / `write_key_pem` — strict permissions
@@ -2092,7 +2092,7 @@ runs locally" to "deployable security tool."
 
 ### What we verified
 - Integrity gate clean: tsc 0 / eslint 0 / mypy 0 / ruff 0 /
-  backend pytest 260/260 / live tenant-isolation 6/6.
+  backend pytest 260/260 / live organization-isolation 6/6.
 - Acceptance test (manual): send "Hello" → retry the assistant
   reply → edit the user message. Result: 2/2 navigator on the
   assistant message AND a separate independent 2/2 navigator at
@@ -2111,7 +2111,7 @@ runs locally" to "deployable security tool."
   `position` integer for stable sibling order, atomic version-add
   transaction wrapping the new INSERT + parent's
   `selected_child_id` UPDATE, no path flattening on save, lossless
-  round-trip test, tenant scoping via `TenantScopedQueryBuilder`.
+  round-trip test, organization scoping via `OrganizationScopedQueryBuilder`.
 
 ### What's next
 - Wrap 5.0c with this PROGRESS.md + CHANGELOG catch-up commit, then
@@ -2162,7 +2162,7 @@ runs locally" to "deployable security tool."
 
 ### What we verified
 - Integrity gate clean before slice commit: tsc 0 / eslint 0 /
-  mypy 0 (down from 56) / ruff 0 / pytest 260/260 / live tenant-
+  mypy 0 (down from 56) / ruff 0 / pytest 260/260 / live organization-
   isolation 6/6.
 - Manual two-conversation concurrent stream verified by the user:
   start a run in convo A, switch to convo B, start another, both
@@ -2480,7 +2480,7 @@ runs locally" to "deployable security tool."
 - Pass 2 (`4f86af5`) — first user web-test of 5.0c-b surfaced layout
   bugs. Avatar moved out of the header into a Claude-style sidebar
   footer; header gained a Settings gear (placeholder for User Settings
-  + Wolf Configuration); tenant selector stayed top-right. Code-block
+  + Wolf Configuration); organization selector stayed top-right. Code-block
   Copy button added. Scroll-to-bottom floating arrow. Disclaimer line
   under the composer. Scrollbar thumb upped from `bg-border` to
   `foreground/30` so it's visible at rest.
@@ -2521,7 +2521,7 @@ runs locally" to "deployable security tool."
 - **`chat-header.tsx`**: replaced the session-id chip with a circular
   user-avatar dropdown (initials from `display_name`, falling back to
   the email local-part). The dropdown shows display name, role, email,
-  current tenant, the first 8 chars of `user_id` for support, and the
+  current organization, the first 8 chars of `user_id` for support, and the
   sign-out action — covering the user's original request for a single
   "who am I + where am I + leave" surface.
 - **`chat-sidebar.tsx`**: the Conversations sidebar is now collapsible
@@ -2878,7 +2878,7 @@ too if qwen3:8b weren't slightly non-deterministic even at temp=0.
 **Branch / commit:** `main` — starting commit `34dea23`, this entry's commit pending.
 
 ### What we did
-- Investigated a reported cross-tenant "leak" (beta returned "ACME runbook"
+- Investigated a reported cross-organization "leak" (beta returned "ACME runbook"
   content): probed the live DB as beta — it retrieved ONLY its own chunks.
   **Not a data-layer leak**; the chat model parroted the prompt's "ACME"
   label onto beta's own content. A grounding/honesty issue → Slice 5.0b.
@@ -2926,7 +2926,7 @@ too if qwen3:8b weren't slightly non-deterministic even at temp=0.
 ## 2026-05-27 — Phase 4 follow-up: close the 4.4b + 4.4c gaps
 
 **Session type:** claude-code (continuation)
-**Phase:** Phase 4 — multi-tenancy hardening (gap-fix after close-out)
+**Phase:** Phase 4 — multi-organization hardening (gap-fix after close-out)
 **Duration:** ~15 min
 **Branch / commit:** `main` — starting commit `ce12c2a`, this entry's
 commit pending.
@@ -2937,23 +2937,23 @@ The Phase 4 close-out (`ce12c2a`) left two sub-slices partial; the
 operator asked why, and whether the gaps would bite later. They would
 (chronic doc-drift + implicit-guard-rot), so we fixed both now.
 
-- **4.4b — CI wire (was: implicit only).** The cross-tenant isolation
+- **4.4b — CI wire (was: implicit only).** The cross-organization isolation
   tests already ran in CI by directory discovery, but `.github/
   workflows/ci.yml` contained zero textual reference to "isolation" —
   a future contributor reading the workflow couldn't see the guard,
   and an accidental test-file move would silently drop the coverage.
-  Added an explicit "Cross-tenant isolation suite (explicit gate)"
-  step to the `test` job naming `test_cross_tenant_isolation.py` +
-  `test_tenant_scoped_cache.py`. Same tests; now visible + regression-
+  Added an explicit "Cross-organization isolation suite (explicit gate)"
+  step to the `test` job naming `test_cross_organization_isolation.py` +
+  `test_organization_scoped_cache.py`. Same tests; now visible + regression-
   obvious in the CI log.
 
 - **4.4c — doc 05 (was: ONBOARDING only).** Added an "Implementation
-  status — Phase 4" section to `docs/05-multi-tenancy.md` mapping each
-  design requirement to its concrete artifact (TenantContext,
-  TenantScopedQueryBuilder, PgvectorKnowledgeStore leg clauses,
-  TenantScopedCache, bootstrap_tenant validation, audit log,
-  stateless-reestablish connection model, per-tenant model seam, the
-  CI + synthetic-probe testing split, the dev two-tenant pattern).
+  status — Phase 4" section to `docs/05-multi-organization.md` mapping each
+  design requirement to its concrete artifact (OrganizationContext,
+  OrganizationScopedQueryBuilder, PgvectorKnowledgeStore leg clauses,
+  OrganizationScopedCache, bootstrap_organization validation, audit log,
+  stateless-reestablish connection model, per-organization model seam, the
+  CI + synthetic-probe testing split, the dev two-organization pattern).
   Plus a "still owed" note: the secrets backend is the Fernet file
   backend today, not a real Vault/OpenBao manager (Phase 6+ deploy
   work; the `SecretsBackend` protocol already abstracts the swap).
@@ -2982,45 +2982,45 @@ ask explicitly. Logged here so the pattern is visible.
 ## 2026-05-27 — Phase 4 close-out: Slices 4.2 + 4.3 + 4.4 + isolation-suite live smoke
 
 **Session type:** claude-code (continuation, Phase 4 close-out)
-**Phase:** Phase 4 — multi-tenancy hardening — **CLOSED**
+**Phase:** Phase 4 — multi-organization hardening — **CLOSED**
 **Duration:** ~150 min across multiple sub-sessions
 **Branch / commit:** `main` — starting commit `338413f` (Slice 4.1),
 final commit pending.
 
 ### What we did
 
-**Slice 4.2 — `bootstrap_tenant` validates + `--update` flag (commit `1da9e1c`)**
+**Slice 4.2 — `bootstrap_organization` validates + `--update` flag (commit `1da9e1c`)**
 
 - New `ConnectionValidationError`: raised when the Indexer (HTTP GET /)
   or Server API (POST /security/user/authenticate) rejects auth, returns
   an unexpected status, or is unreachable. Error messages name the
   failing endpoint and (for Server-API 401) explicitly call out the
   Indexer-vs-Server-API user-database split.
-- New `TenantAlreadyExistsError`: raised on re-run for a slug that
-  already has a `validated_at`-stamped Wazuh config. Doc 05 §Tenant
+- New `OrganizationAlreadyExistsError`: raised on re-run for a slug that
+  already has a `validated_at`-stamped Wazuh config. Doc 05 §Organization
   misconfiguration's "immutable by default after validation" pinned at
   the CLI boundary.
-- `bootstrap_tenant()` gains `update: bool = False` and
+- `bootstrap_organization()` gains `update: bool = False` and
   `skip_validation: bool = False`. The CLI exposes `--update` and
   `--skip-validation` flags. Exit codes: 0 success, 4 already-exists,
   5 validation-failure.
-- `TenantWazuhConfig.validated_at` is now actually written (the column
+- `OrganizationWazuhConfig.validated_at` is now actually written (the column
   existed since Phase 0 but was never stamped). Set to `now()` on
   successful validation, NULL on `--skip-validation`.
 - 6 new tests covering 200/200 success, Indexer 403 tolerance, Indexer
   401, Server API 401, unreachable network, and the regression guard
   on the Server-API-401 error-message content.
 
-**Slice 4.3 — `TenantScopedCache` + agent_name caching + audit-write isolation (commit `3ff751c`)**
+**Slice 4.3 — `OrganizationScopedCache` + agent_name caching + audit-write isolation (commit `3ff751c`)**
 
-- New `app/caching/` module: `TenantScopedCache` Protocol +
-  `InMemoryTenantCache` implementation. Storage keys are composed
-  as `t:<tenant_id>:<ns>:<key>` inside the wrapper — callers pass
-  `tenant_id` as a positional argument, making it structurally
+- New `app/caching/` module: `OrganizationScopedCache` Protocol +
+  `InMemoryOrganizationCache` implementation. Storage keys are composed
+  as `t:<organization_id>:<ns>:<key>` inside the wrapper — callers pass
+  `organization_id` as a positional argument, making it structurally
   impossible to construct an unprefixed key. The internal
-  `_compose_storage_key` raises `UnprefixedKeyError` if `tenant_id`
+  `_compose_storage_key` raises `UnprefixedKeyError` if `organization_id`
   is None (defence-in-depth for misuse via internals).
-- Module-level singleton `_TENANT_CACHE` in `app/api/chat.py` — shared
+- Module-level singleton `_ORGANIZATION_CACHE` in `app/api/chat.py` — shared
   across both `/chat` and `/chat/stream` paths. Future multi-process
   Wolf swaps in a Redis-backed implementation of the same protocol;
   no other code changes.
@@ -3028,28 +3028,28 @@ final commit pending.
   `dispatch_tool_call` + `AgentLoop.run` + both chat endpoints.
 - `_resolve_agent_name_to_id` (Phase 3 Slice 3's agent-name lookup) is
   now the first cache consumer. Hits the Server API once per
-  (tenant, agent_name) per 60s TTL window; subsequent resolutions
+  (organization, agent_name) per 60s TTL window; subsequent resolutions
   within a chat loop are free. Negative results cached as
   `__NOT_FOUND__` sentinel so a repeatedly-asked non-existent name
   doesn't re-probe. The earlier "intentionally not cached" comment is
   updated to reflect the new behaviour + staleness bound.
-- Audit-write isolation test added to `test_cross_tenant_isolation`:
-  adversarial payload from tenant A names tenant B in `event_data`
-  fields; stored row's `tenant_id` column stamps tenant A regardless
+- Audit-write isolation test added to `test_cross_organization_isolation`:
+  adversarial payload from organization A names organization B in `event_data`
+  fields; stored row's `organization_id` column stamps organization A regardless
   of payload content. Column wins, payload is data.
 - 13 new tests total (10 cache + 3 agent-name cache-behavior).
 
 **Slice 4.4 — Phase 4 close-out (this commit)**
 
-- `tools/tenant_isolation_test/__main__.py` — the "synthetic probe"
+- `tools/organization_isolation_test/__main__.py` — the "synthetic probe"
   CLI per doc 05's "run constantly in CI **and** as a synthetic probe
   in production." Six live checks against the actual DB:
-    1. RAG: tenant A cannot see tenant B's chunks
-    2. RAG: tenant B cannot see tenant A's chunks
+    1. RAG: organization A cannot see organization B's chunks
+    2. RAG: organization B cannot see organization A's chunks
     3. Audit write isolation: A→B
     4. Audit write isolation: B→A
     5. Cache wrapper rejects unprefixed keys
-    6. Cache cross-tenant isolation
+    6. Cache cross-organization isolation
   Exit 0 on full pass, non-zero on any failure — binary signal for
   CI / production-probe consumers.
 - `Makefile` gains `test-isolation-live` target (separate from the
@@ -3057,21 +3057,21 @@ final commit pending.
 - Live run against the dev DB: **6/6 checks pass.**
 - ONBOARDING gains Gotcha #7 (Wazuh's Indexer-vs-Server-API user-
   database split — the operational issue that bit Slice 1's
-  end-to-end retest) and Gotcha #8 (the two-tenant dev pattern for
+  end-to-end retest) and Gotcha #8 (the two-organization dev pattern for
   meaningful isolation testing).
 
 ### What we decided
 
 - **No dedicated CI job for the live smoke.** The existing CI test
-  job already runs `test_cross_tenant_isolation.py` +
-  `test_tenant_scoped_cache.py` (they're under
+  job already runs `test_cross_organization_isolation.py` +
+  `test_organization_scoped_cache.py` (they're under
   `services/orchestrator/tests/`). The unit-level suite IS the CI
-  guard. The live smoke `tools/tenant_isolation_test` is for
+  guard. The live smoke `tools/organization_isolation_test` is for
   production / staging operators to run periodically against their
-  actual DB. Adding a separate CI job that bootstraps two tenants
+  actual DB. Adding a separate CI job that bootstraps two organizations
   + seeds them on every PR would be triple the work for marginal
   additional coverage.
-- **`--update` flag, not separate `update-tenant-*` CLIs.** Per
+- **`--update` flag, not separate `update-organization-*` CLIs.** Per
   the user's explicit choice on the Slice 4.2 design question.
   Captures doc 05's "immutable by default" with minimal new code;
   dedicated update CLIs can come in Phase 5+ if operator ergonomics
@@ -3080,10 +3080,10 @@ final commit pending.
   explicit choice on the Slice 4.3 design question. No Redis support
   built preemptively; the protocol stays clean and a Redis impl can
   be added when multi-orchestrator deployment actually exists.
-- **Skip per-tenant connection pooling.** Doc 05 allows either
-  "per-tenant pool" OR "stateless re-establish per request." Wolf
+- **Skip per-organization connection pooling.** Doc 05 allows either
+  "per-organization pool" OR "stateless re-establish per request." Wolf
   already does the latter (async context-manager per chat request).
-  Documenting this in PROGRESS rather than building a per-tenant
+  Documenting this in PROGRESS rather than building a per-organization
   pool that's lower-throughput at our current scale.
 
 ### What broke / what we discovered
@@ -3091,8 +3091,8 @@ final commit pending.
 - **Slice 4.1's first re-bootstrap of acme silently succeeded** when
   the operator wasn't expecting it, because `validated_at` was NULL
   pre-Slice 4.2. The fix shipped in 4.2 — the immutability rule only
-  activates once a tenant HAS been validated by the new CLI. Existing
-  tenants pre-dating Slice 4.2 get one free re-bootstrap to opt in.
+  activates once a organization HAS been validated by the new CLI. Existing
+  organizations pre-dating Slice 4.2 get one free re-bootstrap to opt in.
   Documented in Slice 4.2's commit message + tested by the live
   smoke session.
 - **The `__update` / `__NOT_FOUND__` sentinel patterns** worked
@@ -3102,7 +3102,7 @@ final commit pending.
 - **Wazuh's Indexer-vs-Server-API user-database split** caught us
   during Slice 1's end-to-end retest weeks ago and again during
   Slice 4.2's first probe of qwen3:8b's auth flow. Now codified in
-  ONBOARDING Gotcha #7, plus the bootstrap_tenant validator's
+  ONBOARDING Gotcha #7, plus the bootstrap_organization validator's
   Server-API-401 error message names it explicitly. Should not
   re-bite future contributors.
 
@@ -3118,10 +3118,10 @@ final commit pending.
 
 ---
 
-## 2026-05-27 — Phase 4.1: two-tenant live DB + RAG cross-tenant tests
+## 2026-05-27 — Phase 4.1: two-organization live DB + RAG cross-organization tests
 
 **Session type:** claude-code (continuation; first Phase 4 slice)
-**Phase:** Phase 4 — multi-tenancy hardening (per `docs/10-build-roadmap.md`)
+**Phase:** Phase 4 — multi-organization hardening (per `docs/10-build-roadmap.md`)
 **Duration:** ~45 min
 **Branch / commit:** `main` — starting commit `2197d97`, this entry's
 commit pending.
@@ -3133,7 +3133,7 @@ work. That was wrong per the actual roadmap, which orders:
 | Phase | What | Status |
 |---|---|---|
 | Phase 3 | Knowledge & RAG | ✅ shipped |
-| **Phase 4** | **Multi-tenancy hardening** | ← actually next |
+| **Phase 4** | **Multi-organization hardening** | ← actually next |
 | Phase 5 | Cases and reporting | |
 | **Phase 6** | **Propose tools + Approval Gateway** | ← what was mis-framed as "Phase 4" |
 
@@ -3145,21 +3145,21 @@ Phase 6.
 
 ### What we did
 
-- **Bootstrapped a second tenant `beta`** alongside `acme` so Phase 4's
-  isolation work has actual two-tenant live state to exercise against.
-  Both tenants point at the same dev Wazuh deployment (`192.168.245.128`)
-  for simplicity; their separation is enforced by tenant_id stamping
-  at the application layer, not by per-tenant Wazuh instances (the
+- **Bootstrapped a second organization `beta`** alongside `acme` so Phase 4's
+  isolation work has actual two-organization live state to exercise against.
+  Both organizations point at the same dev Wazuh deployment (`192.168.245.128`)
+  for simplicity; their separation is enforced by organization_id stamping
+  at the application layer, not by per-organization Wazuh instances (the
   "bridge model" from doc 05).
 - **Seeded beta with its own private chunks** via the existing dev-seed
-  CLI. The seed CLI templates the tenant slug into the runbook/incident
-  content (`{TENANT}_SOC SSH brute-force runbook`), so beta's chunks
-  are textually similar to acme's but tagged with beta's tenant_id and
+  CLI. The seed CLI templates the organization slug into the runbook/incident
+  content (`{ORGANIZATION}_SOC SSH brute-force runbook`), so beta's chunks
+  are textually similar to acme's but tagged with beta's organization_id and
   reference "BETA SOC" / "BETA SSH sweep" — distinguishable evidence
   of isolation.
 - **Live DB state after seeding:**
 
-  | tenant | source_type | chunks |
+  | organization | source_type | chunks |
   |---|---|---|
   | acme | past_incident | 1 |
   | acme | runbook | 2 |
@@ -3171,35 +3171,35 @@ Phase 6.
   Note the shared corpora grew slightly from Slice 3's baseline because
   the dev-seed CLI re-inserts its 6 inline shared chunks on each run.
   Not a problem; the tests don't depend on shared-chunk uniqueness.
-- **Extended `tests/test_cross_tenant_isolation.py`** with 3 new tests
+- **Extended `tests/test_cross_organization_isolation.py`** with 3 new tests
   covering the Phase-3 RAG path the original Phase-2-era suite predated:
-  - `test_pgvector_store_search_constrains_results_to_requesting_tenant`
+  - `test_pgvector_store_search_constrains_results_to_requesting_organization`
     — source-level invariant. Asserts that every candidate-fetcher
     method (`_vector_candidates`, `_fts_candidates`,
-    `_vector_aux_candidates`) contains the tenant-scoping WHERE clause
+    `_vector_aux_candidates`) contains the organization-scoping WHERE clause
     in its source. A future contributor would have to delete the clause
     to break isolation; the source-grep check catches it without needing
     a live DB.
-  - `test_pgvector_chunk_input_validation_blocks_cross_tenant_writes` —
-    validates that ChunkInput's tenant_id-vs-source_type rule (shared
-    corpus must have NULL tenant_id; tenant-private corpus requires a
-    tenant_id) raises at the data layer. Prevents the inverse mistake
-    of cross-tenant writes.
-  - `test_pgvector_search_call_path_includes_requesting_tenant_id` —
+  - `test_pgvector_chunk_input_validation_blocks_cross_organization_writes` —
+    validates that ChunkInput's organization_id-vs-source_type rule (shared
+    corpus must have NULL organization_id; organization-private corpus requires a
+    organization_id) raises at the data layer. Prevents the inverse mistake
+    of cross-organization writes.
+  - `test_pgvector_search_call_path_includes_requesting_organization_id` —
     sanity-checks the search() call shape: each leg-helper receives
-    the REQUESTING tenant's id and ONLY that id.
-- **Live cross-tenant verification** (one-shot script, not test
+    the REQUESTING organization's id and ONLY that id.
+- **Live cross-organization verification** (one-shot script, not test
   fixture): with the live dev DB in chained-retrieval mode
   (BM25 + v1.5 + v2-moe per ADR 0014), ran the same query as both
-  tenants:
+  organizations:
   - "SSH brute-force runbook steps" as acme → returned only ACME-tagged
     chunks (ACME SOC SSH brute-force response, ACME SOC Brute-force
     triage, INC-2026-0042 ACME SSH sweep).
   - Same query as beta → returned only BETA-tagged chunks (BETA SOC SSH
     brute-force response, BETA SOC Brute-force triage, INC-2026-0042
     BETA SSH sweep).
-  - Zero cross-tenant leakage observed.
-- **Tests**: 7 tests now in test_cross_tenant_isolation.py (4 prior + 3
+  - Zero cross-organization leakage observed.
+- **Tests**: 7 tests now in test_cross_organization_isolation.py (4 prior + 3
   new). `make check` 183 passed (180 prior + 3 new). Lint + mypy strict
   still clean.
 - **Updated PROGRESS.md** to clarify the actual roadmap-ordered Phase
@@ -3207,18 +3207,18 @@ Phase 6.
 
 ### What we decided
 
-- **Beta tenant points at the same Wazuh deployment as acme.** In
-  production an MSSP would have per-tenant Wazuh deployments; for the
+- **Beta organization points at the same Wazuh deployment as acme.** In
+  production an MSSP would have per-organization Wazuh deployments; for the
   dev DB the application-layer isolation is the load-bearing
   enforcement, and reusing the existing Wazuh keeps the dev setup
-  simple. Application-layer tenant_id scoping is what we're
+  simple. Application-layer organization_id scoping is what we're
   hardening in Phase 4 anyway.
 - **Source-level invariant tests for the RAG isolation clauses.** A
   test that runs SQL against a live Postgres would also catch
   regression, but it requires a Postgres-only fixture path the
   conftest doesn't currently provide. The source-grep approach
   catches the regression risk without needing the fixture; Slice 4.4
-  will add the canonical `tools/tenant_isolation_test/` runnable that
+  will add the canonical `tools/organization_isolation_test/` runnable that
   exercises the live DB as the operational guard.
 - **Append-only CHANGELOG discipline preserved.** Prior entries that
   refer to "Phase 4" meaning the propose-tools work are NOT rewritten;
@@ -3244,16 +3244,16 @@ Phase 6.
 
 ### What's next
 
-- **Phase 4 Slice 4.2** — `bootstrap_tenant` validates connection
+- **Phase 4 Slice 4.2** — `bootstrap_organization` validates connection
   before persisting; `--update` flag for re-bootstrap (treat
-  `TenantWazuhConfig` as immutable post-validation per doc 05
-  §Tenant misconfiguration).
-- **Phase 4 Slice 4.3** — `TenantScopedCache` abstraction (minimal,
+  `OrganizationWazuhConfig` as immutable post-validation per doc 05
+  §Organization misconfiguration).
+- **Phase 4 Slice 4.3** — `OrganizationScopedCache` abstraction (minimal,
   in-memory) + one consumer (agent_name resolution caching) +
   audit-write isolation test.
-- **Phase 4 Slice 4.4** — flesh out `tools/tenant_isolation_test` as
+- **Phase 4 Slice 4.4** — flesh out `tools/organization_isolation_test` as
   the canonical runnable isolation suite; wire into CI;
-  document the two-tenant pattern in ONBOARDING; Phase 4 close-out.
+  document the two-organization pattern in ONBOARDING; Phase 4 close-out.
 
 ---
 
@@ -3423,7 +3423,7 @@ commit pending.
   - `GROUNDING_JUDGE_MODEL_PROVIDER` (empty = same as chat)
   - `GROUNDING_JUDGE_API_KEY_REF` (empty = same as chat)
 - Refactored `app/agent/model_resolver.py` to factor out a `_build_provider()`
-  helper shared by both `get_model_for_tenant()` and the new
+  helper shared by both `get_model_for_organization()` and the new
   `get_grounding_judge_model()`.
 - Threaded `judge_provider` through `chat.py` (both endpoints) into the
   `GroundingValidator`. When the override env vars are empty the helper
@@ -3483,7 +3483,7 @@ commit pending.
   batches, updates only `embedding` + `embedding_model` (content
   + metadata untouched).
 - Default mode is REPORT-ONLY; `--apply` required to write. Per-
-  tenant scoping via `--tenant-slug` or `--tenant-slug __shared__`
+  organization scoping via `--organization-slug` or `--organization-slug __shared__`
   for the shared corpora. `--limit` for incremental migration.
 - Idempotent: re-running after a clean pass finds zero mismatches.
 - Smoke-tested in report mode on the live DB (0 mismatches — the
@@ -3601,11 +3601,11 @@ commit pending.
     per `<rule>` with metadata (`rule_id`, `level`, `title`,
     `ruleset_file`, `groups`, `mitre`, `wazuh_version`).
   - `__main__.py` — driver CLI with `--source attack | wazuh_rules
-    | all`, `--replace-shared` (deletes existing tenant_id-NULL
+    | all`, `--replace-shared` (deletes existing organization_id-NULL
     chunks before re-ingesting), `--cache-dir`, `--limit`, and
     SHA-256-of-content idempotency (re-running without
     `--replace-shared` skips chunks already in the DB).
-- Idempotency by design: tenant-private chunks (`tenant_id IS NOT
+- Idempotency by design: organization-private chunks (`organization_id IS NOT
   NULL`) are never touched by the ingester. Operator-local
   customisation (e.g. the ACME SOC runbooks) survives a corpus
   refresh.
@@ -3618,7 +3618,7 @@ commit pending.
     logged and skipped (graceful degradation contract).
   - Total runtime 2 min 4 s on the RTX 4050 (embed bottleneck:
     nomic-embed-text via Ollama at ~30 ms/chunk).
-  - Final DB state: **5170 shared chunks + 3 tenant-private chunks**.
+  - Final DB state: **5170 shared chunks + 3 organization-private chunks**.
 - Confirmed retrieval quality on the rich corpus by direct store
   smoke-test (bypassing the chat endpoint):
   - "rule 5712 sshd brute force" → Rule 5712 chunk #1 (FTS exact-
@@ -3767,7 +3767,7 @@ land in this session (8f0d544 for Part A, pending for Part B).
   - Reciprocal Rank Fusion (Cormack et al. 2009, k=60): for each
     chunk present in either leg, `score = sum(1 / (60 + rank_in_leg))`.
     Chunks ranked highly in both legs win.
-  - Tenant-scoping clause is preserved in both legs (defence in depth).
+  - Organization-scoping clause is preserved in both legs (defence in depth).
   - `source_types` + `metadata_filters` apply to both legs via shared
     `_apply_metadata_filters` helper.
 - Smoke against the dev corpus showed the expected behaviour:
@@ -3853,7 +3853,7 @@ land in this session (8f0d544 for Part A, pending for Part B).
   the suspect claim with a `[unverified]` marker, never silently
   dropped content. Failure modes (judge errors) also preserve the
   original answer rather than refusing to respond.
-- **No tenant- or per-request validator override** for Slice 2. A
+- **No organization- or per-request validator override** for Slice 2. A
   `validator_mode` field on `ChatRequestBody` was offered in the
   Slice 2 planning question and not chosen; current code-level
   default-mark is sufficient. Operator can opt out by removing the
@@ -4055,9 +4055,9 @@ commit pending.
 - **Operator supplied the Server API admin credentials**
   (`wazuh-wui` / generated). curl confirmed JWT issuance + `/agents`
   + `/rules?rule_ids=5712` all return real data.
-- **Re-ran `bootstrap_tenant --tenant-slug acme`** with per-endpoint
+- **Re-ran `bootstrap_organization --organization-slug acme`** with per-endpoint
   credentials (`admin` for Indexer, `wazuh-wui` for Server API). Idem-
-  potent — overwrote the secrets in place; tenant + user bindings
+  potent — overwrote the secrets in place; organization + user bindings
   preserved.
 - **Closed the Slice 1 end-to-end gap** with two verifications via
   `/api/v1/chat`:
@@ -4076,9 +4076,9 @@ commit pending.
 
 - **No Wolf code changes** — the Slice 1 implementation is unchanged
   by this detour. The failure was operator-side credentials only.
-- **Keep the per-endpoint credential pattern** in the dev tenant
+- **Keep the per-endpoint credential pattern** in the dev organization
   (Indexer admin + Server API admin can be different users). Already
-  supported by `bootstrap_tenant` — `--opensearch-username` and
+  supported by `bootstrap_organization` — `--opensearch-username` and
   `--server-api-username` are independent flags.
 - **Acknowledge the synthesis-fidelity hiccup** seen in the mixed-mode
   answer: the model wove a fragment of the rule's `ignore=60s`
@@ -4144,13 +4144,13 @@ pending this entry.
     `OllamaEmbeddingAdapter` (sequential per-text calls to
     `/api/embeddings`; fine at Slice-1 scale, batching deferred).
   - `store.py` — `KnowledgeStore` Protocol +
-    `PgvectorKnowledgeStore`. Tenant-scoping enforced at the SQL
-    clause: `WHERE tenant_id IS NULL OR tenant_id = $req_tenant`.
-    `SHARED_SOURCE_TYPES` / `TENANT_SOURCE_TYPES` validation at
-    upsert: shared corpora forbid a tenant_id; private corpora
+    `PgvectorKnowledgeStore`. Organization-scoping enforced at the SQL
+    clause: `WHERE organization_id IS NULL OR organization_id = $req_organization`.
+    `SHARED_SOURCE_TYPES` / `ORGANIZATION_SOURCE_TYPES` validation at
+    upsert: shared corpora forbid a organization_id; private corpora
     require one.
 - **Alembic migration 0004** — `knowledge_chunks` table + composite
-  `(tenant_id, source_type)` btree index + HNSW
+  `(organization_id, source_type)` btree index + HNSW
   `vector_cosine_ops` index on `embedding`. `CREATE EXTENSION IF NOT
   EXISTS vector` is idempotent for fresh databases. Applied cleanly
   against the dev DB.
@@ -4166,18 +4166,18 @@ pending this entry.
   per-request DB session + Ollama base URL).
 - **`seed_dev_knowledge` management CLI** — loads the Slice-1 inline
   corpus: 6 shared chunks (Wazuh rules 5710/5712 + active-response;
-  ATT&CK T1110 / T1110.001 / T1078) and 3 tenant-private chunks per
-  tenant (SSH brute-force runbook, T1110 triage runbook, past
+  ATT&CK T1110 / T1110.001 / T1078) and 3 organization-private chunks per
+  organization (SSH brute-force runbook, T1110 triage runbook, past
   incident write-up). Fails loud if `DATABASE_URL` is unset (matches
   the lesson learned from ONBOARDING §3.7 alembic drift earlier this
   session). JSON output to stdout for scripting; errors to stderr.
 - **Ran the migration + seed against the dev DB.** Confirmed table
   schema and indexes (HNSW + composite btree); seeded 9 chunks for
-  tenant `acme` (6 shared with `tenant_id=NULL` + 3 private with
-  `tenant_id=acme.id`).
+  organization `acme` (6 shared with `organization_id=NULL` + 3 private with
+  `organization_id=acme.id`).
 - **12 new pytest tests** in `tests/test_knowledge_store.py`:
   validation rules on `ChunkInput` (shared corpora must have null
-  tenant_id; private corpora require one; unknown source_type
+  organization_id; private corpora require one; unknown source_type
   rejected; empty content rejected), `QueryRunbookInput` constraints
   (non-empty query; 1..20 limit clamp; minimal-args default), tool
   surface (raises when store not configured; passes filters through
@@ -4193,8 +4193,8 @@ pending this entry.
   *"how does Acme respond to SSH brute-force?"* returned 5 hits with
   cosine distances 0.317–0.415, top hit being the shared ATT&CK
   T1110 chunk, followed by the ACME SOC private runbook chunk. The
-  SQL log shows the expected `WHERE tenant_id IS NULL OR tenant_id =
-  $acme.id ORDER BY distance LIMIT 5` clause — tenant scoping
+  SQL log shows the expected `WHERE organization_id IS NULL OR organization_id =
+  $acme.id ORDER BY distance LIMIT 5` clause — organization scoping
   enforced at the query layer.
 
 ### What we decided
@@ -4217,9 +4217,9 @@ pending this entry.
   appears.
 - **Inline 9-chunk seed for Slice 1, not a real scrape.** Smallest
   artifact that proves the vertical; real scrapers come in Slice 3.
-- **Tenant scoping enforced inside the store**, not at the tool
-  layer. The dispatcher's `sanitize_tenant_id_from_args` already
-  strips any model-supplied tenant_id; the store's SQL clause is
+- **Organization scoping enforced inside the store**, not at the tool
+  layer. The dispatcher's `sanitize_organization_id_from_args` already
+  strips any model-supplied organization_id; the store's SQL clause is
   the load-bearing second line of defense per doc 05.
 - **The chat-endpoint end-to-end test was blocked by a separate
   Wazuh Server API 401** (the `wolf` user works for the Indexer but
@@ -4372,7 +4372,7 @@ pending this entry.
 - **Setup from clean clone** per ONBOARDING.md §3: `uv sync --all-packages`,
   `npm install` in frontend, generated `SECRET_KEY` + `SECRETS_FILE_KEY`,
   wrote `.env` (mode 0600) with `DEFAULT_MODEL_ID=qwen3:4b`, ran
-  `alembic upgrade head` (3 migrations clean), bootstrapped tenant `acme`
+  `alembic upgrade head` (3 migrations clean), bootstrapped organization `acme`
   with the real Wazuh URLs.
 - **Verified end-to-end against real Wazuh** at `192.168.245.128`:
   curl-driven login → chat → tool call (`count_alerts_by_severity`) →
@@ -4594,19 +4594,19 @@ here so the changelog matches the git log.
   above).  Updated `ONBOARDING.md` accordingly: dropped Gotcha #2,
   renumbered #3-#7 → #2-#6, fixed three inline cross-references and
   the §0 repo-layout block.
-- `7917fc5` — fixed factually wrong `bootstrap_tenant` flag names in
+- `7917fc5` — fixed factually wrong `bootstrap_organization` flag names in
   `ONBOARDING.md` §3.9/§3.10 (real flags are `--admin-email`,
   `--admin-password`, `--opensearch-url`, `--opensearch-username`,
   `--opensearch-password`, `--server-api-url`, `--server-api-username`,
   `--server-api-password`, `--verify-tls`/`--no-verify-tls` — not the
   `--user-*` / `--wazuh-*` names previously documented).  Also
-  corrected the structural misstatement that `bootstrap_tenant`
-  supports a two-step "create tenant first, wire Wazuh later" flow —
+  corrected the structural misstatement that `bootstrap_organization`
+  supports a two-step "create organization first, wire Wazuh later" flow —
   the CLI requires all Wazuh fields up front.  Merged §3.9 + §3.10
   into a single accurate step with a "no Wazuh yet" placeholder
   pattern; renumbered §3.11/§3.12 → §3.10/§3.11.  Clarified in §5
   that the CLI is fully idempotent and re-running it with the same
-  `--tenant-slug` is the supported update / credential-rotation path
+  `--organization-slug` is the supported update / credential-rotation path
   (no dedicated update CLI needed).
 - `<earlier in session>` — saved the new-machine handoff prompt as
   `prompts/HANDOFF-NEW-MACHINE.md` (was previously only inline in
@@ -4902,7 +4902,7 @@ pending this entry.
   deployment (calls `run()` through a ToolExecContext, bypassing the
   dispatcher's session requirement but going through full Pydantic
   input/output validation and the real HTTP layer).  Usage:
-  `uv run python -m app.management.smoke_wazuh --tenant-slug acme \
+  `uv run python -m app.management.smoke_wazuh --organization-slug acme \
    --all-tools --agent-id 000 --rule-id 5402`.
 - Re-verified all 9 tools end-to-end against the live Wazuh:
   list_agents (1), get_agent_detail (1), get_cluster_health,

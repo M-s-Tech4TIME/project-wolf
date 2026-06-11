@@ -42,10 +42,10 @@ state-changing action without an authenticated human approval.
    evidence grounding, and human approval make the *platform* reliable regardless of
    which model is plugged in. The model's quality changes *how much autonomy* it is
    given, not whether the platform is trustworthy.
-6. **Multi-tenant native.** Built for MSSPs from day one. A single-org deployment is
-   simply "one tenant." There is no untenanted code path.
+6. **Multi-organization native.** Built for MSSPs from day one. A single-org deployment is
+   simply "one organization." There is no unorganizationed code path.
 7. **Everything is audited.** Every model call, tool call, proposal, approval, and
-   execution is recorded immutably and is tenant-scoped.
+   execution is recorded immutably and is organization-scoped.
 
 ## Who it serves
 
@@ -64,7 +64,7 @@ Read the documents in order. They build on each other.
 | 02 | [`docs/02-model-abstraction.md`](docs/02-model-abstraction.md) | The model-agnostic layer; how "any model" works honestly |
 | 03 | [`docs/03-tool-catalog-and-capability-tiers.md`](docs/03-tool-catalog-and-capability-tiers.md) | Every tool, the read/propose/execute model, enforcement |
 | 04 | [`docs/04-approval-gateway.md`](docs/04-approval-gateway.md) | The proposal lifecycle, approvals, active response |
-| 05 | [`docs/05-multi-tenancy.md`](docs/05-multi-tenancy.md) | Tenant isolation, the enforcement points, edge cases |
+| 05 | [`docs/05-multi-organization.md`](docs/05-multi-organization.md) | Organization isolation, the enforcement points, edge cases |
 | 06 | [`docs/06-knowledge-and-rag.md`](docs/06-knowledge-and-rag.md) | Live state vs stable knowledge; the RAG design |
 | 07 | [`docs/07-security-and-threat-model.md`](docs/07-security-and-threat-model.md) | Threat model, prompt injection, hardening |
 | 08 | [`docs/08-reporting-and-orchestration.md`](docs/08-reporting-and-orchestration.md) | Reports, documentation, case management |

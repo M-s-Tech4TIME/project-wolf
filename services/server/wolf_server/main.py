@@ -140,9 +140,7 @@ def _find_alembic_ini() -> Path:
     dev_path = Path(__file__).resolve().parent.parent / "alembic.ini"
     if dev_path.exists():
         return dev_path
-    raise FileNotFoundError(
-        f"alembic.ini not found at {deb_path} or {dev_path}"
-    )
+    raise FileNotFoundError(f"alembic.ini not found at {deb_path} or {dev_path}")
 
 
 async def _run_migrations() -> None:
@@ -168,8 +166,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="wolf-server",
         description=(
-            "Wolf Server — agentic AI platform for Wazuh, "
-            "the brain component (per ADR 0016)."
+            "Wolf Server — agentic AI platform for Wazuh, the brain component (per ADR 0016)."
         ),
         version="0.1.0",
         lifespan=lifespan,

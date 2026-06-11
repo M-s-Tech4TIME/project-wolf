@@ -39,9 +39,9 @@ set -a && source ../../.env && set +a
 uv run python -m wolf_server   # the Phase 5.4-c launcher; auto-HTTPS when certs present
 ```
 
-You will also need a bootstrapped tenant (`uv run python -m
-wolf_server.management.bootstrap_tenant ...` — see
-[`services/server/wolf_server/management/bootstrap_tenant.py`](../server/wolf_server/management/bootstrap_tenant.py)).
+You will also need a bootstrapped organization (`uv run python -m
+wolf_server.management.bootstrap_organization ...` — see
+[`services/server/wolf_server/management/bootstrap_organization.py`](../server/wolf_server/management/bootstrap_organization.py)).
 
 ## Structure
 
@@ -55,17 +55,17 @@ app/
     page.tsx            mounts <ChatShell>
 
 components/
-  auth-provider.tsx     /me + /me/tenants context
+  auth-provider.tsx     /me + /me/organizations context
   chat-shell.tsx        header + sidebar + main + citations
-  chat-header.tsx       app title + tenant switcher + user menu
+  chat-header.tsx       app title + organization switcher + user menu
   chat-sidebar.tsx      history of past conversations (+ Starred section)
   chat-composer.tsx     question input + send / stop button
   chats-history-overlay.tsx  full-screen search across every branch
   message-thread.tsx    user/assistant bubbles + tree branching navigator
   citations-panel.tsx   tool calls + citations (right panel)
   markdown.tsx          markdown renderer + syntax highlighting + verdict chips
-  tenant-switcher.tsx   dropdown that triggers re-login on switch
-  login-form.tsx        email/password (+ optional tenant override)
+  organization-switcher.tsx   dropdown that triggers re-login on switch
+  login-form.tsx        email/password (+ optional organization override)
   confirm-dialog.tsx    in-app destructive-action confirmation
   ui/                   shadcn primitives
 
@@ -92,9 +92,9 @@ scripts/
   origin (the dashboard at :3000), so the cookies are scoped to that
   single origin — no cross-port eTLD+1 gymnastics needed.
 - All `fetch` calls use `credentials: "include"` (see `lib/api.ts`).
-- The tenant switcher does not re-issue JWTs server-side (yet). Switching
-  tenants signs out and sends the user back to `/login?tenant=<id>` with
-  the desired tenant prefilled.
+- The organization switcher does not re-issue JWTs server-side (yet). Switching
+  organizations signs out and sends the user back to `/login?organization=<id>` with
+  the desired organization prefilled.
 
 ## SSE streaming
 

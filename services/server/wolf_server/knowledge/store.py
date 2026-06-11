@@ -1,15 +1,15 @@
 """KnowledgeStore protocol + pgvector implementation.
 
 Per doc 05 + doc 06: a retrieval call MUST only return chunks visible to
-the requesting tenant. The store enforces this at the query level — there
-is no `raw_search()` escape hatch. The tenant_id is a required argument on
+the requesting organization. The store enforces this at the query level — there
+is no `raw_search()` escape hatch. The organization_id is a required argument on
 every read.
 
 Visibility rules:
-  - Shared corpora (source_type='wazuh_doc' / 'attack') have tenant_id=NULL
-    and are visible to every tenant.
-  - Per-tenant corpora (source_type='runbook' / 'past_incident') have a
-    non-null tenant_id and are visible ONLY to that tenant.
+  - Shared corpora (source_type='wazuh_doc' / 'attack') have organization_id=NULL
+    and are visible to every organization.
+  - Per-organization corpora (source_type='runbook' / 'past_incident') have a
+    non-null organization_id and are visible ONLY to that organization.
   - search() returns the union, ranked by vector distance, after the
     metadata filter is applied.
 """
@@ -36,8 +36,8 @@ RANKER_CANDIDATE_LIMIT = 25
 # Source types Wolf supports today. Validated at write time so unknown
 # values can't sneak into the metadata and break retrieval semantics.
 SHARED_SOURCE_TYPES = frozenset({"wazuh_doc", "attack"})
-TENANT_SOURCE_TYPES = frozenset({"runbook", "past_incident"})
-ALL_SOURCE_TYPES = SHARED_SOURCE_TYPES | TENANT_SOURCE_TYPES
+ORGANIZATION_SOURCE_TYPES = frozenset({"runbook", "past_incident"})
+ALL_SOURCE_TYPES = SHARED_SOURCE_TYPES | ORGANIZATION_SOURCE_TYPES
 
 
 @dataclass(frozen=True)
@@ -46,9 +46,9 @@ class ChunkInput:
 
     content: str
     source_type: str
-    # Required for source_type in TENANT_SOURCE_TYPES; must be None for
+    # Required for source_type in ORGANIZATION_SOURCE_TYPES; must be None for
     # source_type in SHARED_SOURCE_TYPES. Enforced in upsert().
-    tenant_id: uuid.UUID | None
+    organization_id: uuid.UUID | None
     chunk_metadata: dict[str, Any]
 
 
@@ -72,7 +72,7 @@ class RetrievedChunk:
     id: uuid.UUID
     content: str
     source_type: str
-    tenant_id: uuid.UUID | None
+    organization_id: uuid.UUID | None
     chunk_metadata: dict[str, Any]
     distance: float
     rrf_score: float | None = None
@@ -87,7 +87,7 @@ class KnowledgeStore(Protocol):
     async def search(
         self,
         *,
-        tenant_id: uuid.UUID,
+        organization_id: uuid.UUID,
         query_text: str,
         source_types: Sequence[str] | None = None,
         metadata_filters: dict[str, Any] | None = None,
@@ -151,11 +151,9 @@ class PgvectorKnowledgeStore:
             aux_vectors = [None] * len(texts)
 
         ids: list[uuid.UUID] = []
-        for chunk, vector, aux_vector in zip(
-            chunks, vectors, aux_vectors, strict=True
-        ):
+        for chunk, vector, aux_vector in zip(chunks, vectors, aux_vectors, strict=True):
             row = KnowledgeChunk(
-                tenant_id=chunk.tenant_id,
+                organization_id=chunk.organization_id,
                 source_type=chunk.source_type,
                 content=chunk.content,
                 embedding=vector,
@@ -173,7 +171,7 @@ class PgvectorKnowledgeStore:
     async def search(
         self,
         *,
-        tenant_id: uuid.UUID,
+        organization_id: uuid.UUID,
         query_text: str,
         source_types: Sequence[str] | None = None,
         metadata_filters: dict[str, Any] | None = None,
@@ -207,10 +205,10 @@ class PgvectorKnowledgeStore:
             [query_vector_aux] = await self._embedder_aux.embed([query_text])
 
         vector_ranks = await self._vector_candidates(
-            tenant_id, query_vector, source_types, metadata_filters
+            organization_id, query_vector, source_types, metadata_filters
         )
         fts_ranks = await self._fts_candidates(
-            tenant_id, query_text, source_types, metadata_filters
+            organization_id, query_text, source_types, metadata_filters
         )
         # Third RRF leg activates only when both an aux embedder is wired
         # AND the embedding_v2 column has been populated. Chunks with NULL
@@ -218,7 +216,7 @@ class PgvectorKnowledgeStore:
         vector_aux_ranks: dict[uuid.UUID, int] = {}
         if query_vector_aux is not None:
             vector_aux_ranks = await self._vector_aux_candidates(
-                tenant_id, query_vector_aux, source_types, metadata_filters
+                organization_id, query_vector_aux, source_types, metadata_filters
             )
 
         # RRF fusion. A chunk missing from one leg contributes 0 from that
@@ -250,7 +248,7 @@ class PgvectorKnowledgeStore:
                 id=chunk_id,
                 content=by_id[chunk_id][0].content,
                 source_type=by_id[chunk_id][0].source_type,
-                tenant_id=by_id[chunk_id][0].tenant_id,
+                organization_id=by_id[chunk_id][0].organization_id,
                 chunk_metadata=by_id[chunk_id][0].chunk_metadata,
                 distance=float(by_id[chunk_id][1]),
                 rrf_score=rrf_score,
@@ -261,7 +259,7 @@ class PgvectorKnowledgeStore:
 
     async def _vector_candidates(
         self,
-        tenant_id: uuid.UUID,
+        organization_id: uuid.UUID,
         query_vector: list[float],
         source_types: Sequence[str] | None,
         metadata_filters: dict[str, Any] | None,
@@ -270,8 +268,8 @@ class PgvectorKnowledgeStore:
         stmt = (
             select(KnowledgeChunk.id)
             .where(
-                (KnowledgeChunk.tenant_id.is_(None))
-                | (KnowledgeChunk.tenant_id == tenant_id)
+                (KnowledgeChunk.organization_id.is_(None))
+                | (KnowledgeChunk.organization_id == organization_id)
             )
             .order_by(KnowledgeChunk.embedding.cosine_distance(query_vector))
             .limit(RANKER_CANDIDATE_LIMIT)
@@ -282,7 +280,7 @@ class PgvectorKnowledgeStore:
 
     async def _vector_aux_candidates(
         self,
-        tenant_id: uuid.UUID,
+        organization_id: uuid.UUID,
         query_vector: list[float],
         source_types: Sequence[str] | None,
         metadata_filters: dict[str, Any] | None,
@@ -292,15 +290,15 @@ class PgvectorKnowledgeStore:
         Skips chunks where embedding_v2 IS NULL — these never made it
         through the aux embedder (e.g. content too long for v2-moe's
         512-token window) and would corrupt cosine ranking with a
-        zero-vector. Tenant scoping clause is identical to the primary
+        zero-vector. Organization scoping clause is identical to the primary
         vector leg.
         """
         stmt = (
             select(KnowledgeChunk.id)
             .where(KnowledgeChunk.embedding_v2.isnot(None))
             .where(
-                (KnowledgeChunk.tenant_id.is_(None))
-                | (KnowledgeChunk.tenant_id == tenant_id)
+                (KnowledgeChunk.organization_id.is_(None))
+                | (KnowledgeChunk.organization_id == organization_id)
             )
             .order_by(KnowledgeChunk.embedding_v2.cosine_distance(query_vector))
             .limit(RANKER_CANDIDATE_LIMIT)
@@ -311,7 +309,7 @@ class PgvectorKnowledgeStore:
 
     async def _fts_candidates(
         self,
-        tenant_id: uuid.UUID,
+        organization_id: uuid.UUID,
         query_text: str,
         source_types: Sequence[str] | None,
         metadata_filters: dict[str, Any] | None,
@@ -332,8 +330,8 @@ class PgvectorKnowledgeStore:
                 func.ts_rank_cd(tsv, tsquery).label("fts_score"),
             )
             .where(
-                (KnowledgeChunk.tenant_id.is_(None))
-                | (KnowledgeChunk.tenant_id == tenant_id)
+                (KnowledgeChunk.organization_id.is_(None))
+                | (KnowledgeChunk.organization_id == organization_id)
             )
             .where(tsv.op("@@")(tsquery))
             .order_by(func.ts_rank_cd(tsv, tsquery).desc())
@@ -353,9 +351,7 @@ class PgvectorKnowledgeStore:
             stmt = stmt.where(KnowledgeChunk.source_type.in_(list(source_types)))
         if metadata_filters:
             for key, value in metadata_filters.items():
-                stmt = stmt.where(
-                    KnowledgeChunk.chunk_metadata[key].astext == str(value)
-                )
+                stmt = stmt.where(KnowledgeChunk.chunk_metadata[key].astext == str(value))
         return stmt
 
     @staticmethod
@@ -365,15 +361,15 @@ class PgvectorKnowledgeStore:
                 f"Unknown source_type {chunk.source_type!r}; expected one of "
                 f"{sorted(ALL_SOURCE_TYPES)}"
             )
-        if chunk.source_type in SHARED_SOURCE_TYPES and chunk.tenant_id is not None:
+        if chunk.source_type in SHARED_SOURCE_TYPES and chunk.organization_id is not None:
             raise ValueError(
-                f"source_type={chunk.source_type!r} is shared; tenant_id must "
-                f"be None, got {chunk.tenant_id}"
+                f"source_type={chunk.source_type!r} is shared; organization_id must "
+                f"be None, got {chunk.organization_id}"
             )
-        if chunk.source_type in TENANT_SOURCE_TYPES and chunk.tenant_id is None:
+        if chunk.source_type in ORGANIZATION_SOURCE_TYPES and chunk.organization_id is None:
             raise ValueError(
-                f"source_type={chunk.source_type!r} is tenant-private; "
-                f"tenant_id is required"
+                f"source_type={chunk.source_type!r} is organization-private; "
+                f"organization_id is required"
             )
         if not chunk.content.strip():
             raise ValueError("Chunk content cannot be empty or whitespace-only")

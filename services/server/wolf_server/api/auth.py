@@ -3,7 +3,7 @@
 POST /api/v1/auth/login          — local account login
 POST /api/v1/auth/logout         — clear session cookie
 GET  /api/v1/auth/me             — return current user info (requires auth)
-GET  /api/v1/auth/me/tenants     — list tenants the user belongs to (requires auth)
+GET  /api/v1/auth/me/organizations     — list organizations the user belongs to (requires auth)
 GET  /api/v1/auth/oidc/start     — redirect to OIDC IdP (when configured)
 GET  /api/v1/auth/oidc/callback  — OIDC code exchange (when configured)
 """
@@ -23,7 +23,7 @@ from wolf_server.auth.middleware import COOKIE_NAME
 from wolf_server.auth.oidc import get_authorization_url, oidc_is_configured
 from wolf_server.config import get_settings
 from wolf_server.database import get_db
-from wolf_server.tenancy.models import Tenant, User, UserTenant
+from wolf_server.organization.models import Organization, User, UserOrganization
 
 logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
@@ -36,16 +36,16 @@ _settings = get_settings()
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
-    # The tenant the user wants to operate in.  If omitted and the user
-    # belongs to exactly one tenant, that tenant is used automatically.
-    tenant_id: uuid.UUID | None = None
+    # The organization the user wants to operate in.  If omitted and the user
+    # belongs to exactly one organization, that organization is used automatically.
+    organization_id: uuid.UUID | None = None
 
 
 class LoginResponse(BaseModel):
     user_id: uuid.UUID
     email: str
     display_name: str
-    tenant_id: uuid.UUID
+    organization_id: uuid.UUID
     role: str
 
 
@@ -53,7 +53,7 @@ class MeResponse(BaseModel):
     user_id: uuid.UUID
     email: str
     display_name: str
-    tenant_id: uuid.UUID
+    organization_id: uuid.UUID
     role: str
 
 
@@ -93,39 +93,40 @@ async def login(
     if not user.is_active:
         await _audit_login_failure(db, body.email, source_ip, "user_inactive", user_id=user.id)
         await db.commit()
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Account is inactive"
-        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Account is inactive")
 
-    # Resolve tenant membership.
-    tenant_query = select(UserTenant).where(UserTenant.user_id == user.id)
-    bindings_result = await db.execute(tenant_query)
+    # Resolve organization membership.
+    organization_query = select(UserOrganization).where(UserOrganization.user_id == user.id)
+    bindings_result = await db.execute(organization_query)
     bindings = bindings_result.scalars().all()
 
     if not bindings:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="User has no tenant memberships",
+            detail="User has no organization memberships",
         )
 
-    if body.tenant_id is not None:
-        binding = next((b for b in bindings if b.tenant_id == body.tenant_id), None)
+    if body.organization_id is not None:
+        binding = next((b for b in bindings if b.organization_id == body.organization_id), None)
         if binding is None:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="User is not a member of the requested tenant",
+                detail="User is not a member of the requested organization",
             )
     elif len(bindings) == 1:
         binding = bindings[0]
     else:
-        tenant_ids = [str(b.tenant_id) for b in bindings]
+        organization_ids = [str(b.organization_id) for b in bindings]
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"User belongs to multiple tenants; specify tenant_id. Options: {tenant_ids}",
+            detail=(
+                "User belongs to multiple organizations; specify organization_id. "
+                f"Options: {organization_ids}"
+            ),
         )
 
     session_id = str(uuid.uuid4())
-    access_token = create_access_token(user.id, binding.tenant_id, binding.role, session_id)
+    access_token = create_access_token(user.id, binding.organization_id, binding.role, session_id)
     refresh_token = create_refresh_token(user.id, session_id)
 
     # Write audit event BEFORE setting the cookie so the event is in-tx.
@@ -136,7 +137,7 @@ async def login(
             "email": user.email,
             "method": "local",
         },
-        tenant_id=binding.tenant_id,
+        organization_id=binding.organization_id,
         user_id=user.id,
         session_id=session_id,
         source_ip=source_ip,
@@ -145,13 +146,13 @@ async def login(
 
     _set_auth_cookies(response, access_token, refresh_token)
 
-    logger.info("login_success", user_id=str(user.id), tenant_id=str(binding.tenant_id))
+    logger.info("login_success", user_id=str(user.id), organization_id=str(binding.organization_id))
 
     return LoginResponse(
         user_id=user.id,
         email=user.email,
         display_name=user.display_name,
-        tenant_id=binding.tenant_id,
+        organization_id=binding.organization_id,
         role=binding.role,
     )
 
@@ -165,16 +166,16 @@ async def logout(
     """Clear the session cookies.  Audit the logout if a valid session is present."""
     session: dict[str, Any] = getattr(request.state, "session", {})
     user_id_raw = session.get("user_id")
-    tenant_id_raw = session.get("tenant_id")
+    organization_id_raw = session.get("organization_id")
     session_id = str(session.get("session_id", ""))
 
-    if user_id_raw and tenant_id_raw:
+    if user_id_raw and organization_id_raw:
         try:
             await write_event(
                 db,
                 event_type="auth.logout",
                 event_data=None,
-                tenant_id=uuid.UUID(str(tenant_id_raw)),
+                organization_id=uuid.UUID(str(organization_id_raw)),
                 user_id=uuid.UUID(str(user_id_raw)),
                 session_id=session_id,
                 source_ip=request.client.host if request.client else None,
@@ -192,37 +193,31 @@ async def me(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> MeResponse:
-    """Return current session's user and tenant info.
+    """Return current session's user and organization info.
 
-    The JWT only carries user_id/tenant_id/role; email and display_name
+    The JWT only carries user_id/organization_id/role; email and display_name
     come from the User row. Surfacing them in the sidebar profile chip
     (Slice 5.0c-b) was the original prompt for wiring this up.
     """
     session: dict[str, Any] = getattr(request.state, "session", {})
     if not session.get("user_id"):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated"
-        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
     user_id = uuid.UUID(str(session["user_id"]))
-    user = (
-        await db.execute(select(User).where(User.id == user_id))
-    ).scalar_one_or_none()
+    user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
     if user is None:
         # Session points to a user that no longer exists — treat as logged out.
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Stale session"
-        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Stale session")
     return MeResponse(
         user_id=user_id,
         email=user.email or "",
         display_name=user.display_name or "",
-        tenant_id=uuid.UUID(str(session["tenant_id"])),
+        organization_id=uuid.UUID(str(session["organization_id"])),
         role=str(session.get("role", "")),
     )
 
 
-class TenantMembership(BaseModel):
-    """One tenant the current user is a member of."""
+class OrganizationMembership(BaseModel):
+    """One organization the current user is a member of."""
 
     id: uuid.UUID
     slug: str
@@ -230,35 +225,33 @@ class TenantMembership(BaseModel):
     role: str
 
 
-@router.get("/me/tenants", response_model=list[TenantMembership])
-async def my_tenants(
+@router.get("/me/organizations", response_model=list[OrganizationMembership])
+async def my_organizations(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> list[TenantMembership]:
-    """List all tenants the current user is a member of.
+) -> list[OrganizationMembership]:
+    """List all organizations the current user is a member of.
 
-    Used by wolf-dashboard's tenant switcher.  Only returns active tenants;
-    the user's per-tenant role comes from the user_tenants binding.
+    Used by wolf-dashboard's organization switcher.  Only returns active organizations;
+    the user's per-organization role comes from the user_organizations binding.
     """
     session: dict[str, Any] = getattr(request.state, "session", {})
     user_id_raw = session.get("user_id")
     if not user_id_raw:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated"
-        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
     user_id = uuid.UUID(str(user_id_raw))
 
     rows = await db.execute(
-        select(UserTenant, Tenant)
-        .join(Tenant, Tenant.id == UserTenant.tenant_id)
-        .where(UserTenant.user_id == user_id, Tenant.is_active.is_(True))
-        .order_by(Tenant.slug)
+        select(UserOrganization, Organization)
+        .join(Organization, Organization.id == UserOrganization.organization_id)
+        .where(UserOrganization.user_id == user_id, Organization.is_active.is_(True))
+        .order_by(Organization.slug)
     )
     return [
-        TenantMembership(
-            id=tenant.id, slug=tenant.slug, name=tenant.name, role=binding.role
+        OrganizationMembership(
+            id=organization.id, slug=organization.slug, name=organization.name, role=binding.role
         )
-        for binding, tenant in rows.all()
+        for binding, organization in rows.all()
     ]
 
 

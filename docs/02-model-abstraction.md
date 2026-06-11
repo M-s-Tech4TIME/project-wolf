@@ -147,9 +147,9 @@ turns "which strategy for this model" from guesswork into measurement, and it le
 operators honestly see what their chosen model can and cannot do **before** relying
 on it.
 
-## Per-tenant model choice
+## Per-organization model choice
 
-Model configuration is **per tenant**. An MSSP can run Client A on a local Ollama
+Model configuration is **per organization**. An MSSP can run Client A on a local Ollama
 model (for data-residency reasons) and Client B on Claude (for maximum capability),
 simultaneously, on the same platform. The data-residency implications of this choice
 are covered in `07-security-and-threat-model.md` — it is not merely a quality knob,
@@ -163,7 +163,7 @@ it is a data-governance decision.
   self-hosted everything. No external paid dependency is required for any feature.
 - If a team *chooses* a paid API model, that cost is between them and the provider;
   the platform neither adds nor brokers cost.
-- The platform should expose **token-usage visibility** per tenant so operators
+- The platform should expose **token-usage visibility** per organization so operators
   running paid models can see their spend — transparency, not metering.
 
 ## What the operator must understand (surface this in the product)

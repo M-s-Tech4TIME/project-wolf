@@ -227,9 +227,7 @@ def make_embedding_provider(settings: "Settings") -> EmbeddingProvider:
     requires `uv sync --extra embeddings-local` (torch is not a default
     runtime dep per ADR 0007).
     """
-    return _build_provider(
-        settings.embedding_provider, settings.embedding_model, settings
-    )
+    return _build_provider(settings.embedding_provider, settings.embedding_model, settings)
 
 
 def make_embedding_provider_aux(
