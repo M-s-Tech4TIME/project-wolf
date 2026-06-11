@@ -155,8 +155,27 @@ jobs:
         # legitimately don't exist on PyPI — they're our internal
         # packages. Default behaviour already exits 1 on real
         # CVE findings, which is what we want.
+        #
+        # Retry loop (2026-06-11): pip-audit queries PyPI's
+        # vulnerability API per-dependency; a transient PyPI-side
+        # http error surfaces as pip_audit ServiceError and exit 1 —
+        # indistinguishable from a finding by exit code alone (run
+        # 27337124057 failed this way). Three attempts with a 30s
+        # backoff ride out the flake; a REAL CVE finding fails all
+        # three attempts identically, so nothing is masked — the
+        # job still exits 1 on findings.
         run: |
-          uv run pip-audit --desc
+          for attempt in 1 2 3; do
+            if uv run pip-audit --desc; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "pip-audit attempt ${attempt} failed — retrying in 30s ..."
+              sleep 30
+            fi
+          done
+          echo "pip-audit failed on all 3 attempts."
+          exit 1
 
   # Secrets-scanning gate — docs/17 Gap 11. Runs gitleaks against
   # the full git history on every push + PR. Allowlist for known
