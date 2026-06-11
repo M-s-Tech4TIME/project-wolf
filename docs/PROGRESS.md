@@ -6,14 +6,45 @@
 >
 > For history of what changed when, see `CHANGELOG.md` (append-only).
 
-**Last updated:** 2026-06-11 by claude-code (ALL FOUR ADRs 0017 + 0018 + 0019 + 0020 ACCEPTED after multi-round operator reviews — entire design arc locked; Phase 6.4 organization→organization rename is the next real work unit; memory/ moved into the repo)
+**Last updated:** 2026-06-11 by claude-code (Phase 6.4 tenant→organization rename SHIPPED — 4 commits on main, all 14 CI jobs green; Phase 6.5-a is the next workable slice)
 
 ---
 
 ## 1. Where we are right now
 
-**Current phase:** No active build phase. Three closure points
+**Current phase:** Phase 6.4 COMPLETE. Four closure points
 since the last update:
+
+0. **Phase 6.4 — tenant→organization codebase rename SHIPPED**
+   (2026-06-11, commits `076febd` + `a7d0aed` + `e382674` +
+   `3f000cb`, all 14 CI jobs green at `3f000cb`).
+   - Alembic migration 0007 renames every schema object (3 tables,
+     5 columns, 3 named uniques, 3 FKs, 7 indexes) via
+     Postgres-native `ALTER ... RENAME` — in-place, no rebuild;
+     `downgrade()` round-trips. FK constraints renamed by **dynamic
+     pg_constraint lookup** because legacy DBs carry Postgres
+     auto-names (`user_tenants_user_id_fkey`) while post-2026-06-05
+     fresh DBs carry NAMING_CONVENTION names
+     (`fk_user_tenants_user_id_users`) — hardcoding either shape
+     broke the other (caught by CI, fixed in `3f000cb`).
+   - Backend: ~144 Python files swept (~1500 substitutions);
+     `wolf_server.tenancy` → `wolf_server.organization`;
+     `Tenant`→`Organization`, `UserTenant`→`UserOrganization`,
+     `TenantContext`→`OrganizationContext`, etc. 8 files renamed
+     via git mv (incl. `bootstrap_organization.py`,
+     `tools/cross_organization_isolation/`).
+   - Frontend: 8 dashboard files; `tenant-switcher.tsx` →
+     `organization-switcher.tsx`.
+   - Docs/config: 27 living docs + 10 memory files + Makefile +
+     debian/control + ci.yml + .env.example. ADRs + migrations
+     0001-0006 intentionally untouched (immutable history).
+   - Hygiene along the way: optional-dep test now `importorskip`s
+     cleanly + `embeddings-local` extra installed; starlette
+     deprecation warning fixed properly by adding `httpx2` test dep
+     (no filterwarnings). Final: 397 passed / 0 skipped /
+     0 warnings; mypy --strict clean; isolation suite 18 passed.
+   - Memory entry `tenant-renamed-to-organization` flipped
+     STANDING RULE → COMPLETED.
 
 1. **Batches 1, 2, 3 of docs/17 release-engineering all CLOSED**
    (2026-06-09). 9 of 14 gaps in docs/17 are now closed; only
@@ -60,7 +91,7 @@ since the last update:
      `X-Organization-Id` header); session cookie blacklist
      (Redis); invite-link verification flow with same-network gate
      (no SMTP — copy-link out-of-band delivery). Phase 6.4
-     (organization→organization rename) is the unblocked pre-req. Phase
+     (tenant→organization rename) is the unblocked pre-req. Phase
      6.5 = 9 sub-slices, 12-13 sessions. Propose/approve/execute
      enforcement decorators defer to Phase 6 (wolf-gateway). MFA
      deferred to v1.1.
@@ -725,7 +756,14 @@ who want to build their own images.
 
 ## 4. What's next
 
-**Immediate next steps** (in priority order):
+**Top of queue (2026-06-11):** Phase 6.4 (tenant→organization
+rename) **SHIPPED** — see §1 item 0. The next workable slice is
+**Phase 6.5-a** (session cookie blacklist via Redis), first of the
+9 sub-slices in ADR 0018 §"Implementation sequencing". Phase 6.5
+total estimate: 12-13 sessions.
+
+**Immediate next steps** (in priority order; items below predate
+the multi-organization design arc and remain valid backlog):
 -1. ~~Multi-embedding RRF chaining (v1.5 + v2-moe via ADR 0014).~~
     **Shipped 2026-05-27.** Migration 0006 + secondary embedding
     column + 3-way RRF in `search()` + `--aux` mode on `wolf reembed`.

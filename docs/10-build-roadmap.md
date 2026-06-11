@@ -32,9 +32,10 @@ ACCEPTED after multi-round operator reviews:
 - **ADR 0020** — Superuser-owned Wazuh component mapping — drives
   Phase 6.6
 
-**Phase 6.4 (organization→organization codebase rename): the next active
-slice.** The unblocked pre-req for all Phase 6.5+ work. ~40-60
-files, single PR, 1-2 sessions.
+**Phase 6.4 (tenant→organization codebase rename): ✅ SHIPPED
+2026-06-11** (main @ `3f000cb`, all 14 CI jobs green). Actual scope:
+~170 files, single PR, 1 session. **Phase 6.5-a is the next active
+slice.**
 
 **Phase 6+ (Approval Gateway and beyond): designed but not yet
 started.** Sub-phase ordering 6.4 → 6.5 → 6 → 6.6 → 7 → 7.5 → 8 →
@@ -300,31 +301,39 @@ different analyst with the right authority approves, wolf-gateway
 executes it against a real Wazuh deployment, verification read
 confirms the actual state. Every step audited.
 
-## Phase 6.4 — organization → organization codebase rename
+## Phase 6.4 — tenant → organization codebase rename — ✅ SHIPPED 2026-06-11
 
-**Per ADR 0018 (ACCEPTED 2026-06-10).** Pre-requisite for Phase 6.5
-and all subsequent phases. The entire codebase migrates from the
-"organization" terminology to "organization":
+**Per ADR 0018 (ACCEPTED 2026-06-10). SHIPPED 2026-06-11** — main @
+`3f000cb`, 4 commits (`076febd` rename, `a7d0aed` httpx2 test-dep,
+`e382674` CI workflow paths, `3f000cb` migration FK fix), all 14 CI
+jobs green. Pre-requisite for Phase 6.5 and all subsequent phases.
+The entire codebase migrated from the "tenant" terminology to
+"organization":
 
-- DB: `organizations` table → `organizations`; `organization_id` columns →
-  `organization_id`; foreign-key constraint names
-- Alembic migration that renames atomically + backfills any code
-  paths that touch the old column
-- SQLAlchemy models: `Organization` → `Organization`; `UserOrganization` →
-  `UserOrganization`; `OrganizationContext` → `OrganizationContext`
-- API routes: `/api/v1/organizations/...` → `/api/v1/organizations/...`
-- Frontend: `organization-switcher.tsx` → `organization-switcher.tsx`;
+- DB: `tenants` table → `organizations`; `tenant_id` columns →
+  `organization_id`; FK constraints renamed by dynamic pg_constraint
+  lookup (legacy Postgres auto-names vs NAMING_CONVENTION names —
+  both shapes converge post-0007)
+- Alembic migration 0007 renames atomically (Postgres-native
+  `ALTER ... RENAME`, in-place, reversible `downgrade()`)
+- SQLAlchemy models: `Tenant` → `Organization`; `UserTenant` →
+  `UserOrganization`; `TenantContext` → `OrganizationContext`
+- Frontend: `tenant-switcher.tsx` → `organization-switcher.tsx`;
   all TypeScript types + variable names + React contexts
-- Test fixtures + factory helpers
-- Memory entry `organization-renamed-to-organization.md` flips from
+- Test fixtures + factory helpers; `tools/tenant_isolation_test/`
+  → `tools/cross_organization_isolation/`
+- Memory entry `tenant-renamed-to-organization.md` flipped from
   STANDING RULE to COMPLETED
 
-Single PR, single review session. Estimated scope: **1-2 sessions**.
+Actual scope: 1 session, ~170 files (144 Python swept + frontend +
+docs + config), ~1500 substitutions, 8 git-mv renames.
 
-**Exit criteria:** every reference to `organization`/`organization_id`/`Organization`
-in the codebase is renamed to `organization`/`organization_id`/
-`Organization`. All tests pass. Cross-organization isolation suite
-(formerly cross-organization isolation suite) green.
+**Exit criteria — all met:** every functional reference to
+`tenant`/`tenant_id`/`Tenant` renamed (remaining occurrences are
+immutable history only: ADRs, migrations 0001-0006, the rename
+memory file). 397 tests pass, 0 skipped, 0 warnings.
+Cross-organization isolation suite (formerly cross-tenant isolation
+suite) green locally + in CI.
 
 ## Phase 6.5 — Bootstrap Superuser + Per-Org RBAC + Login UX
 
@@ -719,7 +728,7 @@ sub-phases between the existing Phase 6 work and Phase 7:
 
 | Phase | Driver | Why this position |
 |---|---|---|
-| **6.4** | ADR 0018 | organization → organization codebase rename. Pre-req for every Phase 6.5+ slice that references the new naming. Single PR, ~1-2 sessions. |
+| **6.4** | ADR 0018 | tenant → organization codebase rename. Pre-req for every Phase 6.5+ slice that references the new naming. Single PR, ~1-2 sessions. |
 | **6.5** | ADR 0018 | Bootstrap Superuser + Per-Org RBAC + Login UX. 9 sub-slices, ~12-13 sessions. Land BEFORE Phase 7's case-management work since cases attach to an organization + a user with a role. |
 | **6** | (existing) | Wolf-gateway — the Approval Gateway. After 6.5 because the gateway uses 6.5's role-decorator pattern + needs the organization + role model from 6.5-b. |
 | **6.6** | ADR 0020 | Superuser-owned Wazuh component mapping. After Phase 6.5 because the UI requires the Superuser identity + per-tab header model. Sequenced after Phase 6 because it touches the same wolf-server settings APIs. |

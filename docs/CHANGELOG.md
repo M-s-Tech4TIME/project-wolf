@@ -49,6 +49,89 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-11 — Phase 6.4 SHIPPED: tenant → organization rename across the entire stack
+
+**Session type:** claude-code (operator-directed; same session as the design-arc close-out)
+**Phase:** 6.4 (tenant→organization codebase rename, per ADR 0018 §"Implementation sequencing")
+**Duration:** ~1 session
+**Branch / commit:** main @ `3f000cb` (4 commits: `076febd` rename, `a7d0aed` httpx2, `e382674` CI paths, `3f000cb` migration FK fix). All 14 CI jobs green at HEAD.
+
+### What we did
+
+- **Alembic migration 0007** (`0007_rename_tenant_to_organization.py`):
+  renames 3 tables (`tenants`→`organizations`, `user_tenants`→
+  `user_organizations`, `tenant_wazuh_configs`→`organization_wazuh_configs`),
+  5 columns (every `tenant_id` → `organization_id` +
+  `inject_tenant_filter` → `inject_organization_filter`), 3 named unique
+  constraints, 3 FK constraints, 7 indexes. All Postgres-native
+  `ALTER ... RENAME` — in-place, no rebuild. `downgrade()` round-trips
+  (verified). Migrations 0001-0006 untouched (immutable history;
+  operator chose "add a rename migration" over rewriting 0001-0006).
+- **Backend sweep**: ~144 Python files, ~1500 substitutions in two
+  passes (word-boundary regex, then snake/CamelCase compounds).
+  Package rename `wolf_server.tenancy` → `wolf_server.organization`;
+  classes `Tenant`→`Organization`, `UserTenant`→`UserOrganization`,
+  `TenantContext`→`OrganizationContext`, `TenantWazuhConfig`→
+  `OrganizationWazuhConfig`, `TenantScopedCache`→`OrganizationScopedCache`,
+  `TenantScopedQueryBuilder`→`OrganizationScopedQueryBuilder`;
+  dependency `require_tenant_context`→`require_organization_context`.
+  8 files renamed via git mv: `bootstrap_tenant.py`→
+  `bootstrap_organization.py`, `tools/tenant_isolation_test/`→
+  `tools/cross_organization_isolation/`, 5 test files, and
+  `tenant-switcher.tsx`→`organization-switcher.tsx`.
+- **Frontend sweep**: 8 dashboard TS/TSX files (`tenantId`→
+  `organizationId`, `TenantMembership`→`OrganizationMembership`,
+  `/login?tenant=`→`/login?organization=`).
+- **Docs/config sweep**: 27 living docs (planning bundle 00-17 incl.
+  `05-multi-tenancy.md`→`05-multi-organization.md`, root MDs,
+  CHANGELOG/PROGRESS/restart/HANDOFF), 10 memory files, Makefile
+  (test-isolation paths, typecheck path), debian/control, ci.yml
+  (mypy path + explicit isolation-gate test paths), .env.example.
+  Intentionally untouched: ADRs (immutable records) + migrations
+  0001-0006 + the `tenant-renamed-to-organization` memory file
+  (now flipped STANDING RULE → COMPLETED).
+- **Hygiene fixes shipped alongside** (operator mandate: fix
+  properly, never bypass):
+  - `test_factory_accepts_sentence_transformers_aliases` now
+    `pytest.importorskip`s the optional dep AND the
+    `embeddings-local` extra is installed in dev, so the test
+    actually runs: 397 passed / 0 skipped / 0 warnings final state.
+  - StarletteDeprecationWarning fixed at the root by adding
+    `httpx2>=2.3` as a test dep (starlette 1.x's preferred
+    TestClient client) — an earlier `filterwarnings` bypass was
+    reverted in favour of this.
+
+### What broke / what we discovered
+
+- **FK constraint names diverge by database age** — the one CI
+  failure of the arc (run 27324709968: alembic-check + smoke-mtls,
+  same root cause). Databases initialised before `Base.metadata`
+  gained `NAMING_CONVENTION` (2026-06-05) carry Postgres auto-names
+  (`user_tenants_user_id_fkey`); fresh databases get convention
+  names (`fk_user_tenants_user_id_users`) because alembic applies
+  `target_metadata`'s convention to unnamed constraints in
+  `op.create_table`. Migration 0007 hardcoded the auto-name shape
+  (what the local dev DB has) → passed every local gate, exploded
+  on CI's clean containers. Fixed in `3f000cb` with a
+  `_rename_fk()` helper that resolves the actual constraint name
+  from `pg_constraint` by (table, columns) and renames whatever it
+  finds — verified on BOTH shapes (old dev DB round-trip + exact
+  CI repro on a throwaway initdb cluster running 0001→0007 from
+  empty). All post-0007 databases now converge on identical
+  convention FK names.
+- The docs sweep mangled "tenant→organization" (descriptions of the
+  rename itself) into "organization→organization" in 7 spots across
+  PROGRESS/roadmap/CHANGELOG — restored when writing this entry.
+
+### What's next
+
+- **Phase 6.5-a** (session cookie blacklist, Redis) — first of 9
+  sub-slices per ADR 0018. Phase 6.5 estimate: 12-13 sessions.
+- Graphify rebuild will pick up the new names on its next run
+  (hook already fired post-commit).
+
+---
+
 ## 2026-06-10 → 2026-06-11 — Multi-organization design arc: ADRs 0017+0018+0019+0020 all ACCEPTED
 
 **Session type:** claude-code (mixed; multi-round operator review)
@@ -160,7 +243,7 @@ review):
 - Wolf is multi-organization-ready by design before any
   multi-organization code ships. The 4 ADRs together define the
   contract.
-- Phase 6.4 (organization→organization codebase rename) is the next real
+- Phase 6.4 (tenant→organization codebase rename) is the next real
   work unit. Single PR, ~40-60 files, 1-2 sessions. Unblocks
   Phase 6.5 (9 sub-slices, 12-13 sessions) and Phase 6.6 (5
   sub-slices, 3-5 sessions).
@@ -180,7 +263,7 @@ review):
 
 ### What's next
 
-- **Phase 6.4 — organization → organization codebase rename.** Single PR,
+- **Phase 6.4 — tenant → organization codebase rename.** Single PR,
   ~40-60 files. Mechanical rename across DB schema (Alembic
   migration) + SQLAlchemy models + API routes + frontend +
   TypeScript types + tests. Memory entry `organization-renamed-to-
