@@ -22,8 +22,16 @@ from wolf_server.database import Base
 
 config = context.config
 
-if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+# Logging guard (2026-06-12): when wolf-server runs migrations IN-PROCESS
+# at startup, alembic.ini's [logging] sections must not touch the app's
+# live logging — fileConfig's defaults kill every existing logger and set
+# the root level to WARN, which silenced uvicorn + structlog entirely and
+# turned an "address already in use" bind failure into an 11-hour silent
+# crash-loop. wolf_server.main sets `configure_logger=False` via Config
+# attributes (the canonical alembic escape hatch); CLI invocations keep
+# alembic.ini's logging as before, minus the logger-killing default.
+if config.config_file_name is not None and config.attributes.get("configure_logger", True):
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # Override the sqlalchemy.url from environment.
 database_url = os.environ.get("DATABASE_URL", "")

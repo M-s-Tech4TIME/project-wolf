@@ -152,6 +152,11 @@ async def _run_migrations() -> None:
     from alembic.config import Config  # noqa: PLC0415
 
     cfg = Config(str(_find_alembic_ini()))
+    # In-process run: alembic.ini's logging config must NOT reconfigure
+    # the app's live logging (env.py honors this attribute). Without it,
+    # fileConfig sets root level WARN + re-homes handlers, silencing
+    # uvicorn + structlog for the rest of the process lifetime.
+    cfg.attributes["configure_logger"] = False
 
     loop = asyncio.get_event_loop()
     with ThreadPoolExecutor(max_workers=1) as pool:
