@@ -6,7 +6,7 @@
 >
 > For history of what changed when, see `CHANGELOG.md` (append-only).
 
-**Last updated:** 2026-06-11 by claude-code (Phase 6.4 tenant→organization rename SHIPPED — 4 commits on main, all 14 CI jobs green; Phase 6.5-a is the next workable slice)
+**Last updated:** 2026-06-11 by claude-code (Phase 6.5-b role enforcement SHIPPED — capability matrix + org CRUD + org user management + consent gate + audit view, 440 tests green; Phase 6.5-g session-cookie blacklist is the next workable slice)
 
 ---
 
@@ -758,13 +758,19 @@ who want to build their own images.
 
 **Top of queue (2026-06-11):** Phase 6.4 (tenant→organization
 rename) **SHIPPED**; **Phase 6.5-a (Bootstrap Superuser +
-org-recovery) SHIPPED** same day — wrapper + CLI core +
-.deb postinst + Superuser password-reset API + break-glass
-org-recovery API + login-as-"Wolf" (org-less session); 18 tests;
-415 total green. Pending: operator manual web-test of the Wolf
-login. Next workable slice: **6.5-b (role enforcement, Phase 6.5
-subset)** — build order a → b → g → c-i → c-ii → d → e → f → h.
-Phase 6.5 total estimate: 12-13 sessions.
+org-recovery) SHIPPED** same day (operator manual web-test signed
+off); **Phase 6.5-b (role enforcement, Phase 6.5 subset) SHIPPED**
+same day — capability matrix (`organization/rbac.py`, mirrors
+ADR 0018 row-for-row) + `require_capability()` dependency +
+"Last Admin" invariant guard + role rename approver→responder +
+new engineer role (data migration 0008) + org CRUD API (Superuser)
++ org user-management API (Admin) + Superuser-membership
+consent-gate endpoints + org audit-log view (Admin/Responder);
+25 new tests, 440 total green; `wolf_server/api` added to the
+strict-mypy set. Propose/approve/execute decorators deferred to
+Phase 6 per the ADR. Next workable slice: **6.5-g (session-cookie
+blacklist, Redis)** — build order a → b → g → c-i → c-ii → d → e
+→ f → h. Phase 6.5 total estimate: 12-13 sessions.
 
 **Immediate next steps** (in priority order; items below predate
 the multi-organization design arc and remain valid backlog):

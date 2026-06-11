@@ -49,6 +49,150 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-11 — Phase 6.5-b SHIPPED: role enforcement (capability matrix + org/user management APIs)
+
+**Session type:** claude-code (operator-directed)
+**Phase:** 6.5-b (role enforcement, Phase 6.5 subset — per ADR 0018 §"Decision: per-organization RBAC")
+**Duration:** ~1 session
+**Branch / commit:** main (this commit). Same-day follow-on to 6.5-a after the operator signed off its manual web-test.
+
+### What we did
+
+- **Capability matrix module** (`wolf_server/organization/rbac.py`):
+  `Capability` enum + `ROLE_CAPABILITIES` mirroring ADR 0018's matrix
+  row-for-row (the non-Phase-6 rows only), `require_capability()`
+  FastAPI dependency factory layered on
+  `require_organization_context` (403 names the missing capability),
+  and the **"Last Admin" invariant guard**
+  (`ensure_not_last_admin()` — 409 before any demotion/removal that
+  would leave an org with zero active Admins).
+- **Role enum updated** per the ADR: `approver` renamed to
+  `responder`, new `engineer` role added. **Alembic migration 0008**
+  rewrites existing rows (`approver`→`responder`; reversible).
+  Role values: analyst / responder / engineer / admin / superuser
+  ("superuser" marks the Superuser's own consented membership row —
+  read+chat only inside an org, no governance).
+- **Org CRUD API** (`api/organizations.py`, Superuser-only):
+  GET/POST `/api/v1/organizations`, PATCH/DELETE
+  `/api/v1/organizations/{id}`. Slug is immutable (isolation key);
+  delete is a soft-delete (`is_active=False`, data retained for
+  audit); every mutation audit-emitted.
+- **Org-scoped management API** (`api/org_management.py`):
+  - User management (Admin): list/create members, change role,
+    remove membership — Last-Admin guard on the admin paths;
+    Admins cannot hand out the `superuser` role value (422).
+  - **Superuser-membership consent gate** (Admin): POST/DELETE
+    `/api/v1/organization/memberships/superuser` grants/revokes the
+    install Superuser's read+chat membership (ADR 0018's org-consent
+    gate). Time-limited grants (24h) + notifications arrive in 6.5-f.
+  - Org audit-log view (Admin + Responder): GET
+    `/api/v1/organization/audit`, paginated, scoped to the caller's
+    org, install-level events excluded.
+  - Governance mutations write **dual audit events** — one org-scoped
+    + one install-level (organization_id NULL), linked via
+    `related_event_id`, per the ADR's role-change discipline.
+- **Chat endpoints** now gate on `require_capability(CHAT)` (uniform
+  pattern; every org role keeps chat per the matrix).
+- **`wolf_server/api` added to the strict-mypy set** (Makefile +
+  ci.yml, kept in parity) — the pre-existing api modules already
+  passed `--strict`; only the new files needed fixes. 53 files strict.
+- **Tests**: `test_rbac.py` (25 tests — matrix row-for-row assert,
+  org CRUD authz, user management + Last-Admin guard, consent gate
+  grant/revoke + dual audit, audit-view role gating + org scoping +
+  pagination, chat-gate regression). 440 total green, 0 skips,
+  0 warnings; isolation gate 18 passed; coverage 73.84% (floor 70).
+
+### What we decided
+
+- The Superuser's in-org membership role is the literal `superuser`
+  value with read+chat capabilities only — org governance stays with
+  the org's own Admins; its role cannot be edited via the normal
+  role-change endpoint (409 points to the consent-gate revoke).
+- Propose / approve / execute matrix rows stay DEFERRED to Phase 6
+  (wolf-gateway) per the ADR — the role values exist, the plumbing
+  that uses them ships with the gateway.
+
+### What broke / what we discovered
+
+- pydantic's `EmailStr` rejects `wolf@wolf.local` (special-use
+  domain) at validation time — an accidental extra defense layer: the
+  bootstrap identity cannot even be expressed through the org
+  member-creation endpoint. The explicit `is_superuser` 409 guard is
+  still tested via a routable-address superuser account.
+- starlette deprecated `HTTP_422_UNPROCESSABLE_ENTITY` in favour of
+  `HTTP_422_UNPROCESSABLE_CONTENT` — fixed at the root (no filters).
+- Migration 0008 verified on BOTH DB shapes per the Phase 6.4 lesson:
+  aged dev DB round-trip (up→down→up with a live `approver` row) +
+  full 0001→0008 chain + `alembic check` on a throwaway fresh
+  Postgres cluster.
+- Correction to the 6.4 entry's "What's next" below (append-only, so
+  noted here): 6.5-a is Bootstrap Superuser + org-recovery (shipped),
+  NOT the session-cookie blacklist — that is 6.5-g, now next in the
+  build order.
+
+### What's next
+
+- **6.5-g — session-cookie blacklist** (Redis-backed, TTL = cookie
+  expiry; triggered by logout / force-revoke / password reset).
+  Then c-i (header-based org context) → c-ii (frontend login +
+  per-tab org) → d → e → f → h.
+
+---
+
+## 2026-06-11 — Phase 6.5-a SHIPPED: bootstrap Superuser "Wolf" + break-glass org-recovery
+
+**Session type:** claude-code (operator-directed)
+**Phase:** 6.5-a (Bootstrap Superuser + org-recovery, per ADR 0018)
+**Duration:** ~1 session (entry appended retroactively in the 6.5-b
+session — the 6.5-a session closed before its CHANGELOG entry landed)
+**Branch / commit:** main @ `ba34c60` (2 commits: `01f9272` slice,
+`ba34c60` pip-audit retry hardening). All 14 CI jobs green at
+run 27337576750. Operator manual web-test signed off 2026-06-11.
+
+### What we did
+
+- **Bootstrap CLI core** (`wolf_server/bootstrap/superuser.py`):
+  create-if-absent Superuser "Wolf" (email-keyed internally as
+  `wolf@wolf.local`, RFC 6762 non-routable), 32-char autogenerated
+  password (`secrets.token_urlsafe(24)`) printed ONCE to stdout —
+  never logged, never stored in plaintext; `--rotate-password`;
+  idempotent re-runs; wrapper-only guard (`WOLF_WRAPPER_VERSION`
+  env check, exit 2 on direct invocation) per the
+  shell-wrapper-required pattern.
+- **Shell wrapper** (`deploy/bin/bootstrap_superuser`, dual-mode:
+  installed `/etc/wolf-server/env` vs dev repo `.env`); shipped in
+  the .deb (`debian/wolf-server.install` + best-effort postinst
+  auto-create + operator instruction step 4).
+- **Superuser API routes** (`api/superuser.py`): `require_superuser`
+  dependency; POST `/api/v1/users/{id}/password-reset` (generated
+  password returned once; the Superuser's OWN account refused — the
+  CLI on the host is its recovery path, so a hijacked session cannot
+  rotate the credential silently); POST
+  `/api/v1/organizations/{id}/recovery/admin` (break-glass: refused
+  409 while ANY active Admin exists; restores Admin succession,
+  never bypasses it; Superuser still gains no data access).
+- **Login as "Wolf"**: literal username mapped to the reserved email;
+  Superuser gets an org-less session (`organization_id=None`,
+  role `superuser`); org-scoped endpoints reject it (401 today,
+  403 polish in 6.5-c). Login form accepts username or email.
+- **CI**: bootstrap package added to strict mypy; .deb smoke verifies
+  the new shim; dep-audit hardened with 3×30s retry after a transient
+  PyPI ServiceError flake (real CVEs still fail all 3 attempts).
+- 18 new tests (CLI create/idempotent/rotate/guard + API authz/audit
+  + login regression).
+
+### What we decided
+
+- Single install-level Superuser identity, org-consent gate intact:
+  the Superuser cannot self-grant org membership; an org Admin must
+  grant it (endpoint ships with 6.5-b).
+
+### What's next
+
+- 6.5-b role enforcement (shipped same day — see the entry above).
+
+---
+
 ## 2026-06-11 — Phase 6.4 SHIPPED: tenant → organization rename across the entire stack
 
 **Session type:** claude-code (operator-directed; same session as the design-arc close-out)

@@ -32,7 +32,7 @@ def test_context_is_frozen() -> None:
 
 
 def test_valid_roles_are_accepted() -> None:
-    for role in ("analyst", "approver", "admin", "superuser"):
+    for role in ("analyst", "responder", "engineer", "admin", "superuser"):
         ctx = _make_ctx(role=role)
         assert ctx.role == role
 

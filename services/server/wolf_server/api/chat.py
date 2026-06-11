@@ -41,7 +41,8 @@ from wolf_server.knowledge.embeddings import (
     make_embedding_provider_aux,
 )
 from wolf_server.knowledge.store import PgvectorKnowledgeStore
-from wolf_server.organization.context import OrganizationContext, require_organization_context
+from wolf_server.organization.context import OrganizationContext
+from wolf_server.organization.rbac import Capability, require_capability
 from wolf_server.secrets_factory import get_secrets_backend
 from wolf_server.tools.base import Citation
 from wolf_server.wazuh.opensearch import WazuhOpenSearchClient
@@ -121,7 +122,7 @@ def _secrets_dep() -> SecretsBackend:
 @router.post("", response_model=ChatResponseBody)
 async def chat(
     body: ChatRequestBody,
-    ctx: Annotated[OrganizationContext, Depends(require_organization_context)],
+    ctx: Annotated[OrganizationContext, Depends(require_capability(Capability.CHAT))],
     db: Annotated[AsyncSession, Depends(get_db)],
     secrets: Annotated[SecretsBackend, Depends(_secrets_dep)],
 ) -> ChatResponseBody:
@@ -200,7 +201,7 @@ def _sse_format(event: LoopEvent) -> str:
 @router.post("/stream")
 async def chat_stream(
     body: ChatRequestBody,
-    ctx: Annotated[OrganizationContext, Depends(require_organization_context)],
+    ctx: Annotated[OrganizationContext, Depends(require_capability(Capability.CHAT))],
     db: Annotated[AsyncSession, Depends(get_db)],
     secrets: Annotated[SecretsBackend, Depends(_secrets_dep)],
 ) -> StreamingResponse:

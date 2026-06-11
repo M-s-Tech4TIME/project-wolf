@@ -49,11 +49,14 @@ jobs:
         # list matches the Makefile typecheck target exactly.
         # Phase 6.5-a: wolf_server/bootstrap added — it mints + rotates
         # the Superuser credential, so it belongs in the strict set.
+        # Phase 6.5-b: wolf_server/api added — the RBAC capability gates
+        # live on its routes (org CRUD, user management, consent gate).
         run: |
           uv run mypy packages/common/wolf_common \
                        packages/secrets/wolf_secrets \
                        packages/schema/wolf_schema \
                        packages/cert/wolf_cert \
+                       services/server/wolf_server/api \
                        services/server/wolf_server/organization \
                        services/server/wolf_server/audit \
                        services/server/wolf_server/bootstrap \

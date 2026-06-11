@@ -27,10 +27,13 @@ from sqlalchemy.orm import selectinload
 from wolf_server.database import get_db
 from wolf_server.organization.models import Organization, User, UserOrganization
 
-# Valid roles — extend as new roles are defined.
-Role = Literal["analyst", "approver", "admin", "superuser"]
+# Valid roles per ADR 0018 (Phase 6.5-b): "approver" was renamed to
+# "responder" and "engineer" was added (data migration 0008 rewrites
+# existing rows).  "superuser" marks the Superuser's own consented
+# membership row — see organization/rbac.py for what each role can do.
+Role = Literal["analyst", "responder", "engineer", "admin", "superuser"]
 
-VALID_ROLES: frozenset[str] = frozenset({"analyst", "approver", "admin", "superuser"})
+VALID_ROLES: frozenset[str] = frozenset({"analyst", "responder", "engineer", "admin", "superuser"})
 
 
 @dataclass(frozen=True)

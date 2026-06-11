@@ -207,11 +207,15 @@ def create_app() -> FastAPI:
     # ── Routers ─────────────────────────────────────────────────────────────
     from wolf_server.api.auth import router as auth_router  # noqa: PLC0415
     from wolf_server.api.chat import router as chat_router  # noqa: PLC0415
+    from wolf_server.api.org_management import router as org_management_router  # noqa: PLC0415
+    from wolf_server.api.organizations import router as organizations_router  # noqa: PLC0415
     from wolf_server.api.superuser import router as superuser_router  # noqa: PLC0415
 
     app.include_router(auth_router)
     app.include_router(chat_router)
     app.include_router(superuser_router)
+    app.include_router(organizations_router)
+    app.include_router(org_management_router)
 
     # ── Error handlers ──────────────────────────────────────────────────────
 

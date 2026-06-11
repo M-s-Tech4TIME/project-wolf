@@ -4,7 +4,8 @@ Tables:
   organizations       — one record per isolated customer (or single-org)
   users               — platform users (local accounts or OIDC-federated)
   user_organizations  — many-to-many: user ↔ organization with a role
-  roles               — role definitions (analyst, approver, admin, superuser)
+                        (analyst / responder / engineer / admin / superuser —
+                        validated app-side, see organization/rbac.py)
 
 Design notes:
   - All PKs are UUID so records can be created without a database round-trip.

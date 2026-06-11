@@ -353,14 +353,20 @@ estimated**:
    exists; login accepts username "Wolf" → org-less superuser
    session (organization_id None). 18 tests.
 
-2. **6.5-b — Role enforcement (Phase 6.5 subset only)** — role
-   enum (Superuser / Admin / Engineer / Responder / Analyst) +
-   `UserOrganization` membership table; API-layer decorator pattern
-   for the capability matrix rows that don't depend on Phase 6;
-   "Last Admin" invariant guard. **Propose / approve / execute
-   decorators DEFERRED to Phase 6 (wolf-gateway)** — role values
-   exist + the ADR documents intent, but the plumbing that USES
-   these capabilities ships with Phase 6.
+2. **6.5-b — Role enforcement (Phase 6.5 subset only)** — ✅
+   **SHIPPED 2026-06-11.** Capability matrix
+   (`organization/rbac.py`, mirrors ADR 0018 row-for-row) +
+   `require_capability()` dependency + "Last Admin" invariant
+   guard; role rename approver→responder + new engineer role
+   (data migration 0008); org CRUD API (Superuser-only); org
+   user-management API (Admin, Last-Admin-guarded); Superuser-
+   membership consent-gate endpoints (grant/revoke, dual
+   org+install audit); org audit-log view (Admin + Responder);
+   chat gated via `require_capability(CHAT)`; `wolf_server/api`
+   joined the strict-mypy set. 25 tests. **Propose / approve /
+   execute decorators DEFERRED to Phase 6 (wolf-gateway)** — role
+   values exist + the ADR documents intent, but the plumbing that
+   USES these capabilities ships with Phase 6.
 
 3. **6.5-g — Session cookie blacklist infrastructure** — Redis-
    backed blacklist with TTL matching cookie expiry; session

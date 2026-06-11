@@ -95,7 +95,7 @@ async def test_my_organizations_returns_only_user_memberships(
     assert foreign_organization.slug not in returned_slugs
     # Each row carries the user's role within that organization.
     for row in rows:
-        assert row["role"] in {"analyst", "approver", "admin", "superuser"}
+        assert row["role"] in {"analyst", "responder", "engineer", "admin", "superuser"}
 
 
 @pytest.mark.asyncio
