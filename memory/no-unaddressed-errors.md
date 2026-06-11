@@ -9,6 +9,8 @@ metadata:
 
 STANDING RULE (set 2026-06-01): No error, warning, or silently-skipped diagnostic is allowed to remain unaddressed in this project. Going forward I must fix them, solve them, or — only if a fix is genuinely out of scope for the current slice — explicitly track them with a concrete plan to address them. "Pre-existing baseline" is not an acceptable answer; the user pushed back specifically on me brushing past 56 mypy `import-untyped` errors that had been present since Phase 0 just because they weren't *introduced* by the current slice.
 
+REAFFIRMED with sharper wording 2026-06-11 (during Phase 6.5-g), verbatim intent: "leave no errors, fails, warnings, skips unaddressed — and by addressed, I actually mean solving, fixing and patching it, not ignoring or bypassing it. Follow it strictly from now onwards." The operator has now corrected/reinforced this twice (the 6.4 filterwarnings episode — a filter is a bypass, the real fix was the httpx2 dep — and this reaffirmation). "Addressed" = root-cause fix. Filters, suppressions, baseline-acceptance, and skip-markers without a real optional-dep reason all count as bypasses.
+
 This sits alongside [[integrity-across-the-stack]] and [[quality-secure-coding-discipline]] — those rules cover the *positive* integrity bar (everything we add must be coherent across frontend / backend / DB / libs / UI); this rule covers the *negative* bar: nothing broken or warning is left lying around.
 
 **Scope of "errors":**

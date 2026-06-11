@@ -8,6 +8,7 @@ GET  /api/v1/auth/oidc/start     — redirect to OIDC IdP (when configured)
 GET  /api/v1/auth/oidc/callback  — OIDC code exchange (when configured)
 """
 
+import time
 import uuid
 from typing import Annotated, Any
 
@@ -18,6 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from wolf_server.audit.log import write_event
+from wolf_server.auth.blacklist import get_session_blacklist
 from wolf_server.auth.local import create_access_token, create_refresh_token, verify_password
 from wolf_server.auth.middleware import COOKIE_NAME
 from wolf_server.auth.oidc import get_authorization_url, oidc_is_configured
@@ -125,9 +127,7 @@ async def login(
             )
 
         if body.organization_id is not None:
-            binding = next(
-                (b for b in bindings if b.organization_id == body.organization_id), None
-            )
+            binding = next((b for b in bindings if b.organization_id == body.organization_id), None)
             if binding is None:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
@@ -189,11 +189,26 @@ async def logout(
     response: Response,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> None:
-    """Clear the session cookies.  Audit the logout if a valid session is present."""
+    """Blacklist the session server-side, clear the cookies, audit the logout.
+
+    Phase 6.5-g: cookie deletion alone never invalidates the JWT — a copied
+    token would keep working until expiry. The blacklist entry (TTL = the
+    token's remaining lifetime) makes the logout effective in every tab
+    immediately.
+    """
     session: dict[str, Any] = getattr(request.state, "session", {})
     user_id_raw = session.get("user_id")
     organization_id_raw = session.get("organization_id")
     session_id = str(session.get("session_id", ""))
+
+    if session_id:
+        exp_raw = session.get("exp")
+        remaining = (
+            int(float(str(exp_raw)) - time.time())
+            if exp_raw
+            else _settings.access_token_expire_minutes * 60
+        )
+        await get_session_blacklist().revoke_session(session_id, ttl_seconds=max(remaining, 1))
 
     if user_id_raw:
         try:

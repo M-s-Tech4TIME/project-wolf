@@ -40,6 +40,11 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
     refresh_token_expire_days: int = 7
+    # Session-blacklist backend (Phase 6.5-g). Empty = in-memory store
+    # (correct for the default single-process deployment). Set to e.g.
+    # redis://localhost:6379/0 to use an operator-managed Redis server
+    # (required for multi-worker installs; survives wolf-server restarts).
+    redis_url: str = ""
 
     # OIDC (optional — operator-configured)
     oidc_issuer: str = ""

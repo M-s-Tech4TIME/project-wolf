@@ -6,7 +6,7 @@
 >
 > For history of what changed when, see `CHANGELOG.md` (append-only).
 
-**Last updated:** 2026-06-11 by claude-code (Phase 6.5-b role enforcement SHIPPED — capability matrix + org CRUD + org user management + consent gate + audit view, 440 tests green; Phase 6.5-g session-cookie blacklist is the next workable slice)
+**Last updated:** 2026-06-11 by claude-code (Phase 6.5-g session-cookie blacklist SHIPPED — protocol + in-memory/Redis backends, middleware check, logout/reset/force-revoke triggers, 453 tests green; Phase 6.5-c-i header-based org context is the next workable slice)
 
 ---
 
@@ -768,9 +768,20 @@ new engineer role (data migration 0008) + org CRUD API (Superuser)
 consent-gate endpoints + org audit-log view (Admin/Responder);
 25 new tests, 440 total green; `wolf_server/api` added to the
 strict-mypy set. Propose/approve/execute decorators deferred to
-Phase 6 per the ADR. Next workable slice: **6.5-g (session-cookie
-blacklist, Redis)** — build order a → b → g → c-i → c-ii → d → e
-→ f → h. Phase 6.5 total estimate: 12-13 sessions.
+Phase 6 per the ADR. **Phase 6.5-g (session-cookie blacklist)
+SHIPPED** same day — `SessionBlacklist` protocol; in-memory default
+(correct for the single-process install) + Redis backend activated
+by `REDIS_URL` (operator-chosen design, Slice 4.3 precedent; redis
+client is a regular dep, redis SERVER never a .deb dependency);
+middleware blacklist check on every authenticated request; triggers:
+logout (session TTL = remaining token life), Superuser
+password-reset (watermark revokes ALL target sessions — closes the
+6.5-a deferred note), new force-revoke endpoint
+`POST /api/v1/users/{id}/sessions/revoke`; `wolf_server/auth` joined
+the strict-mypy set; 13 new tests, 453 total green. Next workable
+slice: **6.5-c-i (backend header-based org context)** — build order
+a → b → g → c-i → c-ii → d → e → f → h. Phase 6.5 total estimate:
+12-13 sessions.
 
 **Immediate next steps** (in priority order; items below predate
 the multi-organization design arc and remain valid backlog):

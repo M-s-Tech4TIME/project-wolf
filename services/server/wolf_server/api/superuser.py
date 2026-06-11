@@ -4,8 +4,13 @@ POST /api/v1/users/{user_id}/password-reset
     Superuser resets any user's password (recovery mechanism). A fresh
     random password is generated server-side and returned ONCE in the
     response for out-of-band delivery; an audit event captures the
-    Superuser identity + target user + timestamp. Session revocation
-    for the affected user lands with the 6.5-g blacklist infrastructure.
+    Superuser identity + target user + timestamp. All the target's
+    existing sessions are blacklisted (6.5-g).
+
+POST /api/v1/users/{user_id}/sessions/revoke
+    Force-revoke (6.5-g): blacklist every outstanding session for a
+    user — the compromised-account response. The account itself stays
+    active; the user re-authenticates with their existing password.
 
 POST /api/v1/organizations/{organization_id}/recovery/admin
     Break-glass org-recovery per ADR 0018 §"Break-glass / org-recovery":
@@ -33,7 +38,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from wolf_server.audit.log import write_event
+from wolf_server.auth.blacklist import get_session_blacklist
 from wolf_server.auth.local import hash_password
+from wolf_server.config import get_settings
 from wolf_server.database import get_db
 from wolf_server.organization.models import Organization, User, UserOrganization
 
@@ -42,6 +49,18 @@ router = APIRouter(prefix="/api/v1", tags=["superuser"])
 
 # Matches the bootstrap CLI's entropy (24 bytes -> 32 url-safe chars).
 _PASSWORD_BYTES = 24
+
+
+async def _revoke_all_sessions(user_id: uuid.UUID) -> None:
+    """Watermark-revoke every outstanding session for a user (6.5-g).
+
+    TTL covers the access-token lifetime — the longest any outstanding
+    token can still authenticate. (No refresh endpoint exists yet; when
+    one lands it must check the same watermark and this TTL must grow to
+    the refresh lifetime.)
+    """
+    ttl = get_settings().access_token_expire_minutes * 60
+    await get_session_blacklist().revoke_user(str(user_id), ttl_seconds=ttl)
 
 
 # ── Dependency ───────────────────────────────────────────────────────────────
@@ -137,10 +156,19 @@ async def reset_user_password(
     target.hashed_password = hash_password(new_password)
     target.updated_at = datetime.now(UTC)
 
+    # ADR 0018 Round 1: a password reset invalidates ALL the target's
+    # existing sessions — whoever prompted the reset (lost credential,
+    # suspected compromise), live sessions must not outlive it.
+    await _revoke_all_sessions(target.id)
+
     await write_event(
         db,
         event_type="superuser.user_password.reset",
-        event_data={"target_user_id": str(target.id), "target_email": target.email},
+        event_data={
+            "target_user_id": str(target.id),
+            "target_email": target.email,
+            "sessions_revoked": True,
+        },
         user_id=superuser.id,
         session_id=str(getattr(request.state, "session", {}).get("session_id", "")),
         source_ip=request.client.host if request.client else None,
@@ -153,6 +181,44 @@ async def reset_user_password(
         target_user_id=str(target.id),
     )
     return PasswordResetResponse(user_id=target.id, email=target.email, new_password=new_password)
+
+
+@router.post("/users/{user_id}/sessions/revoke", status_code=status.HTTP_204_NO_CONTENT)
+async def revoke_user_sessions(
+    user_id: uuid.UUID,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    superuser: Annotated[User, Depends(require_superuser)],
+) -> None:
+    """Force-revoke every outstanding session for a user (audit-emitted).
+
+    Unlike password-reset this is allowed against ANY account, including
+    the Superuser's own — it only forces re-authentication, it never
+    touches credentials.
+    """
+    target = await db.scalar(select(User).where(User.id == user_id))
+    if target is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"User {user_id} not found"
+        )
+
+    await _revoke_all_sessions(target.id)
+
+    await write_event(
+        db,
+        event_type="superuser.user_sessions.revoked",
+        event_data={"target_user_id": str(target.id), "target_email": target.email},
+        user_id=superuser.id,
+        session_id=str(getattr(request.state, "session", {}).get("session_id", "")),
+        source_ip=request.client.host if request.client else None,
+    )
+    await db.commit()
+
+    logger.info(
+        "superuser_sessions_revoked",
+        superuser_id=str(superuser.id),
+        target_user_id=str(target.id),
+    )
 
 
 @router.post(

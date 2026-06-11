@@ -368,10 +368,20 @@ estimated**:
    values exist + the ADR documents intent, but the plumbing that
    USES these capabilities ships with Phase 6.
 
-3. **6.5-g — Session cookie blacklist infrastructure** — Redis-
-   backed blacklist with TTL matching cookie expiry; session
-   middleware checks blacklist on every authenticated request;
-   triggered by logout, force-revoke, password reset.
+3. **6.5-g — Session cookie blacklist infrastructure** — ✅
+   **SHIPPED 2026-06-11.** `SessionBlacklist` protocol with TWO
+   backends (operator choice, Slice 4.3 precedent): in-memory
+   default (correct for the single-process native install) +
+   Redis activated by `REDIS_URL` (multi-worker /
+   restart-surviving; redis *client* is a regular dep, the
+   *server* is operator-managed — never a .deb dependency).
+   AuthMiddleware checks the blacklist on every authenticated
+   request (revoked → 401 + cookie cleared). Triggers: logout
+   (session-scoped, TTL = remaining token life), Superuser
+   password-reset + new force-revoke endpoint
+   `POST /api/v1/users/{id}/sessions/revoke` (user-watermark:
+   ALL outstanding sessions die, later re-logins live).
+   `wolf_server/auth` joined the strict-mypy set. 13 tests.
 
 4. **6.5-c-i — Backend header-based org context** — every
    authenticated endpoint refactored to read org from

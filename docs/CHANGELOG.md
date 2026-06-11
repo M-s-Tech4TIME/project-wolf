@@ -49,6 +49,88 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-11 — Phase 6.5-g SHIPPED: session-cookie blacklist (server-side revocation)
+
+**Session type:** claude-code (operator-directed)
+**Phase:** 6.5-g (session cookie blacklist infrastructure, per ADR 0018 §"Session cookie blacklisting")
+**Duration:** ~1 session
+**Branch / commit:** main (this commit). Same-day follow-on to 6.5-b.
+
+### What we did
+
+- **`wolf_server/auth/blacklist.py`**: `SessionBlacklist` protocol with
+  two revocation shapes — `revoke_session(session_id)` (one session;
+  logout) and `revoke_user(user_id)` (timestamp **watermark**: every
+  token issued before the revocation moment dies, later re-logins
+  live; password reset / force-revoke). All entries TTL-bounded so the
+  blacklist never outgrows the tokens it covers.
+- **Two backends, operator-chosen** (AskUserQuestion; follows the
+  Slice 4.3 cache precedent): `InMemorySessionBlacklist` default —
+  correct for Wolf's single-process deployment (uvicorn, one worker;
+  injectable clocks for deterministic tests) — and
+  `RedisSessionBlacklist` activated by setting `REDIS_URL`
+  (multi-worker installs / revocation-survives-restart; single MGET
+  round-trip per check). The redis *client* lib is a regular dep; the
+  redis *server* is operator-managed (`apt install redis-server`) and
+  is NEVER a .deb dependency. Documented limit of the in-memory
+  default: a wolf-server restart forgets revocations, bounded by the
+  60-min access-token expiry.
+- **AuthMiddleware** consults the blacklist on every authenticated
+  request after JWT validation — revoked sessions get 401
+  "Session revoked" + cookie cleared, in every tab, immediately.
+  Session payload now carries iat/exp so trigger sites can compute
+  TTLs matching the token's remaining lifetime.
+- **Trigger sites wired**: `POST /api/v1/auth/logout` now blacklists
+  server-side (previously it only deleted cookies — a copied JWT kept
+  working until expiry; that gap is closed). Superuser password-reset
+  now watermark-revokes ALL the target's sessions (ADR 0018 Round 1,
+  closing the 6.5-a deferred note). NEW
+  `POST /api/v1/users/{id}/sessions/revoke` — Superuser force-revoke
+  for compromised accounts (credential untouched, audit-emitted
+  `superuser.user_sessions.revoked`; allowed against any account
+  including the Superuser's own, since it only forces re-auth).
+- **`wolf_server/auth` joined the strict-mypy set** (Makefile + ci.yml
+  in parity — passed `--strict` as-is). 59 files strict total.
+- **Config**: `REDIS_URL` setting + `.env.example` documentation.
+- **Tests**: 13 new in `test_session_blacklist.py` — in-memory TTL +
+  watermark semantics with injected clocks, Redis backend against a
+  stub client (key shapes, EX TTLs, MGET logic), factory backend
+  selection, and full API flows (logout replay-attack 401, password
+  reset kills sessions + re-login with new credential works,
+  force-revoke authz/404/happy-path + audit). 453 total green,
+  0 skips, 0 warnings; isolation gate 18 passed; coverage 74.04%
+  (floor 70).
+
+### What we decided
+
+- Backend strategy (operator choice, recorded): protocol + in-memory
+  default + Redis opt-in via env. Wolf's .deb never depends on
+  redis-server; the upgrade path is install Redis → set REDIS_URL →
+  restart.
+- Watermark comparison is `iat <= watermark` — errs toward
+  over-revocation within the 1-second iat granularity (a re-login in
+  the same second as a reset bounces once and retries), never toward
+  letting a pre-reset token survive.
+- A future refresh-token endpoint MUST check the same watermark and
+  grow revoke-all TTLs to the refresh lifetime (documented in the
+  module docstring; no refresh endpoint exists today).
+
+### What broke / what we discovered
+
+- The `uv sync` that added the redis client dropped the local
+  `embeddings-local` extra → the sentence-transformers test went back
+  to skipping locally. Root-fixed by re-syncing with the extra
+  (453 passed / 0 skipped). CI was never affected — its test job has
+  installed `--extra embeddings-local` since Phase 6.4.
+
+### What's next
+
+- **6.5-c-i — backend header-based org context** (`X-Organization-Id`
+  header replaces the JWT org claim; biggest backend change in the
+  phase), then c-ii (frontend login + per-tab org), d, e, f, h.
+
+---
+
 ## 2026-06-11 — Phase 6.5-b SHIPPED: role enforcement (capability matrix + org/user management APIs)
 
 **Session type:** claude-code (operator-directed)
