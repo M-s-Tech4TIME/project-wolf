@@ -6,7 +6,7 @@
 >
 > For history of what changed when, see `CHANGELOG.md` (append-only).
 
-**Last updated:** 2026-06-11 by claude-code (Phase 6.5-g session-cookie blacklist SHIPPED — protocol + in-memory/Redis backends, middleware check, logout/reset/force-revoke triggers, 453 tests green; Phase 6.5-c-i header-based org context is the next workable slice)
+**Last updated:** 2026-06-12 by claude-code (Phase 6.5-c-i header-based org context SHIPPED — X-Organization-Id per-tab context + three-shape login + select/switch endpoints, 467 tests green; also fixed the GPG-signing CI failure on Dependabot PRs — 15 dep PRs now unblocked. Next workable slice: 6.5-c-ii frontend login + per-tab org state)
 
 ---
 
@@ -778,10 +778,22 @@ logout (session TTL = remaining token life), Superuser
 password-reset (watermark revokes ALL target sessions — closes the
 6.5-a deferred note), new force-revoke endpoint
 `POST /api/v1/users/{id}/sessions/revoke`; `wolf_server/auth` joined
-the strict-mypy set; 13 new tests, 453 total green. Next workable
-slice: **6.5-c-i (backend header-based org context)** — build order
-a → b → g → c-i → c-ii → d → e → f → h. Phase 6.5 total estimate:
-12-13 sessions.
+the strict-mypy set; 13 new tests, 453 total green. **Phase 6.5-c-i
+(backend header-based org context) SHIPPED 2026-06-12** —
+`X-Organization-Id` header carries the per-tab org (cookie = user,
+header = org, capability gate = permission; membership validated
+every request); transitional JWT-claim fallback until c-ii; login's
+three-shape response per the ADR (superuser redirect /
+auto-selected / needs_org_selection; zero-memberships 401);
+audit-recording select-/switch-organization endpoints; /me honors
+the header; 14 new tests, 467 total green. Same day: root-fixed the
+GPG-signing CI failure on Dependabot PRs (signing steps now
+push-only — GitHub withholds secrets from Dependabot runs by
+design); all 15 pending Dependabot PRs unblocked, PR #11 validated
+green. Next workable slice: **6.5-c-ii (frontend login + per-tab
+org state)** — removes the transitional fallback + login org field.
+Build order a → b → g → c-i → c-ii → d → e → f → h. Phase 6.5
+total estimate: 12-13 sessions.
 
 **Immediate next steps** (in priority order; items below predate
 the multi-organization design arc and remain valid backlog):

@@ -1,9 +1,11 @@
 """Authentication API routes.
 
-POST /api/v1/auth/login          — local account login
-POST /api/v1/auth/logout         — clear session cookie
-GET  /api/v1/auth/me             — return current user info (requires auth)
+POST /api/v1/auth/login          — local account login (three-shape response, ADR 0018)
+POST /api/v1/auth/logout         — blacklist session + clear cookies
+GET  /api/v1/auth/me             — current user info; honors X-Organization-Id (requires auth)
 GET  /api/v1/auth/me/organizations     — list organizations the user belongs to (requires auth)
+POST /api/v1/auth/select-organization  — record post-login org choice for audit (optional)
+POST /api/v1/auth/switch-organization  — record per-tab org switch for audit (optional)
 GET  /api/v1/auth/oidc/start     — redirect to OIDC IdP (when configured)
 GET  /api/v1/auth/oidc/callback  — OIDC code exchange (when configured)
 """
@@ -17,6 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from wolf_server.audit.log import write_event
 from wolf_server.auth.blacklist import get_session_blacklist
@@ -26,6 +29,7 @@ from wolf_server.auth.oidc import get_authorization_url, oidc_is_configured
 from wolf_server.bootstrap.superuser import SUPERUSER_EMAIL, SUPERUSER_USERNAME
 from wolf_server.config import get_settings
 from wolf_server.database import get_db
+from wolf_server.organization.context import ORG_HEADER
 from wolf_server.organization.models import Organization, User, UserOrganization
 
 logger = structlog.get_logger(__name__)
@@ -43,19 +47,42 @@ class LoginRequest(BaseModel):
     # user lookup and 401 like any wrong credential.
     email: str
     password: str
-    # The organization the user wants to operate in.  If omitted and the user
-    # belongs to exactly one organization, that organization is used automatically.
+    # TRANSITIONAL (removed with 6.5-c-ii): the pre-header dashboard sends
+    # the org at login. The new flow authenticates org-less and carries
+    # the org per request in the X-Organization-Id header instead.
     organization_id: uuid.UUID | None = None
 
 
+class MembershipInfo(BaseModel):
+    organization_id: uuid.UUID
+    organization_name: str
+    role: str
+
+
 class LoginResponse(BaseModel):
+    """Three-shape login response (ADR 0018 §login UX, Phase 6.5-c-i).
+
+    Exactly one of these applies:
+      - is_superuser=True (+ redirect): install-admin session, no org scope
+      - auto_selected_organization set: single membership, ready for /chat
+      - needs_org_selection=True (+ memberships): the dashboard renders the
+        org picker; the session cookie is already issued (auth-only)
+    The flat organization_id/role fields mirror the legacy shape and stay
+    populated whenever an org is resolved (removed with 6.5-c-ii).
+    """
+
     user_id: uuid.UUID
     email: str
     display_name: str
-    # None for the install-level Superuser (zero org memberships by
-    # default; data access requires an org Admin's explicit grant).
     organization_id: uuid.UUID | None
-    role: str
+    # None while no org is resolved (needs_org_selection).
+    role: str | None
+    is_superuser: bool = False
+    # Client-side landing route hint (Superuser → install-admin UI).
+    redirect: str | None = None
+    auto_selected_organization: MembershipInfo | None = None
+    needs_org_selection: bool = False
+    memberships: list[MembershipInfo] | None = None
 
 
 class MeResponse(BaseModel):
@@ -107,48 +134,79 @@ async def login(
         await db.commit()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Account is inactive")
 
-    # The install-level Superuser authenticates with NO organization
-    # context — zero memberships by default (ADR 0018 org-consent gate).
-    # Org-scoped endpoints reject the org-less session; the Superuser
-    # uses the install-admin surface only.
+    # Resolve the response shape (ADR 0018 §login UX, Phase 6.5-c-i).
+    is_superuser = False
+    redirect: str | None = None
+    auto_selected: MembershipInfo | None = None
+    needs_org_selection = False
+    memberships: list[MembershipInfo] | None = None
+
     if user.is_superuser:
+        # The install-level Superuser authenticates with NO organization
+        # context — zero memberships by default (ADR 0018 org-consent
+        # gate). The org-selector is never shown; the install-admin UI
+        # is the landing surface.
         selected_organization_id: uuid.UUID | None = None
-        role = "superuser"
+        role: str | None = "superuser"
+        is_superuser = True
+        redirect = "/superuser/dashboard"
     else:
-        # Resolve organization membership.
-        organization_query = select(UserOrganization).where(UserOrganization.user_id == user.id)
-        bindings_result = await db.execute(organization_query)
+        # Resolve organization memberships — active orgs only (a binding
+        # to a soft-deleted org must not be selectable or listed).
+        bindings_result = await db.execute(
+            select(UserOrganization)
+            .join(Organization, Organization.id == UserOrganization.organization_id)
+            .where(UserOrganization.user_id == user.id, Organization.is_active.is_(True))
+            .options(selectinload(UserOrganization.organization))
+        )
         bindings = bindings_result.scalars().all()
 
         if not bindings:
+            # 401 (not 403) per ADR: the credential was right but there is
+            # nothing to log in TO; the friendlier detail tells the user
+            # who can fix it.
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="User has no organization memberships",
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=(
+                    "User has no organization memberships. If this is "
+                    "unexpected, contact your organization admin."
+                ),
+            )
+
+        def _info(b: UserOrganization) -> MembershipInfo:
+            return MembershipInfo(
+                organization_id=b.organization_id,
+                organization_name=b.organization.name,
+                role=b.role,
             )
 
         if body.organization_id is not None:
+            # TRANSITIONAL legacy path (pre-6.5-c-ii dashboard sends the
+            # org at login). Removed together with the header fallback.
             binding = next((b for b in bindings if b.organization_id == body.organization_id), None)
             if binding is None:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="User is not a member of the requested organization",
                 )
+            selected_organization_id = binding.organization_id
+            role = binding.role
         elif len(bindings) == 1:
             binding = bindings[0]
+            selected_organization_id = binding.organization_id
+            role = binding.role
+            auto_selected = _info(binding)
         else:
-            organization_ids = [str(b.organization_id) for b in bindings]
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=(
-                    "User belongs to multiple organizations; specify organization_id. "
-                    f"Options: {organization_ids}"
-                ),
-            )
-        selected_organization_id = binding.organization_id
-        role = binding.role
+            # N>1 memberships: authenticate now (auth-only cookie), let the
+            # dashboard render the org picker. Org context arrives per
+            # request via the X-Organization-Id header afterwards.
+            selected_organization_id = None
+            role = None
+            needs_org_selection = True
+            memberships = [_info(b) for b in bindings]
 
     session_id = str(uuid.uuid4())
-    access_token = create_access_token(user.id, selected_organization_id, role, session_id)
+    access_token = create_access_token(user.id, selected_organization_id, role or "", session_id)
     refresh_token = create_refresh_token(user.id, session_id)
 
     # Write audit event BEFORE setting the cookie so the event is in-tx.
@@ -158,6 +216,7 @@ async def login(
         event_data={
             "email": user.email,
             "method": "local",
+            "needs_org_selection": needs_org_selection,
         },
         organization_id=selected_organization_id,
         user_id=user.id,
@@ -172,6 +231,7 @@ async def login(
         "login_success",
         user_id=str(user.id),
         organization_id=str(selected_organization_id),
+        needs_org_selection=needs_org_selection,
     )
 
     return LoginResponse(
@@ -180,6 +240,11 @@ async def login(
         display_name=user.display_name,
         organization_id=selected_organization_id,
         role=role,
+        is_superuser=is_superuser,
+        redirect=redirect,
+        auto_selected_organization=auto_selected,
+        needs_org_selection=needs_org_selection,
+        memberships=memberships,
     )
 
 
@@ -252,6 +317,39 @@ async def me(
     if user is None:
         # Session points to a user that no longer exists — treat as logged out.
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Stale session")
+
+    # Per-tab org context (6.5-c-i): when the X-Organization-Id header is
+    # present, org + role reflect THAT membership, so each tab's profile
+    # chip shows the org the tab is actually working in. Header absent →
+    # the JWT claim (transitional fallback, removed with 6.5-c-ii).
+    header_raw = request.headers.get(ORG_HEADER)
+    if header_raw is not None:
+        try:
+            header_org_id = uuid.UUID(header_raw.strip())
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid {ORG_HEADER} header: not a UUID",
+            ) from None
+        binding = await db.scalar(
+            select(UserOrganization).where(
+                UserOrganization.user_id == user_id,
+                UserOrganization.organization_id == header_org_id,
+            )
+        )
+        if binding is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You are not a member of this organization",
+            )
+        return MeResponse(
+            user_id=user_id,
+            email=user.email or "",
+            display_name=user.display_name or "",
+            organization_id=header_org_id,
+            role=binding.role,
+        )
+
     organization_id_raw = session.get("organization_id")
     return MeResponse(
         user_id=user_id,
@@ -299,6 +397,84 @@ async def my_organizations(
         )
         for binding, organization in rows.all()
     ]
+
+
+class OrganizationSelectRequest(BaseModel):
+    organization_id: uuid.UUID
+
+
+async def _record_org_choice(
+    event_type: str,
+    body: OrganizationSelectRequest,
+    request: Request,
+    db: AsyncSession,
+) -> MembershipInfo:
+    """Shared core of select-organization / switch-organization (6.5-c-i).
+
+    These endpoints are OPTIONAL per ADR 0018 — org-context routing happens
+    via the X-Organization-Id header, not here. They exist purely so the
+    choice lands in the audit trail (who worked in which org when) and can
+    back last-used persistence later. Membership is validated so the audit
+    log can never record a selection the user could not actually make.
+    """
+    session: dict[str, Any] = getattr(request.state, "session", {})
+    user_id_raw = session.get("user_id")
+    if not user_id_raw:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+    user_id = uuid.UUID(str(user_id_raw))
+
+    binding = await db.scalar(
+        select(UserOrganization)
+        .join(Organization, Organization.id == UserOrganization.organization_id)
+        .where(
+            UserOrganization.user_id == user_id,
+            UserOrganization.organization_id == body.organization_id,
+            Organization.is_active.is_(True),
+        )
+        .options(selectinload(UserOrganization.organization))
+    )
+    if binding is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not a member of this organization",
+        )
+
+    await write_event(
+        db,
+        event_type=event_type,
+        event_data={"role": binding.role},
+        organization_id=body.organization_id,
+        user_id=user_id,
+        session_id=str(session.get("session_id", "")),
+        source_ip=request.client.host if request.client else None,
+    )
+    await db.commit()
+
+    return MembershipInfo(
+        organization_id=binding.organization_id,
+        organization_name=binding.organization.name,
+        role=binding.role,
+    )
+
+
+@router.post("/select-organization", response_model=MembershipInfo)
+async def select_organization(
+    body: OrganizationSelectRequest,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> MembershipInfo:
+    """Record the post-login org selection (audit; ADR 0018, optional)."""
+    return await _record_org_choice("auth.organization.selected", body, request, db)
+
+
+@router.post("/switch-organization", response_model=MembershipInfo)
+async def switch_organization(
+    body: OrganizationSelectRequest,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> MembershipInfo:
+    """Record a mid-session per-tab org switch (audit; ADR 0018, optional)."""
+    return await _record_org_choice("auth.organization.switched", body, request, db)
 
 
 @router.get("/oidc/start")

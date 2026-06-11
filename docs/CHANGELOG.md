@@ -49,6 +49,79 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-12 — Phase 6.5-c-i SHIPPED: header-based org context + GPG-on-Dependabot CI fix
+
+**Session type:** claude-code (operator-directed)
+**Phase:** 6.5-c-i (backend header-based org context, per ADR 0018 Round 3)
+**Duration:** ~1 session
+**Branch / commit:** main (this commit; CI fix landed separately as `95721a7`).
+
+### What we did
+
+- **Per-tab org context**: the session cookie now carries
+  AUTHENTICATION only; the active organization arrives per request in
+  the `X-Organization-Id` header. Cookie → user, header → org,
+  capability gate (6.5-b) → permission. The membership binding is
+  validated on EVERY request — the header selects among the user's
+  memberships, it can never reach beyond them (non-member 403,
+  inactive org 403, malformed header 400). Two tabs can now work in
+  two different orgs concurrently with per-org roles.
+- **Centralized, not scattered**: because 6.5-b routed every
+  org-scoped endpoint through `require_organization_context`, the
+  "biggest backend change in Phase 6.5" landed as ONE dependency
+  change in `organization/context.py` — chat, org-management, audit
+  view, everything inherited the header path at once.
+- **Transitional fallback** (ADR-prescribed): header absent → the
+  JWT's org claim, so the pre-c-ii dashboard keeps working unchanged.
+  Removed together with login's `organization_id` field when c-ii
+  lands.
+- **Login three-shape response** (ADR 0018 §login UX): Superuser →
+  `is_superuser` + `redirect: /superuser/dashboard`; exactly one
+  membership → `auto_selected_organization {id, name, role}`; N>1 →
+  `needs_org_selection` + `memberships` list with an auth-only cookie
+  already issued (the dashboard renders the org picker, no second
+  login). Zero memberships → 401 "contact your organization admin"
+  (was 403). Memberships in soft-deleted orgs are excluded from
+  auto-select and listing. Legacy flat organization_id/role fields
+  stay populated for the transition.
+- **New optional audit endpoints**: `POST /auth/select-organization`
+  + `POST /auth/switch-organization` — membership-validated, emit
+  `auth.organization.selected/.switched` so who-worked-in-which-org
+  lands in the trail; org routing itself stays header-driven.
+- **`GET /auth/me` honors the header** — each tab's profile chip
+  shows that tab's org + role.
+- **Tests**: 14 new in `test_org_header_context.py`, including the
+  literal two-tabs workflow (same session, admin in org A via header,
+  analyst in org B, capability gate composing per request). 467 total
+  green, 0 skips, 0 warnings; isolation gate 18; strict mypy 59
+  files; coverage 74.00% (floor 70).
+
+### Also fixed: GPG signing failed every Dependabot PR (operator-reported)
+
+- Operator spotted `FAIL: GPG_PRIVATE_KEY secret not set` on the
+  python-jose Dependabot PR. Root cause: GitHub deliberately withholds
+  repository secrets from Dependabot-/fork-triggered `pull_request`
+  runs, so smoke-deb's hard FAIL-if-unset signing gate could never
+  pass there. Fix (`95721a7`): the import + sign + verify steps are
+  now `if: github.event_name == 'push'` — PR runs still build and
+  smoke all four .debs; the hard signing guarantee (docs/17 Gap 1)
+  stays enforced on main, where the secret exists. Validated both
+  ways: main push run green WITH signing; Dependabot PR #11 rebased
+  and ALL checks green. All 15 pending Dependabot PRs are unblocked;
+  reviewing/merging them is queued as follow-up work.
+
+### What's next
+
+- **6.5-c-ii — frontend login + per-tab org state**: org field
+  removed from the login form, three-response handling, per-tab
+  `sessionStorage`, X-Organization-Id on every call, then REMOVE the
+  backend's transitional JWT-claim fallback + login organization_id
+  field.
+- Review + merge the 15 unblocked Dependabot PRs (python + npm +
+  actions groups).
+
+---
+
 ## 2026-06-11 — Phase 6.5-g SHIPPED: session-cookie blacklist (server-side revocation)
 
 **Session type:** claude-code (operator-directed)

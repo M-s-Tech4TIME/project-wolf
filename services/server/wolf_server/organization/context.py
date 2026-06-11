@@ -6,8 +6,18 @@ nothing downstream can change which organization's data is being accessed.
 
 Rule from doc 05: The model never names, picks, or influences which
 organization's data is touched.  This module enforces that by making the
-context a frozen dataclass that is set by wolf-server from the session, never
-from any model output.
+context a frozen dataclass that is set by wolf-server from the request's
+authenticated identity, never from any model output.
+
+Phase 6.5-c-i (ADR 0018 Round 3): the session cookie carries
+AUTHENTICATION only; the active organization arrives per request in the
+`X-Organization-Id` header, set by the dashboard from per-tab state — so
+two tabs can work in two different organizations concurrently.  The
+header names the org; it never grants access: the membership binding is
+validated on every request exactly as before.  When the header is absent
+we FALL BACK to the JWT's organization claim for one release, so the
+pre-6.5-c-ii dashboard keeps working; the fallback is removed when
+6.5-c-ii lands.
 
 Usage:
     # In a FastAPI dependency:
@@ -60,33 +70,68 @@ class OrganizationContext:
 
 # ── FastAPI dependencies ─────────────────────────────────────────────────────
 
+ORG_HEADER = "X-Organization-Id"
+
 
 async def require_organization_context(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> OrganizationContext:
-    """FastAPI dependency: extract and validate the organization context from the session.
+    """FastAPI dependency: extract and validate the organization context.
 
-    Raises HTTP 401 if unauthenticated, HTTP 403 if the user is not a member
-    of the requested organization.
+    The cookie (session) identifies the USER; the `X-Organization-Id`
+    header names the ORGANIZATION for this request (per-tab context,
+    ADR 0018).  The membership binding is validated on every request —
+    the header selects among the user's memberships, it can never reach
+    beyond them.
 
-    The organization_id is ALWAYS taken from the session — never from query
-    params, request body, or any model output.
+    Raises 401 if unauthenticated, 400 if the header is malformed, 403 if
+    the user is not an active member of the named organization.
+
+    The organization_id comes ONLY from the header (or, transitionally,
+    the JWT claim) — never from query params, request body, or any model
+    output.
     """
     # Session payload is set by the auth middleware after JWT validation.
     session: dict[str, object] = getattr(request.state, "session", {})
     user_id_raw = session.get("user_id")
-    organization_id_raw = session.get("organization_id")
     session_id = str(session.get("session_id", ""))
 
-    if not user_id_raw or not organization_id_raw:
+    if not user_id_raw:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required"
         )
 
+    # Per-tab org context: header first; fall back to the JWT's
+    # organization claim for one release (pre-6.5-c-ii dashboard).
+    header_raw = request.headers.get(ORG_HEADER)
+    if header_raw is not None:
+        try:
+            organization_id = uuid.UUID(header_raw.strip())
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid {ORG_HEADER} header: not a UUID",
+            ) from None
+    else:
+        organization_id_raw = session.get("organization_id")
+        if not organization_id_raw:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=(
+                    "No organization context — send the "
+                    f"{ORG_HEADER} header with an organization you belong to"
+                ),
+            )
+        try:
+            organization_id = uuid.UUID(str(organization_id_raw))
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid session"
+            ) from None
+
     try:
         user_id = uuid.UUID(str(user_id_raw))
-        organization_id = uuid.UUID(str(organization_id_raw))
     except ValueError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid session"

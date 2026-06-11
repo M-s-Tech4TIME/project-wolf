@@ -383,11 +383,22 @@ estimated**:
    ALL outstanding sessions die, later re-logins live).
    `wolf_server/auth` joined the strict-mypy set. 13 tests.
 
-4. **6.5-c-i — Backend header-based org context** — every
-   authenticated endpoint refactored to read org from
-   `X-Organization-Id` header instead of cookie/JWT (operator
-   direction: per-tab org context). The biggest backend change in
-   the slice — touches every API endpoint reading org context.
+4. **6.5-c-i — Backend header-based org context** — ✅ **SHIPPED
+   2026-06-12.** `X-Organization-Id` header names the org per
+   request (cookie = user, header = org, 6.5-b gate = permission);
+   membership validated on every request — the header selects
+   among memberships, never grants. Centralized in
+   `require_organization_context` (6.5-b's uniform gating meant
+   ONE dependency change covered every org-scoped endpoint).
+   Transitional JWT-claim fallback when the header is absent
+   (removed with c-ii, together with login's organization_id
+   field). Login gained the ADR's three-shape response
+   (Superuser+redirect / auto-selected / needs_org_selection
+   with memberships; zero-memberships → 401 contact-your-admin;
+   inactive orgs excluded). New audit-recording
+   `POST /auth/select-organization` + `/auth/switch-organization`;
+   `/me` reflects the header org (per-tab profile chip). 14 tests
+   incl. the two-tabs-two-roles workflow.
 
 5. **6.5-c-ii — Frontend login + per-tab org state** — dashboard
    removes org field from login form; handles three login
