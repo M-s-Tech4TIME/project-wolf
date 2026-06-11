@@ -1,0 +1,280 @@
+"""Superuser-only API routes — Phase 6.5-a, ADR 0018.
+
+POST /api/v1/users/{user_id}/password-reset
+    Superuser resets any user's password (recovery mechanism). A fresh
+    random password is generated server-side and returned ONCE in the
+    response for out-of-band delivery; an audit event captures the
+    Superuser identity + target user + timestamp. Session revocation
+    for the affected user lands with the 6.5-g blacklist infrastructure.
+
+POST /api/v1/organizations/{organization_id}/recovery/admin
+    Break-glass org-recovery per ADR 0018 §"Break-glass / org-recovery":
+    when an organization has ZERO active Admins, the Superuser creates a
+    new Admin and force-adds them to the org. Refused (409) while any
+    active Admin exists — this flow restores Admin succession, it never
+    bypasses it. The Superuser still gains NO data access (no
+    UserOrganization row for the Superuser is created).
+
+Authorization: both routes require an authenticated session whose user
+has ``is_superuser=True`` (the bootstrap "Wolf" account). The richer
+role-decorator pattern arrives with 6.5-b; this dependency is the
+Superuser-specific primitive it will build on.
+"""
+
+import secrets
+import uuid
+from datetime import UTC, datetime
+from typing import Annotated, Any
+
+import structlog
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from pydantic import BaseModel, EmailStr
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from wolf_server.audit.log import write_event
+from wolf_server.auth.local import hash_password
+from wolf_server.database import get_db
+from wolf_server.organization.models import Organization, User, UserOrganization
+
+logger = structlog.get_logger(__name__)
+router = APIRouter(prefix="/api/v1", tags=["superuser"])
+
+# Matches the bootstrap CLI's entropy (24 bytes -> 32 url-safe chars).
+_PASSWORD_BYTES = 24
+
+
+# ── Dependency ───────────────────────────────────────────────────────────────
+
+
+async def require_superuser(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> User:
+    """FastAPI dependency: the session user must be the active Superuser.
+
+    Unlike require_organization_context this carries NO organization
+    scope — the Superuser is an install-level identity with zero org
+    memberships by default (ADR 0018 org-consent gate).
+    """
+    session: dict[str, Any] = getattr(request.state, "session", {})
+    user_id_raw = session.get("user_id")
+    if not user_id_raw:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required"
+        )
+    try:
+        user_id = uuid.UUID(str(user_id_raw))
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid session"
+        ) from None
+
+    user = await db.scalar(select(User).where(User.id == user_id))
+    if user is None or not user.is_active or not user.is_superuser:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Superuser privileges required",
+        )
+    return user
+
+
+# ── Schemas ──────────────────────────────────────────────────────────────────
+
+
+class PasswordResetResponse(BaseModel):
+    user_id: uuid.UUID
+    email: str
+    # Returned exactly once for out-of-band delivery to the affected
+    # user; never logged or persisted in plaintext.
+    new_password: str
+
+
+class RecoveryAdminRequest(BaseModel):
+    email: EmailStr
+    display_name: str = "Organization Admin"
+
+
+class RecoveryAdminResponse(BaseModel):
+    organization_id: uuid.UUID
+    user_id: uuid.UUID
+    email: str
+    role: str
+    # Present only when the recovery created a brand-new user account;
+    # None when an existing account was force-added as Admin.
+    new_password: str | None
+
+
+# ── Routes ───────────────────────────────────────────────────────────────────
+
+
+@router.post("/users/{user_id}/password-reset", response_model=PasswordResetResponse)
+async def reset_user_password(
+    user_id: uuid.UUID,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    superuser: Annotated[User, Depends(require_superuser)],
+) -> PasswordResetResponse:
+    """Superuser resets any user's password (audit-emitted)."""
+    target = await db.scalar(select(User).where(User.id == user_id))
+    if target is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"User {user_id} not found"
+        )
+    if target.is_superuser:
+        # The Superuser's own recovery path is the bootstrap_superuser
+        # wrapper (operator-on-host) — never the API, so a hijacked
+        # Superuser session cannot rotate its own credential silently.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Superuser password is rotated via the bootstrap_superuser "
+                "CLI on the host, not via the API"
+            ),
+        )
+
+    new_password = secrets.token_urlsafe(_PASSWORD_BYTES)
+    target.hashed_password = hash_password(new_password)
+    target.updated_at = datetime.now(UTC)
+
+    await write_event(
+        db,
+        event_type="superuser.user_password.reset",
+        event_data={"target_user_id": str(target.id), "target_email": target.email},
+        user_id=superuser.id,
+        session_id=str(getattr(request.state, "session", {}).get("session_id", "")),
+        source_ip=request.client.host if request.client else None,
+    )
+    await db.commit()
+
+    logger.info(
+        "superuser_password_reset",
+        superuser_id=str(superuser.id),
+        target_user_id=str(target.id),
+    )
+    return PasswordResetResponse(user_id=target.id, email=target.email, new_password=new_password)
+
+
+@router.post(
+    "/organizations/{organization_id}/recovery/admin",
+    response_model=RecoveryAdminResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def recover_organization_admin(
+    organization_id: uuid.UUID,
+    body: RecoveryAdminRequest,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    superuser: Annotated[User, Depends(require_superuser)],
+) -> RecoveryAdminResponse:
+    """Break-glass: force-add a new Admin to an organization with zero Admins."""
+    organization = await db.scalar(
+        select(Organization).where(
+            Organization.id == organization_id, Organization.is_active.is_(True)
+        )
+    )
+    if organization is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Organization {organization_id} not found",
+        )
+
+    # The gate: refuse while ANY active Admin exists. Recovery restores
+    # Admin succession; it must never be usable as a bypass around a
+    # living Admin (ADR 0018: "the only way Superuser authority extends
+    # into an Adminless org").
+    admin_rows = await db.execute(
+        select(UserOrganization)
+        .join(User, User.id == UserOrganization.user_id)
+        .where(
+            UserOrganization.organization_id == organization_id,
+            UserOrganization.role == "admin",
+            User.is_active.is_(True),
+        )
+    )
+    if admin_rows.first() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Organization still has an active Admin — recovery is only "
+                "for organizations with zero Admins. Use the normal "
+                "user-management flow instead."
+            ),
+        )
+
+    now = datetime.now(UTC)
+    new_password: str | None = None
+    user = await db.scalar(select(User).where(User.email == body.email))
+    if user is None:
+        new_password = secrets.token_urlsafe(_PASSWORD_BYTES)
+        user = User(
+            id=uuid.uuid4(),
+            email=body.email,
+            display_name=body.display_name,
+            hashed_password=hash_password(new_password),
+            is_active=True,
+            is_superuser=False,
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(user)
+        await db.flush()
+    elif user.is_superuser:
+        # The org-consent gate: the Superuser cannot use recovery to
+        # hand themselves a membership.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The Superuser cannot be added to an organization via recovery",
+        )
+
+    binding = await db.scalar(
+        select(UserOrganization).where(
+            UserOrganization.user_id == user.id,
+            UserOrganization.organization_id == organization_id,
+        )
+    )
+    if binding is not None:
+        binding.role = "admin"
+    else:
+        db.add(
+            UserOrganization(
+                id=uuid.uuid4(),
+                user_id=user.id,
+                organization_id=organization_id,
+                role="admin",
+                created_at=now,
+            )
+        )
+
+    # organization_id is set so the event lands in the org's own audit
+    # view — ADR 0018: "recovery flow used" must be visible to all org
+    # members, not just the install-level log.
+    await write_event(
+        db,
+        event_type="organization.recovery.admin_added",
+        event_data={
+            "recovery_flow": True,
+            "admin_user_id": str(user.id),
+            "admin_email": user.email,
+            "created_new_user": new_password is not None,
+        },
+        organization_id=organization_id,
+        user_id=superuser.id,
+        session_id=str(getattr(request.state, "session", {}).get("session_id", "")),
+        source_ip=request.client.host if request.client else None,
+    )
+    await db.commit()
+
+    logger.info(
+        "organization_recovery_admin_added",
+        superuser_id=str(superuser.id),
+        organization_id=str(organization_id),
+        admin_user_id=str(user.id),
+    )
+    return RecoveryAdminResponse(
+        organization_id=organization_id,
+        user_id=user.id,
+        email=user.email,
+        role="admin",
+        new_password=new_password,
+    )

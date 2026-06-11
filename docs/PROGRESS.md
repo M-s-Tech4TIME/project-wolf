@@ -757,10 +757,14 @@ who want to build their own images.
 ## 4. What's next
 
 **Top of queue (2026-06-11):** Phase 6.4 (tenant→organization
-rename) **SHIPPED** — see §1 item 0. The next workable slice is
-**Phase 6.5-a** (session cookie blacklist via Redis), first of the
-9 sub-slices in ADR 0018 §"Implementation sequencing". Phase 6.5
-total estimate: 12-13 sessions.
+rename) **SHIPPED**; **Phase 6.5-a (Bootstrap Superuser +
+org-recovery) SHIPPED** same day — wrapper + CLI core +
+.deb postinst + Superuser password-reset API + break-glass
+org-recovery API + login-as-"Wolf" (org-less session); 18 tests;
+415 total green. Pending: operator manual web-test of the Wolf
+login. Next workable slice: **6.5-b (role enforcement, Phase 6.5
+subset)** — build order a → b → g → c-i → c-ii → d → e → f → h.
+Phase 6.5 total estimate: 12-13 sessions.
 
 **Immediate next steps** (in priority order; items below predate
 the multi-organization design arc and remain valid backlog):

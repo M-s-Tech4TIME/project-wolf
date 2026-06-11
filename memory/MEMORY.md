@@ -1,5 +1,7 @@
 # Memory index
 
+- [CI audit before push](ci-audit-before-push.md) — STANDING RULE (2026-06-11): before EVERY push, audit .github/workflows for slice-relevant changes (paths, strict-mypy set, smoke loops, artifacts) and land them in the same commit; watch the run to green — CI closeout is part of the slice
+
 - [Integrity across the stack](integrity-across-the-stack.md) — STANDING RULE (2026-05-30): every change preserves integrity across frontend / backend / DB / libraries / UI; full backend suite + cross-organization gate on every services/ change
 - [Quality + secure coding discipline](quality-secure-coding-discipline.md) — STANDING RULE (2026-05-31): features-first; quality + secure coding applied inline as each slice is built; dedicated hardening + audit pass deferred to a later phase but tracked, never abandoned
 - [No unaddressed errors](no-unaddressed-errors.md) — STANDING RULE (2026-06-01): never leave errors / warnings / silent diagnostics unaddressed; "pre-existing baseline" is not a pass; fix or track-with-plan, never just report-and-move-on

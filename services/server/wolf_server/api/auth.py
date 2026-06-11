@@ -13,7 +13,7 @@ from typing import Annotated, Any
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,6 +21,7 @@ from wolf_server.audit.log import write_event
 from wolf_server.auth.local import create_access_token, create_refresh_token, verify_password
 from wolf_server.auth.middleware import COOKIE_NAME
 from wolf_server.auth.oidc import get_authorization_url, oidc_is_configured
+from wolf_server.bootstrap.superuser import SUPERUSER_EMAIL, SUPERUSER_USERNAME
 from wolf_server.config import get_settings
 from wolf_server.database import get_db
 from wolf_server.organization.models import Organization, User, UserOrganization
@@ -34,7 +35,11 @@ _settings = get_settings()
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    # Plain str (not EmailStr) so the fixed Superuser username "Wolf"
+    # is accepted alongside regular email addresses (ADR 0018: the
+    # Superuser logs in by username). Non-email strings simply fail the
+    # user lookup and 401 like any wrong credential.
+    email: str
     password: str
     # The organization the user wants to operate in.  If omitted and the user
     # belongs to exactly one organization, that organization is used automatically.
@@ -45,7 +50,9 @@ class LoginResponse(BaseModel):
     user_id: uuid.UUID
     email: str
     display_name: str
-    organization_id: uuid.UUID
+    # None for the install-level Superuser (zero org memberships by
+    # default; data access requires an org Admin's explicit grant).
+    organization_id: uuid.UUID | None
     role: str
 
 
@@ -53,7 +60,7 @@ class MeResponse(BaseModel):
     user_id: uuid.UUID
     email: str
     display_name: str
-    organization_id: uuid.UUID
+    organization_id: uuid.UUID | None
     role: str
 
 
@@ -70,8 +77,11 @@ async def login(
     """Authenticate with email + password and receive a session cookie."""
     source_ip = request.client.host if request.client else None
 
-    # Load the user by email.
-    result = await db.execute(select(User).where(User.email == body.email))
+    # Load the user by email. The fixed Superuser username "Wolf" maps
+    # to the reserved internal address (ADR 0018 — operators type the
+    # username, the account is keyed by email).
+    lookup_email = SUPERUSER_EMAIL if body.email == SUPERUSER_USERNAME else body.email
+    result = await db.execute(select(User).where(User.email == lookup_email))
     user = result.scalar_one_or_none()
 
     # Constant-time password check to mitigate user enumeration.
@@ -95,38 +105,50 @@ async def login(
         await db.commit()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Account is inactive")
 
-    # Resolve organization membership.
-    organization_query = select(UserOrganization).where(UserOrganization.user_id == user.id)
-    bindings_result = await db.execute(organization_query)
-    bindings = bindings_result.scalars().all()
+    # The install-level Superuser authenticates with NO organization
+    # context — zero memberships by default (ADR 0018 org-consent gate).
+    # Org-scoped endpoints reject the org-less session; the Superuser
+    # uses the install-admin surface only.
+    if user.is_superuser:
+        selected_organization_id: uuid.UUID | None = None
+        role = "superuser"
+    else:
+        # Resolve organization membership.
+        organization_query = select(UserOrganization).where(UserOrganization.user_id == user.id)
+        bindings_result = await db.execute(organization_query)
+        bindings = bindings_result.scalars().all()
 
-    if not bindings:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="User has no organization memberships",
-        )
-
-    if body.organization_id is not None:
-        binding = next((b for b in bindings if b.organization_id == body.organization_id), None)
-        if binding is None:
+        if not bindings:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="User is not a member of the requested organization",
+                detail="User has no organization memberships",
             )
-    elif len(bindings) == 1:
-        binding = bindings[0]
-    else:
-        organization_ids = [str(b.organization_id) for b in bindings]
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(
-                "User belongs to multiple organizations; specify organization_id. "
-                f"Options: {organization_ids}"
-            ),
-        )
+
+        if body.organization_id is not None:
+            binding = next(
+                (b for b in bindings if b.organization_id == body.organization_id), None
+            )
+            if binding is None:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="User is not a member of the requested organization",
+                )
+        elif len(bindings) == 1:
+            binding = bindings[0]
+        else:
+            organization_ids = [str(b.organization_id) for b in bindings]
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "User belongs to multiple organizations; specify organization_id. "
+                    f"Options: {organization_ids}"
+                ),
+            )
+        selected_organization_id = binding.organization_id
+        role = binding.role
 
     session_id = str(uuid.uuid4())
-    access_token = create_access_token(user.id, binding.organization_id, binding.role, session_id)
+    access_token = create_access_token(user.id, selected_organization_id, role, session_id)
     refresh_token = create_refresh_token(user.id, session_id)
 
     # Write audit event BEFORE setting the cookie so the event is in-tx.
@@ -137,7 +159,7 @@ async def login(
             "email": user.email,
             "method": "local",
         },
-        organization_id=binding.organization_id,
+        organization_id=selected_organization_id,
         user_id=user.id,
         session_id=session_id,
         source_ip=source_ip,
@@ -146,14 +168,18 @@ async def login(
 
     _set_auth_cookies(response, access_token, refresh_token)
 
-    logger.info("login_success", user_id=str(user.id), organization_id=str(binding.organization_id))
+    logger.info(
+        "login_success",
+        user_id=str(user.id),
+        organization_id=str(selected_organization_id),
+    )
 
     return LoginResponse(
         user_id=user.id,
         email=user.email,
         display_name=user.display_name,
-        organization_id=binding.organization_id,
-        role=binding.role,
+        organization_id=selected_organization_id,
+        role=role,
     )
 
 
@@ -169,13 +195,17 @@ async def logout(
     organization_id_raw = session.get("organization_id")
     session_id = str(session.get("session_id", ""))
 
-    if user_id_raw and organization_id_raw:
+    if user_id_raw:
         try:
             await write_event(
                 db,
                 event_type="auth.logout",
                 event_data=None,
-                organization_id=uuid.UUID(str(organization_id_raw)),
+                # None for the org-less Superuser session — the logout
+                # still lands in the install-level audit log.
+                organization_id=(
+                    uuid.UUID(str(organization_id_raw)) if organization_id_raw else None
+                ),
                 user_id=uuid.UUID(str(user_id_raw)),
                 session_id=session_id,
                 source_ip=request.client.host if request.client else None,
@@ -207,11 +237,12 @@ async def me(
     if user is None:
         # Session points to a user that no longer exists — treat as logged out.
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Stale session")
+    organization_id_raw = session.get("organization_id")
     return MeResponse(
         user_id=user_id,
         email=user.email or "",
         display_name=user.display_name or "",
-        organization_id=uuid.UUID(str(session["organization_id"])),
+        organization_id=uuid.UUID(str(organization_id_raw)) if organization_id_raw else None,
         role=str(session.get("role", "")),
     )
 

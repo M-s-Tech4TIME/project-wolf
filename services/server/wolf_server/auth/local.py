@@ -53,14 +53,17 @@ def _make_token(data: dict[str, Any], expires_delta: timedelta) -> str:
 
 def create_access_token(
     user_id: uuid.UUID,
-    organization_id: uuid.UUID,
+    organization_id: uuid.UUID | None,
     role: str,
     session_id: str,
 ) -> str:
+    # organization_id is None for the install-level Superuser (zero org
+    # memberships by default — ADR 0018). Org-scoped dependencies treat
+    # a None org claim as "no org context" and reject accordingly.
     return _make_token(
         {
             "sub": str(user_id),
-            "organization_id": str(organization_id),
+            "organization_id": str(organization_id) if organization_id is not None else None,
             "role": role,
             "session_id": session_id,
             "token_type": "access",

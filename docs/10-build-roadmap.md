@@ -342,11 +342,16 @@ ready Wolf release. Builds on Phase 6.4's rename + Phase 6's
 wolf-gateway role-gate hook. 9 sub-slices, **12-13 sessions
 estimated**:
 
-1. **6.5-a — Bootstrap Superuser + org-recovery** — shell-wrapper
-   `bootstrap_superuser.sh` + Python core; `.deb` postinst
-   auto-create on fresh install; Superuser password reset for any
-   user (audit-emitted); break-glass org-recovery endpoint for
-   zero-Admin orgs.
+1. **6.5-a — Bootstrap Superuser + org-recovery** — ✅ **SHIPPED
+   2026-06-11.** `deploy/bin/bootstrap_superuser` wrapper +
+   `wolf_server/bootstrap/superuser.py` core (create-if-absent,
+   32-char password printed once, --rotate-password, wrapper-only
+   guard); `.deb` postinst best-effort auto-create + operator
+   instruction step; Superuser password reset for any user
+   (audit-emitted; own account refused — CLI is its recovery path);
+   break-glass org-recovery endpoint refused while any active Admin
+   exists; login accepts username "Wolf" → org-less superuser
+   session (organization_id None). 18 tests.
 
 2. **6.5-b — Role enforcement (Phase 6.5 subset only)** — role
    enum (Superuser / Admin / Engineer / Responder / Analyst) +

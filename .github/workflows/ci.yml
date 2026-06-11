@@ -47,6 +47,8 @@ jobs:
         # Phase 6.4 rename (2026-06-11): wolf_server/tenancy →
         # wolf_server/organization; wolf_server/models added so this
         # list matches the Makefile typecheck target exactly.
+        # Phase 6.5-a: wolf_server/bootstrap added — it mints + rotates
+        # the Superuser credential, so it belongs in the strict set.
         run: |
           uv run mypy packages/common/wolf_common \
                        packages/secrets/wolf_secrets \
@@ -54,6 +56,7 @@ jobs:
                        packages/cert/wolf_cert \
                        services/server/wolf_server/organization \
                        services/server/wolf_server/audit \
+                       services/server/wolf_server/bootstrap \
                        services/server/wolf_server/models \
                        services/server/wolf_server/wazuh \
                        services/server/wolf_server/guardrails \
@@ -640,7 +643,7 @@ jobs:
           echo "OK: wolf-database + wolf-server venvs + wolf-dashboard standalone all present"
       - name: Verify CLI shims work
         run: |
-          for shim in /usr/bin/wolf-cert /usr/bin/wolf-database /usr/bin/wolf-server /usr/bin/wolf-dashboard; do
+          for shim in /usr/bin/wolf-cert /usr/bin/wolf-database /usr/bin/wolf-server /usr/bin/wolf-dashboard /usr/bin/bootstrap_superuser; do
               test -x "$shim" || { echo "FAIL: $shim not executable"; exit 1; }
           done
           # wolf-database --help should print actual help text (proves

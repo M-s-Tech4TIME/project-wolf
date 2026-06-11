@@ -61,10 +61,12 @@ export function LoginForm() {
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
+            <Label htmlFor="email">Email or username</Label>
+            {/* type="text" (not "email"): the fixed Superuser username
+                "Wolf" must be enterable — ADR 0018, Phase 6.5-a. */}
             <Input
               id="email"
-              type="email"
+              type="text"
               required
               autoComplete="username"
               value={email}

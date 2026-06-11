@@ -79,6 +79,7 @@ typecheck: ## Type-check safety-critical packages with mypy (strict)
 	           packages/cert/wolf_cert \
 	           services/server/wolf_server/organization \
 	           services/server/wolf_server/audit \
+	           services/server/wolf_server/bootstrap \
 	           services/server/wolf_server/models \
 	           services/server/wolf_server/wazuh \
 	           services/server/wolf_server/guardrails \

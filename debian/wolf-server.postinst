@@ -85,6 +85,21 @@ case "$1" in
             --find-links "${WHEEL_DIR}" \
             wolf-cert
 
+        # ── bootstrap Superuser (Phase 6.5-a, ADR 0018) ───────────
+        # Best-effort: only possible when the operator has already
+        # provisioned /etc/wolf-server/env AND the database is up —
+        # i.e. upgrades / re-installs. Fresh installs have neither
+        # yet, so the operator runs step 4 of the printed
+        # instructions after first bring-up. The CLI is idempotent
+        # ("already exists — nothing to do"), so re-running on every
+        # upgrade is safe. Failures never abort the install.
+        if [ -r /etc/wolf-server/env ]; then
+            /usr/bin/bootstrap_superuser || \
+                echo "NOTE: bootstrap_superuser could not run (database" \
+                     "not reachable yet?). Run 'sudo /usr/bin/bootstrap_superuser'" \
+                     "manually once wolf-database is up." >&2
+        fi
+
         # ── systemd ───────────────────────────────────────────────
         # dh_installsystemd's daemon-reload + enable-on-fresh-install
         # snippets land at the DEBHELPER substitution point below.
@@ -125,6 +140,14 @@ case "$1" in
     3. Start the service:
 
          sudo systemctl enable --now wolf-server
+
+    4. Create the bootstrap Superuser (after the database is up):
+
+         sudo /usr/bin/bootstrap_superuser
+
+       This prints the Superuser "Wolf" password ONCE — save it in
+       your password manager. Lost it later? Re-run with
+       --rotate-password.
 
 EOF
         ;;

@@ -4,12 +4,16 @@
 # this file and copies the listed files into
 # debian/wolf-server/<dest>/ during the build.
 
-# Two CLI shims. wolf-cert is bundled with wolf-server because they
+# CLI shims. wolf-cert is bundled with wolf-server because they
 # share the venv (wolf-cert is a CLI tool not used by wolf-server's
 # runtime code, but the /usr/bin/wolf-cert shim looks for it in
 # wolf-server's venv — see deploy/bin/wolf-cert for the rationale).
-deploy/bin/wolf-server  usr/bin/
-deploy/bin/wolf-cert    usr/bin/
+# bootstrap_superuser (Phase 6.5-a, ADR 0018) creates / recovers the
+# install-level Superuser "Wolf" — wrapper-only invocation per the
+# shell-wrapper-required pattern.
+deploy/bin/wolf-server          usr/bin/
+deploy/bin/wolf-cert            usr/bin/
+deploy/bin/bootstrap_superuser  usr/bin/
 
 # Bundle of wheels — the workspace packages (wolf_server,
 # wolf_cert, wolf_common, wolf_secrets, wolf_schema) plus every

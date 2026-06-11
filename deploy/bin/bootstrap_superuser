@@ -1,0 +1,72 @@
+#!/bin/sh
+# /usr/bin/bootstrap_superuser — shipped CLI wrapper. Phase 6.5-a, ADR 0018.
+#
+# Creates (or rotates the password of) the single install-level
+# Superuser "Wolf". The Python core at
+# wolf_server/bootstrap/superuser.py refuses to run without the
+# WOLF_WRAPPER_VERSION marker this wrapper exports — the wrapper is
+# the ONLY supported invocation path (shell-wrapper-required pattern:
+# env preflight + permission gating live here, not in Python).
+#
+# Two modes:
+#   installed — wolf-server .deb present: sources /etc/wolf-server/env
+#               (DATABASE_URL, SECRET_KEY, ...) and execs the venv python.
+#               Requires root (the env file is 0640 wolf-server:wolf).
+#   dev       — repo checkout: run from the repo root; .env is sourced
+#               the same way the Makefile targets do it.
+#
+# The generated password is printed ONCE to stdout by the Python core.
+# This wrapper never touches or echoes it.
+
+set -eu
+
+export WOLF_WRAPPER_VERSION="1"
+
+VENV="/usr/lib/wolf-server/.venv"
+PYTHON="${VENV}/bin/python"
+ENV_FILE="/etc/wolf-server/env"
+
+if [ -x "${PYTHON}" ]; then
+    # ── installed mode ────────────────────────────────────────────
+    # The env file is readable only by wolf-server:wolf (0640), so a
+    # non-root operator gets a clean message instead of a sourcing
+    # error mid-run.
+    if [ ! -r "${ENV_FILE}" ]; then
+        echo "FAIL: cannot read ${ENV_FILE}." >&2
+        echo "  Run as root: sudo /usr/bin/bootstrap_superuser" >&2
+        echo "  (and provision ${ENV_FILE} first if this is a fresh install" >&2
+        echo "   — see the wolf-server install instructions.)" >&2
+        exit 2
+    fi
+    set -a
+    . "${ENV_FILE}"
+    set +a
+    cd /usr/lib/wolf-server
+    exec "${PYTHON}" -m wolf_server.bootstrap.superuser "$@"
+fi
+
+# ── dev mode ──────────────────────────────────────────────────────
+# Resolve the repo root from this script's location so the wrapper
+# works regardless of the caller's cwd.
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+REPO_ROOT=$(CDPATH= cd -- "${SCRIPT_DIR}/../.." && pwd)
+
+if [ ! -f "${REPO_ROOT}/services/server/pyproject.toml" ]; then
+    echo "FAIL: wolf-server not installed at ${VENV} and no dev workspace found." >&2
+    echo "  Install the wolf-server package (apt install wolf-server)" >&2
+    echo "  or run this wrapper from a repo checkout." >&2
+    exit 2
+fi
+
+if ! command -v uv >/dev/null 2>&1; then
+    echo "FAIL: dev mode needs 'uv' on PATH (https://docs.astral.sh/uv/)." >&2
+    exit 2
+fi
+
+cd "${REPO_ROOT}"
+if [ -f .env ]; then
+    set -a
+    . ./.env
+    set +a
+fi
+exec uv run --project services/server python -m wolf_server.bootstrap.superuser "$@"
