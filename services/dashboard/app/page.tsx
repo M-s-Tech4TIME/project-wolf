@@ -11,7 +11,14 @@ export default function HomePage() {
 
   useEffect(() => {
     if (isLoading) return;
-    router.replace(me ? "/chat" : "/login");
+    if (!me) {
+      router.replace("/login");
+    } else if (me.role === "superuser") {
+      // Install-admin sessions land on their own surface (6.5-c-ii).
+      router.replace("/superuser/dashboard");
+    } else {
+      router.replace("/chat");
+    }
   }, [isLoading, me, router]);
 
   return (

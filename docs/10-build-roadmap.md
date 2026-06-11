@@ -400,12 +400,20 @@ estimated**:
    `/me` reflects the header org (per-tab profile chip). 14 tests
    incl. the two-tabs-two-roles workflow.
 
-5. **6.5-c-ii — Frontend login + per-tab org state** — dashboard
-   removes org field from login form; handles three login
-   responses (Superuser → `/superuser/dashboard`; auto-selected
-   → `/chat`; needs-org-selection → org-switcher); per-tab
-   `sessionStorage` for active `organization_id`; every API call
-   sets `X-Organization-Id` header.
+5. **6.5-c-ii — Frontend login + per-tab org state** — ✅ **SHIPPED
+   2026-06-12** (pending operator manual web-test). Login form is
+   email+password only; three-shape handling (Superuser →
+   `/superuser/dashboard` placeholder page, real UI is 6.5-d;
+   auto-selected → `/chat`; needs-selection → inline org picker in
+   the login card); per-tab `sessionStorage`
+   (`lib/org-context.ts`) + `X-Organization-Id` on every API call
+   (incl. the SSE chat stream); org-switcher switches per-tab with
+   NO re-login (audit via switch-organization); auth-provider
+   self-heals stale tab org (403 → clear + retry) and auto-selects
+   for single-org users in fresh tabs. Live-validated end-to-end
+   through the HTTPS proxy. **Backend transitional fallback (JWT
+   org claim + login organization_id field) is removed after the
+   operator's manual sign-off.**
 
 6. **6.5-d — Organizations + Superuser-dashboard UI** — Superuser-
    only `/superuser/dashboard` route; Organizations page

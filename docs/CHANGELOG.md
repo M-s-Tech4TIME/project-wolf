@@ -49,6 +49,72 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-12 — Phase 6.5-c-ii SHIPPED: frontend login + per-tab org state (+ startup-logging fix)
+
+**Session type:** claude-code (operator-directed)
+**Phase:** 6.5-c-ii (frontend login flow + per-tab org state, per ADR 0018 Round 3)
+**Duration:** ~1 session (same session as 6.5-c-i)
+**Branch / commit:** main (this commit; startup-logging fix landed as `4766bd8`).
+
+### What we did
+
+- **`lib/org-context.ts`**: per-tab active org in `sessionStorage`
+  (framework-free so `lib/api.ts` reads it synchronously); every API
+  call — including the SSE chat stream — carries `X-Organization-Id`.
+  Two tabs = two orgs, by construction.
+- **Login form**: email + password only (org field gone). Three-shape
+  handling: Superuser → `/superuser/dashboard`; auto-selected → /chat;
+  needs-selection → the same card swaps to an inline org picker
+  (name + role per row; cookie already issued, no second login).
+- **Org switcher**: per-tab switch with NO logout/re-login (the old
+  flow signed out and bounced through /login?organization=). Switch =
+  set tab state → optional switch-organization audit call → refetch
+  /me under the new header.
+- **Auth provider**: holds `activeOrganizationId`; hydrates from
+  sessionStorage; self-heals a stale tab org (403 from /me → clear +
+  retry org-less); auto-selects for single-org users in fresh tabs;
+  sign-out clears the tab's org context.
+- **`/superuser/dashboard`**: minimal guarded landing page (real
+  install-admin UI is 6.5-d) so the Superuser redirect has a home;
+  root page routes superuser sessions there, org users to /chat.
+- **Live validation** through the real HTTPS dashboard proxy with a
+  seeded two-org user: three-shape login ✓, /me role flips per header
+  (admin in org A / analyst in org B) ✓, Admin surface 200 vs 403 per
+  org ✓, select-organization audit ✓, logout blacklist kills replayed
+  cookie ✓ (6.5-g verified through the full stack). Gates: backend 395
+  green, mypy strict 59 files, ruff, tsc, eslint, production build.
+- Seeded `selftest@wolf.test` (password `selftest-password-123!`,
+  admin in "Selftest Alpha" / analyst in "Selftest Beta") left in the
+  dev DB for the operator's manual multi-org web-test; remove after
+  sign-off.
+
+### Also fixed: wolf-server's 11-hour silent crash-loop (dev host)
+
+- Found while preparing self-validation: the dev wolf-server unit had
+  been crash-looping since 15:38 the previous day with NO error output
+  (restart counter 6,895). Two stacked causes: (1) an orphaned
+  `uv run python -m wolf_server` from earlier manual testing held
+  :7860, so every systemd restart died at socket bind; (2) the bind
+  error was INVISIBLE because alembic's in-process fileConfig killed
+  every live logger (disable_existing_loggers default + root WARN).
+  Killed the orphan (the unit self-healed instantly) and root-fixed
+  the logging in `4766bd8` — env.py now honors alembic's canonical
+  `configure_logger=False` attribute set by wolf_server.main, and
+  post-migration log lines (`wolf_server_ready`, bind errors) are
+  verified visible in the journal again.
+- Honest note: two earlier diagnostics this session blamed the
+  dashboard ("wedged", restarted it) — actually my probes used
+  http:// against its https:// listener; the dashboard was fine.
+
+### What's next
+
+- Operator manual web-test of c-ii (checklist in PROGRESS), then
+  REMOVE the backend's transitional JWT-claim fallback + login
+  organization_id field (the ADR's "one release" compat window ends).
+- Review + merge the 15 unblocked Dependabot PRs.
+
+---
+
 ## 2026-06-12 — Phase 6.5-c-i SHIPPED: header-based org context + GPG-on-Dependabot CI fix
 
 **Session type:** claude-code (operator-directed)

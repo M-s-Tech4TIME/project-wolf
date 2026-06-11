@@ -5,22 +5,39 @@
 export type LoginRequest = {
   email: string;
   password: string;
-  organization_id?: string | null;
 };
 
+/** One membership row in login's needs-org-selection / auto-select
+ *  shapes (Phase 6.5-c-ii, ADR 0018 §login UX). */
+export type MembershipInfo = {
+  organization_id: string;
+  organization_name: string;
+  role: string;
+};
+
+/** Three-shape login response (ADR 0018): exactly one of
+ *  `is_superuser`, `auto_selected_organization`, or
+ *  `needs_org_selection` applies. */
 export type LoginResponse = {
   user_id: string;
   email: string;
   display_name: string;
-  organization_id: string;
-  role: string;
+  organization_id: string | null;
+  role: string | null;
+  is_superuser: boolean;
+  redirect: string | null;
+  auto_selected_organization: MembershipInfo | null;
+  needs_org_selection: boolean;
+  memberships: MembershipInfo[] | null;
 };
 
 export type MeResponse = {
   user_id: string;
   email: string;
   display_name: string;
-  organization_id: string;
+  /** Reflects the X-Organization-Id header when sent (per-tab org);
+   *  null for org-less sessions (Superuser, pre-selection). */
+  organization_id: string | null;
   role: string;
 };
 

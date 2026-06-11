@@ -6,7 +6,7 @@
 >
 > For history of what changed when, see `CHANGELOG.md` (append-only).
 
-**Last updated:** 2026-06-12 by claude-code (Phase 6.5-c-i header-based org context SHIPPED — X-Organization-Id per-tab context + three-shape login + select/switch endpoints, 467 tests green; also fixed the GPG-signing CI failure on Dependabot PRs — 15 dep PRs now unblocked. Next workable slice: 6.5-c-ii frontend login + per-tab org state)
+**Last updated:** 2026-06-12 by claude-code (Phase 6.5-c-ii frontend login + per-tab org SHIPPED — live-validated through the HTTPS proxy; OPEN CHECKPOINT: operator manual web-test, then remove the backend's transitional fallback. Also root-fixed the silent startup-logging bug behind an 11-hour dev crash-loop. Next: Dependabot PR batch, then 6.5-d)
 
 ---
 

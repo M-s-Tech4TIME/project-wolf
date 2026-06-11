@@ -11,12 +11,14 @@
 // browser sees it as a cookie scoped to the dashboard's origin,
 // which is now the only origin involved.
 
+import { activeOrgHeader } from "./org-context";
 import type {
   ChatRequestBody,
   ChatResponseBody,
   LoginRequest,
   LoginResponse,
   LoopEvent,
+  MembershipInfo,
   MeResponse,
   OrganizationMembership,
 } from "./types";
@@ -47,6 +49,10 @@ async function apiFetch(
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json",
+      // Phase 6.5-c-ii: the per-tab active org rides on every call.
+      // The cookie authenticates the user; this header names the org;
+      // wolf-server validates the membership on each request.
+      ...activeOrgHeader(),
       ...(init.headers ?? {}),
     },
   });
@@ -94,6 +100,27 @@ export function fetchMyOrganizations(): Promise<OrganizationMembership[]> {
   );
 }
 
+/** Record the post-login org selection in the audit trail (optional per
+ *  ADR 0018 — org routing itself is header-driven, not this call). */
+export function selectOrganization(
+  organizationId: string,
+): Promise<MembershipInfo> {
+  return apiFetch("/api/v1/auth/select-organization", {
+    method: "POST",
+    body: JSON.stringify({ organization_id: organizationId }),
+  }).then(unwrap<MembershipInfo>);
+}
+
+/** Record a mid-session per-tab org switch in the audit trail. */
+export function switchOrganization(
+  organizationId: string,
+): Promise<MembershipInfo> {
+  return apiFetch("/api/v1/auth/switch-organization", {
+    method: "POST",
+    body: JSON.stringify({ organization_id: organizationId }),
+  }).then(unwrap<MembershipInfo>);
+}
+
 // ── Chat ─────────────────────────────────────────────────────────────────
 
 export function chat(body: ChatRequestBody): Promise<ChatResponseBody> {
@@ -122,6 +149,7 @@ export async function chatStream(
     headers: {
       "Content-Type": "application/json",
       Accept: "text/event-stream",
+      ...activeOrgHeader(),
     },
     body: JSON.stringify(body),
     signal,

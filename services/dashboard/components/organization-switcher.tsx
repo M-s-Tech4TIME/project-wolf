@@ -1,7 +1,6 @@
 "use client";
 
 import { Building2, Check, ChevronsUpDown } from "lucide-react";
-import { useRouter } from "next/navigation";
 
 import { useAuth } from "@/components/auth-provider";
 import { Button } from "@/components/ui/button";
@@ -13,23 +12,32 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { logout } from "@/lib/api";
+import { switchOrganization } from "@/lib/api";
 
 /**
- * Organization switcher.  The JWT cookie pins organization at login time, so switching
- * organizations requires a re-login.  Selecting a different organization signs out,
- * then sends the user to /login with the desired organization prefilled.
+ * Organization switcher — Phase 6.5-c-ii (ADR 0018 Round 3).
+ *
+ * Switching is per-tab state, not a re-login: the auth cookie identifies
+ * the user and stays untouched; this tab's X-Organization-Id header simply
+ * changes. Other tabs keep their own active org. The switch is recorded in
+ * the audit trail via the optional switch-organization endpoint.
  */
 export function OrganizationSwitcher() {
-  const { me, organizations, refresh } = useAuth();
-  const router = useRouter();
-  const current = organizations.find((t) => t.id === me?.organization_id);
+  const { organizations, activeOrganizationId, setActiveOrganization, refresh } = useAuth();
+  const current = organizations.find((t) => t.id === activeOrganizationId);
 
   const handleSwitch = async (organizationId: string) => {
-    if (organizationId === me?.organization_id) return;
-    await logout();
+    if (organizationId === activeOrganizationId) return;
+    setActiveOrganization(organizationId);
+    try {
+      // Audit-only (ADR 0018): a failure here must never block the switch.
+      await switchOrganization(organizationId);
+    } catch (err) {
+      console.warn("switch-organization audit call failed", err);
+    }
+    // Re-fetch /me (and memberships) under the new header so org-scoped
+    // UI (profile chip, sidebar) reflects this tab's new context.
     await refresh();
-    router.push(`/login?organization=${organizationId}`);
   };
 
   return (
@@ -59,7 +67,7 @@ export function OrganizationSwitcher() {
             >
               <div className="flex w-full items-center justify-between">
                 <span className="font-medium">{t.name}</span>
-                {t.id === me?.organization_id ? (
+                {t.id === activeOrganizationId ? (
                   <Check className="h-4 w-4 text-primary" />
                 ) : null}
               </div>
