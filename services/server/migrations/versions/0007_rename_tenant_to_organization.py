@@ -31,10 +31,20 @@ Renames performed:
     uq_user_tenant                      → uq_user_organization
     uq_tenant_wazuh_config_tenant       → uq_organization_wazuh_config_organization
 
-  FK constraints (Postgres-auto-named — renamed for naming consistency):
-    user_tenants_tenant_id_fkey         → user_organizations_organization_id_fkey
-    tenant_wazuh_configs_tenant_id_fkey → organization_wazuh_configs_organization_id_fkey
-    (user_tenants_user_id_fkey         → user_organizations_user_id_fkey — table rename only)
+  FK constraints (renamed by DYNAMIC lookup, not hardcoded name):
+    The current FK name depends on when the database was created. Databases
+    initialised before the Base naming_convention landed (2026-06-05) carry
+    Postgres auto-names (user_tenants_user_id_fkey); fresh databases get
+    convention names from wolf_server.database.NAMING_CONVENTION
+    (fk_user_tenants_user_id_users). This migration looks up whichever FK
+    actually exists on the (table, columns) pair via pg_constraint and renames
+    it to the convention name for the NEW table:
+      user_organizations(user_id)
+          → fk_user_organizations_user_id_users
+      user_organizations(organization_id)
+          → fk_user_organizations_organization_id_organizations
+      organization_wazuh_configs(organization_id)
+          → fk_organization_wazuh_configs_organization_id_organizations
 
   indexes:
     ix_tenants_slug                     → ix_organizations_slug
@@ -62,6 +72,51 @@ revision: str = "0007"
 down_revision: str | None = "0006"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
+
+
+def _rename_fk(table: str, columns: str, new_name: str) -> None:
+    """Rename the FK constraint on (table, columns) to new_name, whatever it
+    is currently called.
+
+    `columns` is the comma-separated attnum-ordered column list, e.g.
+    "user_id". The DO block resolves the constraint's current name from
+    pg_constraint — necessary because old databases carry Postgres
+    auto-names (<table>_<col>_fkey) while fresh ones carry
+    NAMING_CONVENTION names (fk_<table>_<col>_<reftable>).
+    """
+    # S608: the interpolated values are compile-time string literals defined
+    # in this migration file (table/column/constraint names), never external
+    # or user-controlled input — the injection vector ruff flags can't occur.
+    op.execute(
+        f"""
+        DO $$
+        DECLARE
+            fk_name text;
+        BEGIN
+            SELECT con.conname INTO fk_name
+            FROM pg_constraint con
+            JOIN pg_class rel ON rel.oid = con.conrelid
+            WHERE rel.relname = '{table}'
+              AND con.contype = 'f'
+              AND (
+                  SELECT string_agg(att.attname, ',' ORDER BY u.ord)
+                  FROM unnest(con.conkey) WITH ORDINALITY AS u(attnum, ord)
+                  JOIN pg_attribute att
+                    ON att.attrelid = con.conrelid AND att.attnum = u.attnum
+              ) = '{columns}';
+            IF fk_name IS NULL THEN
+                RAISE EXCEPTION
+                    'No FK constraint found on {table}({columns})';
+            END IF;
+            IF fk_name <> '{new_name}' THEN
+                EXECUTE format(
+                    'ALTER TABLE {table} RENAME CONSTRAINT %I TO %I',
+                    fk_name, '{new_name}'
+                );
+            END IF;
+        END $$;
+        """  # noqa: S608
+    )
 
 
 def upgrade() -> None:
@@ -104,24 +159,21 @@ def upgrade() -> None:
         "TO uq_organization_wazuh_config_organization"
     )
 
-    # ── FK constraints (auto-named by Postgres) ───────────────────────────────
-    # Pattern: <table>_<column>_fkey. After the table+column renames above the
-    # legacy names (e.g. user_tenants_tenant_id_fkey) still exist; rename them
-    # for naming consistency with the new schema.
-    op.execute(
-        "ALTER TABLE user_organizations "
-        "RENAME CONSTRAINT user_tenants_user_id_fkey "
-        "TO user_organizations_user_id_fkey"
+    # ── FK constraints (dynamic rename) ───────────────────────────────────────
+    # The legacy FK name varies by database age (Postgres auto-name vs
+    # NAMING_CONVENTION name — see the module docstring). Look up whatever
+    # exists on the column pair and rename it to the convention name for the
+    # NEW table, so every post-0007 database converges on identical names.
+    _rename_fk("user_organizations", "user_id", "fk_user_organizations_user_id_users")
+    _rename_fk(
+        "user_organizations",
+        "organization_id",
+        "fk_user_organizations_organization_id_organizations",
     )
-    op.execute(
-        "ALTER TABLE user_organizations "
-        "RENAME CONSTRAINT user_tenants_tenant_id_fkey "
-        "TO user_organizations_organization_id_fkey"
-    )
-    op.execute(
-        "ALTER TABLE organization_wazuh_configs "
-        "RENAME CONSTRAINT tenant_wazuh_configs_tenant_id_fkey "
-        "TO organization_wazuh_configs_organization_id_fkey"
+    _rename_fk(
+        "organization_wazuh_configs",
+        "organization_id",
+        "fk_organization_wazuh_configs_organization_id_organizations",
     )
 
     # ── indexes ───────────────────────────────────────────────────────────────
@@ -172,22 +224,22 @@ def downgrade() -> None:
     op.execute("ALTER INDEX ix_user_organizations_user_id RENAME TO ix_user_tenants_user_id")
     op.execute("ALTER INDEX ix_organizations_slug RENAME TO ix_tenants_slug")
 
-    # ── FK constraints ────────────────────────────────────────────────────────
-    op.execute(
-        "ALTER TABLE organization_wazuh_configs "
-        "RENAME CONSTRAINT organization_wazuh_configs_organization_id_fkey "
-        "TO tenant_wazuh_configs_tenant_id_fkey"
+    # ── FK constraints (dynamic rename) ───────────────────────────────────────
+    # Downgrade restores the NAMING_CONVENTION names a fresh pre-0007
+    # database would have (fk_<old_table>_<col>_<reftable>). Databases that
+    # originally carried Postgres auto-names don't get those back — the
+    # convention name is the canonical pre-0007 shape going forward.
+    _rename_fk(
+        "organization_wazuh_configs",
+        "organization_id",
+        "fk_tenant_wazuh_configs_tenant_id_tenants",
     )
-    op.execute(
-        "ALTER TABLE user_organizations "
-        "RENAME CONSTRAINT user_organizations_organization_id_fkey "
-        "TO user_tenants_tenant_id_fkey"
+    _rename_fk(
+        "user_organizations",
+        "organization_id",
+        "fk_user_tenants_tenant_id_tenants",
     )
-    op.execute(
-        "ALTER TABLE user_organizations "
-        "RENAME CONSTRAINT user_organizations_user_id_fkey "
-        "TO user_tenants_user_id_fkey"
-    )
+    _rename_fk("user_organizations", "user_id", "fk_user_tenants_user_id_users")
 
     # ── named unique constraints ──────────────────────────────────────────────
     op.execute(
