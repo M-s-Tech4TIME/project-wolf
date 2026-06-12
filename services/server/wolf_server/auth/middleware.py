@@ -68,10 +68,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
             if revoked:
                 return _reject("Session revoked. Please log in again.")
 
+        # Auth only — no organization or role here (ADR 0018 Round 3).
+        # Org context is resolved per request from the X-Organization-Id
+        # header by require_organization_context.
         request.state.session = {
             "user_id": user_id,
-            "organization_id": payload.get("organization_id"),
-            "role": payload.get("role"),
             "session_id": session_id,
             # iat/exp (epoch seconds) carried so trigger sites can compute
             # blacklist TTLs that match the token's remaining lifetime.

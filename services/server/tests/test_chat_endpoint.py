@@ -145,10 +145,13 @@ async def _login(client: AsyncClient, seed: dict[str, Any]) -> None:
         json={
             "email": seed["user_email"],
             "password": "password123",
-            "organization_id": str(seed["organization_id"]),
         },
     )
     assert resp.status_code == 200
+    # Per-tab org context (ADR 0018): the session is auth-only; every
+    # org-scoped call names the org via the X-Organization-Id header.
+    # Set it as a client default so all subsequent requests carry it.
+    client.headers["X-Organization-Id"] = str(seed["organization_id"])
 
 
 # ─── Tests ───────────────────────────────────────────────────────────────────

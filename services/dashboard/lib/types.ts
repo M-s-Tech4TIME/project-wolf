@@ -17,13 +17,12 @@ export type MembershipInfo = {
 
 /** Three-shape login response (ADR 0018): exactly one of
  *  `is_superuser`, `auto_selected_organization`, or
- *  `needs_org_selection` applies. */
+ *  `needs_org_selection` applies. The session cookie is authentication
+ *  only — the org arrives per request via X-Organization-Id. */
 export type LoginResponse = {
   user_id: string;
   email: string;
   display_name: string;
-  organization_id: string | null;
-  role: string | null;
   is_superuser: boolean;
   redirect: string | null;
   auto_selected_organization: MembershipInfo | null;

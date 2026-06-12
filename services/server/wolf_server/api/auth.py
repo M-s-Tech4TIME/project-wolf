@@ -47,10 +47,6 @@ class LoginRequest(BaseModel):
     # user lookup and 401 like any wrong credential.
     email: str
     password: str
-    # TRANSITIONAL (removed with 6.5-c-ii): the pre-header dashboard sends
-    # the org at login. The new flow authenticates org-less and carries
-    # the org per request in the X-Organization-Id header instead.
-    organization_id: uuid.UUID | None = None
 
 
 class MembershipInfo(BaseModel):
@@ -60,23 +56,20 @@ class MembershipInfo(BaseModel):
 
 
 class LoginResponse(BaseModel):
-    """Three-shape login response (ADR 0018 §login UX, Phase 6.5-c-i).
+    """Three-shape login response (ADR 0018 §login UX, Phase 6.5-c).
 
     Exactly one of these applies:
       - is_superuser=True (+ redirect): install-admin session, no org scope
       - auto_selected_organization set: single membership, ready for /chat
       - needs_org_selection=True (+ memberships): the dashboard renders the
         org picker; the session cookie is already issued (auth-only)
-    The flat organization_id/role fields mirror the legacy shape and stay
-    populated whenever an org is resolved (removed with 6.5-c-ii).
+    The session cookie is authentication ONLY — the org an API call acts
+    in arrives per request via the X-Organization-Id header.
     """
 
     user_id: uuid.UUID
     email: str
     display_name: str
-    organization_id: uuid.UUID | None
-    # None while no org is resolved (needs_org_selection).
-    role: str | None
     is_superuser: bool = False
     # Client-side landing route hint (Superuser → install-admin UI).
     redirect: str | None = None
@@ -134,7 +127,10 @@ async def login(
         await db.commit()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Account is inactive")
 
-    # Resolve the response shape (ADR 0018 §login UX, Phase 6.5-c-i).
+    # Resolve the response shape (ADR 0018 §login UX, Phase 6.5-c).
+    # selected_organization_id scopes the login audit event when an org
+    # is resolved at login time; it is NOT placed in the token (the
+    # session cookie is authentication only).
     is_superuser = False
     redirect: str | None = None
     auto_selected: MembershipInfo | None = None
@@ -147,7 +143,6 @@ async def login(
         # gate). The org-selector is never shown; the install-admin UI
         # is the landing surface.
         selected_organization_id: uuid.UUID | None = None
-        role: str | None = "superuser"
         is_superuser = True
         redirect = "/superuser/dashboard"
     else:
@@ -180,33 +175,20 @@ async def login(
                 role=b.role,
             )
 
-        if body.organization_id is not None:
-            # TRANSITIONAL legacy path (pre-6.5-c-ii dashboard sends the
-            # org at login). Removed together with the header fallback.
-            binding = next((b for b in bindings if b.organization_id == body.organization_id), None)
-            if binding is None:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="User is not a member of the requested organization",
-                )
-            selected_organization_id = binding.organization_id
-            role = binding.role
-        elif len(bindings) == 1:
+        if len(bindings) == 1:
             binding = bindings[0]
             selected_organization_id = binding.organization_id
-            role = binding.role
             auto_selected = _info(binding)
         else:
             # N>1 memberships: authenticate now (auth-only cookie), let the
             # dashboard render the org picker. Org context arrives per
             # request via the X-Organization-Id header afterwards.
             selected_organization_id = None
-            role = None
             needs_org_selection = True
             memberships = [_info(b) for b in bindings]
 
     session_id = str(uuid.uuid4())
-    access_token = create_access_token(user.id, selected_organization_id, role or "", session_id)
+    access_token = create_access_token(user.id, session_id)
     refresh_token = create_refresh_token(user.id, session_id)
 
     # Write audit event BEFORE setting the cookie so the event is in-tx.
@@ -238,8 +220,6 @@ async def login(
         user_id=user.id,
         email=user.email,
         display_name=user.display_name,
-        organization_id=selected_organization_id,
-        role=role,
         is_superuser=is_superuser,
         redirect=redirect,
         auto_selected_organization=auto_selected,
@@ -263,7 +243,6 @@ async def logout(
     """
     session: dict[str, Any] = getattr(request.state, "session", {})
     user_id_raw = session.get("user_id")
-    organization_id_raw = session.get("organization_id")
     session_id = str(session.get("session_id", ""))
 
     if session_id:
@@ -276,17 +255,36 @@ async def logout(
         await get_session_blacklist().revoke_session(session_id, ttl_seconds=max(remaining, 1))
 
     if user_id_raw:
+        # Org scope for the audit event comes from the tab's
+        # X-Organization-Id header (the dashboard sends it on every call,
+        # logout included). The binding is validated before use so an
+        # arbitrary header value can never fabricate an org-scoped audit
+        # row; no/invalid header → the logout lands install-level
+        # (organization_id NULL), e.g. the org-less Superuser session.
+        user_id = uuid.UUID(str(user_id_raw))
+        organization_id: uuid.UUID | None = None
+        header_raw = request.headers.get(ORG_HEADER)
+        if header_raw:
+            try:
+                candidate = uuid.UUID(header_raw.strip())
+            except ValueError:
+                candidate = None
+            if candidate is not None:
+                binding = await db.scalar(
+                    select(UserOrganization).where(
+                        UserOrganization.user_id == user_id,
+                        UserOrganization.organization_id == candidate,
+                    )
+                )
+                if binding is not None:
+                    organization_id = candidate
         try:
             await write_event(
                 db,
                 event_type="auth.logout",
                 event_data=None,
-                # None for the org-less Superuser session — the logout
-                # still lands in the install-level audit log.
-                organization_id=(
-                    uuid.UUID(str(organization_id_raw)) if organization_id_raw else None
-                ),
-                user_id=uuid.UUID(str(user_id_raw)),
+                organization_id=organization_id,
+                user_id=user_id,
                 session_id=session_id,
                 source_ip=request.client.host if request.client else None,
             )
@@ -318,10 +316,9 @@ async def me(
         # Session points to a user that no longer exists — treat as logged out.
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Stale session")
 
-    # Per-tab org context (6.5-c-i): when the X-Organization-Id header is
+    # Per-tab org context (6.5-c): when the X-Organization-Id header is
     # present, org + role reflect THAT membership, so each tab's profile
-    # chip shows the org the tab is actually working in. Header absent →
-    # the JWT claim (transitional fallback, removed with 6.5-c-ii).
+    # chip shows the org the tab is actually working in.
     header_raw = request.headers.get(ORG_HEADER)
     if header_raw is not None:
         try:
@@ -350,13 +347,15 @@ async def me(
             role=binding.role,
         )
 
-    organization_id_raw = session.get("organization_id")
+    # Header absent: an org-less view of the session (the Superuser, or a
+    # tab before org selection). The cookie carries authentication only,
+    # so the role is derived from the User row, never from token claims.
     return MeResponse(
         user_id=user_id,
         email=user.email or "",
         display_name=user.display_name or "",
-        organization_id=uuid.UUID(str(organization_id_raw)) if organization_id_raw else None,
-        role=str(session.get("role", "")),
+        organization_id=None,
+        role="superuser" if user.is_superuser else "",
     )
 
 

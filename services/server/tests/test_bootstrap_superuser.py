@@ -192,13 +192,13 @@ async def test_superuser_logs_in_by_username_with_no_org(
     resp = await _login(client, SUPERUSER_USERNAME, _WOLF_PASSWORD)
     assert resp.status_code == 200
     body = resp.json()
-    assert body["organization_id"] is None
-    assert body["role"] == "superuser"
+    assert body["is_superuser"] is True
     assert body["display_name"] == SUPERUSER_USERNAME
 
     me = await client.get("/api/v1/auth/me")
     assert me.status_code == 200
     assert me.json()["organization_id"] is None
+    assert me.json()["role"] == "superuser"
 
 
 async def test_superuser_login_wrong_password_rejected(
@@ -358,10 +358,11 @@ async def test_recovery_force_adds_admin_to_adminless_org(
     assert event.event_data["recovery_flow"] is True
     assert event.event_data["created_new_user"] is True
 
-    # The new Admin can actually log in with the returned password.
+    # The new Admin can actually log in with the returned password
+    # (single membership → auto-select shape).
     resp = await _login(client, new_admin_email, body["new_password"])
     assert resp.status_code == 200
-    assert resp.json()["role"] == "admin"
+    assert resp.json()["auto_selected_organization"]["role"] == "admin"
 
 
 async def test_recovery_promotes_existing_member_without_new_password(
@@ -427,9 +428,12 @@ async def test_regular_user_login_still_carries_org(
     client: AsyncClient, seed_organization_and_user: dict[str, Any]
 ) -> None:
     """Regression guard: the Superuser special-case must not change the
-    normal login contract — org members still get their organization_id."""
+    normal login contract — a single-membership org member still gets
+    their org via the auto-select shape (ADR 0018 §login UX)."""
     resp = await _login(client, seed_organization_and_user["user_email"], "password123")
     assert resp.status_code == 200
     body = resp.json()
-    assert body["organization_id"] == str(seed_organization_and_user["organization_id"])
-    assert body["role"] == "analyst"
+    assert body["is_superuser"] is False
+    auto = body["auto_selected_organization"]
+    assert auto["organization_id"] == str(seed_organization_and_user["organization_id"])
+    assert auto["role"] == "analyst"

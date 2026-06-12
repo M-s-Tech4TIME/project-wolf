@@ -4,11 +4,13 @@ Passwords are hashed with bcrypt.  Never store or log plaintext passwords.
 JWT tokens are signed with HS256 and the SECRET_KEY from settings.
 
 Token design:
-  - access token  — short-lived (60 min default), carries user_id + organization_id + role
+  - access token  — short-lived (60 min default), carries user_id + session_id ONLY
   - refresh token — long-lived (7 days), used to get a new access token
 
-The organization_id in the token is the organization the user *selected* at login.
-If a user belongs to multiple organizations they log in again to switch.
+The access token is AUTHENTICATION only (ADR 0018 Round 3): it never
+carries an organization or role. The active organization arrives per
+request in the X-Organization-Id header and the membership binding is
+validated on every request — see organization/context.py.
 """
 
 import uuid
@@ -53,18 +55,11 @@ def _make_token(data: dict[str, Any], expires_delta: timedelta) -> str:
 
 def create_access_token(
     user_id: uuid.UUID,
-    organization_id: uuid.UUID | None,
-    role: str,
     session_id: str,
 ) -> str:
-    # organization_id is None for the install-level Superuser (zero org
-    # memberships by default — ADR 0018). Org-scoped dependencies treat
-    # a None org claim as "no org context" and reject accordingly.
     return _make_token(
         {
             "sub": str(user_id),
-            "organization_id": str(organization_id) if organization_id is not None else None,
-            "role": role,
             "session_id": session_id,
             "token_type": "access",
         },

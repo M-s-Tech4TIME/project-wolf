@@ -81,7 +81,6 @@ async def test_my_organizations_returns_only_user_memberships(
         json={
             "email": seed_organization_and_user["user_email"],
             "password": "password123",
-            "organization_id": str(seed_organization_and_user["organization_id"]),
         },
     )
 
@@ -112,7 +111,6 @@ async def test_my_organizations_excludes_inactive_organizations(
         json={
             "email": seed_organization_and_user["user_email"],
             "password": "password123",
-            "organization_id": str(seed_organization_and_user["organization_id"]),
         },
     )
     organization = await db.get(Organization, seed_organization_and_user["organization_id"])

@@ -111,10 +111,12 @@ async def _login_as(
         json={
             "email": org[role]["email"],
             "password": _MEMBER_PASSWORD,
-            "organization_id": str(org["organization_id"]),
         },
     )
     assert resp.status_code == 200, resp.text
+    # Auth-only session (ADR 0018): name the org on every request via
+    # the header — set as a client default for the rest of the test.
+    client.headers["X-Organization-Id"] = str(org["organization_id"])
 
 
 async def _login_superuser(client: AsyncClient) -> None:
@@ -123,6 +125,9 @@ async def _login_superuser(client: AsyncClient) -> None:
         json={"email": SUPERUSER_USERNAME, "password": _WOLF_PASSWORD},
     )
     assert resp.status_code == 200, resp.text
+    # The Superuser session is org-less; drop any header a previous
+    # member login in the same test left as a client default.
+    client.headers.pop("X-Organization-Id", None)
 
 
 async def _audit_events(db: AsyncSession, event_type: str) -> list[AuditEvent]:
@@ -321,16 +326,13 @@ async def test_admin_creates_member_with_generated_password_and_dual_audit(
     assert install_events[-1].event_data is not None
     assert install_events[-1].event_data["organization_id"] == str(org_id)
 
-    # The new credential works.
+    # The new credential works (single membership → auto-select shape).
     login = await client.post(
         "/api/v1/auth/login",
-        json={
-            "email": email,
-            "password": body["new_password"],
-            "organization_id": str(org_id),
-        },
+        json={"email": email, "password": body["new_password"]},
     )
     assert login.status_code == 200
+    assert login.json()["auto_selected_organization"]["organization_id"] == str(org_id)
 
 
 async def test_admin_cannot_assign_superuser_role(

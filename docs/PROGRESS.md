@@ -6,7 +6,7 @@
 >
 > For history of what changed when, see `CHANGELOG.md` (append-only).
 
-**Last updated:** 2026-06-12 by claude-code (Phase 6.5-c-ii frontend login + per-tab org SHIPPED — live-validated through the HTTPS proxy; OPEN CHECKPOINT: operator manual web-test, then remove the backend's transitional fallback. Also root-fixed the silent startup-logging bug behind an 11-hour dev crash-loop. Next: Dependabot PR batch, then 6.5-d)
+**Last updated:** 2026-06-12 by claude-code (Phase 6.5-c CLOSED: operator signed off all four c-ii manual web-tests; transitional fallback REMOVED — access token now carries sub+session_id only, X-Organization-Id header is the ONLY org source, login organization_id field + flat response fields gone, tests refactored 1:1 (467 green), live-validated through the HTTPS proxy. Next: Dependabot PR batch, then 6.5-d)
 
 ---
 
@@ -790,8 +790,18 @@ the header; 14 new tests, 467 total green. Same day: root-fixed the
 GPG-signing CI failure on Dependabot PRs (signing steps now
 push-only — GitHub withholds secrets from Dependabot runs by
 design); all 15 pending Dependabot PRs unblocked, PR #11 validated
-green. Next workable slice: **6.5-c-ii (frontend login + per-tab
-org state)** — removes the transitional fallback + login org field.
+green. **Phase 6.5-c-ii (frontend login + per-tab org state)
+SHIPPED 2026-06-12** (`051ee2a`) and the operator signed off all
+four manual web-tests (multi-org picker / per-tab switch / Wolf →
+Superuser dashboard / single-org straight to /chat). **6.5-c CLOSED
+same day: the transitional fallback was removed** — the access
+token now carries `sub`+`session_id` only (no org, no role claims);
+`X-Organization-Id` is the ONLY org source (absent → 401);
+`LoginRequest.organization_id` + the flat response fields are gone;
+/me derives role from the User row when header-less; logout audit
+org comes from a membership-validated header. Tests refactored off
+the legacy login path 1:1 — still 467 green. Next: the 15 Dependabot
+PRs, then **6.5-d (Organizations + Superuser-dashboard UI)**.
 Build order a → b → g → c-i → c-ii → d → e → f → h. Phase 6.5
 total estimate: 12-13 sessions.
 

@@ -49,6 +49,64 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-12 — 6.5-c CLOSED: operator sign-off + transitional fallback removed (cookie = auth only, for real)
+
+**Session type:** claude-code (operator-directed)
+**Phase:** 6.5-c closeout (ends ADR 0018 Round 3's one-release compat window)
+**Duration:** same session as 6.5-c-ii
+**Branch / commit:** main (this commit)
+
+### What we did
+
+- **Operator manual web-test checkpoint CLOSED** — all four c-ii
+  checks confirmed working: multi-org picker, per-tab org switching
+  (two tabs, two orgs), Wolf → Superuser dashboard, single-org user
+  straight to /chat. Selftest seed data (orgs `…aa`/`…bb`, user
+  `selftest@wolf.test`, both bindings) deleted from the dev DB.
+- **Transitional fallback REMOVED** (was: JWT org-claim fallback so
+  the pre-c-ii dashboard kept working for one release):
+  - `auth/local.py` — the access token now carries `sub` +
+    `session_id` + `token_type` ONLY. No `organization_id`, no
+    `role`. The cookie is authentication, period.
+  - `auth/middleware.py` — session dict no longer exposes
+    organization_id/role (nothing downstream reads them anymore).
+  - `organization/context.py` — `X-Organization-Id` is the ONLY
+    source of org context; header absent → 401 naming the header.
+  - `api/auth.py` — `LoginRequest.organization_id` gone (the legacy
+    org-at-login path with it); `LoginResponse` flat
+    `organization_id`/`role` fields gone (the three-shape fields are
+    the contract); `/me` without a header now derives `role` from
+    the User row (`superuser`/`""`), never from token claims; logout
+    scopes its audit event from a membership-validated header
+    (invalid/absent → install-level, organization_id NULL — an
+    arbitrary header can't fabricate an org-scoped audit row).
+  - `lib/types.ts` — LoginResponse mirror updated.
+- **Tests refactored off the legacy login path** (the org field in
+  login payloads + JWT-claim reliance): test_auth, test_chat_endpoint,
+  test_rbac, test_session_blacklist, test_organizations_endpoint,
+  test_bootstrap_superuser, test_org_header_context. The fallback
+  test became its inverse: header absent is 401 even after an
+  auto-selected login. Org-scoped suites now set the header as an
+  httpx client default after login (exactly what the dashboard does).
+
+### Verification
+
+- 467 backend tests green (same count — replacements were 1:1),
+  18-test isolation gate green, ruff clean, strict mypy clean
+  (59 files), dashboard production build clean.
+- Live against the restarted dev server through the HTTPS proxy:
+  login returns the auto-select shape with no flat org fields; chat
+  without the header → 401 naming `X-Organization-Id`; `/me`
+  header-less → `organization_id: null`; decoded cookie payload is
+  `sub`/`session_id`/`token_type`/`iat`/`exp` only; logout 204.
+
+### What's next
+
+- The 15 unblocked Dependabot PRs (operator-chosen order), then 6.5-d
+  (Organizations + Superuser-dashboard UI).
+
+---
+
 ## 2026-06-12 — Phase 6.5-c-ii SHIPPED: frontend login + per-tab org state (+ startup-logging fix)
 
 **Session type:** claude-code (operator-directed)

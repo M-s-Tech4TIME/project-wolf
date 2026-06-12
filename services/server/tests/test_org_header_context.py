@@ -1,4 +1,4 @@
-"""Tests for Phase 6.5-c-i — header-based org context (ADR 0018 Round 3).
+"""Tests for Phase 6.5-c — header-based org context (ADR 0018 Round 3).
 
 The cookie identifies the USER; the X-Organization-Id header names the
 ORGANIZATION per request (per-tab context). Covers:
@@ -7,8 +7,9 @@ ORGANIZATION per request (per-tab context). Covers:
     (the two-tabs-two-orgs workflow) with role following the binding
   - the header can never reach beyond memberships (403 non-member; the
     header names, membership grants)
-  - malformed header → 400; header absent → JWT-claim fallback
-    (transitional) or 401 when the session is org-less
+  - malformed header → 400; header absent → 401 (the session is
+    authentication only — it never carries an org, so there is nothing
+    to fall back to)
   - capability gates (6.5-b) compose with the header path
   - login three-shape response: superuser redirect / single-membership
     auto-select / N>1 needs_org_selection (cookie issued, org-less);
@@ -183,29 +184,33 @@ async def test_malformed_header_400(client: AsyncClient, multi_org_user: dict[st
     assert ORG_HEADER in resp.json()["detail"]
 
 
-async def test_header_absent_falls_back_to_jwt_claim(
+async def test_header_absent_401_even_after_auto_select(
     client: AsyncClient, seed_organization_and_user: dict[str, Any]
 ) -> None:
-    """Transitional (pre-6.5-c-ii dashboard): org-at-login still works."""
+    """The session NEVER carries an org (the transitional JWT-claim
+    fallback was removed with 6.5-c-ii): even a single-membership login
+    whose response auto-selected an org must send the header on every
+    org-scoped call."""
     resp = await client.post(
         "/api/v1/auth/login",
         json={
             "email": seed_organization_and_user["user_email"],
             "password": _PASSWORD,
-            "organization_id": str(seed_organization_and_user["organization_id"]),
         },
     )
     assert resp.status_code == 200
-    # No header on this request — the JWT org claim carries the context.
-    resp = await client.post("/api/v1/chat", json={})
-    assert resp.status_code not in (400, 401, 403)
+    assert resp.json()["auto_selected_organization"] is not None
+    # No header on this request — there is no fallback.
+    resp = await client.post("/api/v1/chat", json={"question": "hi"})
+    assert resp.status_code == 401
+    assert ORG_HEADER in resp.json()["detail"]
 
 
 async def test_header_absent_and_orgless_session_401(
     client: AsyncClient, multi_org_user: dict[str, Any]
 ) -> None:
-    """needs_org_selection sessions carry no org claim: org-scoped calls
-    without the header get a 401 that names the header to send."""
+    """needs_org_selection sessions carry no org context: org-scoped
+    calls without the header get a 401 that names the header to send."""
     await _login(client, multi_org_user["email"])
     resp = await client.get("/api/v1/organization/users")
     assert resp.status_code == 401
@@ -230,7 +235,6 @@ async def test_login_superuser_shape(client: AsyncClient, seed_superuser: dict[s
     body = resp.json()
     assert body["is_superuser"] is True
     assert body["redirect"] == "/superuser/dashboard"
-    assert body["organization_id"] is None
     assert body["needs_org_selection"] is False
     assert body["memberships"] is None
 
@@ -246,9 +250,6 @@ async def test_login_single_membership_auto_selects(
     assert auto is not None
     assert auto["organization_id"] == str(seed_organization_and_user["organization_id"])
     assert auto["role"] == "analyst"
-    # Legacy flat fields mirror the selection (transitional).
-    assert body["organization_id"] == auto["organization_id"]
-    assert body["role"] == "analyst"
 
 
 async def test_login_multi_membership_needs_selection(
@@ -258,8 +259,6 @@ async def test_login_multi_membership_needs_selection(
     assert resp.status_code == 200
     body = resp.json()
     assert body["needs_org_selection"] is True
-    assert body["organization_id"] is None
-    assert body["role"] is None
     listed = {m["organization_id"]: m["role"] for m in body["memberships"]}
     assert listed == {
         str(multi_org_user["alpha_id"]): "admin",

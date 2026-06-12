@@ -201,11 +201,10 @@ async def seed_superuser(db: AsyncSession) -> dict[str, Any]:
     return {"user_id": existing.id, "email": existing.email}
 
 
-async def _login(client: AsyncClient, email: str, password: str, org_id: Any = None) -> str:
-    body: dict[str, Any] = {"email": email, "password": password}
-    if org_id is not None:
-        body["organization_id"] = str(org_id)
-    resp = await client.post("/api/v1/auth/login", json=body)
+async def _login(client: AsyncClient, email: str, password: str) -> str:
+    resp = await client.post(
+        "/api/v1/auth/login", json={"email": email, "password": password}
+    )
     assert resp.status_code == 200, resp.text
     token = client.cookies.get(COOKIE)
     assert token
@@ -221,7 +220,6 @@ async def test_logout_blacklists_the_session_server_side(
         client,
         seed_organization_and_user["user_email"],
         "password123",
-        seed_organization_and_user["organization_id"],
     )
 
     assert (await client.get("/api/v1/auth/me")).status_code == 200
@@ -244,7 +242,6 @@ async def test_password_reset_revokes_all_target_sessions(
         client,
         seed_organization_and_user["user_email"],
         "password123",
-        seed_organization_and_user["organization_id"],
     )
 
     await _login(client, SUPERUSER_USERNAME, _WOLF_PASSWORD)
@@ -267,7 +264,6 @@ async def test_password_reset_revokes_all_target_sessions(
         client,
         seed_organization_and_user["user_email"],
         new_password,
-        seed_organization_and_user["organization_id"],
     )
     assert (await client.get("/api/v1/auth/me")).status_code == 200
 
@@ -284,7 +280,6 @@ async def test_force_revoke_endpoint_requires_superuser(
         client,
         seed_organization_and_user["user_email"],
         "password123",
-        seed_organization_and_user["organization_id"],
     )
     assert (await client.post(f"/api/v1/users/{target}/sessions/revoke")).status_code == 403
 
@@ -307,7 +302,6 @@ async def test_force_revoke_kills_target_sessions_and_audits(
         client,
         seed_organization_and_user["user_email"],
         "password123",
-        seed_organization_and_user["organization_id"],
     )
 
     await _login(client, SUPERUSER_USERNAME, _WOLF_PASSWORD)
@@ -339,6 +333,5 @@ async def test_force_revoke_kills_target_sessions_and_audits(
         client,
         seed_organization_and_user["user_email"],
         "password123",
-        seed_organization_and_user["organization_id"],
     )
     assert (await client.get("/api/v1/auth/me")).status_code == 200

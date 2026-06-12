@@ -10,7 +10,9 @@ Tests here verify:
   4. Logout clears the cookie.
   5. The /healthz endpoint is publicly reachable.
   6. Authenticated requests to protected routes work.
-  7. A wrong-organization request is rejected (cross-organization check).
+  7. A request naming an org the user is not a member of is rejected
+     (cross-organization check, via the X-Organization-Id header —
+     ADR 0018: login is org-less; the header names the org per request).
 """
 
 import uuid
@@ -43,13 +45,17 @@ async def test_login_success_sets_cookie(
         json={
             "email": seed_organization_and_user["user_email"],
             "password": "password123",
-            "organization_id": str(seed_organization_and_user["organization_id"]),
         },
     )
     assert resp.status_code == 200
     data = resp.json()
     assert data["email"] == seed_organization_and_user["user_email"]
-    assert data["role"] == "analyst"
+    # Single membership → the auto-select shape (ADR 0018 §login UX).
+    assert data["needs_org_selection"] is False
+    assert data["auto_selected_organization"]["role"] == "analyst"
+    assert data["auto_selected_organization"]["organization_id"] == str(
+        seed_organization_and_user["organization_id"]
+    )
     assert "wolf_access_token" in resp.cookies
 
 
@@ -64,7 +70,6 @@ async def test_login_success_writes_audit_event(
         json={
             "email": seed_organization_and_user["user_email"],
             "password": "password123",
-            "organization_id": str(seed_organization_and_user["organization_id"]),
         },
     )
 
@@ -91,7 +96,6 @@ async def test_login_wrong_password_returns_401(
         json={
             "email": seed_organization_and_user["user_email"],
             "password": "wrong-password",
-            "organization_id": str(seed_organization_and_user["organization_id"]),
         },
     )
     assert resp.status_code == 401
@@ -107,7 +111,6 @@ async def test_login_wrong_password_writes_failure_audit(
         json={
             "email": seed_organization_and_user["user_email"],
             "password": "wrong-password",
-            "organization_id": str(seed_organization_and_user["organization_id"]),
         },
     )
 
@@ -132,19 +135,23 @@ async def test_login_unknown_email_returns_401(
     assert resp.status_code == 401
 
 
-async def test_login_wrong_organization_rejected(
+async def test_wrong_organization_header_rejected(
     client: AsyncClient,
     seed_organization_and_user: dict[str, Any],
 ) -> None:
-    """User cannot log into a organization they are not a member of."""
-    other_organization_id = str(uuid.uuid4())
+    """A header naming an org the user is not a member of gets 403."""
     resp = await client.post(
         "/api/v1/auth/login",
         json={
             "email": seed_organization_and_user["user_email"],
             "password": "password123",
-            "organization_id": other_organization_id,
         },
+    )
+    assert resp.status_code == 200
+
+    resp = await client.get(
+        "/api/v1/auth/me",
+        headers={"X-Organization-Id": str(uuid.uuid4())},
     )
     assert resp.status_code == 403
 
@@ -162,7 +169,6 @@ async def test_logout_clears_cookie(
         json={
             "email": seed_organization_and_user["user_email"],
             "password": "password123",
-            "organization_id": str(seed_organization_and_user["organization_id"]),
         },
     )
     assert login_resp.status_code == 200

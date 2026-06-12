@@ -390,9 +390,11 @@ estimated**:
    among memberships, never grants. Centralized in
    `require_organization_context` (6.5-b's uniform gating meant
    ONE dependency change covered every org-scoped endpoint).
-   Transitional JWT-claim fallback when the header is absent
-   (removed with c-ii, together with login's organization_id
-   field). Login gained the ADR's three-shape response
+   Transitional JWT-claim fallback when the header was absent
+   (removed 2026-06-12 at c-ii sign-off, together with login's
+   organization_id field and the token's org/role claims — the
+   access token is now `sub`+`session_id` only).
+   Login gained the ADR's three-shape response
    (Superuser+redirect / auto-selected / needs_org_selection
    with memberships; zero-memberships → 401 contact-your-admin;
    inactive orgs excluded). New audit-recording
@@ -401,7 +403,8 @@ estimated**:
    incl. the two-tabs-two-roles workflow.
 
 5. **6.5-c-ii — Frontend login + per-tab org state** — ✅ **SHIPPED
-   2026-06-12** (pending operator manual web-test). Login form is
+   2026-06-12**, operator manual web-test signed off same day
+   (all four checks). Login form is
    email+password only; three-shape handling (Superuser →
    `/superuser/dashboard` placeholder page, real UI is 6.5-d;
    auto-selected → `/chat`; needs-selection → inline org picker in
@@ -411,9 +414,10 @@ estimated**:
    NO re-login (audit via switch-organization); auth-provider
    self-heals stale tab org (403 → clear + retry) and auto-selects
    for single-org users in fresh tabs. Live-validated end-to-end
-   through the HTTPS proxy. **Backend transitional fallback (JWT
-   org claim + login organization_id field) is removed after the
-   operator's manual sign-off.**
+   through the HTTPS proxy. **Backend transitional fallback removed
+   2026-06-12 after the operator's sign-off** — token org/role
+   claims stripped, header-absent → 401, login org field gone,
+   tests refactored 1:1 (467 green).
 
 6. **6.5-d — Organizations + Superuser-dashboard UI** — Superuser-
    only `/superuser/dashboard` route; Organizations page
