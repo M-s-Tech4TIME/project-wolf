@@ -6,6 +6,19 @@ on:
   pull_request:
     branches: [main]
 
+# Self-hosted CI (2026-06-12): all jobs run on the org's self-hosted
+# runner (wolf-dev-runner) — GitHub-hosted minutes for this private
+# repo are billed and the quota ran out. Two job classes:
+#   1. Pure build/test jobs run bare on the runner. They install
+#      nothing outside the workspace / tool cache / $RUNNER_TEMP.
+#   2. Anything that mutates a host (apt installs, .deb installs,
+#      systemd units) or binds ports the runner host already uses
+#      (5432 system pg17, 7860 dev wolf-server, 17860 dev
+#      wolf-database) runs inside a throwaway job container.
+# Runner host prerequisites: docker (runner user in the docker
+# group), git, internet egress. Everything else is provisioned
+# per-job.
+#
 # Node 20 is being removed from GHA runners on 2026-09-16 +
 # JavaScript actions are being forced to Node 24 on 2026-06-16.
 # Opt in early so the Node 20 deprecation warnings clear AND we
@@ -15,11 +28,17 @@ on:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
+# One runner executes jobs serially — don't let an obsolete run
+# hold the queue when a newer push supersedes it.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
 
   lint:
     name: Lint (ruff)
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v5
@@ -32,7 +51,7 @@ jobs:
 
   typecheck:
     name: Type-check (mypy strict)
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v5
@@ -71,7 +90,7 @@ jobs:
 
   test:
     name: Test (pytest)
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     # No Postgres service container — unit tests use SQLite
     # (conftest.py handles the dialect switch). Real-Postgres
     # behaviour is exercised by smoke-mtls / smoke-database /
@@ -133,7 +152,7 @@ jobs:
   # resolve the CVE.
   dep-audit:
     name: Dependency vulnerability scan (pip-audit)
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v5
@@ -196,7 +215,7 @@ jobs:
   # license clause.
   secrets-scan:
     name: Secrets scan (gitleaks)
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v6
         with:
@@ -207,19 +226,21 @@ jobs:
       - name: Install gitleaks CLI
         env:
           GITLEAKS_VERSION: "8.21.2"
+        # Lands in the per-job temp dir, NOT /usr/local/bin — the
+        # self-hosted runner has no passwordless sudo and nothing
+        # may be installed onto the host.
         run: |
           curl -sSLf \
             "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
-            | tar -xz -C /tmp gitleaks
-          sudo mv /tmp/gitleaks /usr/local/bin/
-          gitleaks version
+            | tar -xz -C "$RUNNER_TEMP" gitleaks
+          "$RUNNER_TEMP/gitleaks" version
       - name: Run gitleaks detect
         # `detect` scans the full git history (vs `protect` which
         # only scans uncommitted changes). --redact masks any
         # found secrets in the log so they aren't echoed.
         # --exit-code 1 ensures the job fails on findings.
         run: |
-          gitleaks detect \
+          "$RUNNER_TEMP/gitleaks" detect \
             --source . \
             --config .gitleaks.toml \
             --verbose \
@@ -234,7 +255,7 @@ jobs:
   # Phase 5.0c-l close-out gap caught by the 2026-06-05 CI audit.
   frontend:
     name: Frontend (tsc + eslint + build)
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     defaults:
       run:
         working-directory: services/dashboard
@@ -275,7 +296,13 @@ jobs:
   #      SQLite test compatibility
   alembic-check:
     name: Alembic migrations match models
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
+    # Job container so the postgres service publishes NO host port —
+    # the runner host already has live Postgres on 5432 (system
+    # pg17) and 17860 (dev wolf-database). Inside the job's docker
+    # network the service is reachable by its service name.
+    container:
+      image: python:3.13-bookworm
     services:
       postgres:
         image: pgvector/pgvector:pg17
@@ -283,15 +310,13 @@ jobs:
           POSTGRES_USER: wolf
           POSTGRES_PASSWORD: wolf_test
           POSTGRES_DB: wolf_test
-        ports:
-          - 5432:5432
         options: >-
           --health-cmd="pg_isready -U wolf -d wolf_test"
           --health-interval=5s
           --health-timeout=5s
           --health-retries=10
     env:
-      DATABASE_URL: postgresql+asyncpg://wolf:wolf_test@localhost:5432/wolf_test
+      DATABASE_URL: postgresql+asyncpg://wolf:wolf_test@postgres:5432/wolf_test
     steps:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v5
@@ -303,11 +328,17 @@ jobs:
         run: uv run --package wolf-server alembic -c services/server/alembic.ini upgrade head
       - name: Verify models match migrations
         run: uv run --package wolf-server alembic -c services/server/alembic.ini check
+      - name: Restore workspace ownership for the host runner
+        # Container steps ran as root on a bind-mounted workspace
+        # owned by the runner user (uid 1000); root-owned leftovers
+        # would break the next job's checkout cleanup.
+        if: always()
+        run: chown -R 1000:1000 "$GITHUB_WORKSPACE"
 
   # Verify no execute tools can be imported from wolf-server
   safety-check:
     name: Safety check (no execute tools in wolf-server)
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v6
       - name: Check execute tools are absent from wolf-server
@@ -322,7 +353,7 @@ jobs:
   # Prove at least one local model path exists (no paid dependency required)
   local-model-check:
     name: Verify local model path exists
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v6
       - name: Check Ollama adapter exists
@@ -338,7 +369,12 @@ jobs:
   # tests can't reach because they don't go through a real TLS handshake.
   smoke-mtls:
     name: mTLS smoke (Phase 5.6-e)
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
+    # Job container: wolf-server binds :7860 INSIDE the container —
+    # the runner host's dev wolf-server already owns host :7860.
+    # Postgres service publishes no host port (see alembic-check).
+    container:
+      image: python:3.13-bookworm
     services:
       postgres:
         image: pgvector/pgvector:pg17
@@ -346,15 +382,13 @@ jobs:
           POSTGRES_USER: wolf
           POSTGRES_PASSWORD: wolf_test
           POSTGRES_DB: wolf_test
-        ports:
-          - 5432:5432
         options: >-
           --health-cmd="pg_isready -U wolf -d wolf_test"
           --health-interval=5s
           --health-timeout=5s
           --health-retries=10
     env:
-      DATABASE_URL: postgresql+asyncpg://wolf:wolf_test@localhost:5432/wolf_test
+      DATABASE_URL: postgresql+asyncpg://wolf:wolf_test@postgres:5432/wolf_test
       SECRET_KEY: test-secret-key-exactly-32-chars!!
       ENVIRONMENT: test
       SECRETS_BACKEND: file
@@ -410,27 +444,40 @@ jobs:
         run: |
           echo "=== /tmp/wolf-server.log ==="
           cat /tmp/wolf-server.log || true
+      - name: Restore workspace ownership for the host runner
+        if: always()
+        run: chown -R 1000:1000 "$GITHUB_WORKSPACE"
 
 # Phase 5.8-d: validation gate for the systemd unit files + shim
   # scripts + install.sh. No real services start; this is purely
   # syntactic + presence-of-fail-loud-branches validation. Catches
   # regressions in unit-file syntax, shim shell logic, and the
   # install.sh CLI surface.
-  # Phase 5.9-e: build all four wolf-*.deb on a clean ubuntu-latest
-  # runner. Catches build-time issues across the per-component
-  # debian/ artifacts authored in 5.9-a/b/c/d that the per-slice
-  # static checks (bash -n, syntax-only validation) can't reach.
-  # Runs natively on the runner (vs Docker-in-Docker) — faster, no
-  # nested-container quirks.
+  # Phase 5.9-e: build all four wolf-*.deb on a clean runner.
+  # Catches build-time issues across the per-component debian/
+  # artifacts authored in 5.9-a/b/c/d that the per-slice static
+  # checks (bash -n, syntax-only validation) can't reach.
+  # Self-hosted (2026-06-12): runs in a throwaway ubuntu:24.04 job
+  # container so build-deps never land on the runner host.
   smoke-deb:
     name: .deb packaging smoke (Phase 5.9-e)
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
+    container:
+      image: ubuntu:24.04
     steps:
+      - name: Bootstrap job container
+        # Stock ubuntu:24.04 lacks the basics GitHub's hosted image
+        # preinstalled; the existing steps below assume them (and
+        # use sudo, which is a no-op wrapper for root here).
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            sudo curl ca-certificates git gnupg lsb-release zstd
       - uses: actions/checkout@v6
       - name: Install Python 3.13
-        # ubuntu-latest (noble) ships python3.12 in apt. wolf-* packages
-        # have requires-python = ">=3.13"; pip wheel refuses to build
-        # them against 3.12. setup-python action installs 3.13 cleanly
+        # noble ships python3.12 in apt. wolf-* packages have
+        # requires-python = ">=3.13"; pip wheel refuses to build
+        # them against 3.12. setup-python installs 3.13 cleanly
         # via the runner's tool cache.
         uses: actions/setup-python@v6
         with:
@@ -492,6 +539,10 @@ jobs:
         # not a PR concern: PR runs still build + smoke all four
         # .debs; the sign + verify steps run on push, where the
         # hard FAIL-if-unset check keeps Gap 1 enforced.
+        #
+        # The key lives only in this job container, which is
+        # discarded when the job ends — nothing persists on the
+        # self-hosted runner host.
         if: github.event_name == 'push'
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
@@ -545,13 +596,20 @@ jobs:
         # signed .debs + their .asc signatures and `apt install
         # ./wolf-*.deb` locally to spot-check. Verify the signature
         # first via `gpg --verify wolf-*.deb.asc wolf-*.deb`.
+        #
+        # retention-days 1 (was 14): artifact storage on a private
+        # repo counts against the billed storage quota — long
+        # retention of ~100MB-per-run artifacts is exactly the kind
+        # of spend that froze Actions on 2026-06-12. smoke-deb-install
+        # consumes the artifact within the same run; reviewers can
+        # re-run the job if they need a fresh copy.
         uses: actions/upload-artifact@v7
         with:
           name: wolf-debs
           path: |
             packaging/build/debs/wolf*.deb
             packaging/build/debs/wolf*.deb.asc
-          retention-days: 14
+          retention-days: 1
       - name: Dump build log on failure
         if: failure()
         run: |
@@ -559,25 +617,42 @@ jobs:
           ls -la ../
           echo "=== debian/files (if exists) ==="
           cat debian/files 2>/dev/null || echo "(no debian/files — build didn't reach package stage)"
+      - name: Restore workspace ownership for the host runner
+        # Also clears dpkg-buildpackage's side-products from the
+        # workspace parent (a bind-mount of the runner's _work dir).
+        if: always()
+        run: |
+          rm -f ../wolf*.deb ../wolf*.changes ../wolf*.buildinfo
+          chown -R 1000:1000 "$GITHUB_WORKSPACE"
 
   # docs/17 Gap 9 — real .deb install verification.
   #
-  # smoke-deb BUILDS the .debs. This job INSTALLS them on a clean
-  # ubuntu-latest runner + verifies the postinst worked (users +
-  # group + FHS dirs + shims + systemd units registered). Catches
-  # the class of failure where the .deb builds but the postinst
-  # silently broke (e.g., a venv that resolves at build time but
-  # fails at install time, a missing dh_installsystemd snippet, a
-  # shim with the wrong shebang).
+  # smoke-deb BUILDS the .debs. This job INSTALLS them in a clean,
+  # throwaway ubuntu:24.04 container + verifies the postinst worked
+  # (users + group + FHS dirs + shims + systemd units on disk).
+  # Catches the class of failure where the .deb builds but the
+  # postinst silently broke (e.g., a venv that resolves at build
+  # time but fails at install time, a missing dh_installsystemd
+  # snippet, a shim with the wrong shebang).
   #
   # Doesn't start the services — that needs wolf-database init +
   # /etc/wolf-server/env provisioning, which is operator-driven.
-  # Just confirms the .debs land on disk + systemd recognises them.
+  # Just confirms the .debs land on disk + the units parse.
   smoke-deb-install:
     name: .deb install verification (Phase 5.9 / Gap 9)
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
+    container:
+      image: ubuntu:24.04
     needs: smoke-deb
     steps:
+      - name: Bootstrap job container
+        # systemd here is NOT booted (no PID-1 systemd in a job
+        # container) — it provides systemd-analyze for offline
+        # unit-file verification below.
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            sudo curl ca-certificates git gnupg lsb-release zstd systemd
       - uses: actions/checkout@v6
       - name: Download .debs from smoke-deb
         uses: actions/download-artifact@v8
@@ -691,44 +766,64 @@ jobs:
           /usr/bin/wolf-database --help 2>&1 | head -5
           /usr/bin/wolf-cert --help 2>&1 | head -5
           echo "OK: shims executable + CLIs respond"
-      - name: Verify systemd units are loaded
-        # Don't start them (needs operator-driven init); just
-        # confirm systemd recognises the units so they could be
-        # started.
+      - name: Verify systemd units are installed + parseable
+        # The job container has no booted systemd, so `systemctl
+        # cat` (which needs the manager) is unavailable. The KEY
+        # signal is unchanged from the hosted-runner version: unit
+        # file on disk + parseable — systemd-analyze verify checks
+        # both offline. (postinst doesn't auto-enable; the operator
+        # does that after env-file provisioning.)
         run: |
           for unit in wolf-database wolf-server wolf-dashboard; do
-              systemctl status "$unit" --no-pager 2>&1 | head -3 || true
-              # `is-enabled` returns "disabled" for fresh installs
-              # (postinst doesn't auto-enable; operator does that
-              # after env-file provisioning). The KEY signal is
-              # exit code 0 from `cat` — file is on disk + parseable.
-              systemctl cat "$unit" >/dev/null 2>&1 \
-                  || { echo "FAIL: systemctl can't load $unit unit"; exit 1; }
+              path="/usr/lib/systemd/system/${unit}.service"
+              test -f "$path" \
+                  || { echo "FAIL: $path missing"; exit 1; }
+              systemd-analyze verify --man=no "$path" \
+                  || { echo "FAIL: ${unit}.service does not parse"; exit 1; }
           done
-          echo "OK: all 3 systemd units loaded + parseable"
+          echo "OK: all 3 systemd units installed + parseable"
       - name: Smoke summary
         run: |
           echo "=== smoke-deb-install: PASS ==="
-          echo "wolf-* packages installed cleanly on ubuntu-latest"
+          echo "wolf-* packages installed cleanly in a throwaway ubuntu:24.04 container"
           echo "users / group / FHS dirs / venvs / shims / systemd units all verified"
+      - name: Restore workspace ownership for the host runner
+        if: always()
+        run: chown -R 1000:1000 "$GITHUB_WORKSPACE"
 
   smoke-systemd:
     name: systemd + shims smoke (Phase 5.8-d)
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
+    # Job container: `make install-user-systemd` writes wolf-*.service
+    # into ~/.config/systemd/user/ — on the bare runner host those
+    # are the LIVE dev units. Inside the container, $HOME is /root
+    # and disposable. systemd (the package) provides systemd-analyze
+    # for offline verification; nodejs/npm satisfy the @NODE_BIN@
+    # substitution the install target does.
+    container:
+      image: ubuntu:24.04
     steps:
+      - name: Bootstrap job container
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            sudo curl ca-certificates git zstd make systemd nodejs npm
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.13"
       - name: Install dependencies (for the workspace + npm path)
         # `make install-user-systemd` needs `npm` on PATH to
-        # substitute @NODE_BIN@. GHA ubuntu-latest preinstalls
-        # node + npm; this step's `command -v npm` smoke confirms.
+        # substitute @NODE_BIN@. The bootstrap step installed it;
+        # this `command -v npm` smoke confirms.
         run: |
           uv sync --all-packages
           command -v npm
       - name: Run smoke-systemd
         run: make smoke-systemd
+      - name: Restore workspace ownership for the host runner
+        if: always()
+        run: chown -R 1000:1000 "$GITHUB_WORKSPACE"
 
   # Phase 5.7-d: end-to-end smoke for wolf-database (the bundled
   # Postgres component). Installs postgresql-17 + postgresql-17-pgvector
@@ -739,15 +834,25 @@ jobs:
   # mocked subprocess can't reach.
   smoke-database:
     name: wolf-database smoke (Phase 5.7-d)
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
+    # Job container: the smoke runs a real Postgres on :17860 — the
+    # runner host's dev wolf-database already owns host :17860 (and
+    # system pg17 owns :5432), so the whole lifecycle stays inside
+    # the container.
+    container:
+      image: ubuntu:24.04
     steps:
+      - name: Bootstrap job container
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            sudo curl ca-certificates git gnupg lsb-release zstd make
       - uses: actions/checkout@v6
-      - uses: astral-sh/setup-uv@v5
-        with:
-          python-version: "3.13"
       - name: Add PostgreSQL APT repo + install postgresql-17 + pgvector
         # Ubuntu 24.04's default repos ship Postgres 16; we need 17
-        # to match the version wolf-database enforces.
+        # to match the version wolf-database enforces. (No systemd in
+        # the job container, so unlike the hosted runner there's no
+        # auto-started system Postgres to stop.)
         run: |
           sudo install -d /usr/share/postgresql-common/pgdg
           sudo curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
@@ -757,11 +862,20 @@ jobs:
               sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt update
           sudo apt install -y postgresql-17 postgresql-17-pgvector
-          # Stop the system Postgres unit Debian/Ubuntu auto-starts
-          # post-install; we don't want it fighting wolf-database for
-          # port 5432 (though the smoke uses 17860 anyway).
-          sudo systemctl stop postgresql || true
-      - name: Install Python deps
-        run: uv sync --all-packages
-      - name: Run wolf-database lifecycle smoke
-        run: make smoke-database
+      - name: Install uv (shared location, usable by the non-root user)
+        # Not setup-uv: that installs into root's $HOME, which the
+        # non-root smoke user below can't read.
+        run: curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
+      - name: Run wolf-database lifecycle smoke (as non-root)
+        # Postgres refuses initdb/start as root. The job container
+        # runs as root, so hand the smoke to the image's stock
+        # `ubuntu` user — uid 1000, which also matches the runner
+        # user on the host, so the bind-mounted workspace ends up
+        # with the right ownership for the next job's checkout.
+        run: |
+          chown -R ubuntu:ubuntu "$GITHUB_WORKSPACE"
+          runuser -u ubuntu -- env HOME=/home/ubuntu "PATH=$PATH" \
+            bash -c "cd '$GITHUB_WORKSPACE' && uv sync --all-packages && make smoke-database"
+      - name: Restore workspace ownership for the host runner
+        if: always()
+        run: chown -R 1000:1000 "$GITHUB_WORKSPACE"

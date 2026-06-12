@@ -30,8 +30,24 @@ permissions:
 jobs:
   release:
     name: Build, sign, and publish release
-    runs-on: ubuntu-latest
+    # Self-hosted (2026-06-12): runs in a throwaway ubuntu:24.04 job
+    # container on the org's self-hosted runner — same split as
+    # ci.yml's smoke-deb. Build-deps and the imported GPG signing
+    # key live only in the container, which is discarded after the
+    # job; nothing lands on the runner host.
+    runs-on: self-hosted
+    container:
+      image: ubuntu:24.04
     steps:
+      - name: Bootstrap job container
+        # Stock ubuntu:24.04 lacks the basics GitHub's hosted image
+        # preinstalled (sudo is a no-op wrapper for root here).
+        # dpkg-dev provides dpkg-parsechangelog for the version
+        # check below, before the full build-deps install.
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            sudo curl ca-certificates git gnupg lsb-release zstd dpkg-dev
       - uses: actions/checkout@v6
         with:
           # The tag's commit is what we ship — not an arbitrary
@@ -185,3 +201,13 @@ jobs:
           ls -la packaging/build/debs/ 2>&1 || true
           echo "=== debian/changelog head ==="
           head -5 debian/changelog || true
+
+      - name: Restore workspace ownership for the host runner
+        # Container steps ran as root on a bind-mounted workspace
+        # owned by the runner user (uid 1000); root-owned leftovers
+        # would break the next job's checkout cleanup. Also clears
+        # dpkg-buildpackage's side-products from the workspace parent.
+        if: always()
+        run: |
+          rm -f ../wolf*.deb ../wolf*.changes ../wolf*.buildinfo
+          chown -R 1000:1000 "$GITHUB_WORKSPACE"
