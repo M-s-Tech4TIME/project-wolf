@@ -545,7 +545,7 @@ jobs:
         # signed .debs + their .asc signatures and `apt install
         # ./wolf-*.deb` locally to spot-check. Verify the signature
         # first via `gpg --verify wolf-*.deb.asc wolf-*.deb`.
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: wolf-debs
           path: |
