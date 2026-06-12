@@ -432,7 +432,7 @@ jobs:
         # have requires-python = ">=3.13"; pip wheel refuses to build
         # them against 3.12. setup-python action installs 3.13 cleanly
         # via the runner's tool cache.
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.13"
       - name: Add PostgreSQL APT repo
