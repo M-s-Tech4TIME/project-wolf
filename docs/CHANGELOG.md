@@ -49,6 +49,72 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-13 — Repo PUBLIC + hardened; Dependabot batch closed 15/15; vuln alerts triaged
+
+**Session type:** mixed (operator flipped visibility + 2FA; claude-code everything else)
+**Phase:** between 6.5-c and 6.5-d (infra/security interlude)
+**Duration:** ~half session (spanning 06-12 → 06-13)
+**Branch / commit:** main (this commit)
+
+### What we did
+- **GitHub Actions billing outage resolved by going public.** Hosted minutes
+  for the private repo hit the billed quota (all jobs failed at zero steps:
+  "recent account payments have failed or your spending limit needs to be
+  increased"). Operator chose public over self-hosted; a fully-built
+  self-hosted migration (runner `wolf-dev-runner` + containerized job
+  layout, PR #17) was reverted end-to-end on request: PR closed unmerged,
+  branch deleted, runner deregistered, `~/actions-runner` removed, main
+  untouched throughout (verified `git diff origin/main -- .github/ == 0`,
+  467/467 green).
+- **Pre-publication audit before the flip:** gitleaks over all 236 commits —
+  no leaks; no tracked `.env`/keys; LICENSE is Apache-2.0; lab-LAN IPs in
+  docs noted as cosmetic only.
+- **Hardening applied (API-verified):** rulesets `protect-main` (no
+  force-push/deletion, no bypass) + `protect-release-tags` (`v*` create/
+  move/delete = repo admins only); workflow token read-only; Actions can't
+  approve PRs; fork-PR workflows need approval for ALL external
+  contributors; secret scanning + push protection; Dependabot alerts +
+  security updates; private vulnerability reporting. Operator enabled
+  org-wide 2FA.
+- **Dependabot batch closed 15/15:** main rerun green; #14 pydantic
+  ≥2.13.4 and #15 sqlalchemy ≥2.0.50 merged green (squash). Final tally:
+  13 merged, #9 eslint-10 deferred (ignore-major, upstream
+  eslint-config-next crash), #10 superseded by #16.
+- **Fixed what Dependabot left behind:** its four "requirement update" PRs
+  (#11 python-jose, #12 uvicorn, #14 pydantic, #15 sqlalchemy) were
+  lock-only — manifest floors never landed, `uv lock --check` failed.
+  Applied all four floors to services/server/pyproject.toml + re-lock
+  (33f11f9, 467/467 green).
+- **First Dependabot alerts triaged (3):** postcss XSS (medium) FIXED via
+  scoped npm override lifting next's pinned 8.4.31 → 8.5.15 (bfd7eb5;
+  tsc/eslint/build green). ecdsa Minerva (high) dismissed `not_used` —
+  Wolf JWTs are HS256-only, ecdsa is an unused python-jose transitive, no
+  patched version exists. torch jit.script (low) dismissed
+  `tolerable_risk` — no untrusted-TorchScript path, no patched version;
+  revisit when one ships.
+
+### What we decided
+- Public + hosted runners over private + self-hosted (operator decision;
+  self-hosted work fully reversed, not merged).
+- Long-term tracked idea: migrate python-jose → PyJWT to drop the ecdsa
+  subtree entirely (recorded in alert #2's dismissal comment).
+
+### What broke / what we discovered
+- Dependabot uv "requirement update" PRs edit ONLY uv.lock (requires-dist
+  inside the lock) without touching pyproject — silent manifest/lock drift
+  that CI masks because `uv sync` re-locks quietly. `uv lock --check`
+  catches it; worth keeping in mind for future Dependabot merges.
+- A background graphify rebuild (branch-switch hook) twice regenerated
+  uv.lock requires-dist lines from a stale checkout — discarded both times
+  in favour of origin.
+- `gh run rerun` after the visibility flip confirmed billing was the only
+  redness: same SHAs, all green.
+
+### What's next
+- Slice 6.5-d: Organizations + Superuser-dashboard UI (then e, f, h).
+
+---
+
 ## 2026-06-12 — 6.5-c CLOSED: operator sign-off + transitional fallback removed (cookie = auth only, for real)
 
 **Session type:** claude-code (operator-directed)

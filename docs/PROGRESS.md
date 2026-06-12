@@ -6,7 +6,7 @@
 >
 > For history of what changed when, see `CHANGELOG.md` (append-only).
 
-**Last updated:** 2026-06-12 by claude-code (Phase 6.5-c CLOSED: operator signed off all four c-ii manual web-tests; transitional fallback REMOVED — access token now carries sub+session_id only, X-Organization-Id header is the ONLY org source, login organization_id field + flat response fields gone, tests refactored 1:1 (467 green), live-validated through the HTTPS proxy. Next: Dependabot PR batch, then 6.5-d)
+**Last updated:** 2026-06-13 by claude-code (Repo is now PUBLIC + hardened — operator flipped visibility to resolve the Actions billing outage; rulesets on main + v* tags, read-only workflow token, fork-PR approval for all external contributors, secret scanning + push protection, Dependabot alerts/updates, private vuln reporting, org-wide 2FA. Dependabot batch CLOSED 15/15 (13 merged, #9 deferred ignore-major, #10 superseded); manifest floors from the four lock-only requirement PRs landed by hand (uv lock --check clean, 467 green); first 3 vuln alerts triaged (postcss FIXED via npm override, ecdsa + torch dismissed with documented reasons — no patched versions exist). Next: 6.5-d)
 
 ---
 
