@@ -21,3 +21,6 @@
 - [Wolf colour palette](wolf-color-palette.md) — Slice 5.0c-c source of truth: Platinum / Dusk Blue / Steel Blue / Icy Blue; supersedes wolf-color-palette-outlook.png
 - [wolf-pack (Phase 12)](wolf-pack.md) — bidirectional native daemon on every Wazuh host: ships rules/decoders/SCA/vuln/inventory INTO Wolf + executes propose-approved actions OUTBOUND. Renamed from wolf-knowledge-relay per ADR 0017 (ACCEPTED 2026-06-11); detailed design in future ADR ~0023
 - [Conversation tree persistence plan](conversation-tree-persistence-plan.md) — for the DB-storage phase: schema + atomic version-add + no path flattening + round-trip test; captured 2026-06-02 alongside Slice 5.0c-l v4.1
+- [Repo public + hosted CI](repo-public-hosted-ci.md) — PUBLIC since 2026-06-12 by operator decision (billing); self-hosted CI fully reversed, don't re-propose; hardening list inside
+- [Dependabot uv lock-only PRs](dependabot-uv-lock-only-prs.md) — uv "requirement update" PRs skip pyproject; run `uv lock --check` after merging, land floors by hand
+- [Memory mirrored into repo](memory-mirrored-into-repo.md) — STANDING RULE (2026-06-13): every memory lives in BOTH ~/.claude memory dir AND in-repo memory/, kept byte-identical; repo copy git-tracked, never gitignored
