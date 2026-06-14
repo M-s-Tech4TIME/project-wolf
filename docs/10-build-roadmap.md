@@ -434,9 +434,23 @@ estimated**:
    backend tests (471 total green), mypy --strict clean, frontend gate
    green, live-smoked through the HTTPS proxy.
 
-7. **6.5-e — User management UI (per-org)** — Org-Admin-only
-   Users page within each org; role assignment dropdowns; audit-
-   event display for role changes.
+7. **6.5-e — User management UI (per-org)** — ✅ **SHIPPED
+   2026-06-14**, operator manual web-test signed off same day (all
+   seven checks). Admin-only `/settings` area (guard layout) reached
+   from the chat-header Settings gear; Users page lists members
+   (name/email/role/member-since/status) with an inline role dropdown
+   (`PATCH /role`), add-member dialog (one-time password for brand-new
+   accounts), remove with confirm, and a "Recent member changes" panel
+   filtering the org audit to `organization.member.*`. Backend was
+   already complete (6.5-b); the Last-Admin 409 guard surfaces in the
+   UI. Frontend-only — no `services/` change. Frontend gate green,
+   live-smoked through the proxy.
+   - **Follow-on (operator-raised 2026-06-14): 6.5-e.1 — password
+     recovery.** Admins/Superuser rotate a user's password (one-time
+     password, share out-of-band) since there is no SMTP/self-service
+     reset. Org-Admin reset is a new endpoint; Superuser reset backend
+     already exists (`POST /api/v1/users/{id}/password-reset`). See
+     CHANGELOG.
 
 8. **6.5-f — Superuser-membership-grant flow + UI** — backend
    Superuser-request → Admin-approve/reject → time-limited

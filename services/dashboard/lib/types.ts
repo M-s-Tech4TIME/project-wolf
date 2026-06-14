@@ -105,6 +105,58 @@ export type InstallAuditPage = {
   offset: number;
 };
 
+// ── Per-org user management (Phase 6.5-e) ──────────────────────────────────
+// Mirror services/server/wolf_server/api/org_management.py. All org-scoped
+// (the active-org header rides on every call).
+
+/** Roles an org Admin may assign (backend ASSIGNABLE_ROLES). "superuser" is
+ *  deliberately absent — it goes through the consent-gate endpoints. */
+export const ORG_ROLES = ["admin", "engineer", "responder", "analyst"] as const;
+export type OrgRole = (typeof ORG_ROLES)[number];
+
+export type Member = {
+  user_id: string;
+  email: string;
+  display_name: string;
+  role: string;
+  is_active: boolean;
+  member_since: string;
+};
+
+export type MemberCreate = {
+  email: string;
+  display_name: string;
+  role: string;
+};
+
+/** POST /organization/users response — extends Member with a one-time
+ *  password set only when a brand-new account was created. */
+export type MemberCreateResponse = Member & {
+  new_password: string | null;
+};
+
+export type RoleChange = {
+  role: string;
+};
+
+/** One row of the org's own audit trail (no org-name column — it's
+ *  implicitly the active org). */
+export type OrgAuditEvent = {
+  id: string;
+  event_type: string;
+  event_data: Record<string, unknown> | null;
+  user_id: string | null;
+  source_ip: string | null;
+  related_event_id: string | null;
+  created_at: string;
+};
+
+export type OrgAuditPage = {
+  events: OrgAuditEvent[];
+  limit: number;
+  offset: number;
+};
+
 export type Citation = {
   tool: string;
   query: Record<string, unknown>;

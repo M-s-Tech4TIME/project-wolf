@@ -49,6 +49,48 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-14 — 6.5-e SHIPPED: per-org User management UI
+
+**Session type:** claude-code (operator-directed; plan-mode approved)
+**Phase:** 6.5-e
+**Branch / commit:** main (this commit)
+
+### What we did
+- **Frontend-only slice** — the backend (member list/add/role-change/remove,
+  Last-Admin 409 guard, `organization.member.*` audit events) was already
+  complete from 6.5-b.
+- New Admin-only `/settings` area: `app/settings/layout.tsx` (guard — no
+  session → /login, `role !== "admin"` → /chat) + `app/settings/users/page.tsx`.
+- Users page: members table (name + "(you)", email, role, member-since,
+  status badge); inline **role dropdown** (reuses `DropdownMenuRadioGroup`) →
+  `PATCH /role`; **add-member** dialog (one-time password shown once for
+  brand-new accounts, copy button); **remove** via `ConfirmDialog`; **"Recent
+  member changes"** panel filtering `GET /organization/audit` to
+  `organization.member.*`. Backend 409s (last-admin / fixed Superuser role)
+  surface as banners.
+- `components/chat-header.tsx`: Admin-only "Users" item in the Settings gear →
+  `/settings/users`. `lib/types.ts` + `lib/api.ts` extended (member types +
+  `ORG_ROLES`; `listMembers`/`createMember`/`changeMemberRole`/`removeMember`/
+  `fetchOrgAudit`). No new UI primitives.
+
+### What broke / what we discovered
+- `npm run build` while `wolf-dashboard.service` (next dev) is up disturbs the
+  live dev cache (proxy → 000) — same class as the earlier `rm -rf .next`
+  incident, now both captured in memory `next-dev-cache-vs-build`. Also found
+  `wolf-server.service` had independently stopped; restarted both.
+- Frontend gate green (tsc, eslint 0 warnings, build); live smoke:
+  `GET /api/v1/organization/users` unauth → 401, `/settings/users` → 200.
+
+### What's next
+- **6.5-e.1 — password recovery (operator-raised):** add an Org-Admin
+  `POST /api/v1/organization/users/{id}/password-reset` (Admin-gated, generates
+  + returns a one-time password, revokes the target's sessions, audits) plus a
+  "Reset password" action on the Users page. The Superuser reset backend
+  already exists; a Superuser reset UI has an ADR-0018 consent-gate tension
+  (the Superuser may not list org members) — design separately. Then 6.5-f.
+
+---
+
 ## 2026-06-14 — 6.5-d SHIPPED: Organizations + Superuser-dashboard UI
 
 **Session type:** claude-code (operator-directed; plan-mode approved)

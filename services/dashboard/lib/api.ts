@@ -19,12 +19,16 @@ import type {
   LoginRequest,
   LoginResponse,
   LoopEvent,
+  Member,
+  MemberCreate,
+  MemberCreateResponse,
   MembershipInfo,
   MeResponse,
   Organization,
   OrganizationCreate,
   OrganizationMembership,
   OrganizationUpdate,
+  OrgAuditPage,
   RecoveryAdminRequest,
   RecoveryAdminResponse,
 } from "./types";
@@ -262,4 +266,60 @@ export function fetchInstallAudit(
     offset: String(offset),
   });
   return apiFetch(`/api/v1/superuser/audit?${qs}`).then(unwrap<InstallAuditPage>);
+}
+
+// ── Per-org user management (Phase 6.5-e) ──────────────────────────────────
+// Org-scoped routes gated by USERS_MANAGE (Admin). The active-org header is
+// sent automatically by apiFetch — these act on the caller's current org.
+
+export function listMembers(): Promise<Member[]> {
+  return apiFetch("/api/v1/organization/users").then(unwrap<Member[]>);
+}
+
+/** Add a member. If the email is a brand-new account, the response carries a
+ *  one-time `new_password`; otherwise an existing user is added at `role`. */
+export function createMember(body: MemberCreate): Promise<MemberCreateResponse> {
+  return apiFetch("/api/v1/organization/users", {
+    method: "POST",
+    body: JSON.stringify(body),
+  }).then(unwrap<MemberCreateResponse>);
+}
+
+/** Change a member's role. Throws ApiError(409) if it would leave the org
+ *  without an active Admin, or for the Superuser's fixed role. */
+export function changeMemberRole(
+  userId: string,
+  role: string,
+): Promise<Member> {
+  return apiFetch(`/api/v1/organization/users/${userId}/role`, {
+    method: "PATCH",
+    body: JSON.stringify({ role }),
+  }).then(unwrap<Member>);
+}
+
+/** Remove a member from the org. Throws ApiError(409) on the last-Admin guard. */
+export async function removeMember(userId: string): Promise<void> {
+  const resp = await apiFetch(`/api/v1/organization/users/${userId}`, {
+    method: "DELETE",
+  });
+  if (!resp.ok) {
+    let detail = resp.statusText;
+    try {
+      const body = await resp.json();
+      if (body && typeof body === "object" && "detail" in body) {
+        detail = String((body as { detail: unknown }).detail);
+      }
+    } catch {
+      /* keep statusText */
+    }
+    throw new ApiError(resp.status, detail);
+  }
+}
+
+export function fetchOrgAudit(limit = 50, offset = 0): Promise<OrgAuditPage> {
+  const qs = new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset),
+  });
+  return apiFetch(`/api/v1/organization/audit?${qs}`).then(unwrap<OrgAuditPage>);
 }

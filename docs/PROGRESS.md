@@ -6,7 +6,7 @@
 >
 > For history of what changed when, see `CHANGELOG.md` (append-only).
 
-**Last updated:** 2026-06-14 by claude-code (6.5-d SHIPPED — Organizations + Superuser-dashboard UI, operator web-test signed off all four checks. Guarded /superuser shell (Dashboard·Organizations·Audit); Organizations CRUD (create/rename/soft-delete); per-org first-Admin seeding via break-glass recovery (one-time password, 409-aware, consent gate held — no member listing); install-wide audit view backed by new Superuser-only GET /api/v1/superuser/audit. Org-less rows labelled "System" (matches AuditEvent model wording), distinct from the install-wide VIEW scope and the install-level Superuser identity. 471 backend tests + 18 isolation + mypy strict green; frontend gate green; live-smoked via proxy. Next: 6.5-e per-org User management UI)
+**Last updated:** 2026-06-14 by claude-code (6.5-e SHIPPED — per-org User management UI, operator web-test signed off all seven checks. Frontend-only (backend was complete in 6.5-b): Admin-only /settings area reached from the chat-header Settings gear; Users page lists members with inline role dropdown, add-member dialog (one-time password for new accounts), remove-with-confirm, and a "Recent member changes" audit panel; Last-Admin 409 guard surfaces in the UI. Frontend gate green; live-smoked via proxy. NEXT: 6.5-e.1 — password recovery (operator-raised): Org-Admin password-reset endpoint + Users-page action so Admins/Superuser can rotate a user's password and share it out-of-band — no SMTP/self-service reset exists. Superuser reset backend already exists; a Superuser reset UI has an ADR-0018 consent-gate tension to design around. Then 6.5-f.)
 
 ---
 

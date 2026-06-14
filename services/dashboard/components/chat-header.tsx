@@ -1,8 +1,10 @@
 "use client";
 
-import { Cog, Settings as SettingsIcon, ShieldCheck, Sliders, UserCircle } from "lucide-react";
+import { Cog, Settings as SettingsIcon, ShieldCheck, Sliders, UserCircle, Users } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
+import { useAuth } from "@/components/auth-provider";
 import { OrganizationSwitcher } from "@/components/organization-switcher";
 import { Button } from "@/components/ui/button";
 import {
@@ -37,6 +39,10 @@ export function ChatHeader({
   /** Slice 5.0c-i: click-to-edit the active conversation's title. */
   onRename?: (next: string) => void;
 }) {
+  // Org-management surfaces are Admin-only (the role reflects the per-tab
+  // active org). Non-Admins just don't see the entry point.
+  const { me } = useAuth();
+  const isAdmin = me?.role === "admin";
   return (
     <header className="relative flex h-14 items-center justify-between border-b border-border bg-card px-4">
       <div className="flex items-center gap-3">
@@ -74,6 +80,15 @@ export function ChatHeader({
               Settings
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
+            {/* Phase 6.5-e: org member management — Admin only. */}
+            {isAdmin ? (
+              <DropdownMenuItem asChild className="text-sm">
+                <Link href="/settings/users">
+                  <Users className="mr-2 h-4 w-4" />
+                  <span>Users</span>
+                </Link>
+              </DropdownMenuItem>
+            ) : null}
             {/* Placeholder items — actual surfaces ship as a later slice */}
             <DropdownMenuItem disabled className="text-sm">
               <UserCircle className="mr-2 h-4 w-4" />

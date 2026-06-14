@@ -1,6 +1,6 @@
 ---
 name: next-dev-cache-vs-build
-description: "Never `rm -rf .next` while wolf-dashboard.service (next dev / Turbopack) is running — it corrupts the live dev cache; restart the dashboard to recover"
+description: "Don't `rm -rf .next` OR run `npm run build` while wolf-dashboard.service (next dev / Turbopack) is running — both disturb the live dev cache (proxy 000s); restart the dashboard to recover"
 metadata: 
   node_type: memory
   type: project
@@ -20,13 +20,21 @@ request to `/api/[...path]` then panics: "Failed to open SST file
 curl to the proxy hangs → HTTP 000 (the TLS handshake completes, but no HTTP
 response comes).
 
-**Why:** the running dev server holds references into `.next/dev`; wiping the
-directory underneath it corrupts its cache mid-flight.
+**Also hit 2026-06-14 during 6.5-e:** running `npm run build` (production
+`next build`) while the dev service is up ALSO disturbs the live dev server —
+the proxy went to HTTP 000 even with NO `rm`. So the hazard isn't just deleting
+`.next`; a concurrent build writing into `.next` is enough.
 
-**How to apply:** to force a clean build, prefer `rm -rf .next/standalone` /
-the build subdirs, or stop the dev service first. If `.next` was already wiped
-and the dev proxy now 000s, the fix is `systemctl --user restart
-wolf-dashboard.service` — it rebuilds the dev cache fresh (recovers in ~2s +
-first-request recompile). Confirm with an unauth probe through the proxy:
-`curl -sk https://localhost:3000/api/v1/auth/me` → 401. Related:
-[[per-slice-web-test-checkpoints]].
+**Why:** the running dev server holds references into `.next`; deleting it OR a
+concurrent `next build` writing into it corrupts/invalidates its cache
+mid-flight.
+
+**How to apply:** the frontend gate's `tsc --noEmit` + `eslint` are safe to run
+against the live dev server (and it hot-reloads edits, so the UI is validated
+live anyway). For the production `npm run build`, stop `wolf-dashboard.service`
+first, or just expect to `systemctl --user restart wolf-dashboard.service`
+afterward. If the dev proxy returns 000, restart the dashboard — it rebuilds the
+dev cache fresh (~2s + first-request recompile). Confirm with an unauth probe:
+`curl -sk https://localhost:3000/api/v1/auth/me` → 401. (A 502 instead means
+the dashboard is up but wolf-server is down — restart `wolf-server.service`.)
+Related: [[per-slice-web-test-checkpoints]].
