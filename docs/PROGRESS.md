@@ -6,7 +6,7 @@
 >
 > For history of what changed when, see `CHANGELOG.md` (append-only).
 
-**Last updated:** 2026-06-14 by claude-code (6.5-e.1 SHIPPED — Org-Admin password reset, operator signed off (checks 1/2/4; check 3 is a guard only reachable post-6.5-f, covered by an automated test). New POST /api/v1/organization/users/{id}/password-reset (Admin-gated, member-scoped, one-time password, revokes the member's sessions, dual-audited) + "Reset password" action on the Users page (confirm → one-time reveal + copy). 475 backend tests + 18 isolation + mypy strict green; frontend gate green; live-smoked. Builds on 6.5-e (per-org User management UI, shipped earlier today). NEXT: 6.5-e.2 — Superuser break-glass reset-by-email (planned, awaiting approval) for the locked-out sole-Admin case; then 6.5-f.)
+**Last updated:** 2026-06-15 by claude-code (6.5-e.2 SHIPPED — Superuser break-glass reset-by-email, operator signed off (1/2/3). New POST /api/v1/users/password-reset-by-email (Superuser-only, 404/409, revokes sessions, audited via:email) + break-glass card on the Superuser per-org page; recovers the locked-out sole-Admin by email without roster listing (consent gate held). SHIPPED WITH a validation/exception-handling fix set: fixed the [object Object] 422-render bug at the source (unwrap/formatApiDetail in lib/api.ts), added isValidEmail inline checks on email forms, and bounded RecoveryAdminRequest.display_name. 480 backend + 18 isolation + mypy strict green; frontend gate green. NEW STANDING RULE (memory input-validation-exception-handling): every input field project-wide needs validation + guided readable errors; dedicated retrofit slice 6.5-i scheduled for pre-rule fields. NEXT: 6.5-f (Superuser-membership-grant), with 6.5-i tracked.)
 
 ---
 

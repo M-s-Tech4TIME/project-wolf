@@ -1,18 +1,22 @@
 "use client";
 
-// Per-organization detail + initial-Admin seeding — Phase 6.5-d.
+// Per-organization detail — Phase 6.5-d + 6.5-e.2.
 //
-// The Superuser can seed an org's FIRST Admin via the break-glass
-// recovery endpoint (works only while the org has zero active Admins).
-// Per ADR 0018's consent gate this page shows NO org data (no member
-// list) — once an Admin exists, user management is the org Admin's job
-// (Phase 6.5-e), and the backend returns 409 here.
+// Two break-glass actions, both consent-gate-safe (no member roster is
+// ever shown — ADR 0018):
+//   - Seed the org's FIRST Admin via the recovery endpoint (works only
+//     while the org has zero active Admins; 409 once an Admin exists —
+//     routine user management is then the org Admin's job, Phase 6.5-e).
+//   - Reset a member's password BY EMAIL (6.5-e.2) — the recovery path
+//     for a locked-out sole Admin the org-scoped reset can't reach. The
+//     Superuser types an email it already holds; no roster listing.
 
-import { ArrowLeft, Check, Copy, KeyRound } from "lucide-react";
+import { ArrowLeft, Check, Copy, KeyRound, Mail } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -25,10 +29,20 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ApiError, listOrganizations, recoverOrganizationAdmin } from "@/lib/api";
+import {
+  ApiError,
+  listOrganizations,
+  recoverOrganizationAdmin,
+  resetUserPasswordByEmail,
+} from "@/lib/api";
 import { copyText } from "@/lib/clipboard";
 import { absoluteTimeTitle } from "@/lib/format";
-import type { Organization, RecoveryAdminResponse } from "@/lib/types";
+import { isValidEmail } from "@/lib/utils";
+import type {
+  MemberPasswordReset,
+  Organization,
+  RecoveryAdminResponse,
+} from "@/lib/types";
 
 export default function OrganizationDetailPage() {
   const params = useParams<{ id: string }>();
@@ -70,6 +84,10 @@ export default function OrganizationDetailPage() {
   async function submitSeed() {
     const trimmedEmail = email.trim();
     if (!trimmedEmail) return setFormError("Email is required.");
+    if (!isValidEmail(trimmedEmail))
+      return setFormError("Enter a valid email address.");
+    if (displayName.trim().length > 255)
+      return setFormError("Display name must be 255 characters or fewer.");
     setBusy(true);
     setFormError(null);
     setAlreadyHasAdmin(false);
@@ -95,6 +113,38 @@ export default function OrganizationDetailPage() {
     if (await copyText(result.new_password)) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
+    }
+  }
+
+  // Break-glass reset-by-email (6.5-e.2)
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetConfirm, setResetConfirm] = useState(false);
+  const [resetBusy, setResetBusy] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
+  const [resetResult, setResetResult] = useState<MemberPasswordReset | null>(null);
+  const [resetCopied, setResetCopied] = useState(false);
+
+  async function confirmResetByEmail() {
+    setResetConfirm(false);
+    setResetBusy(true);
+    setResetError(null);
+    try {
+      const res = await resetUserPasswordByEmail(resetEmail.trim());
+      setResetResult(res);
+    } catch (e) {
+      setResetError(
+        e instanceof ApiError ? e.message : "Failed to reset password.",
+      );
+    } finally {
+      setResetBusy(false);
+    }
+  }
+
+  async function copyResetPassword() {
+    if (!resetResult) return;
+    if (await copyText(resetResult.new_password)) {
+      setResetCopied(true);
+      setTimeout(() => setResetCopied(false), 2000);
     }
   }
 
@@ -236,6 +286,107 @@ export default function OrganizationDetailPage() {
           )}
         </CardContent>
       </Card>
+
+      <Card className="px-5">
+        <CardHeader className="px-0">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Mail className="h-5 w-5" />
+            Reset a member&apos;s password
+          </CardTitle>
+          <CardDescription>
+            Break-glass recovery for a locked-out member (e.g. the only Admin,
+            whom no peer can reset). Enter the member&apos;s email; their current
+            password and sessions end, and you&apos;ll get a one-time password to
+            share. Looks up by email install-wide — no organization data is shown.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="px-0">
+          {resetResult ? (
+            <div className="space-y-3">
+              <Alert>
+                <AlertTitle>Password reset</AlertTitle>
+                <AlertDescription>
+                  New one-time password for{" "}
+                  <span className="font-medium">{resetResult.email}</span>.
+                </AlertDescription>
+              </Alert>
+              <div className="space-y-1.5">
+                <Label>One-time password (shown once)</Label>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 truncate rounded-md bg-muted px-3 py-2 font-mono text-sm">
+                    {resetResult.new_password}
+                  </code>
+                  <Button variant="outline" size="sm" onClick={copyResetPassword}>
+                    {resetCopied ? (
+                      <Check className="h-4 w-4" />
+                    ) : (
+                      <Copy className="h-4 w-4" />
+                    )}
+                    {resetCopied ? "Copied" : "Copy"}
+                  </Button>
+                </div>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setResetResult(null);
+                  setResetEmail("");
+                }}
+              >
+                Reset another
+              </Button>
+            </div>
+          ) : (
+            <div className="max-w-md space-y-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="reset-email">Member email</Label>
+                <Input
+                  id="reset-email"
+                  type="email"
+                  value={resetEmail}
+                  onChange={(e) => setResetEmail(e.target.value)}
+                  placeholder="locked-out-admin@acme.example"
+                  disabled={resetBusy}
+                />
+              </div>
+              {resetError ? (
+                <p className="text-sm text-destructive">{resetError}</p>
+              ) : null}
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setResetError(null);
+                  const trimmed = resetEmail.trim();
+                  if (!trimmed) setResetError("Email is required.");
+                  else if (!isValidEmail(trimmed))
+                    setResetError("Enter a valid email address.");
+                  else setResetConfirm(true);
+                }}
+                disabled={resetBusy}
+              >
+                {resetBusy ? "Resetting…" : "Reset password"}
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <ConfirmDialog
+        open={resetConfirm}
+        title="Reset this member's password?"
+        description={
+          <>
+            A new one-time password will be generated for{" "}
+            <span className="font-medium">{resetEmail.trim()}</span>. Their
+            current password stops working and any active sessions end. Deliver
+            the new password out of band.
+          </>
+        }
+        confirmLabel="Reset password"
+        onConfirm={confirmResetByEmail}
+        onCancel={() => setResetConfirm(false)}
+      />
     </div>
   );
 }

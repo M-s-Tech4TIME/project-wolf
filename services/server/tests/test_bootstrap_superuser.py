@@ -270,6 +270,125 @@ async def test_superuser_cannot_reset_own_password_via_api(
     assert "bootstrap_superuser" in resp.json()["detail"]
 
 
+# ─── Break-glass password reset by email (Phase 6.5-e.2) ─────────────────────
+
+
+async def test_password_reset_by_email_requires_superuser(
+    client: AsyncClient, seed_organization_and_user: dict[str, Any]
+) -> None:
+    # Authenticated as an ordinary analyst — must be refused.
+    resp = await _login(client, seed_organization_and_user["user_email"], "password123")
+    assert resp.status_code == 200
+    resp = await client.post(
+        "/api/v1/users/password-reset-by-email",
+        json={"email": seed_organization_and_user["user_email"]},
+    )
+    assert resp.status_code == 403
+
+
+async def test_password_reset_by_email_unknown_email_404(
+    client: AsyncClient, seed_superuser: dict[str, Any]
+) -> None:
+    resp = await _login(client, SUPERUSER_USERNAME, _WOLF_PASSWORD)
+    assert resp.status_code == 200
+    resp = await client.post(
+        "/api/v1/users/password-reset-by-email",
+        json={"email": f"nobody-{uuid.uuid4().hex[:8]}@test.example"},
+    )
+    assert resp.status_code == 404
+
+
+async def test_superuser_resets_password_by_email_and_audits(
+    client: AsyncClient,
+    db: AsyncSession,
+    seed_superuser: dict[str, Any],
+    seed_organization_and_user: dict[str, Any],
+) -> None:
+    resp = await _login(client, SUPERUSER_USERNAME, _WOLF_PASSWORD)
+    assert resp.status_code == 200
+
+    target_id = seed_organization_and_user["user_id"]
+    target_email = seed_organization_and_user["user_email"]
+    resp = await client.post(
+        "/api/v1/users/password-reset-by-email", json={"email": target_email}
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["user_id"] == str(target_id)
+    new_password = body["new_password"]
+    assert len(new_password) >= 32
+
+    # Old credential dead, new credential live.
+    target = await db.scalar(select(User).where(User.id == target_id))
+    assert target is not None
+    await db.refresh(target)
+    assert not verify_password("password123", target.hashed_password)
+    assert verify_password(new_password, target.hashed_password)
+
+    event = await db.scalar(
+        select(AuditEvent)
+        .where(AuditEvent.event_type == "superuser.user_password.reset")
+        .order_by(AuditEvent.created_at.desc())
+    )
+    assert event is not None
+    assert event.event_data is not None
+    assert event.event_data["target_user_id"] == str(target_id)
+    assert event.event_data["via"] == "email"
+
+
+async def test_password_reset_by_email_refuses_superuser(
+    client: AsyncClient, db: AsyncSession, seed_superuser: dict[str, Any]
+) -> None:
+    # The bootstrap email "wolf@wolf.local" is a special-use domain that
+    # EmailStr rejects outright (422), so exercise the is_superuser GUARD
+    # with a superuser account whose email is submittable — the guard,
+    # not the address format, must be what refuses the reset.
+    su_email = f"super-{uuid.uuid4().hex[:8]}@test.example"
+    extra = User(
+        id=uuid.uuid4(),
+        email=su_email,
+        display_name="Extra Superuser",
+        hashed_password=hash_password("irrelevant"),
+        is_active=True,
+        is_superuser=True,
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    db.add(extra)
+    await db.commit()
+    # The DB is session-scoped and shared across tests; a second active
+    # Superuser violates the singleton invariant (_get_install_superuser),
+    # so remove it in a finally even if an assertion fails.
+    try:
+        resp = await _login(client, SUPERUSER_USERNAME, _WOLF_PASSWORD)
+        assert resp.status_code == 200
+        resp = await client.post(
+            "/api/v1/users/password-reset-by-email", json={"email": su_email}
+        )
+        assert resp.status_code == 409
+        assert "bootstrap_superuser" in resp.json()["detail"]
+    finally:
+        await db.delete(extra)
+        await db.commit()
+
+
+async def test_recovery_rejects_empty_display_name(
+    client: AsyncClient,
+    seed_superuser: dict[str, Any],
+    seed_organization_and_user: dict[str, Any],
+) -> None:
+    # display_name is Field(min_length=1) — an empty value must be a clean
+    # 422, not a silently-stored blank name.
+    org_id = seed_organization_and_user["organization_id"]
+    resp = await _login(client, SUPERUSER_USERNAME, _WOLF_PASSWORD)
+    assert resp.status_code == 200
+    resp = await client.post(
+        f"/api/v1/organizations/{org_id}/recovery/admin",
+        json={"email": f"x-{uuid.uuid4().hex[:8]}@test.example", "display_name": ""},
+    )
+    assert resp.status_code == 422
+
+
 async def test_recovery_refused_while_active_admin_exists(
     client: AsyncClient,
     db: AsyncSession,

@@ -69,17 +69,62 @@ async function apiFetch(
   });
 }
 
+/**
+ * Turn a FastAPI error `detail` into a human-readable string.
+ *
+ * FastAPI sends two shapes: a plain string (our `HTTPException(detail=...)`)
+ * or — for request-validation (422) failures — a LIST of
+ * `{loc, msg, type}` objects from pydantic. The naive `String(detail)` on
+ * the list produced "[object Object]" in the UI; this formats each entry as
+ * "field: message" (dropping the leading "body"/"query" location segment).
+ */
+function formatApiDetail(detail: unknown): string {
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => {
+        if (item && typeof item === "object" && "msg" in item) {
+          const rec = item as { loc?: unknown; msg?: unknown };
+          const field = Array.isArray(rec.loc)
+            ? rec.loc.filter((p) => p !== "body" && p !== "query").join(".")
+            : "";
+          const msg = String(rec.msg);
+          return field ? `${field}: ${msg}` : msg;
+        }
+        return typeof item === "string" ? item : JSON.stringify(item);
+      })
+      .filter(Boolean)
+      .join("; ");
+  }
+  if (detail && typeof detail === "object") {
+    try {
+      return JSON.stringify(detail);
+    } catch {
+      return "Request failed";
+    }
+  }
+  return String(detail);
+}
+
 async function unwrap<T>(resp: Response): Promise<T> {
   if (!resp.ok) {
     let body: unknown;
     let detail = resp.statusText;
+    // Clone so a non-JSON body can still be read as text in the fallback
+    // (the original stream is consumed by .json()).
+    const clone = resp.clone();
     try {
       body = await resp.json();
       if (body && typeof body === "object" && "detail" in body) {
-        detail = String((body as { detail: unknown }).detail);
+        detail = formatApiDetail((body as { detail: unknown }).detail);
       }
     } catch {
-      detail = await resp.text();
+      try {
+        const text = await clone.text();
+        if (text) detail = text;
+      } catch {
+        /* keep statusText */
+      }
     }
     throw new ApiError(resp.status, detail, body);
   }
@@ -323,6 +368,19 @@ export async function removeMember(userId: string): Promise<void> {
 export function resetMemberPassword(userId: string): Promise<MemberPasswordReset> {
   return apiFetch(`/api/v1/organization/users/${userId}/password-reset`, {
     method: "POST",
+  }).then(unwrap<MemberPasswordReset>);
+}
+
+/** Break-glass: Superuser resets a user's password by EMAIL (6.5-e.2) — the
+ *  recovery path for a locked-out sole Admin (no peer Admin, and the Superuser
+ *  may not browse the roster to pick by id). Throws ApiError(404) if no such
+ *  user, 409 for the Superuser's own credential. */
+export function resetUserPasswordByEmail(
+  email: string,
+): Promise<MemberPasswordReset> {
+  return apiFetch("/api/v1/users/password-reset-by-email", {
+    method: "POST",
+    body: JSON.stringify({ email }),
   }).then(unwrap<MemberPasswordReset>);
 }
 

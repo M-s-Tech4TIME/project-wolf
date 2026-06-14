@@ -49,6 +49,53 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-15 — 6.5-e.2 SHIPPED: Superuser break-glass reset-by-email + validation/error-handling fixes
+
+**Session type:** claude-code (operator-directed)
+**Phase:** 6.5-e.2
+**Branch / commit:** main (this commit)
+
+### What we did
+- **New endpoint** `POST /api/v1/users/password-reset-by-email` (`superuser.py`,
+  Superuser-only): the recovery path for a locked-out *sole Admin* the
+  org-scoped reset (6.5-e.1) can't reach. Resolves the user by an email the
+  Superuser already holds — no roster listing, so ADR 0018's consent gate is
+  intact. 404 unknown email, 409 for a Superuser-flagged account, revokes the
+  target's sessions, audits `superuser.user_password.reset` with `via:email`.
+  4 tests.
+- **Frontend**: "Reset a member's password" break-glass card on the Superuser
+  per-org page (`organizations/[id]`) — email → confirm → one-time-password
+  reveal + copy. `resetUserPasswordByEmail` added.
+
+### Input-validation + exception-handling fixes (operator-raised; seeds 6.5-i)
+- **`[object Object]` bug fixed at the source:** `unwrap()` in `lib/api.ts`
+  used to `String(detail)` FastAPI's 422 `detail`, which is a LIST of pydantic
+  error objects → "[object Object]" in the UI. New `formatApiDetail` renders it
+  as `"field: message"` (string details pass through). App-wide fix.
+- **Client-side inline validation:** `isValidEmail` (`lib/utils.ts`) on the
+  add-member / seed-admin / reset-by-email forms (+ display-name length), so
+  malformed input is flagged before the round-trip. Server pydantic remains
+  authoritative.
+- **Backend gap closed:** `RecoveryAdminRequest.display_name` now
+  `Field(min_length=1, max_length=255)` (was an unconstrained `str`), with a
+  test (empty → 422).
+- **Standing rule recorded** (memory `input-validation-exception-handling`):
+  every input field project-wide needs validation + guided, field-relevant
+  errors; a dedicated retrofit slice **6.5-i** is scheduled for fields shipped
+  before this rule.
+
+### Verification
+- 480 backend tests (+ the new reset-by-email + display-name tests) + 18
+  cross-org isolation + mypy --strict clean. Frontend tsc/eslint(0)/build green.
+  `formatApiDetail` verified against real pydantic-422 shapes. Operator
+  web-test of the break-glass card signed off (1/2/3).
+
+### What's next
+- **6.5-f** (Superuser-membership-grant flow), with **6.5-i** (validation
+  hardening retrofit) tracked.
+
+---
+
 ## 2026-06-14 — 6.5-e.1 SHIPPED: Org-Admin password reset (recovery)
 
 **Session type:** claude-code (operator-directed)

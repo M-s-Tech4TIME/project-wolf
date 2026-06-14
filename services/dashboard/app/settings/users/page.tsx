@@ -53,6 +53,7 @@ import {
 } from "@/lib/api";
 import { copyText } from "@/lib/clipboard";
 import { absoluteTimeTitle, relativeTime } from "@/lib/format";
+import { isValidEmail } from "@/lib/utils";
 import {
   ORG_ROLES,
   type Member,
@@ -138,7 +139,11 @@ export default function UsersPage() {
     const trimmedEmail = email.trim();
     const trimmedName = displayName.trim();
     if (!trimmedEmail) return setFormError("Email is required.");
+    if (!isValidEmail(trimmedEmail))
+      return setFormError("Enter a valid email address.");
     if (!trimmedName) return setFormError("Display name is required.");
+    if (trimmedName.length > 255)
+      return setFormError("Display name must be 255 characters or fewer.");
     setBusy(true);
     setFormError(null);
     try {

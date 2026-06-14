@@ -25,3 +25,4 @@
 - [Dependabot uv lock-only PRs](dependabot-uv-lock-only-prs.md) — uv "requirement update" PRs skip pyproject; run `uv lock --check` after merging, land floors by hand
 - [Memory mirrored into repo](memory-mirrored-into-repo.md) — STANDING RULE (2026-06-13): every memory lives in BOTH ~/.claude memory dir AND in-repo memory/, kept byte-identical; repo copy git-tracked, never gitignored
 - [Next dev cache vs build](next-dev-cache-vs-build.md) — never `rm -rf .next` while wolf-dashboard.service (next dev/Turbopack) runs — corrupts the live cache (proxy 000s); restart the dashboard to recover
+- [Input validation + exception handling](input-validation-exception-handling.md) — STANDING RULE (2026-06-15): every input field project-wide needs validation + guided, readable, field-relevant errors (server-authoritative + client-inline); dedicated retrofit slice for pre-rule fields

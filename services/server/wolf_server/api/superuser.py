@@ -42,7 +42,7 @@ from typing import Annotated, Any
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -119,9 +119,17 @@ class PasswordResetResponse(BaseModel):
     new_password: str
 
 
+class EmailPasswordResetRequest(BaseModel):
+    # Break-glass reset keyed by email (Phase 6.5-e.2): the Superuser may
+    # not browse an org's member roster (ADR 0018 consent gate), so the
+    # locked-out-sole-Admin recovery path resolves the target by an email
+    # the Superuser already holds rather than by a picked-from-a-list id.
+    email: EmailStr
+
+
 class RecoveryAdminRequest(BaseModel):
     email: EmailStr
-    display_name: str = "Organization Admin"
+    display_name: str = Field(default="Organization Admin", min_length=1, max_length=255)
 
 
 class RecoveryAdminResponse(BaseModel):
@@ -209,6 +217,68 @@ async def reset_user_password(
 
     logger.info(
         "superuser_password_reset",
+        superuser_id=str(superuser.id),
+        target_user_id=str(target.id),
+    )
+    return PasswordResetResponse(user_id=target.id, email=target.email, new_password=new_password)
+
+
+@router.post("/users/password-reset-by-email", response_model=PasswordResetResponse)
+async def reset_user_password_by_email(
+    body: EmailPasswordResetRequest,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    superuser: Annotated[User, Depends(require_superuser)],
+) -> PasswordResetResponse:
+    """Break-glass: Superuser resets a user's password keyed by email (6.5-e.2).
+
+    The recovery path for a locked-out *sole Admin* — the org-scoped
+    Admin reset (6.5-e.1) can't reach them (no peer Admin), and the
+    Superuser may not browse the org's roster to pick them by id (ADR
+    0018 consent gate). Resolving by an email the Superuser already holds
+    avoids any roster listing; the response leaks nothing beyond the
+    reset result. Same guards/effects as the by-id reset above: refused
+    for the Superuser's own credential (rotate via the bootstrap CLI),
+    invalidates the target's live sessions, audited.
+    """
+    target = await db.scalar(select(User).where(User.email == body.email))
+    if target is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No user found with email {body.email!r}",
+        )
+    if target.is_superuser:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Superuser password is rotated via the bootstrap_superuser "
+                "CLI on the host, not via the API"
+            ),
+        )
+
+    new_password = secrets.token_urlsafe(_PASSWORD_BYTES)
+    target.hashed_password = hash_password(new_password)
+    target.updated_at = datetime.now(UTC)
+
+    await _revoke_all_sessions(target.id)
+
+    await write_event(
+        db,
+        event_type="superuser.user_password.reset",
+        event_data={
+            "target_user_id": str(target.id),
+            "target_email": target.email,
+            "sessions_revoked": True,
+            "via": "email",
+        },
+        user_id=superuser.id,
+        session_id=str(getattr(request.state, "session", {}).get("session_id", "")),
+        source_ip=request.client.host if request.client else None,
+    )
+    await db.commit()
+
+    logger.info(
+        "superuser_password_reset_by_email",
         superuser_id=str(superuser.id),
         target_user_id=str(target.id),
     )
