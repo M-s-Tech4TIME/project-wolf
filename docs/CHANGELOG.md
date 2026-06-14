@@ -49,6 +49,59 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-14 — 6.5-d SHIPPED: Organizations + Superuser-dashboard UI
+
+**Session type:** claude-code (operator-directed; plan-mode approved)
+**Phase:** 6.5-d
+**Branch / commit:** main (this commit)
+
+### What we did
+- **New backend endpoint** `GET /api/v1/superuser/audit` — install-wide
+  audit (every org's events + org-less system rows, newest-first,
+  paginated; LEFT JOIN carries each row's org name, null for system
+  rows). Superuser-gated via the existing `require_superuser`; mirrors
+  the org-audit query in `org_management.view_audit_log`. 4 new tests
+  in `test_superuser_audit.py` (401/403, cross-org + system rows,
+  pagination, org_name null/populated). Everything else 6.5-d needs was
+  already live (org CRUD in `organizations.py`; break-glass
+  `recovery/admin` in `superuser.py`).
+- **Frontend** — guarded `/superuser` shell (`layout.tsx`: role guard +
+  nav Dashboard·Organizations·Audit + sign-out); reworked dashboard hub
+  (org counts + consent-gate note); Organizations page (list / create
+  with slug-pattern / rename / soft-delete via `confirm-dialog`, deleted
+  shown with a badge); per-org detail (`[id]/page.tsx`) that seeds the
+  first Admin and shows the one-time password with copy, 409-aware;
+  install-wide audit table with Prev/Next pagination. Added the two
+  missing shadcn primitives (`ui/table.tsx`, `ui/dialog.tsx`); extended
+  `lib/types.ts` + `lib/api.ts`.
+- **Terminology fix (operator-raised):** org-less audit rows
+  (`organization_id IS NULL`) are now labelled **"System"** in the UI,
+  not "Install" — matching the `AuditEvent` model's own comment
+  ("system-level events"). Kept the **install-wide** wording for the
+  VIEW scope and "install-level" for the Superuser admin identity
+  (ADR 0018) — two distinct axes that the old "Install" badge conflated.
+
+### What we decided
+- Nested routes under `/superuser` with a shared guarded layout (vs one
+  tabbed page).
+- Per-org page seeds the first Admin only; shows NO org member data
+  (ADR 0018 consent gate) — user management is the org Admin's job
+  (6.5-e).
+
+### What broke / what we discovered
+- `rm -rf .next` to force a clean build corrupted the *running* dev
+  server's Turbopack cache (proxy hung, HTTP 000). Fix: restart
+  `wolf-dashboard.service`. Captured as memory `next-dev-cache-vs-build`.
+- Self-validation: 471 backend tests + 18 isolation + mypy --strict
+  clean; frontend tsc/eslint/build green; live smoke through the proxy
+  (`/api/v1/superuser/audit` → 401 unauth, registered+gated; unknown
+  path → 404).
+
+### What's next
+- Slice 6.5-e: per-org User management UI (list / role-change / remove).
+
+---
+
 ## 2026-06-13 — Repo PUBLIC + hardened; Dependabot batch closed 15/15; vuln alerts triaged
 
 **Session type:** mixed (operator flipped visibility + 2FA; claude-code everything else)

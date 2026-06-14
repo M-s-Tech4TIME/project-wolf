@@ -15,12 +15,18 @@ import { activeOrgHeader } from "./org-context";
 import type {
   ChatRequestBody,
   ChatResponseBody,
+  InstallAuditPage,
   LoginRequest,
   LoginResponse,
   LoopEvent,
   MembershipInfo,
   MeResponse,
+  Organization,
+  OrganizationCreate,
   OrganizationMembership,
+  OrganizationUpdate,
+  RecoveryAdminRequest,
+  RecoveryAdminResponse,
 } from "./types";
 
 // All API calls are same-origin under `/api/v1/...`. No `apiBase()`
@@ -196,4 +202,64 @@ function parseFrame(frame: string): { type: string; data: unknown } | null {
   if (!eventName) return null;
   const data = dataLines.length > 0 ? JSON.parse(dataLines.join("\n")) : {};
   return { type: eventName, data };
+}
+
+// ── Superuser install-admin (Phase 6.5-d) ──────────────────────────────────
+// These hit Superuser-only routes gated by require_superuser; the Superuser
+// has no active org, so apiFetch sends no X-Organization-Id header (correct —
+// these endpoints are install-scoped, not org-scoped).
+
+export function listOrganizations(): Promise<Organization[]> {
+  return apiFetch("/api/v1/organizations").then(unwrap<Organization[]>);
+}
+
+export function createOrganization(
+  body: OrganizationCreate,
+): Promise<Organization> {
+  return apiFetch("/api/v1/organizations", {
+    method: "POST",
+    body: JSON.stringify(body),
+  }).then(unwrap<Organization>);
+}
+
+export function updateOrganization(
+  organizationId: string,
+  body: OrganizationUpdate,
+): Promise<Organization> {
+  return apiFetch(`/api/v1/organizations/${organizationId}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  }).then(unwrap<Organization>);
+}
+
+/** Soft-delete (is_active=false) — the org's audit trail + rows survive. */
+export function deleteOrganization(
+  organizationId: string,
+): Promise<Organization> {
+  return apiFetch(`/api/v1/organizations/${organizationId}`, {
+    method: "DELETE",
+  }).then(unwrap<Organization>);
+}
+
+/** Break-glass: seed the first Admin into an org with zero Admins.
+ *  Throws ApiError(409) when the org already has an active Admin. */
+export function recoverOrganizationAdmin(
+  organizationId: string,
+  body: RecoveryAdminRequest,
+): Promise<RecoveryAdminResponse> {
+  return apiFetch(`/api/v1/organizations/${organizationId}/recovery/admin`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  }).then(unwrap<RecoveryAdminResponse>);
+}
+
+export function fetchInstallAudit(
+  limit = 50,
+  offset = 0,
+): Promise<InstallAuditPage> {
+  const qs = new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset),
+  });
+  return apiFetch(`/api/v1/superuser/audit?${qs}`).then(unwrap<InstallAuditPage>);
 }

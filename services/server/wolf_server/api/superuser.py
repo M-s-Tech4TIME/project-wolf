@@ -20,7 +20,16 @@ POST /api/v1/organizations/{organization_id}/recovery/admin
     bypasses it. The Superuser still gains NO data access (no
     UserOrganization row for the Superuser is created).
 
-Authorization: both routes require an authenticated session whose user
+GET /api/v1/superuser/audit
+    Install-wide audit trail (Phase 6.5-d) — every organization's events
+    plus system-level rows (organization_id IS NULL), newest first,
+    paginated. Distinct from the per-org GET /api/v1/organization/audit,
+    which is org-scoped and excludes system-level rows. Each row carries
+    its organization's name (null for system-level events). "Install-wide"
+    is the VIEW scope (the whole installation); "system-level" is the
+    org-less row attribution (matches the AuditEvent model's own wording).
+
+Authorization: all routes require an authenticated session whose user
 has ``is_superuser=True`` (the bootstrap "Wolf" account). The richer
 role-decorator pattern arrives with 6.5-b; this dependency is the
 Superuser-specific primitive it will build on.
@@ -32,12 +41,13 @@ from datetime import UTC, datetime
 from typing import Annotated, Any
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from wolf_server.audit.log import write_event
+from wolf_server.audit.models import AuditEvent
 from wolf_server.auth.blacklist import get_session_blacklist
 from wolf_server.auth.local import hash_password
 from wolf_server.config import get_settings
@@ -122,6 +132,28 @@ class RecoveryAdminResponse(BaseModel):
     # Present only when the recovery created a brand-new user account;
     # None when an existing account was force-added as Admin.
     new_password: str | None
+
+
+class InstallAuditEventResponse(BaseModel):
+    id: uuid.UUID
+    event_type: str
+    event_data: dict[str, Any] | None
+    # organization_id + organization_name are None for system-level
+    # events (startup, health checks, org-less auth, etc.) — the
+    # AuditEvent model calls these "system-level"; the UI badges them
+    # "System".
+    organization_id: uuid.UUID | None
+    organization_name: str | None
+    user_id: uuid.UUID | None
+    source_ip: str | None
+    related_event_id: uuid.UUID | None
+    created_at: datetime
+
+
+class InstallAuditPageResponse(BaseModel):
+    events: list[InstallAuditEventResponse]
+    limit: int
+    offset: int
 
 
 # ── Routes ───────────────────────────────────────────────────────────────────
@@ -344,3 +376,42 @@ async def recover_organization_admin(
         role="admin",
         new_password=new_password,
     )
+
+
+@router.get("/superuser/audit", response_model=InstallAuditPageResponse)
+async def view_install_audit(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    superuser: Annotated[User, Depends(require_superuser)],
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> InstallAuditPageResponse:
+    """Install-wide audit trail, newest first (Superuser-only).
+
+    Unlike the org view (GET /api/v1/organization/audit) this is not
+    scoped to one organization and does NOT exclude system-level rows
+    (organization_id IS NULL). A LEFT JOIN carries each row's
+    organization name (None for system-level events). Mirrors the
+    org-audit query/pagination shape in org_management.view_audit_log.
+    """
+    result = await db.execute(
+        select(AuditEvent, Organization.name)
+        .outerjoin(Organization, Organization.id == AuditEvent.organization_id)
+        .order_by(AuditEvent.created_at.desc(), AuditEvent.id)
+        .limit(limit)
+        .offset(offset)
+    )
+    events = [
+        InstallAuditEventResponse(
+            id=event.id,
+            event_type=event.event_type,
+            event_data=dict(event.event_data) if event.event_data is not None else None,
+            organization_id=event.organization_id,
+            organization_name=org_name,
+            user_id=event.user_id,
+            source_ip=event.source_ip,
+            related_event_id=event.related_event_id,
+            created_at=event.created_at,
+        )
+        for event, org_name in result.all()
+    ]
+    return InstallAuditPageResponse(events=events, limit=limit, offset=offset)

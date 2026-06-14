@@ -419,10 +419,20 @@ estimated**:
    claims stripped, header-absent → 401, login org field gone,
    tests refactored 1:1 (467 green).
 
-6. **6.5-d — Organizations + Superuser-dashboard UI** — Superuser-
-   only `/superuser/dashboard` route; Organizations page
-   (list/create/edit/delete); per-org page with initial Admin user
-   creation; install-wide audit-log view.
+6. **6.5-d — Organizations + Superuser-dashboard UI** — ✅ **SHIPPED
+   2026-06-14**, operator manual web-test signed off same day (all
+   four checks). Guarded `/superuser` shell (Dashboard · Organizations
+   · Audit) with the role guard lifted into the layout; Organizations
+   page (list / create with slug / rename / soft-delete, deleted shown
+   with a badge); per-org page seeds the first Admin via the
+   break-glass recovery endpoint (one-time password shown + copy;
+   409-aware once an Admin exists — no member listing, consent gate
+   held); install-wide audit view (new Superuser-only
+   `GET /api/v1/superuser/audit`, paginated, org name joined). Org-less
+   rows are labelled **"System"** (matching the AuditEvent model's own
+   wording), distinct from the **install-wide** VIEW scope. 4 new
+   backend tests (471 total green), mypy --strict clean, frontend gate
+   green, live-smoked through the HTTPS proxy.
 
 7. **6.5-e — User management UI (per-org)** — Org-Admin-only
    Users page within each org; role assignment dropdowns; audit-

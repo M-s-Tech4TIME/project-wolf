@@ -24,3 +24,4 @@
 - [Repo public + hosted CI](repo-public-hosted-ci.md) — PUBLIC since 2026-06-12 by operator decision (billing); self-hosted CI fully reversed, don't re-propose; hardening list inside
 - [Dependabot uv lock-only PRs](dependabot-uv-lock-only-prs.md) — uv "requirement update" PRs skip pyproject; run `uv lock --check` after merging, land floors by hand
 - [Memory mirrored into repo](memory-mirrored-into-repo.md) — STANDING RULE (2026-06-13): every memory lives in BOTH ~/.claude memory dir AND in-repo memory/, kept byte-identical; repo copy git-tracked, never gitignored
+- [Next dev cache vs build](next-dev-cache-vs-build.md) — never `rm -rf .next` while wolf-dashboard.service (next dev/Turbopack) runs — corrupts the live cache (proxy 000s); restart the dashboard to recover

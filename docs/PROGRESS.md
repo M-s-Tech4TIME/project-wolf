@@ -6,7 +6,7 @@
 >
 > For history of what changed when, see `CHANGELOG.md` (append-only).
 
-**Last updated:** 2026-06-13 by claude-code (Repo is now PUBLIC + hardened — operator flipped visibility to resolve the Actions billing outage; rulesets on main + v* tags, read-only workflow token, fork-PR approval for all external contributors, secret scanning + push protection, Dependabot alerts/updates, private vuln reporting, org-wide 2FA. Dependabot batch CLOSED 15/15 (13 merged, #9 deferred ignore-major, #10 superseded); manifest floors from the four lock-only requirement PRs landed by hand (uv lock --check clean, 467 green); first 3 vuln alerts triaged (postcss FIXED via npm override, ecdsa + torch dismissed with documented reasons — no patched versions exist). Next: 6.5-d)
+**Last updated:** 2026-06-14 by claude-code (6.5-d SHIPPED — Organizations + Superuser-dashboard UI, operator web-test signed off all four checks. Guarded /superuser shell (Dashboard·Organizations·Audit); Organizations CRUD (create/rename/soft-delete); per-org first-Admin seeding via break-glass recovery (one-time password, 409-aware, consent gate held — no member listing); install-wide audit view backed by new Superuser-only GET /api/v1/superuser/audit. Org-less rows labelled "System" (matches AuditEvent model wording), distinct from the install-wide VIEW scope and the install-level Superuser identity. 471 backend tests + 18 isolation + mypy strict green; frontend gate green; live-smoked via proxy. Next: 6.5-e per-org User management UI)
 
 ---
 

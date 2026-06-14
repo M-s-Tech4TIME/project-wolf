@@ -47,6 +47,64 @@ export type OrganizationMembership = {
   role: string;
 };
 
+// ── Superuser install-admin (Phase 6.5-d) ──────────────────────────────────
+// Mirror services/server/wolf_server/api/{organizations,superuser}.py.
+
+/** An organization as the Superuser sees it (install-scoped CRUD). */
+export type Organization = {
+  id: string;
+  name: string;
+  slug: string;
+  is_active: boolean;
+  created_at: string;
+};
+
+/** Create payload — slug is the immutable isolation key (backend pattern
+ *  ^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$); name is the only editable field. */
+export type OrganizationCreate = {
+  name: string;
+  slug: string;
+};
+
+export type OrganizationUpdate = {
+  name: string;
+};
+
+/** Break-glass: seed the first Admin into an org with zero Admins. */
+export type RecoveryAdminRequest = {
+  email: string;
+  display_name: string;
+};
+
+export type RecoveryAdminResponse = {
+  organization_id: string;
+  user_id: string;
+  email: string;
+  role: string;
+  /** Present only when a brand-new user account was created; shown once. */
+  new_password: string | null;
+};
+
+/** One row of the install-wide audit view (organization_* null for
+ *  install-level events). */
+export type InstallAuditEvent = {
+  id: string;
+  event_type: string;
+  event_data: Record<string, unknown> | null;
+  organization_id: string | null;
+  organization_name: string | null;
+  user_id: string | null;
+  source_ip: string | null;
+  related_event_id: string | null;
+  created_at: string;
+};
+
+export type InstallAuditPage = {
+  events: InstallAuditEvent[];
+  limit: number;
+  offset: number;
+};
+
 export type Citation = {
   tool: string;
   query: Record<string, unknown>;

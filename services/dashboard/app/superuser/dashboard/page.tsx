@@ -1,20 +1,17 @@
 "use client";
 
-// Superuser landing — Phase 6.5-c-ii routing stub.
+// Superuser overview hub — Phase 6.5-d.
 //
-// Login routes the install-level Superuser here (ADR 0018: the
-// org-selector is NEVER shown to the Superuser — they work at install
-// scope, not org scope). The real install-admin surface (Organizations
-// CRUD, per-org Admin creation, install-wide audit view) is Phase 6.5-d;
-// this page exists so the redirect target is real and the Superuser
-// session has a home that is not the org-scoped /chat.
+// The guard + nav + sign-out live in app/superuser/layout.tsx; this page
+// is just the landing content: a quick org count and entry points into
+// Organizations and the install-wide audit log.
 
-import { ShieldCheck } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { Building2, ScrollText } from "lucide-react";
+import Link from "next/link";
+import { useEffect, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
-import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   Card,
   CardContent,
@@ -22,59 +19,94 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { ApiError, listOrganizations } from "@/lib/api";
 
 export default function SuperuserDashboardPage() {
-  const router = useRouter();
-  const { isLoading, me, signOut } = useAuth();
+  const { me } = useAuth();
+  const [orgCount, setOrgCount] = useState<number | null>(null);
+  const [activeCount, setActiveCount] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (isLoading) return;
-    if (!me) {
-      router.replace("/login");
-    } else if (me.role !== "superuser") {
-      // Org users have no business here — back to their workspace.
-      router.replace("/chat");
-    }
-  }, [isLoading, me, router]);
-
-  if (isLoading || !me || me.role !== "superuser") {
-    return (
-      <div className="flex h-screen items-center justify-center text-muted-foreground">
-        Loading…
-      </div>
-    );
-  }
+    let cancelled = false;
+    listOrganizations()
+      .then((orgs) => {
+        if (cancelled) return;
+        setOrgCount(orgs.length);
+        setActiveCount(orgs.filter((o) => o.is_active).length);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setError(e instanceof ApiError ? e.message : "Failed to load organizations");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-muted/30 px-4">
-      <div className="w-full max-w-lg">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <ShieldCheck className="h-5 w-5" />
-              Superuser dashboard
-            </CardTitle>
-            <CardDescription>
-              Signed in as <span className="font-medium">{me.display_name}</span> —
-              the install-level administrator.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4 text-sm text-muted-foreground">
-            <p>
-              The install-admin surface (Organizations management, per-org Admin
-              creation, install-wide audit log) arrives in Phase 6.5-d. The
-              backing APIs are already live.
-            </p>
-            <p>
-              Per the organization-consent gate, this account has no data access
-              inside any organization until that organization&apos;s Admin grants it.
-            </p>
-            <Button variant="outline" onClick={() => void signOut()}>
-              Sign out
-            </Button>
-          </CardContent>
-        </Card>
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-xl font-semibold">Welcome, {me?.display_name}</h1>
+        <p className="text-sm text-muted-foreground">
+          You are the install-level administrator.
+        </p>
       </div>
-    </main>
+
+      {error ? (
+        <Alert variant="destructive">
+          <AlertTitle>Couldn&apos;t load organizations</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      ) : null}
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Link href="/superuser/organizations" className="block">
+          <Card className="h-full px-5 transition-colors hover:ring-foreground/25">
+            <CardHeader className="px-0">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Building2 className="h-5 w-5" />
+                Organizations
+              </CardTitle>
+              <CardDescription>
+                {orgCount === null
+                  ? "Loading…"
+                  : `${activeCount} active · ${orgCount} total`}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="px-0 text-sm text-muted-foreground">
+              Create organizations, rename or soft-delete them, and seed each
+              one&apos;s first Admin.
+            </CardContent>
+          </Card>
+        </Link>
+
+        <Link href="/superuser/audit" className="block">
+          <Card className="h-full px-5 transition-colors hover:ring-foreground/25">
+            <CardHeader className="px-0">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <ScrollText className="h-5 w-5" />
+                Audit log
+              </CardTitle>
+              <CardDescription>Install-wide</CardDescription>
+            </CardHeader>
+            <CardContent className="px-0 text-sm text-muted-foreground">
+              Every organization&apos;s events plus system-level activity, newest
+              first.
+            </CardContent>
+          </Card>
+        </Link>
+      </div>
+
+      <Alert>
+        <AlertTitle>Organization-consent gate</AlertTitle>
+        <AlertDescription>
+          Per ADR 0018, this account has no data access inside any organization
+          until that organization&apos;s Admin grants it. You can create
+          organizations and seed their first Admin, but you cannot read their
+          data.
+        </AlertDescription>
+      </Alert>
+    </div>
   );
 }
