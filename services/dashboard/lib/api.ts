@@ -22,6 +22,7 @@ import type {
   Member,
   MemberCreate,
   MemberCreateResponse,
+  MemberPasswordReset,
   MembershipInfo,
   MeResponse,
   Organization,
@@ -314,6 +315,15 @@ export async function removeMember(userId: string): Promise<void> {
     }
     throw new ApiError(resp.status, detail);
   }
+}
+
+/** Admin rotates a member's password (recovery — no SMTP). Returns the
+ *  one-time password to share out of band. Throws ApiError(409) for the
+ *  Superuser's fixed credential, 404 if not a member of this org. */
+export function resetMemberPassword(userId: string): Promise<MemberPasswordReset> {
+  return apiFetch(`/api/v1/organization/users/${userId}/password-reset`, {
+    method: "POST",
+  }).then(unwrap<MemberPasswordReset>);
 }
 
 export function fetchOrgAudit(limit = 50, offset = 0): Promise<OrgAuditPage> {

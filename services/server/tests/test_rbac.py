@@ -335,6 +335,91 @@ async def test_admin_creates_member_with_generated_password_and_dual_audit(
     assert login.json()["auto_selected_organization"]["organization_id"] == str(org_id)
 
 
+# ─── Member password reset (Phase 6.5-e.1) ───────────────────────────────────
+
+
+async def test_password_reset_requires_admin(
+    client: AsyncClient, org_with_members: dict[str, Any]
+) -> None:
+    analyst_id = org_with_members["analyst"]["user_id"]
+    for role in ("engineer", "responder", "analyst"):
+        await _login_as(client, org_with_members, role)
+        resp = await client.post(
+            f"/api/v1/organization/users/{analyst_id}/password-reset"
+        )
+        assert resp.status_code == 403, role
+
+
+async def test_admin_resets_member_password_and_dual_audit(
+    client: AsyncClient, db: AsyncSession, org_with_members: dict[str, Any]
+) -> None:
+    await _login_as(client, org_with_members, "admin")
+    analyst = org_with_members["analyst"]
+
+    resp = await client.post(
+        f"/api/v1/organization/users/{analyst['user_id']}/password-reset"
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["email"] == analyst["email"]
+    assert len(body["new_password"]) >= 32
+
+    # Dual audit: org-scoped event + linked install-level event.
+    events = await _audit_events(db, "organization.member.password_reset")
+    org_id = org_with_members["organization_id"]
+    org_events = [e for e in events if e.organization_id == org_id]
+    assert org_events
+    assert org_events[-1].event_data is not None
+    assert org_events[-1].event_data["sessions_revoked"] is True
+    install_events = [
+        e
+        for e in events
+        if e.organization_id is None and e.related_event_id == org_events[-1].id
+    ]
+    assert install_events
+
+    # The new credential works; the old one no longer does.
+    old = await client.post(
+        "/api/v1/auth/login",
+        json={"email": analyst["email"], "password": _MEMBER_PASSWORD},
+    )
+    assert old.status_code == 401
+    new = await client.post(
+        "/api/v1/auth/login",
+        json={"email": analyst["email"], "password": body["new_password"]},
+    )
+    assert new.status_code == 200
+
+
+async def test_reset_password_unknown_member_404(
+    client: AsyncClient, org_with_members: dict[str, Any]
+) -> None:
+    await _login_as(client, org_with_members, "admin")
+    resp = await client.post(
+        f"/api/v1/organization/users/{uuid.uuid4()}/password-reset"
+    )
+    assert resp.status_code == 404
+
+
+async def test_admin_cannot_reset_superuser_password(
+    client: AsyncClient,
+    db: AsyncSession,
+    org_with_members: dict[str, Any],
+    seed_superuser: dict[str, Any],
+) -> None:
+    # Give the Superuser a (consent-granted) membership in this org, then
+    # confirm an Admin still can't rotate that credential via the API.
+    org_id = org_with_members["organization_id"]
+    db.add(_new_binding(seed_superuser["user_id"], org_id, "superuser"))
+    await db.commit()
+
+    await _login_as(client, org_with_members, "admin")
+    resp = await client.post(
+        f"/api/v1/organization/users/{seed_superuser['user_id']}/password-reset"
+    )
+    assert resp.status_code == 409
+
+
 async def test_admin_cannot_assign_superuser_role(
     client: AsyncClient, org_with_members: dict[str, Any]
 ) -> None:

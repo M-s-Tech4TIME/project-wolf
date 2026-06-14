@@ -139,6 +139,14 @@ export type RoleChange = {
   role: string;
 };
 
+/** POST /organization/users/{id}/password-reset response — the freshly
+ *  generated password, returned once for out-of-band delivery. */
+export type MemberPasswordReset = {
+  user_id: string;
+  email: string;
+  new_password: string;
+};
+
 /** One row of the org's own audit trail (no org-name column — it's
  *  implicitly the active org). */
 export type OrgAuditEvent = {

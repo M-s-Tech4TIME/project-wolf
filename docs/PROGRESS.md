@@ -6,7 +6,7 @@
 >
 > For history of what changed when, see `CHANGELOG.md` (append-only).
 
-**Last updated:** 2026-06-14 by claude-code (6.5-e SHIPPED — per-org User management UI, operator web-test signed off all seven checks. Frontend-only (backend was complete in 6.5-b): Admin-only /settings area reached from the chat-header Settings gear; Users page lists members with inline role dropdown, add-member dialog (one-time password for new accounts), remove-with-confirm, and a "Recent member changes" audit panel; Last-Admin 409 guard surfaces in the UI. Frontend gate green; live-smoked via proxy. NEXT: 6.5-e.1 — password recovery (operator-raised): Org-Admin password-reset endpoint + Users-page action so Admins/Superuser can rotate a user's password and share it out-of-band — no SMTP/self-service reset exists. Superuser reset backend already exists; a Superuser reset UI has an ADR-0018 consent-gate tension to design around. Then 6.5-f.)
+**Last updated:** 2026-06-14 by claude-code (6.5-e.1 SHIPPED — Org-Admin password reset, operator signed off (checks 1/2/4; check 3 is a guard only reachable post-6.5-f, covered by an automated test). New POST /api/v1/organization/users/{id}/password-reset (Admin-gated, member-scoped, one-time password, revokes the member's sessions, dual-audited) + "Reset password" action on the Users page (confirm → one-time reveal + copy). 475 backend tests + 18 isolation + mypy strict green; frontend gate green; live-smoked. Builds on 6.5-e (per-org User management UI, shipped earlier today). NEXT: 6.5-e.2 — Superuser break-glass reset-by-email (planned, awaiting approval) for the locked-out sole-Admin case; then 6.5-f.)
 
 ---
 

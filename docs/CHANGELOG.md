@@ -49,6 +49,43 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-14 — 6.5-e.1 SHIPPED: Org-Admin password reset (recovery)
+
+**Session type:** claude-code (operator-directed)
+**Phase:** 6.5-e.1 (operator-raised follow-on to 6.5-e)
+**Branch / commit:** main (this commit)
+
+### What we did
+- **New endpoint** `POST /api/v1/organization/users/{user_id}/password-reset`
+  (`org_management.py`, Admin-gated via `USERS_MANAGE`): scoped to the caller's
+  org via the membership binding (an Admin can only reset *their* org's
+  members), generates a one-time password, hashes it, **revokes the member's
+  live sessions** (`_revoke_all_sessions`, mirroring the Superuser reset),
+  dual-audits `organization.member.password_reset` (org + install), returns the
+  password once. The Superuser's consent-granted membership is off-limits (409 —
+  rotate via the bootstrap CLI). New `PasswordResetResponse` schema.
+- **Frontend**: a "Reset password" (key icon) action per member row →
+  `ConfirmDialog` (warns the old password + sessions die; flags self-reset) →
+  one-time-password reveal dialog with copy. Added `resetMemberPassword` +
+  `MemberPasswordReset` type. No new UI primitives.
+- **Why:** Wolf has no SMTP / self-service "forgot password", so recovery is
+  necessarily Admin-driven. Operator-raised during the 6.5-e web-test.
+
+### What broke / what we discovered
+- 4 new tests (requires-admin 403; reset + dual-audit with old-password-fails /
+  new-works; unknown-member 404; superuser-role 409). Integrity gate: **475
+  backend tests** + 18 cross-org isolation + mypy --strict clean. Frontend gate
+  green; live smoke (reset endpoint unauth → 401).
+- Operator clarified the recurring wolf-server "inactive" was just reboots
+  (user services don't auto-start without lingering) — not a bug.
+
+### What's next
+- **6.5-e.2 — Superuser break-glass reset-by-email** (planned): recovers the
+  locked-out *sole Admin* case the Org-Admin reset can't reach (no peer Admin).
+  Superuser resets by email (consent-gate-safe — no roster listing). Then 6.5-f.
+
+---
+
 ## 2026-06-14 — 6.5-e SHIPPED: per-org User management UI
 
 **Session type:** claude-code (operator-directed; plan-mode approved)

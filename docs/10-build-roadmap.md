@@ -445,12 +445,19 @@ estimated**:
    already complete (6.5-b); the Last-Admin 409 guard surfaces in the
    UI. Frontend-only — no `services/` change. Frontend gate green,
    live-smoked through the proxy.
-   - **Follow-on (operator-raised 2026-06-14): 6.5-e.1 — password
-     recovery.** Admins/Superuser rotate a user's password (one-time
-     password, share out-of-band) since there is no SMTP/self-service
-     reset. Org-Admin reset is a new endpoint; Superuser reset backend
-     already exists (`POST /api/v1/users/{id}/password-reset`). See
-     CHANGELOG.
+   - **6.5-e.1 — Org-Admin password reset — ✅ SHIPPED 2026-06-14**
+     (operator signed off). New `POST /api/v1/organization/users/{id}/
+     password-reset` (Admin-gated, member-scoped, one-time password,
+     revokes the member's sessions, dual-audited); "Reset password"
+     action on the Users page (confirm → one-time reveal + copy). 4
+     tests; 475 backend green. No SMTP/self-service reset exists, so
+     recovery is Admin-driven.
+   - **6.5-e.2 — Superuser break-glass reset-by-email (PLANNED).** For
+     the locked-out *sole Admin* (no peer Admin to reset them): the
+     Superuser resets by EMAIL (avoids the consent-gate roster-listing
+     problem). Backend `POST /api/v1/users/{id}/password-reset` exists
+     but is by-id; e.2 adds a Superuser reset-by-email endpoint + a
+     break-glass surface on the per-org page.
 
 8. **6.5-f — Superuser-membership-grant flow + UI** — backend
    Superuser-request → Admin-approve/reject → time-limited

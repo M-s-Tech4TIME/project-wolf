@@ -38,7 +38,9 @@ from sqlalchemy.orm import selectinload
 
 from wolf_server.audit.log import write_event
 from wolf_server.audit.models import AuditEvent
+from wolf_server.auth.blacklist import get_session_blacklist
 from wolf_server.auth.local import hash_password
+from wolf_server.config import get_settings
 from wolf_server.database import get_db
 from wolf_server.organization.context import OrganizationContext
 from wolf_server.organization.models import User, UserOrganization
@@ -84,6 +86,14 @@ class MemberCreateResponse(MemberResponse):
     new_password: str | None
 
 
+class PasswordResetResponse(BaseModel):
+    user_id: uuid.UUID
+    email: str
+    # The freshly generated password — returned ONCE for out-of-band
+    # delivery to the member; never logged or persisted in plaintext.
+    new_password: str
+
+
 class RoleChangeRequest(BaseModel):
     role: str
 
@@ -115,6 +125,16 @@ class AuditPageResponse(BaseModel):
 
 def _source_ip(request: Request) -> str | None:
     return request.client.host if request.client else None
+
+
+async def _revoke_all_sessions(user_id: uuid.UUID) -> None:
+    """Watermark-revoke every outstanding session for a user (6.5-g).
+
+    Mirrors api/superuser._revoke_all_sessions — a password reset must
+    invalidate live sessions (the TTL covers the access-token lifetime).
+    """
+    ttl = get_settings().access_token_expire_minutes * 60
+    await get_session_blacklist().revoke_user(str(user_id), ttl_seconds=ttl)
 
 
 def _validate_assignable_role(role: str) -> None:
@@ -394,6 +414,74 @@ async def remove_member(
         "organization_member_removed",
         organization_id=str(ctx.organization_id),
         member_user_id=str(user_id),
+    )
+
+
+@router.post(
+    "/users/{user_id}/password-reset",
+    response_model=PasswordResetResponse,
+)
+async def reset_member_password(
+    user_id: uuid.UUID,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    ctx: Annotated[OrganizationContext, Depends(require_capability(Capability.USERS_MANAGE))],
+) -> PasswordResetResponse:
+    """Admin resets a member's password (Phase 6.5-e.1).
+
+    Recovery path for a member who forgot their password — Wolf has no
+    SMTP / self-service reset, so an Admin rotates it and delivers the
+    one-time password out of band. Scoped to THIS org via the membership
+    binding (an Admin can only reset members of their own org); the
+    Superuser's consent-granted membership is off-limits here (rotate the
+    Superuser credential via the bootstrap CLI on the host). The reset
+    blacklists the member's live sessions and is audited in both the org
+    and install logs.
+    """
+    binding = await _get_binding(db, ctx.organization_id, user_id)
+    if binding is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"User {user_id} is not a member of this organization",
+        )
+    if binding.role == "superuser" or binding.user.is_superuser:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "The Superuser password is rotated via the bootstrap_superuser "
+                "CLI on the host, not via the API"
+            ),
+        )
+
+    new_password = secrets.token_urlsafe(_PASSWORD_BYTES)
+    binding.user.hashed_password = hash_password(new_password)
+    binding.user.updated_at = datetime.now(UTC)
+
+    # A reset invalidates the member's live sessions (ADR 0018 Round 1).
+    await _revoke_all_sessions(binding.user_id)
+
+    await _write_dual_audit(
+        db,
+        ctx,
+        event_type="organization.member.password_reset",
+        event_data={
+            "member_user_id": str(user_id),
+            "member_email": binding.user.email,
+            "sessions_revoked": True,
+        },
+        source_ip=_source_ip(request),
+    )
+    await db.commit()
+
+    logger.info(
+        "organization_member_password_reset",
+        organization_id=str(ctx.organization_id),
+        member_user_id=str(user_id),
+    )
+    return PasswordResetResponse(
+        user_id=binding.user_id,
+        email=binding.user.email,
+        new_password=new_password,
     )
 
 

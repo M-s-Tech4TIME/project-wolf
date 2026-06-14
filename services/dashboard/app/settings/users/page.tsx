@@ -9,7 +9,7 @@
 // (409) is the hard stop — the UI surfaces its message rather than
 // reimplementing the rule.
 
-import { Check, ChevronDown, Copy, Plus, Trash2, Users } from "lucide-react";
+import { Check, ChevronDown, Copy, KeyRound, Plus, Trash2, Users } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
@@ -49,10 +49,16 @@ import {
   fetchOrgAudit,
   listMembers,
   removeMember,
+  resetMemberPassword,
 } from "@/lib/api";
 import { copyText } from "@/lib/clipboard";
 import { absoluteTimeTitle, relativeTime } from "@/lib/format";
-import { ORG_ROLES, type Member, type OrgAuditEvent } from "@/lib/types";
+import {
+  ORG_ROLES,
+  type Member,
+  type MemberPasswordReset,
+  type OrgAuditEvent,
+} from "@/lib/types";
 
 function summarizeMemberEvent(e: OrgAuditEvent): string {
   const d = e.event_data ?? {};
@@ -90,6 +96,10 @@ export default function UsersPage() {
   const [roleBusyId, setRoleBusyId] = useState<string | null>(null);
   // Remove confirm
   const [removing, setRemoving] = useState<Member | null>(null);
+  // Password reset: confirm step → result reveal
+  const [resetting, setResetting] = useState<Member | null>(null);
+  const [resetResult, setResetResult] = useState<MemberPasswordReset | null>(null);
+  const [resetCopied, setResetCopied] = useState(false);
 
   const load = useCallback(() => {
     listMembers()
@@ -185,6 +195,30 @@ export default function UsersPage() {
     if (await copyText(createdPassword)) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
+    }
+  }
+
+  async function confirmReset() {
+    if (!resetting) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await resetMemberPassword(resetting.user_id);
+      setResetting(null);
+      setResetResult(res);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Failed to reset password.");
+      setResetting(null);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function copyResetPassword() {
+    if (!resetResult) return;
+    if (await copyText(resetResult.new_password)) {
+      setResetCopied(true);
+      setTimeout(() => setResetCopied(false), 2000);
     }
   }
 
@@ -295,15 +329,26 @@ export default function UsersPage() {
                       )}
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setRemoving(m)}
-                        title="Remove from organization"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                        <span className="sr-only">Remove</span>
-                      </Button>
+                      <div className="flex items-center justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setResetting(m)}
+                          title="Reset password"
+                        >
+                          <KeyRound className="h-4 w-4" />
+                          <span className="sr-only">Reset password</span>
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setRemoving(m)}
+                          title="Remove from organization"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          <span className="sr-only">Remove</span>
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 );
@@ -458,6 +503,63 @@ export default function UsersPage() {
         onConfirm={confirmRemove}
         onCancel={() => setRemoving(null)}
       />
+
+      {/* Reset password — confirm */}
+      <ConfirmDialog
+        open={resetting !== null}
+        title="Reset password?"
+        description={
+          <>
+            A new one-time password will be generated for{" "}
+            <span className="font-medium">{resetting?.display_name}</span> (
+            {resetting?.email}). Their current password stops working and any
+            active sessions end. You&apos;ll get the new password to share with
+            them.
+            {resetting?.user_id === me?.user_id
+              ? " This is your own account — you will be signed out."
+              : ""}
+          </>
+        }
+        confirmLabel="Reset password"
+        onConfirm={confirmReset}
+        onCancel={() => setResetting(null)}
+      />
+
+      {/* Reset password — one-time reveal */}
+      <Dialog
+        open={resetResult !== null}
+        onOpenChange={(o) => !o && setResetResult(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Password reset</DialogTitle>
+            <DialogDescription>
+              Share this one-time password with{" "}
+              <span className="font-medium">{resetResult?.email}</span> out of
+              band. Wolf never shows it again.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1.5">
+            <Label>New password</Label>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 truncate rounded-md bg-muted px-3 py-2 font-mono text-sm">
+                {resetResult?.new_password}
+              </code>
+              <Button variant="outline" size="sm" onClick={copyResetPassword}>
+                {resetCopied ? (
+                  <Check className="h-4 w-4" />
+                ) : (
+                  <Copy className="h-4 w-4" />
+                )}
+                {resetCopied ? "Copied" : "Copy"}
+              </Button>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setResetResult(null)}>Done</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
