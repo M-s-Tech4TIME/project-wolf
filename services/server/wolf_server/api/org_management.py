@@ -678,14 +678,17 @@ async def list_access_requests(
     decider_ids = {req.decided_by_user_id for req, _ in rows if req.decided_by_user_id}
     decider_names: dict[uuid.UUID, str] = {}
     if decider_ids:
-        decider_names = {
-            uid: name
-            for uid, name in (
+        # .tuples() so the rows type as plain (UUID, str) pairs — dict()
+        # then satisfies both ruff (C416) and mypy --strict.
+        decider_names = dict(
+            (
                 await db.execute(
                     select(User.id, User.display_name).where(User.id.in_(decider_ids))
                 )
-            ).all()
-        }
+            )
+            .tuples()
+            .all()
+        )
 
     return [
         _access_request_admin_response(
