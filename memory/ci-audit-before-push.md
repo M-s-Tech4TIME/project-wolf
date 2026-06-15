@@ -32,10 +32,18 @@ red run.
    (see the Phase 6.4 FK-naming lesson).
 5. New test files → confirm directory discovery picks them up; named
    explicit gates (isolation suite) need path updates when files rename.
-6. Where feasible, run the CI job's EXACT command locally before pushing
-   (mypy invocation, coverage floor command, isolation gate).
-7. After push: watch the run (`gh run watch`) until fully green — the
-   slice is not closed until CI is.
+6. Run the FULL local gate before pushing — mirror EVERY CI job, not a
+   subset. For services/ changes that means ALL of: `uv run ruff check .`
+   (the backend lint gate — easy to forget), `uv run mypy <strict set>
+   --strict`, `uv run pytest services/server/tests packages/`, the
+   cross-org isolation gate, `alembic check` (from services/server or with
+   `-c services/server/alembic.ini`), and for frontend `tsc --noEmit` +
+   `eslint .` + `npm run build`. Watch out for two-tool tension: ruff C416
+   wants `dict(rows)`, but a SQLAlchemy `Row` isn't a tuple to mypy — use
+   `.tuples().all()` so both pass.
+7. After push: watch the run (`gh run watch <id> --exit-status`, and read
+   `$?` directly — piping to `tail` masks the exit code) until fully green.
+   The slice is not closed until CI is.
 
 Related: [[integrity-across-the-stack]], [[no-unaddressed-errors]],
 [[periodic-plan-sync]].
