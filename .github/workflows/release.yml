@@ -160,7 +160,7 @@ jobs:
         # softprops/action-gh-release is the modern idiom; uploads
         # files specified in `files:` as release assets. tag_name
         # defaults to the triggering tag.
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           name: "Wolf v${{ steps.version.outputs.version }}"
           body_path: ${{ steps.notes.outputs.notes_file }}
