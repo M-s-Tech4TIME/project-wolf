@@ -442,10 +442,19 @@ function ConversationListItem({
     }
   }, [isRenaming, conversation.title]);
 
+  // Guard empty/whitespace-only renames (6.5-i) — mirrors the header's
+  // commit(): a blank title reverts rather than persisting "". maxLength
+  // on the input caps the upper bound.
+  function commitRename() {
+    const next = draft.trim();
+    if (next) onCommitRename(next);
+    else onCancelRename();
+  }
+
   function handleKeyDown(e: KeyboardEvent<HTMLInputElement>) {
     if (e.key === "Enter") {
       e.preventDefault();
-      onCommitRename(draft);
+      commitRename();
     } else if (e.key === "Escape") {
       e.preventDefault();
       onCancelRename();
@@ -464,7 +473,7 @@ function ConversationListItem({
           ref={inputRef}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          onBlur={() => onCommitRename(draft)}
+          onBlur={commitRename}
           onKeyDown={handleKeyDown}
           maxLength={80}
           aria-label="Rename conversation"

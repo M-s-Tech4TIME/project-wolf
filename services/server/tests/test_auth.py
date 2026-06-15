@@ -135,6 +135,21 @@ async def test_login_unknown_email_returns_401(
     assert resp.status_code == 401
 
 
+async def test_login_rejects_oversized_fields(client: AsyncClient) -> None:
+    # max_length caps payload size (6.5-i) — over-long email/password is a
+    # clean 422, not an unbounded body hitting the credential check.
+    resp = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "a" * 321, "password": "ok"},
+    )
+    assert resp.status_code == 422
+    resp = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "a@b.com", "password": "p" * 1025},
+    )
+    assert resp.status_code == 422
+
+
 async def test_wrong_organization_header_rejected(
     client: AsyncClient,
     seed_organization_and_user: dict[str, Any],

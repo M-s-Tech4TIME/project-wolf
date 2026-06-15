@@ -49,6 +49,70 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-15 — 6.5-i SHIPPED: input-validation + exception-handling retrofit
+
+**Session type:** claude-code (operator-directed)
+**Phase:** 6.5-i
+**Branch / commit:** main (this commit)
+
+### What we did
+The dedicated pass that closes the gap for input fields shipped before the
+2026-06-15 standing rule (memory `input-validation-exception-handling`).
+
+- **Audit first — backend was largely already at the bar.** `chat.py`,
+  `organizations.py`, `org_management.py`, `superuser.py` already use
+  `Field` (min/max/pattern) / `EmailStr` / role allowlists; app-wide error
+  rendering was already fixed in 6.5-e.2 (`unwrap`/`formatApiDetail` turns a
+  422 `detail` array into `"field: message"`; `isValidEmail` exists). Two real
+  gaps remained.
+- **Backend gap — `auth.py LoginRequest`** (email + password were unbounded):
+  added `Field(max_length=320)` (RFC-5321 cap) / `Field(max_length=1024)` to
+  bound payload size. `email` stays a plain `str` (the fixed Superuser username
+  "Wolf" and `wolf@wolf.local` must log in — `EmailStr` would reject both); **no**
+  `min_length` (login must not constrain/probe credential shape). New
+  `test_login_rejects_oversized_fields` (321-char email / 1025-char password →
+  422).
+- **Frontend gaps — client-side mirrors of the server rules:**
+  - `chat-composer.tsx`: 4000-char cap matching the backend `question`
+    `Field(max_length=4000)` — native `maxLength`, a counter that appears near
+    the limit (red at the cap), and the send path blocks past it.
+  - `chat-sidebar.tsx`: the inline conversation rename could persist an
+    empty/whitespace title (the header already guarded this) — added
+    `commitRename()` that reverts blank to the original (input already
+    `maxLength={80}`).
+  - `login-form.tsx`: `noValidate` on the form so the browser's native "Please
+    fill out this field" bubble is replaced by app-native inline guidance
+    ("Enter your email or username." / "Enter your password.") before the
+    round-trip; `required` kept for assistive-tech semantics. Login error
+    rendered borderless (scoped `className` override, not the shared `Alert`
+    primitive).
+- **Intentionally NOT constrained** (recorded so the audit is complete): the
+  sidebar search box and the chats-history-overlay filter are read-only client
+  filters — they submit no constrained payload, so no validation/error handling
+  is owed.
+- Conversation rename is client-only state today; when persistence lands
+  (future phase) the stored schema gets a matching `Field` bound — a code note
+  flags the spot.
+
+### Verification
+- **481 backend tests** + cross-org isolation (directory-discovered in the same
+  run) + `mypy --strict` clean (6 api files). Frontend tsc/eslint(0 warnings)/
+  build green. Live smoke through the proxy: over-long login email (321 chars)
+  → HTTP 422; normal bad creds → 401 (after explicitly restarting wolf-server so
+  the new code was live). Operator web-test signed off: login empty-field
+  guidance is app-native; composer cap + counter; rename reverts on blank; no
+  `[object Object]` anywhere; borderless login error confirmed.
+- **CI audit (standing pre-push rule):** no workflow change needed — the
+  existing `typecheck` strict-set already covers `wolf_server/api`, `test`
+  covers the new auth test + cross-org gate, and `frontend` runs tsc/eslint/
+  build. 6.5-i added no new module/path/strict-member/smoke/artifact.
+
+### What's next
+- **6.5-f** (Superuser-membership-grant flow). The standing input-validation
+  rule is now satisfied for pre-rule fields and applies inline to all new ones.
+
+---
+
 ## 2026-06-15 — 6.5-e.2 SHIPPED: Superuser break-glass reset-by-email + validation/error-handling fixes
 
 **Session type:** claude-code (operator-directed)

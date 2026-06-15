@@ -42,6 +42,12 @@ type Props = {
  */
 const COMPOSER_MAX_HEIGHT_PX = 240;
 
+// Mirror the backend `question` cap (ChatRequestBody.question
+// Field(max_length=4000) in api/chat.py). The textarea `maxLength`
+// enforces it natively; the counter near the limit makes it guided
+// rather than a silent truncation. Phase 6.5-i.
+const MAX_QUESTION_LEN = 4000;
+
 export function ChatComposer({ onSubmit, streaming, onStop, draft }: Props) {
   const [value, setValue] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -97,7 +103,7 @@ export function ChatComposer({ onSubmit, streaming, onStop, draft }: Props) {
     // Enter-keyboard-shortcut respects, so a draft that's blocked from
     // sending also survives across "type ... press Enter ... still
     // streaming ... click Stop ... press Enter again" cycles.
-    if (!value.trim() || streaming) return;
+    if (!value.trim() || value.length > MAX_QUESTION_LEN || streaming) return;
     const q = value;
     setValue("");
     await onSubmit(q);
@@ -122,6 +128,7 @@ export function ChatComposer({ onSubmit, streaming, onStop, draft }: Props) {
           ref={textareaRef}
           className="flex-1 resize-none overflow-y-auto bg-transparent px-2 py-1.5 text-sm leading-relaxed outline-none placeholder:text-muted-foreground [scrollbar-gutter:stable] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-foreground/30 hover:[&::-webkit-scrollbar-thumb]:bg-foreground/50"
           rows={2}
+          maxLength={MAX_QUESTION_LEN}
           placeholder='Ask something — e.g. "why did agent web-07 trigger alert 5710 at 10:32 UTC?"'
           value={value}
           onChange={(e) => setValue(e.target.value)}
@@ -156,10 +163,22 @@ export function ChatComposer({ onSubmit, streaming, onStop, draft }: Props) {
           </Button>
         )}
       </div>
-      <p className="mt-1.5 px-1 text-[10px] text-muted-foreground">
-        Press <kbd className="rounded bg-muted px-1 py-0.5">Enter</kbd> to send,{" "}
-        <kbd className="rounded bg-muted px-1 py-0.5">Shift+Enter</kbd> for newline.
-      </p>
+      <div className="mt-1.5 flex items-center justify-between gap-2 px-1 text-[10px] text-muted-foreground">
+        <span>
+          Press <kbd className="rounded bg-muted px-1 py-0.5">Enter</kbd> to send,{" "}
+          <kbd className="rounded bg-muted px-1 py-0.5">Shift+Enter</kbd> for newline.
+        </span>
+        {/* Counter appears only as the message approaches the cap. */}
+        {value.length > MAX_QUESTION_LEN * 0.9 ? (
+          <span
+            className={
+              value.length >= MAX_QUESTION_LEN ? "text-destructive" : undefined
+            }
+          >
+            {value.length} / {MAX_QUESTION_LEN}
+          </span>
+        ) : null}
+      </div>
     </form>
   );
 }

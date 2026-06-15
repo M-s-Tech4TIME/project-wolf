@@ -56,6 +56,17 @@ export function LoginForm() {
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    // Inline guards before the round-trip (6.5-i). The identifier is
+    // email-or-username (Superuser logs in by "Wolf"), so we only check
+    // presence here, not email format.
+    if (!email.trim()) {
+      setError("Enter your email or username.");
+      return;
+    }
+    if (!password) {
+      setError("Enter your password.");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -130,7 +141,11 @@ export function LoginForm() {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-4">
+        {/* noValidate: suppress the browser's native "Please fill out this
+            field" bubble so our app-native, guided inline messages
+            (handleSubmit guards below) are what the user sees. `required`
+            stays on the inputs for assistive-tech semantics. Phase 6.5-i. */}
+        <form onSubmit={handleSubmit} className="space-y-4" noValidate>
           <div className="space-y-2">
             <Label htmlFor="email">Email or username</Label>
             {/* type="text" (not "email"): the fixed Superuser username
@@ -157,7 +172,13 @@ export function LoginForm() {
           </div>
 
           {error ? (
-            <Alert variant="destructive">
+            // Scoped override (not the shared Alert primitive, which is used
+            // app-wide): drop the box (border/bg/padding) so the login error
+            // reads as plain destructive-colored text. Phase 6.5-i.
+            <Alert
+              variant="destructive"
+              className="border-0 bg-transparent px-0 py-0"
+            >
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           ) : null}

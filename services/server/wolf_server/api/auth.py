@@ -16,7 +16,7 @@ from typing import Annotated, Any
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -45,8 +45,14 @@ class LoginRequest(BaseModel):
     # is accepted alongside regular email addresses (ADR 0018: the
     # Superuser logs in by username). Non-email strings simply fail the
     # user lookup and 401 like any wrong credential.
-    email: str
-    password: str
+    #
+    # max_length caps payload size (DoS hygiene). NO min_length — login
+    # must not constrain or probe credential shape; a bad/empty value
+    # just fails the lookup and 401s. Bounds: email ≤320 (RFC 5321 max
+    # address length), password ≤1024 (generous; bcrypt only reads the
+    # first 72 bytes, but the cap blocks giant request bodies).
+    email: str = Field(max_length=320)
+    password: str = Field(max_length=1024)
 
 
 class MembershipInfo(BaseModel):
