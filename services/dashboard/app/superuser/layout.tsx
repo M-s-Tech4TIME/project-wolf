@@ -8,7 +8,7 @@
 // in the install-admin surface → /chat. ADR 0018: the Superuser is an
 // install-level identity with no org data access.
 
-import { Building2, ScrollText, ShieldCheck } from "lucide-react";
+import { Building2, MessageSquare, ScrollText, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, type ReactNode } from "react";
@@ -26,7 +26,11 @@ const NAV = [
 export default function SuperuserLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { isLoading, me, signOut } = useAuth();
+  const { isLoading, me, signOut, organizations } = useAuth();
+  // Chat is only reachable once an org Admin has granted the Superuser a
+  // (time-limited) membership — until then there is no org data to chat
+  // about (ADR 0018 consent gate). The grant shows up as a membership.
+  const canChat = organizations.length > 0;
 
   useEffect(() => {
     if (isLoading) return;
@@ -60,7 +64,7 @@ export default function SuperuserLayout({ children }: { children: ReactNode }) {
             </Button>
           </div>
         </div>
-        <nav className="mx-auto flex w-full max-w-6xl gap-1 px-2">
+        <nav className="mx-auto flex w-full max-w-6xl items-center gap-1 px-2">
           {NAV.map(({ href, label, icon: Icon }) => {
             const active = pathname === href || pathname.startsWith(`${href}/`);
             return (
@@ -79,6 +83,30 @@ export default function SuperuserLayout({ children }: { children: ReactNode }) {
               </Link>
             );
           })}
+          {/* Chat — gated on holding an active org grant. */}
+          {canChat ? (
+            <Link
+              href="/chat"
+              className={cn(
+                "flex items-center gap-2 border-b-2 px-3 py-2 text-sm transition-colors",
+                pathname.startsWith("/chat")
+                  ? "border-foreground font-medium text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <MessageSquare className="h-4 w-4" />
+              Chat
+            </Link>
+          ) : (
+            <span
+              aria-disabled="true"
+              title="Request access to an organization to use chat"
+              className="flex cursor-not-allowed items-center gap-2 border-b-2 border-transparent px-3 py-2 text-sm text-muted-foreground/40"
+            >
+              <MessageSquare className="h-4 w-4" />
+              Chat
+            </span>
+          )}
         </nav>
       </header>
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">{children}</main>

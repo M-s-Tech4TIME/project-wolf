@@ -165,6 +165,89 @@ export type OrgAuditPage = {
   offset: number;
 };
 
+// ── Superuser-membership consent gate (Phase 6.5-f) ─────────────────────────
+// Mirror services/server/wolf_server/api/{superuser,org_management}.py.
+// Flow: Superuser requests → Admin approves/rejects → time-limited grant →
+// expiry/revoke → all org members see a transparency banner.
+
+export type AccessRequestStatus =
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "cancelled"
+  // Terminal states an APPROVED grant lands in (timeline tail):
+  | "revoked"
+  | "expired";
+
+/** Duration presets for the request + approve dialogs. `null` = "until
+ *  revoked" (open-ended). Kept here so both UIs share one source. */
+export const ACCESS_DURATION_OPTIONS: { label: string; hours: number | null }[] = [
+  { label: "1 hour", hours: 1 },
+  { label: "4 hours", hours: 4 },
+  { label: "8 hours", hours: 8 },
+  { label: "24 hours", hours: 24 },
+  { label: "72 hours", hours: 72 },
+  { label: "Until revoked", hours: null },
+];
+
+/** A Superuser's own access-request (Superuser-side view). */
+export type SuperuserAccessRequest = {
+  id: string;
+  organization_id: string;
+  organization_name: string;
+  status: AccessRequestStatus;
+  reason: string | null;
+  requested_duration_hours: number | null;
+  granted_expires_at: string | null;
+  requested_at: string;
+  decided_at: string | null;
+  /** When an approved grant ended (revoked/expired); null otherwise. */
+  ended_at: string | null;
+  /** True when this approval is presently a live (non-expired) grant. */
+  currently_active: boolean;
+};
+
+export type AccessRequestCreate = {
+  reason?: string | null;
+  /** null = "until revoked"; otherwise 1..720 hours. Defaults to 24h. */
+  requested_duration_hours?: number | null;
+};
+
+/** An access-request as the org's Admin sees it (consent-gate inbox). */
+export type OrgAccessRequest = {
+  id: string;
+  superuser_user_id: string;
+  superuser_email: string;
+  superuser_display_name: string;
+  status: AccessRequestStatus;
+  reason: string | null;
+  requested_duration_hours: number | null;
+  granted_expires_at: string | null;
+  requested_at: string;
+  decided_at: string | null;
+  decided_by_user_id: string | null;
+  /** Display name of the deciding Admin (null while pending/cancelled). */
+  decided_by_display_name: string | null;
+  /** When an approved grant ended (revoked/expired); null otherwise. */
+  ended_at: string | null;
+};
+
+/** Approval decision: honour the requested duration, override with
+ *  `duration_hours`, or grant open-ended ("until_revoked"). */
+export type AccessApprove = {
+  mode: "requested" | "hours" | "until_revoked";
+  duration_hours?: number | null;
+};
+
+/** The org's current active Superuser grant — drives the all-member
+ *  transparency banner. The endpoint returns `null` when none. */
+export type SuperuserAccessGrant = {
+  granted_by_display_name: string | null;
+  granted_at: string;
+  /** null = "until revoked" (open-ended grant). */
+  expires_at: string | null;
+};
+
 export type Citation = {
   tool: string;
   query: Record<string, unknown>;

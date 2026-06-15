@@ -46,19 +46,30 @@ from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from wolf_server.audit.log import write_event
+from wolf_server.audit.log import write_dual_event, write_event
 from wolf_server.audit.models import AuditEvent
 from wolf_server.auth.blacklist import get_session_blacklist
 from wolf_server.auth.local import hash_password
 from wolf_server.config import get_settings
 from wolf_server.database import get_db
-from wolf_server.organization.models import Organization, User, UserOrganization
+from wolf_server.organization.context import require_active_organization
+from wolf_server.organization.models import (
+    Organization,
+    SuperuserAccessRequest,
+    User,
+    UserOrganization,
+)
+from wolf_server.organization.superuser_access import active_superuser_binding
 
 logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/api/v1", tags=["superuser"])
 
 # Matches the bootstrap CLI's entropy (24 bytes -> 32 url-safe chars).
 _PASSWORD_BYTES = 24
+
+
+def _source_ip(request: Request) -> str | None:
+    return request.client.host if request.client else None
 
 
 async def _revoke_all_sessions(user_id: uuid.UUID) -> None:
@@ -162,6 +173,32 @@ class InstallAuditPageResponse(BaseModel):
     events: list[InstallAuditEventResponse]
     limit: int
     offset: int
+
+
+class AccessRequestCreate(BaseModel):
+    """A Superuser's request for time-limited membership in an org (6.5-f)."""
+
+    reason: str | None = Field(default=None, max_length=1000)
+    # null = "until revoked"; otherwise 1..720 hours (30 days).  Defaults
+    # to 24h (ADR 0018) when omitted.  The approving Admin may override.
+    requested_duration_hours: int | None = Field(default=24, ge=1, le=720)
+
+
+class AccessRequestResponse(BaseModel):
+    id: uuid.UUID
+    organization_id: uuid.UUID
+    organization_name: str
+    status: str
+    reason: str | None
+    requested_duration_hours: int | None
+    granted_expires_at: datetime | None
+    requested_at: datetime
+    decided_at: datetime | None
+    # When an approved grant ended (revoked early / expired); null otherwise.
+    ended_at: datetime | None
+    # True when the Superuser presently holds an active (non-expired)
+    # membership in this org from an approval.
+    currently_active: bool
 
 
 # ── Routes ───────────────────────────────────────────────────────────────────
@@ -485,3 +522,192 @@ async def view_install_audit(
         for event, org_name in result.all()
     ]
     return InstallAuditPageResponse(events=events, limit=limit, offset=offset)
+
+
+# ── Superuser access-requests (the consent gate, Superuser side) ──────────────
+
+
+@router.post(
+    "/superuser/organizations/{organization_id}/access-requests",
+    response_model=AccessRequestResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def request_org_access(
+    organization_id: uuid.UUID,
+    body: AccessRequestCreate,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    superuser: Annotated[User, Depends(require_superuser)],
+) -> AccessRequestResponse:
+    """File a request for time-limited membership in an organization.
+
+    ADR 0018 consent gate: the Superuser cannot self-grant data access —
+    an Admin of the target org must approve.  409 if the Superuser already
+    has active access, or an open pending request, for this org.
+    """
+    org = await require_active_organization(organization_id, db)
+
+    # active_superuser_binding prunes a lapsed grant lazily; if it returns
+    # a binding, access is genuinely live.  Any prune it performs is
+    # persisted by the commit at the end of the happy path.
+    if await active_superuser_binding(db, organization_id) is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="You already have active access to this organization",
+        )
+    existing_pending = await db.scalar(
+        select(SuperuserAccessRequest).where(
+            SuperuserAccessRequest.organization_id == organization_id,
+            SuperuserAccessRequest.superuser_user_id == superuser.id,
+            SuperuserAccessRequest.status == "pending",
+        )
+    )
+    if existing_pending is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="You already have a pending access request for this organization",
+        )
+
+    req = SuperuserAccessRequest(
+        id=uuid.uuid4(),
+        organization_id=organization_id,
+        superuser_user_id=superuser.id,
+        status="pending",
+        reason=body.reason,
+        requested_duration_hours=body.requested_duration_hours,
+        requested_at=datetime.now(UTC),
+    )
+    db.add(req)
+    await db.flush()
+
+    await write_dual_event(
+        db,
+        event_type="organization.superuser_access.requested",
+        event_data={
+            "superuser_user_id": str(superuser.id),
+            "request_id": str(req.id),
+            "requested_duration_hours": body.requested_duration_hours,
+            "has_reason": body.reason is not None,
+        },
+        organization_id=organization_id,
+        user_id=superuser.id,
+        source_ip=_source_ip(request),
+    )
+    await db.commit()
+    logger.info(
+        "superuser_access_requested",
+        organization_id=str(organization_id),
+        request_id=str(req.id),
+    )
+    return AccessRequestResponse(
+        id=req.id,
+        organization_id=organization_id,
+        organization_name=org.name,
+        status=req.status,
+        reason=req.reason,
+        requested_duration_hours=req.requested_duration_hours,
+        granted_expires_at=req.granted_expires_at,
+        requested_at=req.requested_at,
+        decided_at=req.decided_at,
+        ended_at=req.ended_at,
+        currently_active=False,
+    )
+
+
+@router.get("/superuser/access-requests", response_model=list[AccessRequestResponse])
+async def list_my_access_requests(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    superuser: Annotated[User, Depends(require_superuser)],
+    limit: Annotated[int, Query(ge=1, le=200)] = 100,
+) -> list[AccessRequestResponse]:
+    """The Superuser's own access-requests across every org, newest first."""
+    result = await db.execute(
+        select(SuperuserAccessRequest, Organization)
+        .join(Organization, Organization.id == SuperuserAccessRequest.organization_id)
+        .where(SuperuserAccessRequest.superuser_user_id == superuser.id)
+        .order_by(SuperuserAccessRequest.requested_at.desc())
+        .limit(limit)
+    )
+    rows = result.all()
+
+    # Which orgs the Superuser is *actively* (non-expired) a member of, in
+    # one query.  Expiry is checked in Python so the comparison behaves the
+    # same on SQLite (naive datetimes) and Postgres — see expire_if_past.
+    su_bindings = (
+        await db.execute(
+            select(UserOrganization).where(
+                UserOrganization.user_id == superuser.id,
+                UserOrganization.role == "superuser",
+            )
+        )
+    ).scalars()
+    now = datetime.now(UTC)
+    active_org_ids: set[uuid.UUID] = set()
+    for binding in su_bindings:
+        deadline = binding.expires_at
+        if deadline is None:
+            active_org_ids.add(binding.organization_id)
+            continue
+        if deadline.tzinfo is None:
+            deadline = deadline.replace(tzinfo=UTC)
+        if deadline > now:
+            active_org_ids.add(binding.organization_id)
+
+    return [
+        AccessRequestResponse(
+            id=req.id,
+            organization_id=req.organization_id,
+            organization_name=org.name,
+            status=req.status,
+            reason=req.reason,
+            requested_duration_hours=req.requested_duration_hours,
+            granted_expires_at=req.granted_expires_at,
+            requested_at=req.requested_at,
+            decided_at=req.decided_at,
+            ended_at=req.ended_at,
+            currently_active=req.organization_id in active_org_ids,
+        )
+        for req, org in rows
+    ]
+
+
+@router.delete(
+    "/superuser/access-requests/{request_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def cancel_my_access_request(
+    request_id: uuid.UUID,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    superuser: Annotated[User, Depends(require_superuser)],
+) -> None:
+    """Cancel one of the Superuser's own PENDING requests."""
+    req = await db.scalar(
+        select(SuperuserAccessRequest).where(
+            SuperuserAccessRequest.id == request_id,
+            SuperuserAccessRequest.superuser_user_id == superuser.id,
+        )
+    )
+    if req is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No such access request",
+        )
+    if req.status != "pending":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Request is already {req.status}; only a pending request can be cancelled",
+        )
+    req.status = "cancelled"
+    req.decided_at = datetime.now(UTC)
+    await db.flush()
+
+    await write_dual_event(
+        db,
+        event_type="organization.superuser_access.cancelled",
+        event_data={"superuser_user_id": str(superuser.id), "request_id": str(req.id)},
+        organization_id=req.organization_id,
+        user_id=superuser.id,
+        source_ip=_source_ip(request),
+    )
+    await db.commit()

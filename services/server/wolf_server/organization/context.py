@@ -35,6 +35,7 @@ from sqlalchemy.orm import selectinload
 
 from wolf_server.database import get_db
 from wolf_server.organization.models import Organization, User, UserOrganization
+from wolf_server.organization.superuser_access import expire_if_past
 
 # Valid roles per ADR 0018 (Phase 6.5-b): "approver" was renamed to
 # "responder" and "engineer" was added (data migration 0008 rewrites
@@ -142,6 +143,17 @@ async def require_organization_context(
     binding = result.scalar_one_or_none()
 
     if binding is None or not binding.user.is_active or not binding.organization.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not a member of this organization",
+        )
+
+    # Phase 6.5-f: a time-limited Superuser grant past its deadline is
+    # pruned lazily here (no background scheduler), so the Superuser is
+    # locked out on their very next request.  No-op for every other
+    # binding — see organization/superuser_access.py.
+    if await expire_if_past(db, binding):
+        await db.commit()
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You are not a member of this organization",

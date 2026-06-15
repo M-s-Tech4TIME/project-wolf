@@ -27,6 +27,23 @@ export function relativeTime(iso: string, now: number = Date.now()): string {
 }
 
 /**
+ * Human-readable "in X" string for a FUTURE ISO timestamp — the mirror of
+ * relativeTime for the forward direction (e.g. a time-limited grant's
+ * expiry). Returns "expired" once the moment has passed. Phase 6.5-f.
+ */
+export function timeUntil(iso: string, now: number = Date.now()): string {
+  const then = new Date(iso).getTime();
+  if (!Number.isFinite(then)) return "";
+  const secs = Math.floor((then - now) / 1000);
+  if (secs <= 0) return "expired";
+  if (secs < 60) return `in ${secs}s`;
+  if (secs < 3600) return `in ${Math.floor(secs / 60)} min`;
+  if (secs < 86_400) return `in ${Math.floor(secs / 3600)} hr`;
+  const days = Math.floor(secs / 86_400);
+  return `in ${days} day${days === 1 ? "" : "s"}`;
+}
+
+/**
  * Absolute ISO → friendly tooltip ("Thu, 30 May 2026, 14:32:01 UTC")
  * for the `title=` attribute on a relative-time chip.
  */

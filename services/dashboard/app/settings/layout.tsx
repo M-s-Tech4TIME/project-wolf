@@ -10,13 +10,20 @@
 
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, type ReactNode } from "react";
 
 import { useAuth } from "@/components/auth-provider";
+import { cn } from "@/lib/utils";
+
+const SETTINGS_TABS = [
+  { href: "/settings/users", label: "Users" },
+  { href: "/settings/access", label: "Access" },
+] as const;
 
 export default function SettingsLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname();
   const { isLoading, me } = useAuth();
 
   useEffect(() => {
@@ -49,6 +56,25 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
           </Link>
           <span className="text-sm font-medium">Organization settings</span>
         </div>
+        <nav className="mx-auto flex w-full max-w-5xl items-center gap-1 px-4">
+          {SETTINGS_TABS.map((tab) => {
+            const active = pathname === tab.href || pathname.startsWith(`${tab.href}/`);
+            return (
+              <Link
+                key={tab.href}
+                href={tab.href}
+                className={cn(
+                  "border-b-2 px-3 py-2 text-sm transition-colors",
+                  active
+                    ? "border-foreground font-medium text-foreground"
+                    : "border-transparent text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {tab.label}
+              </Link>
+            );
+          })}
+        </nav>
       </header>
       <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6">{children}</main>
     </div>

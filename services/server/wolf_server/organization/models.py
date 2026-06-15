@@ -23,6 +23,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     String,
     Text,
     UniqueConstraint,
@@ -135,6 +136,13 @@ class UserOrganization(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_now
     )
+    # Phase 6.5-f: time-limited Superuser grants (ADR 0018 consent gate).
+    # Null = no expiry — all normal members, plus "until-revoked"
+    # Superuser grants.  Non-null = the row auto-expires; it is pruned
+    # lazily at access time (no background scheduler), see
+    # organization/superuser_access.py.  Only "superuser"-role rows ever
+    # carry a non-null value today.
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     user: Mapped["User"] = relationship("User", back_populates="user_organizations")
     organization: Mapped["Organization"] = relationship(
@@ -145,4 +153,89 @@ class UserOrganization(Base):
         return (
             f"<UserOrganization user={self.user_id} organization={self.organization_id} "
             f"role={self.role!r}>"
+        )
+
+
+class SuperuserAccessRequest(Base):
+    """A Superuser's request for time-limited membership in an organization.
+
+    ADR 0018 consent gate (Phase 6.5-f): the install Superuser cannot
+    self-grant data access.  They file a request that the organization's
+    Admin approves — creating a time-limited UserOrganization row
+    (role="superuser", expires_at) — or rejects.  This row is the durable
+    record of the ask + the decision; the resulting grant itself lives on
+    UserOrganization.
+
+    At most one PENDING request per (organization, superuser) is allowed —
+    enforced in the API layer (409), not via a partial unique index, to
+    keep the SQLite test database happy.
+
+    Status lifecycle (the full timeline the Admin/Superuser sees):
+      pending → approved → (revoked | expired)
+      pending → rejected
+      pending → cancelled
+    ``revoked``/``expired`` are terminal states an *approved* grant lands
+    in when an Admin revokes it early or it lapses; ``ended_at`` stamps the
+    moment the grant ended so the lifecycle is fully queryable from this
+    one row (no need to cross-reference the audit log).
+    """
+
+    __tablename__ = "superuser_access_requests"
+    # Composite index serves the Admin's "pending for this org" list and,
+    # by leftmost-prefix, any "all requests for this org" query.  The
+    # second index serves the Superuser's "my requests" view.  Names are
+    # explicit (and match the migration) so `alembic check` sees no drift.
+    __table_args__ = (
+        Index(
+            "ix_superuser_access_requests_org_status",
+            "organization_id",
+            "status",
+        ),
+        Index(
+            "ix_superuser_access_requests_superuser_user_id",
+            "superuser_user_id",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=_uuid)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    # The install Superuser who filed the request.
+    superuser_user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    # pending → approved → (revoked | expired) | rejected | cancelled.
+    # Validated app-side; see the class docstring for the full lifecycle.
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    # The Superuser's justification (optional, operator-facing).
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Proposed grant duration; null = "until revoked".  The approving
+    # Admin may override it — granted_expires_at records what was actually
+    # granted.
+    requested_duration_hours: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # What the Admin granted on approval; null = until-revoked.  Mirrors
+    # the resulting UserOrganization.expires_at at decision time.
+    granted_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    requested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_now
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # The Admin who approved/rejected (null while pending/cancelled).
+    decided_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    # When an APPROVED grant ended — set on Admin revoke or lazy expiry.
+    # Null while pending/approved-and-active/rejected/cancelled.  Completes
+    # the lifecycle timeline (requested → decided → ended).
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    def __repr__(self) -> str:
+        return (
+            f"<SuperuserAccessRequest org={self.organization_id} "
+            f"status={self.status!r}>"
         )

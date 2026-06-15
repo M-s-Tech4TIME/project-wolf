@@ -15,6 +15,7 @@ import {
   getActiveOrganizationId,
   setActiveOrganizationId,
 } from "@/lib/org-context";
+import { clearDismissedGrantKey } from "@/lib/su-banner-dismiss";
 import type { MeResponse, OrganizationMembership } from "@/lib/types";
 
 type AuthState = {
@@ -88,6 +89,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await apiLogout();
     // The org context belongs to the session that just ended.
     setActiveOrganization(null);
+    // A dismissed Superuser-access banner shouldn't carry into the next
+    // login — clear it so an active grant re-surfaces (6.5-f).
+    clearDismissedGrantKey();
     setMe(null);
     setOrganizations([]);
     router.push("/login");

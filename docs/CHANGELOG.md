@@ -49,6 +49,73 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-15 — 6.5-f SHIPPED: Superuser-membership consent gate (request → approve → time-limited grant)
+
+**Session type:** claude-code (operator-directed)
+**Phase:** 6.5-f
+**Branch / commit:** main (this commit)
+
+### What we did
+ADR 0018's consent gate, end to end. The install Superuser ("Wolf") holds
+**zero** org data access until an org Admin grants it.
+
+- **Backend (request → approve → grant → end):** migration 0009 adds
+  `user_organizations.expires_at` + a new `superuser_access_requests` table
+  (NAMING_CONVENTION-clean; `alembic check` green on Postgres). Superuser files
+  a request (reason + proposed duration, default 24h or until-revoked); an Admin
+  approves (honour / override-hours / until-revoked) or rejects; approval mints a
+  time-limited `UserOrganization` row (role `superuser`). Expiry is **lazy** (no
+  scheduler) — pruned at access time in `require_organization_context` (locks out
+  the Superuser) and in the banner endpoint (self-clears). The direct-grant
+  precursor was **replaced** (single clean path; tests rewritten).
+- **Activity timeline:** each request is a full lifecycle record — added
+  `ended_at` + terminal statuses `revoked`/`expired`, stamped on revoke and in
+  `expire_if_past` (shared `mark_request_ended`). Responses carry `ended_at` +
+  the deciding Admin's display name. Settings → Access renders the per-request
+  timeline (Requested → Approved/Rejected/Cancelled → Revoked/Expired, with
+  actor + time); the Superuser org-detail card mirrors the terminal states.
+- **All-member transparency banner** (state-derived, no notifications table):
+  poll + route-change + window-focus; backend lazy expiry self-clears it. Made
+  **fully dismissable** per operator choice — per-grant sessionStorage key
+  (`lib/su-banner-dismiss`); a new grant or next login re-surfaces it; cleared on
+  sign-out.
+- **Superuser chat-nav gate** (operator-found): an org-less Superuser is bounced
+  off `/chat` to the install-admin dashboard; the **Chat** nav there is disabled
+  until a grant lands, then unlocks. Regular org users unaffected.
+- **MSSP message hygiene** (operator-found): the "can't touch the Superuser"
+  rejections (password / role / remove + the misconfigured-install guard) no
+  longer leak internal endpoints, HTTP verbs, or the bootstrap CLI to a tenant
+  Admin — generic "— Unauthorised." / "revoke their access instead"; the
+  install-topology diagnostic is logged server-side. Regression test asserts no
+  `/api/`·CLI leak.
+
+### What we decided
+- **Replace** the direct-grant with request → approve (operator); Superuser
+  **proposes** a duration, Admin **may override**; notifications v1 = in-app
+  banner + dual-audit only (no notifications table / no SMTP); banner **fully
+  dismissable, returns on a new grant or next login** (operator, supersedes the
+  earlier "not dismissable" stance).
+- A real per-user **notification system** and **SSE real-time push** are deferred
+  to dedicated **Phases 6.7 / 6.8** — see **ADR 0021** (notifications STRICTLY
+  isolated from audit/logs, per operator constraint).
+
+### What broke / what we discovered
+- ESLint `react-hooks/set-state-in-effect` tripped on an `async` `load()` invoked
+  in an effect → reverted to a non-async `.then` chain (grant-first so lazy
+  expiry flips a just-lapsed request before the list is fetched).
+- The final-gate run reported failures purely from invocation artifacts (pytest
+  picked up an exported Postgres `DATABASE_URL`; `alembic check` from the wrong
+  dir) — re-run clean: green.
+
+### What's next
+- Operator-approved closeout. NEXT: 6.5-h (invite-link verification) or 6.6
+  (Wazuh component mapping) per roadmap ordering.
+
+### Gate
+**491 backend + cross-org isolation + mypy --strict** green; `alembic check`
+clean; frontend tsc/eslint(0)/build green; operator web-tested (5 checkpoints +
+3 refinements). No CI workflow change needed.
+
 ## 2026-06-15 — 6.5-i SHIPPED: input-validation + exception-handling retrofit
 
 **Session type:** claude-code (operator-directed)

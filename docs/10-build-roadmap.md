@@ -38,8 +38,8 @@ ACCEPTED after multi-round operator reviews:
 slice.**
 
 **Phase 6+ (Approval Gateway and beyond): designed but not yet
-started.** Sub-phase ordering 6.4 → 6.5 → 6 → 6.6 → 7 → 7.5 → 8 →
-8.5 → 9 → 9.5 → 10 → 11 → 11.5 → 12 → 13. Reflects the ADR-
+started.** Sub-phase ordering 6.4 → 6.5 → 6 → 6.6 → 6.7 → 6.8 → 7
+→ 7.5 → 8 → 8.5 → 9 → 9.5 → 10 → 11 → 11.5 → 12 → 13. Reflects the ADR-
 derived sequencing; see `## Phase ordering — divergence from the
 original plan` below.
 
@@ -463,12 +463,50 @@ estimated**:
      6.5-i) — the `[object Object]` 422-render bug, `isValidEmail`
      inline checks, and `RecoveryAdminRequest.display_name` bounds.
 
-8. **6.5-f — Superuser-membership-grant flow + UI** — backend
-   Superuser-request → Admin-approve/reject → time-limited
-   membership grant (default 24h expiry); revoke (Admin-initiated
-   or expiry-driven); UI on both Superuser side ("Request access
-   to <org>") and Admin side (pending requests in Settings →
-   Access); org member notifications.
+8. **6.5-f — Superuser-membership-grant flow + UI — ✅ SHIPPED
+   2026-06-15.** ADR 0018 consent gate, end to end. The install
+   Superuser holds **zero** org data access until an org Admin
+   grants it: Superuser **requests** (reason + proposed duration,
+   default 24h or until-revoked) → Admin **approves** (honour /
+   override-hours / until-revoked) **or rejects** → time-limited
+   `UserOrganization` row (role `superuser`, `expires_at`) →
+   **revoke** (Admin) or **lazy expiry** (no scheduler — pruned at
+   access time in `require_organization_context` + the banner
+   endpoint). Migration 0009 (`user_organizations.expires_at` +
+   `superuser_access_requests`). The direct-grant precursor was
+   **replaced** (single clean path; tests rewritten).
+   - **Activity timeline:** each request is a full lifecycle record
+     — `ended_at` + terminal statuses `revoked`/`expired`, stamped
+     on revoke and in `expire_if_past`. Settings → Access renders
+     the per-request timeline (Requested → Approved/Rejected/
+     Cancelled → Revoked/Expired, with actor + timestamps); the
+     Superuser org-detail card mirrors the terminal states.
+   - **All-member transparency banner** (state-derived, no
+     notifications table): poll + route-change + window-focus; the
+     backend runs lazy expiry so it self-clears on lapse/revoke.
+     **Fully dismissable** (operator choice 2026-06-15) — per-grant
+     sessionStorage key; a new grant or next login re-surfaces it.
+   - **Superuser chat-nav gate** (operator-found, folded in): an
+     org-less Superuser is bounced off `/chat` to the install-admin
+     dashboard; the **Chat** nav there is disabled until a grant
+     lands, then unlocks (regular org users unaffected).
+   - **MSSP message hygiene** (operator-found, folded in): the
+     "can't touch the Superuser" rejections (password / role /
+     remove + the misconfigured-install guard) no longer leak
+     internal endpoints, HTTP verbs, or the bootstrap CLI to a
+     tenant Admin — generic "— Unauthorised."/"revoke their access
+     instead" wording; the install-topology diagnostic goes to the
+     **server log**. Regression test asserts no `/api/`·CLI leak.
+   - Gate: **491 backend + cross-org isolation + mypy --strict**
+     green; `alembic check` clean (model/migration parity);
+     frontend tsc/eslint(0)/build green; operator web-tested (all
+     5 checkpoints + the three refinements). No CI workflow change
+     needed (existing typecheck/test/frontend/alembic-check jobs
+     already cover the touched surfaces). Commits `<this>`.
+   - **Deferred to dedicated phases (operator-requested
+     2026-06-15):** a real per-user **notification system** (Phase
+     6.7) and **SSE real-time push** (Phase 6.8) — see ADR 0021.
+     The banner's in-app+poll model is the v1 placeholder.
 
 9. **6.5-h — Invite-link verification flow + same-network gate** —
    `User.verification_status` enum + verification token; Admin
@@ -565,6 +603,36 @@ this UI uses it. 5 sub-slices, **3-5 sessions estimated**:
 Superuser configures per-org Wazuh API credentials; an Analyst in
 that org chats with Wolf + Wolf successfully queries the org's
 Wazuh data using the per-org credentials.
+
+## Phase 6.7 — Notification infrastructure
+
+**Per ADR 0021 (PROPOSED 2026-06-15), operator-requested.** A
+dedicated, per-user **notification** feature — strictly **isolated
+from audit/logging** (its own table/model; audit stays the
+immutable compliance record, never coupled). Surfaces when an
+operation touches a user:
+
+- org Admin changes a user's **role** → that user is notified;
+- Admin **resets** a user's password → that user is notified;
+- the full **Superuser-access lifecycle** (requested / cancelled /
+  approved / rejected / revoked / time-expired) → notify the
+  relevant parties (requesting Superuser + the org's Admins /
+  members as appropriate);
+- org-related changes.
+
+**v1 delivery** reuses the 6.5-f banner pattern (poll + on-action +
+window-focus) — useful before any streaming transport exists. UI:
+per-user feed + a notification bell. Email/SMTP delivery stays
+deferred to the future SMTP phase.
+
+## Phase 6.8 — Real-time push (SSE)
+
+**Per ADR 0021 (PROPOSED 2026-06-15).** A server-sent-events
+channel that pushes notification + Superuser-access-banner state
+**live**, replacing the poll. The chat answer stream already uses
+SSE, so the transport is familiar ground. Upgrades the 6.7
+notification bell + the 6.5-f banner from poll → real-time without
+changing their semantics.
 
 ## Phase 7 — Cases and reporting (wolf-hunt foundation)
 

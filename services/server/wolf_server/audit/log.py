@@ -78,3 +78,44 @@ async def write_event_from_context(
         source_ip=source_ip,
         related_event_id=related_event_id,
     )
+
+
+async def write_dual_event(
+    db: AsyncSession,
+    *,
+    event_type: str,
+    event_data: dict[str, Any],
+    organization_id: uuid.UUID,
+    user_id: uuid.UUID | None,
+    session_id: str | None = None,
+    source_ip: str | None = None,
+) -> AuditEvent:
+    """Write a governance event into BOTH the org's audit view and the
+    install-level audit (ADR 0018 role-change discipline).
+
+    The org-level row carries ``organization_id``; the install-level row
+    carries ``organization_id=None`` (so it surfaces in the Superuser's
+    install-wide view), embeds the org id in its ``event_data``, and links
+    back to the org row via ``related_event_id``.  Returns the org-level
+    event.  The caller owns the surrounding transaction (commit).
+    """
+    org_event = await write_event(
+        db,
+        event_type=event_type,
+        event_data=event_data,
+        organization_id=organization_id,
+        user_id=user_id,
+        session_id=session_id,
+        source_ip=source_ip,
+    )
+    await write_event(
+        db,
+        event_type=event_type,
+        event_data={**event_data, "organization_id": str(organization_id)},
+        organization_id=None,
+        user_id=user_id,
+        session_id=session_id,
+        source_ip=source_ip,
+        related_event_id=org_event.id,
+    )
+    return org_event

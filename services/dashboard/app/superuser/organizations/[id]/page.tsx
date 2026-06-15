@@ -11,10 +11,10 @@
 //     for a locked-out sole Admin the org-scoped reset can't reach. The
 //     Superuser types an email it already holds; no roster listing.
 
-import { ArrowLeft, Check, Copy, KeyRound, Mail } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, Copy, KeyRound, Mail, ShieldAlert } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -27,21 +27,41 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   ApiError,
+  cancelAccessRequest,
+  listMyAccessRequests,
   listOrganizations,
   recoverOrganizationAdmin,
+  requestSuperuserAccess,
   resetUserPasswordByEmail,
 } from "@/lib/api";
 import { copyText } from "@/lib/clipboard";
-import { absoluteTimeTitle } from "@/lib/format";
+import { absoluteTimeTitle, relativeTime, timeUntil } from "@/lib/format";
 import { isValidEmail } from "@/lib/utils";
-import type {
-  MemberPasswordReset,
-  Organization,
-  RecoveryAdminResponse,
+import {
+  ACCESS_DURATION_OPTIONS,
+  type MemberPasswordReset,
+  type Organization,
+  type RecoveryAdminResponse,
+  type SuperuserAccessRequest,
 } from "@/lib/types";
 
 export default function OrganizationDetailPage() {
@@ -60,6 +80,61 @@ export default function OrganizationDetailPage() {
   const [alreadyHasAdmin, setAlreadyHasAdmin] = useState(false);
   const [result, setResult] = useState<RecoveryAdminResponse | null>(null);
   const [copied, setCopied] = useState(false);
+
+  // ── Request data access (6.5-f consent gate, Superuser side) ──
+  // `myRequest` is the latest request for THIS org (undefined while loading,
+  // null when none filed).
+  const [myRequest, setMyRequest] = useState<SuperuserAccessRequest | null | undefined>(
+    undefined,
+  );
+  const [reqOpen, setReqOpen] = useState(false);
+  const [reqReason, setReqReason] = useState("");
+  const [reqDurationKey, setReqDurationKey] = useState("24"); // hours, or "null"
+  const [reqBusy, setReqBusy] = useState(false);
+  const [reqError, setReqError] = useState<string | null>(null);
+
+  const loadMyRequest = useCallback(() => {
+    listMyAccessRequests()
+      .then((all) => setMyRequest(all.find((r) => r.organization_id === orgId) ?? null))
+      .catch(() => setMyRequest(null));
+  }, [orgId]);
+
+  useEffect(() => {
+    loadMyRequest();
+  }, [loadMyRequest]);
+
+  async function submitRequest() {
+    setReqBusy(true);
+    setReqError(null);
+    const hours = reqDurationKey === "null" ? null : Number(reqDurationKey);
+    try {
+      await requestSuperuserAccess(orgId, {
+        reason: reqReason.trim() || null,
+        requested_duration_hours: hours,
+      });
+      setReqOpen(false);
+      setReqReason("");
+      loadMyRequest();
+    } catch (e) {
+      setReqError(e instanceof ApiError ? e.message : "Failed to file request.");
+    } finally {
+      setReqBusy(false);
+    }
+  }
+
+  async function cancelRequest() {
+    if (!myRequest) return;
+    setReqBusy(true);
+    setReqError(null);
+    try {
+      await cancelAccessRequest(myRequest.id);
+      loadMyRequest();
+    } catch (e) {
+      setReqError(e instanceof ApiError ? e.message : "Failed to cancel request.");
+    } finally {
+      setReqBusy(false);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -185,6 +260,99 @@ export default function OrganizationDetailPage() {
           </p>
         ) : null}
       </div>
+
+      <Card className="px-5">
+        <CardHeader className="px-0">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <ShieldAlert className="h-5 w-5" />
+            Request data access
+          </CardTitle>
+          <CardDescription>
+            By default you have no access to this organization&apos;s data (ADR
+            0018 consent gate). Request time-limited read &amp; chat access; an
+            Admin of the organization must approve it.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="px-0">
+          {reqError && !reqOpen ? (
+            <p className="mb-3 text-sm text-destructive">{reqError}</p>
+          ) : null}
+          {myRequest === undefined ? (
+            <p className="text-sm text-muted-foreground">Loading…</p>
+          ) : myRequest?.currently_active ? (
+            <Alert>
+              <AlertTitle>You have active access</AlertTitle>
+              <AlertDescription>
+                {myRequest.granted_expires_at ? (
+                  <>
+                    Expires{" "}
+                    <span title={absoluteTimeTitle(myRequest.granted_expires_at)}>
+                      {timeUntil(myRequest.granted_expires_at)}
+                    </span>
+                    . The organization&apos;s Admin can revoke it at any time.
+                  </>
+                ) : (
+                  "Open-ended — active until the organization's Admin revokes it."
+                )}
+              </AlertDescription>
+            </Alert>
+          ) : myRequest?.status === "pending" ? (
+            <div className="space-y-3">
+              <Alert>
+                <AlertTitle>Request pending</AlertTitle>
+                <AlertDescription>
+                  Waiting for an Admin of this organization to approve or reject
+                  your request.
+                </AlertDescription>
+              </Alert>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={cancelRequest}
+                disabled={reqBusy}
+              >
+                {reqBusy ? "Cancelling…" : "Cancel request"}
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {myRequest?.status === "rejected" ? (
+                <p className="text-sm text-muted-foreground">
+                  Your last request was rejected. You can file a new one.
+                </p>
+              ) : myRequest?.status === "revoked" ? (
+                <p className="text-sm text-muted-foreground">
+                  Your previous access was revoked by an Admin
+                  {myRequest.ended_at ? <> {relativeTime(myRequest.ended_at)}</> : null}.
+                  You can request access again.
+                </p>
+              ) : myRequest?.status === "expired" ? (
+                <p className="text-sm text-muted-foreground">
+                  Your previous access expired
+                  {myRequest.ended_at ? <> {relativeTime(myRequest.ended_at)}</> : null}.
+                  You can request access again.
+                </p>
+              ) : null}
+              <Button
+                onClick={() => {
+                  setReqError(null);
+                  setReqReason("");
+                  setReqDurationKey("24");
+                  setReqOpen(true);
+                }}
+                disabled={org !== null && !org.is_active}
+              >
+                Request access
+              </Button>
+              {org !== null && !org.is_active ? (
+                <p className="text-sm text-muted-foreground">
+                  This organization is soft-deleted.
+                </p>
+              ) : null}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Card className="px-5">
         <CardHeader className="px-0">
@@ -371,6 +539,74 @@ export default function OrganizationDetailPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Request access dialog */}
+      <Dialog open={reqOpen} onOpenChange={(o) => !reqBusy && setReqOpen(o)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              Request access to {org?.name ?? "this organization"}
+            </DialogTitle>
+            <DialogDescription>
+              An Admin of the organization must approve. They may shorten the
+              duration or grant it until revoked. You&apos;ll get read &amp; chat
+              access only.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="req-reason">Reason (optional)</Label>
+              <Input
+                id="req-reason"
+                value={reqReason}
+                maxLength={1000}
+                onChange={(e) => setReqReason(e.target.value)}
+                placeholder="e.g. joint debugging of the alert pipeline"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Requested duration</Label>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" className="w-full justify-between">
+                    {ACCESS_DURATION_OPTIONS.find(
+                      (o) => (o.hours === null ? "null" : String(o.hours)) === reqDurationKey,
+                    )?.label ?? "24 hours"}
+                    <ChevronDown className="h-4 w-4 opacity-60" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="start"
+                  className="w-[--radix-dropdown-menu-trigger-width]"
+                >
+                  <DropdownMenuRadioGroup
+                    value={reqDurationKey}
+                    onValueChange={setReqDurationKey}
+                  >
+                    {ACCESS_DURATION_OPTIONS.map((o) => {
+                      const key = o.hours === null ? "null" : String(o.hours);
+                      return (
+                        <DropdownMenuRadioItem key={key} value={key}>
+                          {o.label}
+                        </DropdownMenuRadioItem>
+                      );
+                    })}
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+            {reqError ? <p className="text-sm text-destructive">{reqError}</p> : null}
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setReqOpen(false)} disabled={reqBusy}>
+              Cancel
+            </Button>
+            <Button onClick={submitRequest} disabled={reqBusy}>
+              {reqBusy ? "Requesting…" : "Send request"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <ConfirmDialog
         open={resetConfirm}

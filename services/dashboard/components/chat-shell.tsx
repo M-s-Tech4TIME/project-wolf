@@ -9,6 +9,7 @@ import { ChatsHistoryOverlay } from "@/components/chats-history-overlay";
 import { CitationsPanel } from "@/components/citations-panel";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { MessageThread } from "@/components/message-thread";
+import { SuperuserAccessBanner } from "@/components/superuser-access-banner";
 import {
   NEUTRAL_STREAM,
   useConversationStreams,
@@ -570,6 +571,7 @@ export function ChatShell() {
 
   return (
     <div className="flex h-screen flex-col">
+      <SuperuserAccessBanner />
       <ChatHeader
         title={activeConversation?.title ?? null}
         onRename={

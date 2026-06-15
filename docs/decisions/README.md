@@ -88,5 +88,7 @@ implies. Any rollback path.
 | 0014 | `multi-embedding-retrieval-rrf.md` — optional 3-way RRF fusion (BM25 + v1.5 vector + v2-moe vector). Chained mode is `EMBEDDING_MODEL_AUX`-gated; empty default preserves Slice-2A behaviour. Measured: precision@5 35% → 60% on 20-query battery against the live 5173-chunk corpus. | accepted |
 | 0015 | `grounding-yellow-vs-red-and-judge-on-constrained-gpu.md` — split the grounding marker (yellow vs red), keep judge on qwen3:8b under the 6 GB GPU constraint. | accepted |
 | 0016 | `wolf-component-architecture-and-packaging.md` — Wazuh-style three-component model (`wolf-dashboard`, `wolf-server`, `wolf-database`), shared CA + mTLS between machine components, FHS install layout, systemd-managed lifecycle, `/bin` for shipped CLIs, APT/RPM packaging deferred to release phase. The contract Phases 5.5 → 5.8 build against. | accepted |
+| 0021 | `notification-infrastructure-and-realtime-push.md` — dedicated future phases: in-app Notification infrastructure (Phase 6.7, poll-delivered v1) then SSE real-time push (Phase 6.8); notifications STRICTLY isolated from audit/logs. | proposed |
 
 _Update this table whenever you add a new ADR._
+_(Index trails ADRs 0017–0020 — pre-existing gap, backfill when next touched.)_

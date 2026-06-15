@@ -13,6 +13,8 @@
 
 import { activeOrgHeader } from "./org-context";
 import type {
+  AccessApprove,
+  AccessRequestCreate,
   ChatRequestBody,
   ChatResponseBody,
   InstallAuditPage,
@@ -29,9 +31,12 @@ import type {
   OrganizationCreate,
   OrganizationMembership,
   OrganizationUpdate,
+  OrgAccessRequest,
   OrgAuditPage,
   RecoveryAdminRequest,
   RecoveryAdminResponse,
+  SuperuserAccessGrant,
+  SuperuserAccessRequest,
 } from "./types";
 
 // All API calls are same-origin under `/api/v1/...`. No `apiBase()`
@@ -129,6 +134,29 @@ async function unwrap<T>(resp: Response): Promise<T> {
     throw new ApiError(resp.status, detail, body);
   }
   return resp.json() as Promise<T>;
+}
+
+/** Like `unwrap` but for 204 No Content endpoints — surfaces a guided
+ *  error on failure (via `formatApiDetail`) and returns nothing on success
+ *  without trying to parse an empty body. */
+async function unwrapNoContent(resp: Response): Promise<void> {
+  if (resp.ok) return;
+  let detail = resp.statusText;
+  const clone = resp.clone();
+  try {
+    const body = await resp.json();
+    if (body && typeof body === "object" && "detail" in body) {
+      detail = formatApiDetail((body as { detail: unknown }).detail);
+    }
+  } catch {
+    try {
+      const text = await clone.text();
+      if (text) detail = text;
+    } catch {
+      /* keep statusText */
+    }
+  }
+  throw new ApiError(resp.status, detail);
 }
 
 // ── Auth ─────────────────────────────────────────────────────────────────
@@ -390,4 +418,88 @@ export function fetchOrgAudit(limit = 50, offset = 0): Promise<OrgAuditPage> {
     offset: String(offset),
   });
   return apiFetch(`/api/v1/organization/audit?${qs}`).then(unwrap<OrgAuditPage>);
+}
+
+// ── Superuser-membership consent gate (Phase 6.5-f) ─────────────────────────
+
+// Superuser side (require_superuser; org-less — no active-org header sent).
+
+/** File a request for time-limited membership in an org. Throws
+ *  ApiError(409) if the Superuser already has active access or an open
+ *  pending request for this org, 404 if the org is absent/inactive. */
+export function requestSuperuserAccess(
+  organizationId: string,
+  body: AccessRequestCreate,
+): Promise<SuperuserAccessRequest> {
+  return apiFetch(
+    `/api/v1/superuser/organizations/${organizationId}/access-requests`,
+    { method: "POST", body: JSON.stringify(body) },
+  ).then(unwrap<SuperuserAccessRequest>);
+}
+
+/** The Superuser's own access-requests across every org, newest first. */
+export function listMyAccessRequests(): Promise<SuperuserAccessRequest[]> {
+  return apiFetch("/api/v1/superuser/access-requests").then(
+    unwrap<SuperuserAccessRequest[]>,
+  );
+}
+
+/** Cancel one of the Superuser's own pending requests. Throws
+ *  ApiError(409) if it is no longer pending, 404 if not found. */
+export function cancelAccessRequest(requestId: string): Promise<void> {
+  return apiFetch(`/api/v1/superuser/access-requests/${requestId}`, {
+    method: "DELETE",
+  }).then(unwrapNoContent);
+}
+
+// Admin side (SUPERUSER_MEMBERSHIP_GRANT; acts on the caller's active org).
+
+/** This org's Superuser access-requests — pending first, then newest. */
+export function listOrgAccessRequests(): Promise<OrgAccessRequest[]> {
+  return apiFetch("/api/v1/organization/access-requests").then(
+    unwrap<OrgAccessRequest[]>,
+  );
+}
+
+/** Approve a pending request → create the time-limited grant. The Admin may
+ *  honour the requested duration, override it, or grant "until revoked".
+ *  Throws ApiError(409) if already decided or the Superuser is already active. */
+export function approveAccessRequest(
+  requestId: string,
+  body: AccessApprove,
+): Promise<OrgAccessRequest> {
+  return apiFetch(`/api/v1/organization/access-requests/${requestId}/approve`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  }).then(unwrap<OrgAccessRequest>);
+}
+
+/** Reject a pending request — no grant is created. */
+export function rejectAccessRequest(
+  requestId: string,
+  reason?: string,
+): Promise<OrgAccessRequest> {
+  return apiFetch(`/api/v1/organization/access-requests/${requestId}/reject`, {
+    method: "POST",
+    body: JSON.stringify({ reason: reason ?? null }),
+  }).then(unwrap<OrgAccessRequest>);
+}
+
+/** Revoke the Superuser's active grant in this org immediately. Throws
+ *  ApiError(404) if there is no active grant. */
+export function revokeSuperuserMembership(): Promise<void> {
+  return apiFetch("/api/v1/organization/memberships/superuser", {
+    method: "DELETE",
+  }).then(unwrapNoContent);
+}
+
+// Any active member — the transparency banner.
+
+/** The org's current active Superuser grant, or null. Readable by every
+ *  member of the org; the backend runs lazy expiry so a lapsed grant
+ *  returns null. */
+export function fetchSuperuserAccess(): Promise<SuperuserAccessGrant | null> {
+  return apiFetch("/api/v1/organization/superuser-access").then(
+    unwrap<SuperuserAccessGrant | null>,
+  );
 }

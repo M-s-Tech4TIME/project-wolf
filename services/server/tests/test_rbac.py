@@ -7,13 +7,15 @@ Covers:
   - org user management is Admin-only; roles assignable by an Admin
     exclude "superuser"; dual audit (org + install) on every mutation
   - the "Last Admin" invariant guard (demote + remove paths)
-  - Superuser-membership consent gate (grant / revoke, Admin-only)
+  - Superuser-membership consent gate (6.5-f): request (Superuser) →
+    approve/reject (Admin) → time-limited grant → lazy expiry / revoke,
+    with the all-member transparency banner + cross-org isolation
   - the org audit-log view (Admin + Responder; Analyst/Engineer refused;
     scoped to the caller's org, install-level events excluded)
 """
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest_asyncio
@@ -138,6 +140,39 @@ async def _audit_events(db: AsyncSession, event_type: str) -> list[AuditEvent]:
         .order_by(AuditEvent.created_at)
     )
     return list(result.scalars())
+
+
+async def _make_org_with_admin(db: AsyncSession) -> dict[str, Any]:
+    """A second org with a single Admin — for cross-organization tests."""
+    suffix = uuid.uuid4().hex[:8]
+    now = datetime.now(UTC)
+    org = Organization(
+        id=uuid.uuid4(),
+        name=f"Other Corp {suffix}",
+        slug=f"other-corp-{suffix}",
+        is_active=True,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(org)
+    admin = _new_user(f"admin-{suffix}@test.example")
+    db.add(admin)
+    db.add(_new_binding(admin.id, org.id, "admin"))
+    await db.commit()
+    return {"organization_id": org.id, "admin": {"user_id": admin.id, "email": admin.email}}
+
+
+async def _request_access(
+    client: AsyncClient, organization_id: uuid.UUID, **body: Any
+) -> dict[str, Any]:
+    """Superuser files an access request for an org; returns the request JSON."""
+    resp = await client.post(
+        f"/api/v1/superuser/organizations/{organization_id}/access-requests",
+        json=body,
+    )
+    assert resp.status_code == 201, resp.text
+    result: dict[str, Any] = resp.json()
+    return result
 
 
 # ─── The capability matrix itself ────────────────────────────────────────────
@@ -601,46 +636,102 @@ async def test_admin_removes_member(
 # ─── Superuser-membership consent gate ───────────────────────────────────────
 
 
-async def test_superuser_membership_grant_requires_admin(
+async def _superuser_binding(
+    db: AsyncSession, user_id: uuid.UUID, organization_id: uuid.UUID
+) -> UserOrganization | None:
+    db.expire_all()
+    return await db.scalar(
+        select(UserOrganization).where(
+            UserOrganization.user_id == user_id,
+            UserOrganization.organization_id == organization_id,
+        )
+    )
+
+
+async def test_access_request_requires_superuser(
     client: AsyncClient, org_with_members: dict[str, Any], seed_superuser: dict[str, Any]
 ) -> None:
+    # A regular member is not the Superuser → require_superuser → 403.
+    org_id = org_with_members["organization_id"]
+    await _login_as(client, org_with_members, "admin")
+    resp = await client.post(
+        f"/api/v1/superuser/organizations/{org_id}/access-requests", json={}
+    )
+    assert resp.status_code == 403
+
+
+async def test_access_request_decisions_require_admin(
+    client: AsyncClient, org_with_members: dict[str, Any], seed_superuser: dict[str, Any]
+) -> None:
+    org_id = org_with_members["organization_id"]
+    await _login_superuser(client)
+    rid = (await _request_access(client, org_id))["id"]
+
+    # Non-admin members can neither list nor decide nor revoke.
     for role in ("engineer", "responder", "analyst"):
         await _login_as(client, org_with_members, role)
+        assert (await client.get("/api/v1/organization/access-requests")).status_code == 403, role
         assert (
-            await client.post("/api/v1/organization/memberships/superuser")
+            await client.post(f"/api/v1/organization/access-requests/{rid}/approve", json={})
+        ).status_code == 403, role
+        assert (
+            await client.post(f"/api/v1/organization/access-requests/{rid}/reject", json={})
         ).status_code == 403, role
         assert (
             await client.delete("/api/v1/organization/memberships/superuser")
         ).status_code == 403, role
 
+    # Clean up the pending request.
+    await _login_superuser(client)
+    assert (await client.delete(f"/api/v1/superuser/access-requests/{rid}")).status_code == 204
 
-async def test_admin_grants_and_revokes_superuser_membership(
+
+async def test_request_approve_revoke_flow(
     client: AsyncClient,
     db: AsyncSession,
     org_with_members: dict[str, Any],
     seed_superuser: dict[str, Any],
 ) -> None:
-    await _login_as(client, org_with_members, "admin")
     org_id = org_with_members["organization_id"]
+    su_id = seed_superuser["user_id"]
 
-    resp = await client.post("/api/v1/organization/memberships/superuser")
-    assert resp.status_code == 201, resp.text
-    assert resp.json()["role"] == "superuser"
-    assert resp.json()["user_id"] == str(seed_superuser["user_id"])
+    # Superuser files a request.
+    await _login_superuser(client)
+    req = await _request_access(client, org_id, reason="joint debug", requested_duration_hours=24)
+    rid = req["id"]
+    assert req["status"] == "pending"
+    assert req["currently_active"] is False
 
-    db.expire_all()
-    binding = await db.scalar(
-        select(UserOrganization).where(
-            UserOrganization.user_id == seed_superuser["user_id"],
-            UserOrganization.organization_id == org_id,
-        )
+    # Admin sees it pending in the consent-gate inbox.
+    await _login_as(client, org_with_members, "admin")
+    listing = (await client.get("/api/v1/organization/access-requests")).json()
+    assert any(r["id"] == rid and r["status"] == "pending" for r in listing)
+
+    # Approve, honouring the requested 24h.
+    resp = await client.post(
+        f"/api/v1/organization/access-requests/{rid}/approve", json={"mode": "requested"}
     )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["status"] == "approved"
+    assert body["granted_expires_at"] is not None
+    # Lifecycle fields: the deciding Admin is named, the grant hasn't ended.
+    assert body["decided_by_display_name"]
+    assert body["ended_at"] is None
+
+    # The time-limited membership row exists.
+    binding = await _superuser_binding(db, su_id, org_id)
     assert binding is not None
     assert binding.role == "superuser"
+    assert binding.expires_at is not None
 
-    # Granting twice is refused.
-    assert (await client.post("/api/v1/organization/memberships/superuser")).status_code == 409
+    # The all-member transparency banner shows the active grant.
+    banner = (await client.get("/api/v1/organization/superuser-access")).json()
+    assert banner is not None
+    assert banner["expires_at"] is not None
+    assert banner["granted_by_display_name"]
 
+    # Dual audit (org + install) for the grant.
     grant_events = await _audit_events(db, "organization.superuser_membership.granted")
     org_grants = [e for e in grant_events if e.organization_id == org_id]
     assert org_grants
@@ -648,23 +739,277 @@ async def test_admin_grants_and_revokes_superuser_membership(
         e.organization_id is None and e.related_event_id == org_grants[-1].id for e in grant_events
     )
 
-    resp = await client.delete("/api/v1/organization/memberships/superuser")
-    assert resp.status_code == 204
+    # Approving an already-decided request is refused.
+    assert (
+        await client.post(f"/api/v1/organization/access-requests/{rid}/approve", json={})
+    ).status_code == 409
 
-    db.expire_all()
-    binding = await db.scalar(
-        select(UserOrganization).where(
-            UserOrganization.user_id == seed_superuser["user_id"],
-            UserOrganization.organization_id == org_id,
-        )
-    )
-    assert binding is None
-
-    # Revoking when absent is a 404.
+    # Revoke ends it immediately; the banner clears.
+    assert (await client.delete("/api/v1/organization/memberships/superuser")).status_code == 204
+    assert await _superuser_binding(db, su_id, org_id) is None
+    assert (await client.get("/api/v1/organization/superuser-access")).json() is None
     assert (await client.delete("/api/v1/organization/memberships/superuser")).status_code == 404
-
     revoke_events = await _audit_events(db, "organization.superuser_membership.revoked")
     assert any(e.organization_id == org_id for e in revoke_events)
+
+    # The request row now records the full lifecycle: approved → revoked,
+    # with the terminal timestamp + the deciding Admin still attributed.
+    listing2 = (await client.get("/api/v1/organization/access-requests")).json()
+    revoked_row = next(r for r in listing2 if r["id"] == rid)
+    assert revoked_row["status"] == "revoked"
+    assert revoked_row["ended_at"] is not None
+    assert revoked_row["decided_by_display_name"]
+
+
+async def test_reject_flow(
+    client: AsyncClient,
+    db: AsyncSession,
+    org_with_members: dict[str, Any],
+    seed_superuser: dict[str, Any],
+) -> None:
+    org_id = org_with_members["organization_id"]
+    su_id = seed_superuser["user_id"]
+    await _login_superuser(client)
+    rid = (await _request_access(client, org_id))["id"]
+
+    await _login_as(client, org_with_members, "admin")
+    resp = await client.post(
+        f"/api/v1/organization/access-requests/{rid}/reject", json={"reason": "not now"}
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "rejected"
+    assert await _superuser_binding(db, su_id, org_id) is None
+    assert (await client.get("/api/v1/organization/superuser-access")).json() is None
+    rejected = await _audit_events(db, "organization.superuser_access.rejected")
+    assert any(e.organization_id == org_id for e in rejected)
+    # Rejecting again → 409 (no longer pending).
+    assert (
+        await client.post(f"/api/v1/organization/access-requests/{rid}/reject", json={})
+    ).status_code == 409
+
+
+async def test_superuser_cancels_own_pending(
+    client: AsyncClient,
+    db: AsyncSession,
+    org_with_members: dict[str, Any],
+    seed_superuser: dict[str, Any],
+) -> None:
+    org_id = org_with_members["organization_id"]
+    await _login_superuser(client)
+    rid = (await _request_access(client, org_id))["id"]
+
+    mine = (await client.get("/api/v1/superuser/access-requests")).json()
+    assert any(r["id"] == rid and r["status"] == "pending" for r in mine)
+
+    assert (await client.delete(f"/api/v1/superuser/access-requests/{rid}")).status_code == 204
+    # Cancelling again → 409 (already cancelled).
+    assert (await client.delete(f"/api/v1/superuser/access-requests/{rid}")).status_code == 409
+    cancelled = await _audit_events(db, "organization.superuser_access.cancelled")
+    assert any(e.organization_id == org_id for e in cancelled)
+
+
+async def test_approve_duration_override_and_until_revoked(
+    client: AsyncClient,
+    db: AsyncSession,
+    org_with_members: dict[str, Any],
+    seed_superuser: dict[str, Any],
+) -> None:
+    org_id = org_with_members["organization_id"]
+    su_id = seed_superuser["user_id"]
+
+    # "until revoked": Superuser requests open-ended, Admin grants it.
+    await _login_superuser(client)
+    rid = (await _request_access(client, org_id, requested_duration_hours=None))["id"]
+    await _login_as(client, org_with_members, "admin")
+    resp = await client.post(
+        f"/api/v1/organization/access-requests/{rid}/approve", json={"mode": "until_revoked"}
+    )
+    assert resp.status_code == 200
+    assert resp.json()["granted_expires_at"] is None
+    binding = await _superuser_binding(db, su_id, org_id)
+    assert binding is not None
+    assert binding.expires_at is None
+    assert (await client.delete("/api/v1/organization/memberships/superuser")).status_code == 204
+
+    # Override: Superuser asks 24h, Admin grants 1h instead.
+    await _login_superuser(client)
+    rid2 = (await _request_access(client, org_id, requested_duration_hours=24))["id"]
+    await _login_as(client, org_with_members, "admin")
+    resp = await client.post(
+        f"/api/v1/organization/access-requests/{rid2}/approve",
+        json={"mode": "hours", "duration_hours": 1},
+    )
+    assert resp.status_code == 200
+    binding = await _superuser_binding(db, su_id, org_id)
+    assert binding is not None
+    assert binding.expires_at is not None
+    deadline = binding.expires_at
+    if deadline.tzinfo is None:
+        deadline = deadline.replace(tzinfo=UTC)
+    seconds = (deadline - datetime.now(UTC)).total_seconds()
+    assert 0 < seconds <= 3700  # ~1 hour, not the requested 24
+    assert (await client.delete("/api/v1/organization/memberships/superuser")).status_code == 204
+
+
+async def test_expired_grant_locks_out_superuser(
+    client: AsyncClient,
+    db: AsyncSession,
+    org_with_members: dict[str, Any],
+    seed_superuser: dict[str, Any],
+) -> None:
+    org_id = org_with_members["organization_id"]
+    su_id = seed_superuser["user_id"]
+    db.add(
+        UserOrganization(
+            id=uuid.uuid4(),
+            user_id=su_id,
+            organization_id=org_id,
+            role="superuser",
+            created_at=datetime.now(UTC) - timedelta(hours=2),
+            expires_at=datetime.now(UTC) - timedelta(hours=1),
+        )
+    )
+    await db.commit()
+
+    # The Superuser names the org → context prunes the lapsed grant → 403.
+    await _login_superuser(client)
+    client.headers["X-Organization-Id"] = str(org_id)
+    resp = await client.get("/api/v1/organization/superuser-access")
+    assert resp.status_code == 403
+    client.headers.pop("X-Organization-Id", None)
+
+    assert await _superuser_binding(db, su_id, org_id) is None
+    expired = await _audit_events(db, "organization.superuser_membership.expired")
+    assert any(e.organization_id == org_id for e in expired)
+
+
+async def test_expired_grant_clears_member_banner(
+    client: AsyncClient,
+    db: AsyncSession,
+    org_with_members: dict[str, Any],
+    seed_superuser: dict[str, Any],
+) -> None:
+    org_id = org_with_members["organization_id"]
+    su_id = seed_superuser["user_id"]
+    db.add(
+        UserOrganization(
+            id=uuid.uuid4(),
+            user_id=su_id,
+            organization_id=org_id,
+            role="superuser",
+            created_at=datetime.now(UTC) - timedelta(hours=2),
+            expires_at=datetime.now(UTC) - timedelta(hours=1),
+        )
+    )
+    await db.commit()
+
+    # A regular member's banner poll prunes the lapsed grant + returns null.
+    await _login_as(client, org_with_members, "analyst")
+    assert (await client.get("/api/v1/organization/superuser-access")).json() is None
+    assert await _superuser_binding(db, su_id, org_id) is None
+
+
+async def test_grant_expiry_marks_request_expired(
+    client: AsyncClient,
+    db: AsyncSession,
+    org_with_members: dict[str, Any],
+    seed_superuser: dict[str, Any],
+) -> None:
+    """A grant born of an approved request that lapses transitions the
+    request approved → expired with an ended_at — completing the timeline
+    the Admin/Superuser UI renders."""
+    org_id = org_with_members["organization_id"]
+    su_id = seed_superuser["user_id"]
+
+    # Request → approve (creates an approved request + a time-limited grant).
+    await _login_superuser(client)
+    rid = (await _request_access(client, org_id, requested_duration_hours=1))["id"]
+    await _login_as(client, org_with_members, "admin")
+    assert (
+        await client.post(
+            f"/api/v1/organization/access-requests/{rid}/approve", json={"mode": "requested"}
+        )
+    ).status_code == 200
+
+    # Force the grant past its deadline, then let a banner poll observe it.
+    binding = await _superuser_binding(db, su_id, org_id)
+    assert binding is not None
+    binding.expires_at = datetime.now(UTC) - timedelta(minutes=1)
+    await db.commit()
+    assert (await client.get("/api/v1/organization/superuser-access")).json() is None
+
+    # The request is now terminal: expired, with ended_at + decider intact.
+    listing = (await client.get("/api/v1/organization/access-requests")).json()
+    row = next(r for r in listing if r["id"] == rid)
+    assert row["status"] == "expired"
+    assert row["ended_at"] is not None
+    assert row["decided_by_display_name"]
+
+    # The Superuser's own view reflects the same terminal state.
+    await _login_superuser(client)
+    mine = (await client.get("/api/v1/superuser/access-requests")).json()
+    my_row = next(r for r in mine if r["id"] == rid)
+    assert my_row["status"] == "expired"
+    assert my_row["ended_at"] is not None
+    assert my_row["currently_active"] is False
+
+
+async def test_request_conflicts(
+    client: AsyncClient,
+    db: AsyncSession,
+    org_with_members: dict[str, Any],
+    seed_superuser: dict[str, Any],
+) -> None:
+    org_id = org_with_members["organization_id"]
+    await _login_superuser(client)
+    rid = (await _request_access(client, org_id))["id"]
+
+    # A second pending request for the same org → 409.
+    assert (
+        await client.post(f"/api/v1/superuser/organizations/{org_id}/access-requests", json={})
+    ).status_code == 409
+
+    # Once active, requesting again → 409.
+    await _login_as(client, org_with_members, "admin")
+    assert (
+        await client.post(f"/api/v1/organization/access-requests/{rid}/approve", json={})
+    ).status_code == 200
+    await _login_superuser(client)
+    assert (
+        await client.post(f"/api/v1/superuser/organizations/{org_id}/access-requests", json={})
+    ).status_code == 409
+
+    await _login_as(client, org_with_members, "admin")
+    assert (await client.delete("/api/v1/organization/memberships/superuser")).status_code == 204
+
+
+async def test_access_request_cross_org_isolation(
+    client: AsyncClient,
+    db: AsyncSession,
+    org_with_members: dict[str, Any],
+    seed_superuser: dict[str, Any],
+) -> None:
+    org_a = org_with_members["organization_id"]
+    other = await _make_org_with_admin(db)
+
+    # Superuser requests access to org A only.
+    await _login_superuser(client)
+    rid_a = (await _request_access(client, org_a))["id"]
+
+    # Org B's Admin cannot see org A's request, nor decide on it (404).
+    await _login_as(client, other, "admin")
+    listing_b = (await client.get("/api/v1/organization/access-requests")).json()
+    assert all(r["id"] != rid_a for r in listing_b)
+    assert (
+        await client.post(f"/api/v1/organization/access-requests/{rid_a}/approve", json={})
+    ).status_code == 404
+    assert (
+        await client.post(f"/api/v1/organization/access-requests/{rid_a}/reject", json={})
+    ).status_code == 404
+
+    # Clean up the pending request.
+    await _login_superuser(client)
+    assert (await client.delete(f"/api/v1/superuser/access-requests/{rid_a}")).status_code == 204
 
 
 async def test_superuser_binding_role_is_locked(
@@ -673,19 +1018,62 @@ async def test_superuser_binding_role_is_locked(
     org_with_members: dict[str, Any],
     seed_superuser: dict[str, Any],
 ) -> None:
-    await _login_as(client, org_with_members, "admin")
-    assert (await client.post("/api/v1/organization/memberships/superuser")).status_code == 201
-
+    org_id = org_with_members["organization_id"]
     su_id = seed_superuser["user_id"]
+    # Establish the grant via the request → approve flow.
+    await _login_superuser(client)
+    rid = (await _request_access(client, org_id))["id"]
+    await _login_as(client, org_with_members, "admin")
+    assert (
+        await client.post(f"/api/v1/organization/access-requests/{rid}/approve", json={})
+    ).status_code == 200
+
+    # The Superuser's binding can't be promoted or removed via the ordinary
+    # user-management routes — only the consent-gate revoke ends it.
     resp = await client.patch(f"/api/v1/organization/users/{su_id}/role", json={"role": "admin"})
     assert resp.status_code == 409
 
     resp = await client.delete(f"/api/v1/organization/users/{su_id}")
     assert resp.status_code == 409
-    assert "memberships/superuser" in resp.json()["detail"]
+    # MSSP hygiene: the message states the restriction without leaking the
+    # internal endpoint/CLI; it points to revoking access instead (6.5-f).
+    detail = resp.json()["detail"]
+    assert "revoke their access" in detail
+    assert "/api/" not in detail and "memberships/superuser" not in detail
 
     # Clean up the grant so other tests see the default zero-membership state.
     assert (await client.delete("/api/v1/organization/memberships/superuser")).status_code == 204
+
+
+async def test_revoke_with_misconfigured_superuser_count_stays_generic(
+    client: AsyncClient,
+    db: AsyncSession,
+    org_with_members: dict[str, Any],
+    seed_superuser: dict[str, Any],
+) -> None:
+    """A violated single-Superuser invariant (0 or 2+ active Superusers)
+    surfaces a GENERIC message to the tenant Admin — never the count or the
+    bootstrap CLI (MSSP hygiene, 6.5-f). The operator diagnostic is logged
+    server-side instead. `_get_install_superuser` runs first in the revoke
+    handler, so this fires before any grant lookup (no grant needed)."""
+    # Corrupt the singleton with a second active Superuser. The DB is
+    # session-scoped + shared, so remove it in a finally even on failure.
+    ghost = _new_user("ghost-superuser@wolf.local", is_superuser=True)
+    db.add(ghost)
+    await db.commit()
+    try:
+        await _login_as(client, org_with_members, "admin")
+        resp = await client.delete("/api/v1/organization/memberships/superuser")
+        assert resp.status_code == 409
+        detail = resp.json()["detail"]
+        assert detail == "The Superuser account is unavailable; contact the platform operator."
+        # No install topology / internals leaked to the tenant Admin.
+        assert "found" not in detail
+        assert "CLI" not in detail and "bootstrap" not in detail
+        assert "/api/" not in detail
+    finally:
+        await db.delete(ghost)
+        await db.commit()
 
 
 # ─── Org audit-log view ──────────────────────────────────────────────────────
