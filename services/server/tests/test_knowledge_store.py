@@ -453,47 +453,50 @@ def test_factory_rejects_unknown_provider() -> None:
 def test_factory_accepts_sentence_transformers_aliases(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The factory accepts the canonical name plus common aliases.
+    """The factory routes every sentence-transformers alias to the ST adapter.
 
-    Forces CPU device selection via `CUDA_VISIBLE_DEVICES=""`. Why:
-    on a dev workstation with a single GPU already busy hosting
-    Ollama (the common Wolf dev shape), the SentenceTransformers
-    constructor's "prefer CUDA when available" logic would try to
-    allocate on the busy GPU and OOM. The test only cares about
-    factory dispatch, not where the model lives, so pinning it to
-    CPU keeps the test environment-independent. Captured 2026-06-02
-    while landing Phase 5.4-a.
+    This is a DISPATCH test, and it runs in EVERY environment — with or
+    without the optional `embeddings-local` extra (torch / sentence-
+    transformers) and with no HuggingFace network — because it stubs the
+    adapter rather than constructing the real one (whose constructor
+    lazy-imports the optional library and loads a model). The real
+    adapter's model loading is exercised at runtime by the embedding
+    pipeline, not here; this test only ever asserted the routing
+    (`model_id` starts with `st:`), which the stub preserves exactly.
+
+    History: captured 2026-06-02 (Phase 5.4-a) as an `importorskip` +
+    network-skip test; de-skipped 2026-06-16 (Phase 6.5-h.2 follow-up) so
+    the suite carries zero conditional skips per the no-unaddressed-errors
+    rule. CPU-pinning is no longer needed since no real model is loaded.
     """
-    # Optional dep per ADR 0007 — skip cleanly when the operator hasn't
-    # opted into `uv sync --extra embeddings-local`. Captured 2026-06-11
-    # while establishing Phase 6.4 baseline.
-    pytest.importorskip("sentence_transformers")
-
-    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "")
-
     from wolf_server.config import Settings
-    from wolf_server.knowledge.embeddings import make_embedding_provider
+    from wolf_server.knowledge import embeddings
 
-    # Without the optional extra, this would raise ImportError from inside
-    # the adapter constructor — that's the contract; we don't try to
-    # instantiate here, just verify the factory routes to the right branch.
-    # Since sentence-transformers IS installed in dev, construction
-    # succeeds. We assert the dispatch is correct.
+    class _StubSTAdapter:
+        """Stand-in for SentenceTransformersEmbeddingAdapter — no model load."""
+
+        def __init__(self, model_id: str, *, dimension: int) -> None:
+            self._model_id = model_id
+            self.dimension = dimension
+
+        @property
+        def model_id(self) -> str:
+            return f"st:{self._model_id}"
+
+    # Swap the real adapter (constructor lazy-imports sentence-transformers +
+    # loads a model) for the stub, so the factory's alias→branch routing is
+    # what's under test. `_build_provider` resolves the name from the module
+    # namespace at call time, so patching the attribute is enough.
+    monkeypatch.setattr(embeddings, "SentenceTransformersEmbeddingAdapter", _StubSTAdapter)
+
     for alias in ("sentence-transformers", "sentence_transformers", "st"):
         settings = Settings(
             embedding_provider=alias,
             embedding_model="BAAI/bge-base-en-v1.5",
         )
-        try:
-            provider = make_embedding_provider(settings)
-        except OSError as e:
-            # CI runners sometimes can't reach HuggingFace (intermittent).
-            # The factory dispatch IS what we're verifying — the model
-            # download is incidental. Skip rather than fail-flaky.
-            if "huggingface.co" in str(e) or "cached files" in str(e):
-                pytest.skip(f"HuggingFace network access unavailable: {e}")
-            raise
-        assert provider.model_id.startswith("st:")
+        provider = embeddings.make_embedding_provider(settings)
+        assert isinstance(provider, _StubSTAdapter)
+        assert provider.model_id == "st:BAAI/bge-base-en-v1.5"
 
 
 @pytest.mark.asyncio

@@ -49,6 +49,37 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-16 — Fix: npm advisories (@babel/core, js-yaml) + de-skip embedding-factory test
+
+**Session type:** claude-code
+**Phase:** 6.5-h.2 follow-up
+**Branch / commit:** main @ `<this>`
+
+### What we did
+- **Resolved two transitive npm advisories** in `services/dashboard` (the
+  Dependabot `@babel/core` PR #32 was erroring because the dep is
+  transitive-only — `eslint-config-next` + `shadcn` dev tooling — so it can't
+  be bumped via package.json). `npm audit fix` updated the lockfile only:
+  `@babel/core` 7.29.0 → **7.29.7** (GHSA-4x5r-pxfx-6jf8, arbitrary file read,
+  moderate) and `js-yaml` → **4.2.0** (GHSA-h67p-54hq-rp68, ReDoS, low).
+  `npm audit` now reports **0 vulnerabilities**; tsc/eslint/build green.
+- **De-skipped `test_factory_accepts_sentence_transformers_aliases`** at the
+  root (no-unaddressed-errors rule). It previously `importorskip`'d
+  `sentence_transformers` and could `pytest.skip` on HF network — the suite's
+  only conditional skip. Rewrote it to stub `SentenceTransformersEmbeddingAdapter`
+  so it tests factory **dispatch** (alias → `st:` routing) in every environment,
+  with no optional dep and no network. The test only ever asserted the routing,
+  so no coverage is lost; the suite now carries **0 skips** with or without the
+  `embeddings-local` extra.
+- Recorded the **deferred 6.5-h.2 gate web-test** obligation (gate shipped
+  inert/default-OFF → owes a full operator web-test when activated, ~Phase 6.10;
+  not to be skipped) in memory.
+
+### What's next
+- 6.6 / Phase 6.10 / 6.9 per operator.
+
+---
+
 ## 2026-06-16 — 6.5-h.2 SHIPPED: same-network verification gate (ADR 0018 item 9 / ADR 0023)
 
 **Session type:** claude-code

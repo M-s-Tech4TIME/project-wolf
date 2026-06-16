@@ -63,6 +63,17 @@ the reusable substrate both the toggle and per-org networks need).
   user's IP vs THEIR org's networks) = the MSSP-correct evolution of the gate.
   Supersedes the old `WOLF_TRUSTED_ADDITIONAL_CIDRS` idea.
 
+**DEFERRED OPERATOR WEB-TEST — DO NOT SKIP (operator, 2026-06-16):** because
+6.5-h.2 shipped the gate *inert* (default-OFF), it was NOT operator-web-tested
+end-to-end. When the gate is activated — likely at [[config-settings-system-phase]]
+(Phase 6.10) when the Superuser toggle lands, or whenever an operator enables it —
+the WHOLE feature must get a full web-test, owed and not to be skipped:
+on-network verify succeeds; off-LAN device → 403 `wrong_network` with the token
+NOT consumed (retry works on-network); spoofed `X-Wolf-Client-IP` is ignored;
+chat SSE still streams through the edge proxy. This obligation rides until that
+test is actually performed. (Standing rule: no test is skipped — see
+[[no-unaddressed-errors]].)
+
 Related: [[config-settings-system-phase]], [[superuser-config-authority]],
 [[web-first-configurability]], [[integrity-across-the-stack]],
-[[wolf-bootstrap-superuser-flow]].
+[[wolf-bootstrap-superuser-flow]], [[no-unaddressed-errors]].
