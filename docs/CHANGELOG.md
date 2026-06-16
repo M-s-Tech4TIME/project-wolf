@@ -49,6 +49,62 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-16 — 6.6-a SHIPPED: install-level Wazuh ecosystem topology (backend, ADR 0020)
+
+Phase 6.6 kickoff (Superuser-owned Wazuh component mapping, ADR 0020). Slice
+6.6-a — the **install-level** layer, backend only. The Superuser configures
+ONE install-wide Wazuh ecosystem topology (where the indexer(s)/manager(s)/
+dashboard physically live); the per-org *credentials* layer is the separate
+6.6-c refactor.
+
+- **`wolf_server/wazuh/probe.py`** (new, reusable) — `probe_indexer` /
+  `probe_manager_api` / `probe_dashboard` → structured `EndpointProbeResult`.
+  A probe never raises on an auth/HTTP/transport failure (it captures the
+  outcome so the caller decides hard-vs-soft); probe shapes lifted verbatim
+  from the proven `bootstrap_organization._validate_wazuh_connection`
+  (indexer GET `/` 200/403-ok/401-bad; manager POST `/security/user/
+  authenticate` 200-ok/401-bad; dashboard unauth GET reachable-and-not-5xx).
+  Re-used by 6.6-c.
+- **`wolf_server/wazuh/topology.py`** (new) — pydantic discriminated union
+  (`SingleHostTopology` / `DistributedTopology` on `kind`) — the single
+  source of truth for structural-shape validation, shared by the API and the
+  persisted JSON document. http(s)-scheme + length validation; distributed
+  requires ≥1 indexer node.
+- **`WazuhEcosystemTopology` ORM** (`wolf_server/wazuh/models.py`) + **migration
+  0011** — single-row, install-wide (DB-enforced singleton via a unique
+  `is_singleton` flag). Stores `kind` + the topology JSONB doc + credential
+  *keys* + `verify_tls` + `validated_at` + timestamps. Passwords live in the
+  secrets backend ONLY (ADR 0020 decision 7), never in the row.
+- **`wolf_server/api/wazuh_topology.py`** (new router) — `GET`/`PUT
+  /api/v1/superuser/wazuh-topology`, **Superuser-only** (reuses
+  `require_superuser`; ADR 0018 + ADR 0020 concentrate ALL Wazuh config in the
+  Superuser). PUT = **validate-before-persist, HARD fail** (ADR decision 3):
+  every required endpoint is probed and the save is REJECTED if any blocker
+  fails — indexer node(s) + manager master + dashboard are blockers,
+  distributed manager **workers are warnings** (a worker may be temporarily
+  down). Audit `install.wazuh_topology.updated` on success /
+  `…probe_failed` on rejection — system-level rows, **never** carrying
+  credentials. "Password omitted ⇒ keep the existing credential" so URLs can
+  be edited without re-typing secrets (422 if omitted on first save).
+- **Path note:** used the ADR's `/api/v1/superuser/wazuh-topology` (matches the
+  existing `superuser` router convention), not the roadmap's stale
+  `/api/v1/install/...` — roadmap corrected to match.
+- **Inert at runtime this slice** (expected): the query path still uses the
+  per-org config; topology is wired into runtime resolution at **6.6-e**.
+- **Gate:** ruff + mypy --strict (`wolf_server/wazuh` already in the strict
+  set) + **476 backend / 0 skip / 0 warning** (was 449; +27 new — 13 probe
+  unit via `httpx.MockTransport`, 14 topology model+API) + cross-org isolation
+  (18) green; `alembic check` clean ("No new upgrade operations detected") +
+  0011 downgrade round-trips on Postgres; no new dependency (dep-audit
+  unaffected). Live: wolf-server restarted clean; GET+PUT 401 unauth through
+  the real dashboard proxy + mTLS path (mounted + Superuser-gated). **No CI
+  workflow change needed** — touched modules already in the strict-mypy set,
+  alembic-check covers 0011, no new shipped file for smoke-deb. Commits `<this>`.
+- **Deferred operator web-test (tracked, not skipped):** the full functional
+  test — configure a real Wazuh ecosystem via the GUI + live endpoint probes —
+  lands with 6.6-b (UI) / 6.6-e (runtime) and needs a real Wazuh; it is owed
+  when those slices ship, same bar as the 6.5-h.2 gate test.
+
 ## 2026-06-16 — Fix: npm advisories (@babel/core, js-yaml) + de-skip embedding-factory test
 
 **Session type:** claude-code

@@ -12,10 +12,23 @@ after validation" guarantee from doc 05 §Organization misconfiguration.
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, UniqueConstraint, Uuid
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    String,
+    UniqueConstraint,
+    Uuid,
+)
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from wolf_server.database import Base
+
+# JSONB on Postgres (binary, queryable), generic JSON on SQLite (the test
+# suite — SQLite has no JSONB).  Same construction as audit/models.py.
+_JSON_TYPE = JSONB().with_variant(JSON(), "sqlite")
 
 
 def _now() -> datetime:
@@ -87,3 +100,62 @@ class OrganizationWazuhConfig(Base):
         return (
             f"<OrganizationWazuhConfig organization={self.organization_id} validated={validated}>"
         )
+
+
+class WazuhEcosystemTopology(Base):
+    """Install-level Wazuh ecosystem topology — Phase 6.6-a, ADR 0020.
+
+    A SINGLE install-wide row describing where the Wazuh indexer(s),
+    manager(s) and dashboard physically live (ADR 0020 decision 4: one
+    install = one Wazuh ecosystem).  Distinct from
+    :class:`OrganizationWazuhConfig`, which holds the per-org *credentials*
+    used to query that ecosystem.
+
+    Singleton invariant: enforced at the DB by a unique constraint on the
+    constant ``is_singleton`` flag — at most one row can ever exist.
+
+    The structural shape (URLs + cluster membership) lives in the
+    ``topology`` JSON document, validated by the ``wazuh.topology`` pydantic
+    discriminated union on the way in.  The install-level credentials
+    (indexer admin, manager API) never appear in this row — only the secrets
+    backend keys that name them (ADR 0020 decision 7).
+    """
+
+    __tablename__ = "wazuh_ecosystem_topology"
+    __table_args__ = (
+        UniqueConstraint("is_singleton", name="uq_wazuh_ecosystem_topology_singleton"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=_uuid)
+
+    # Always True; the unique constraint above turns it into a single-row guard.
+    is_singleton: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    # "single" | "distributed" — the discriminator of the topology document.
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)
+
+    # The validated structural document (see wazuh/topology.py).  URLs +
+    # cluster membership only — never credentials.
+    topology: Mapped[dict[str, object]] = mapped_column(_JSON_TYPE, nullable=False)
+
+    # Names of the secrets-backend entries holding the install-level
+    # credentials.  The passwords themselves are never stored here.
+    indexer_credential_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    manager_credential_key: Mapped[str] = mapped_column(String(200), nullable=False)
+
+    # TLS verification for probes + (later, 6.6-e) runtime queries.
+    verify_tls: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    # Set when the last save probed every required endpoint successfully.
+    validated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_now, onupdate=_now
+    )
+
+    def __repr__(self) -> str:
+        validated = self.validated_at is not None
+        return f"<WazuhEcosystemTopology kind={self.kind} validated={validated}>"

@@ -648,13 +648,31 @@ change emits the appropriate audit event.
 
 **Per ADR 0020 (ACCEPTED 2026-06-10).** Sequenced AFTER Phase 6.5
 so the Superuser + RBAC + per-tab header model is in place before
-this UI uses it. 5 sub-slices, **3-5 sessions estimated**:
+this UI uses it. 5 sub-slices, **3-5 sessions estimated**.
 
-1. **6.6-a — Backend: install-level Wazuh ecosystem config** — DB
-   schema `wazuh_ecosystem_topology` (single-row, install-wide);
-   API `GET / PUT /api/v1/install/wazuh-topology` (Superuser-only);
-   probe logic for all endpoints; audit-event emission on topology
-   change.
+> **Sequencing note (2026-06-16, operator direction):** Phase 6.6 is
+> proceeding **now, ahead of Phase 6 (the wolf-gateway Approval Gateway)**.
+> The original table sequenced 6.6 after Phase 6 only because both touch
+> wolf-server settings APIs — but 6.6 has **no functional dependency** on the
+> gateway; it depends only on the shipped Phase 6.5 Superuser + RBAC + per-tab
+> header model. Phase 6 remains designed-not-started and unblocked.
+
+1. **6.6-a — Backend: install-level Wazuh ecosystem config** — ✅
+   **SHIPPED 2026-06-16.** DB schema `wazuh_ecosystem_topology`
+   (single-row, install-wide; migration 0011; DB-enforced singleton);
+   API `GET / PUT /api/v1/superuser/wazuh-topology` (Superuser-only —
+   path follows ADR 0020 + the existing `superuser` router convention,
+   NOT the earlier `/api/v1/install/...` draft); reusable
+   `wazuh/probe.py` (indexer/manager/dashboard) + pydantic discriminated
+   union (`wazuh/topology.py`, single/distributed); **validate-before-
+   persist HARD fail** (any blocker endpoint fails → save rejected;
+   distributed workers are warnings); credentials → secrets backend only
+   (ADR decision 7); audit `install.wazuh_topology.updated` /
+   `…probe_failed` (system-level, never logs creds); "omit password ⇒
+   keep existing". Backend-only + inert at runtime until 6.6-e wires it
+   into the query path. 27 tests (13 probe via MockTransport, 14
+   model+API); 476 backend / 0 skip green, `alembic check` clean +
+   0011 round-trips. Commits `<this>`.
 
 2. **6.6-b — UI: install-level Wazuh ecosystem page** — Superuser-
    only Settings → Wazuh Ecosystem page; Single/Distributed
