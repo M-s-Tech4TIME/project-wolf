@@ -49,6 +49,50 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-17 — 6.6-d SHIPPED: per-org Wazuh Credentials UI + rotation log (ADR 0020)
+
+The per-org credentials GUI for the 6.6-c backend, plus a small companion
+read endpoint for the rotation log. Closes the four GUI/backend layers of
+Phase 6.6 except the runtime wiring (6.6-e).
+
+- **`components/wazuh-credentials-card.tsx`** (new) — a "Wazuh credentials"
+  card rendered on each org's Superuser detail page
+  (`app/superuser/organizations/[id]/page.tsx`). Indexer + Server-API
+  user/password fields (write-only: usernames shown, blank password = "keep
+  existing", "•••• (unchanged)" placeholder), index filter, optional
+  comma-separated agent groups, inject-organization-filter toggle. **"Test &
+  save"** is **soft-fail** — it saves even when the probe fails (Superuser can
+  configure before the Wazuh-side user exists), rendering per-endpoint probe
+  results (✓/✗ + detail), the **scope summary** ("credential sees N agents…"),
+  any warnings, and a "verified / not yet verified" status. A **409** (no
+  install topology configured yet) renders a guided alert linking to
+  `/superuser/wazuh`. Client-side validation mirrors the backend (required
+  usernames + index filter; passwords required on first save).
+- **`GET /api/v1/superuser/organizations/{id}/wazuh-credentials/history`**
+  (new, Superuser-only) — the **rotation log**: an org-scoped projection of
+  the `organization.wazuh_credentials.updated` audit rows (newest first,
+  capped), surfacing probe-ok / index-filter / agent-count per change. Never
+  returns credentials (the audit row never stored any). The install-wide audit
+  view can't be scoped to one org cleanly, hence this focused read. 2 tests.
+- **`lib/types.ts` + `lib/api.ts`** — per-org credentials types
+  (response/update/save/history) + `fetchOrgWazuhCredentials`,
+  `saveOrgWazuhCredentials`, `fetchOrgWazuhCredentialHistory`.
+- **Gate:** backend ruff + mypy --strict (43 files; added typed extractors so
+  the JSON `event_data` projects cleanly into the typed history model) + **492
+  backend / 0 skip / 0 warning** (was 490; +2 history tests) + cross-org
+  isolation (18); frontend `tsc --noEmit` + `eslint .` 0 warnings; live per-org
+  route compiles + serves 200, new history endpoint returns 401 unauth through
+  the proxy. No migration (no schema change); no new dependency; **no CI
+  workflow change needed.** Commits `<this>`.
+- **Phase 6.6 status:** backends (6.6-a, 6.6-c) + UIs (6.6-b, 6.6-d) all
+  SHIPPED; only **6.6-e** (runtime per-query topology + credential resolution,
+  random indexer routing, drop the bridged per-org URL columns) remains — it
+  carries the operator's real-Wazuh functional web-test that closes the phase.
+- **Web-test plan (operator, 2026-06-17):** the Category-1 UI web-test
+  (gating, builders, validation, hard/soft-fail paths — no Wazuh needed) is a
+  single **consolidated** pass over 6.6-b + 6.6-d, to run next; the Category-2
+  functional test runs **for real** at 6.6-e against the operator's Wazuh.
+
 ## 2026-06-16 — 6.6-b SHIPPED: install-level Wazuh Ecosystem UI (frontend, ADR 0020)
 
 The Superuser GUI for the install topology shipped by 6.6-a. Frontend-only.

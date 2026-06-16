@@ -38,6 +38,10 @@ import type {
   RegenerateInviteResponse,
   SuperuserAccessGrant,
   SuperuserAccessRequest,
+  WazuhCredentialHistoryEntry,
+  WazuhCredentialsResponse,
+  WazuhCredentialsSaveResponse,
+  WazuhCredentialsUpdate,
   WazuhTopologyResponse,
   WazuhTopologySaveResponse,
   WazuhTopologyUpdate,
@@ -355,6 +359,41 @@ export function saveWazuhTopology(
     method: "PUT",
     body: JSON.stringify(body),
   }).then(unwrap<WazuhTopologySaveResponse>);
+}
+
+// ── Per-org Wazuh credentials (Phase 6.6-c/d) ───────────────────────────────
+// Superuser-only; the org id is in the path (the Superuser has no membership
+// in the org, so this is install-scoped config, not the active-org header).
+
+export function fetchOrgWazuhCredentials(
+  organizationId: string,
+): Promise<WazuhCredentialsResponse> {
+  return apiFetch(
+    `/api/v1/superuser/organizations/${organizationId}/wazuh-credentials`,
+  ).then(unwrap<WazuhCredentialsResponse>);
+}
+
+/** Save / rotate an org's Wazuh credentials. SOFT fail: the save succeeds even
+ *  when the probe fails (so the Superuser can save before the Wazuh-side user
+ *  is provisioned) — `probe_ok`/`warnings`/scope ride in the response. Throws
+ *  ApiError(409) if no install ecosystem topology is configured yet. */
+export function saveOrgWazuhCredentials(
+  organizationId: string,
+  body: WazuhCredentialsUpdate,
+): Promise<WazuhCredentialsSaveResponse> {
+  return apiFetch(
+    `/api/v1/superuser/organizations/${organizationId}/wazuh-credentials`,
+    { method: "PUT", body: JSON.stringify(body) },
+  ).then(unwrap<WazuhCredentialsSaveResponse>);
+}
+
+/** This org's Wazuh credential-change audit trail (rotation log), newest first. */
+export function fetchOrgWazuhCredentialHistory(
+  organizationId: string,
+): Promise<WazuhCredentialHistoryEntry[]> {
+  return apiFetch(
+    `/api/v1/superuser/organizations/${organizationId}/wazuh-credentials/history`,
+  ).then(unwrap<WazuhCredentialHistoryEntry[]>);
 }
 
 export function fetchInstallAudit(

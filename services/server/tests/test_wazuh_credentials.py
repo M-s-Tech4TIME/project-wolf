@@ -443,3 +443,45 @@ async def test_put_audit_carries_no_credentials(
     assert "idx-secret" not in blob
     assert "api-secret" not in blob
     assert "password" not in blob
+
+
+# ── Rotation log (history) ───────────────────────────────────────────────────
+
+
+async def test_history_returns_credential_changes(
+    client: AsyncClient,
+    db: AsyncSession,
+    seed_superuser: dict[str, Any],
+    with_topology: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_probe(monkeypatch, agents=9, groups=5)
+    org_id = await _make_org(db)
+    assert (await _login(client, SUPERUSER_USERNAME, _WOLF_PASSWORD)).status_code == 200
+    assert (
+        await client.put(
+            f"/api/v1/superuser/organizations/{org_id}/wazuh-credentials", json=_BODY
+        )
+    ).status_code == 200
+
+    resp = await client.get(
+        f"/api/v1/superuser/organizations/{org_id}/wazuh-credentials/history"
+    )
+    assert resp.status_code == 200
+    entries = resp.json()
+    assert len(entries) == 1
+    assert entries[0]["probe_ok"] is True
+    assert entries[0]["index_filter"] == "wazuh-alerts-acme-*"
+    assert entries[0]["agent_count"] == 9
+
+
+async def test_history_requires_superuser(
+    client: AsyncClient, seed_organization_and_user: dict[str, Any]
+) -> None:
+    login = await _login(client, seed_organization_and_user["user_email"], "password123")
+    assert login.status_code == 200
+    org_id = seed_organization_and_user["organization_id"]
+    resp = await client.get(
+        f"/api/v1/superuser/organizations/{org_id}/wazuh-credentials/history"
+    )
+    assert resp.status_code == 403

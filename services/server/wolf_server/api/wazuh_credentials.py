@@ -32,6 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from wolf_server.api.superuser import require_superuser
 from wolf_server.audit.log import write_event
+from wolf_server.audit.models import AuditEvent
 from wolf_server.database import get_db
 from wolf_server.organization.models import Organization, User
 from wolf_server.secrets_factory import get_secrets_backend
@@ -89,6 +90,18 @@ class WazuhCredentialsSaveResponse(WazuhCredentialsResponse):
     warnings: list[str] = Field(default_factory=list)
 
 
+class WazuhCredentialHistoryEntry(BaseModel):
+    """One credential-change audit row, projected for the rotation log."""
+
+    id: str
+    created_at: datetime
+    user_id: str | None
+    probe_ok: bool | None
+    index_filter: str | None
+    agent_count: int | None
+    group_count: int | None
+
+
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 
@@ -142,6 +155,18 @@ async def _require_org(db: AsyncSession, organization_id: uuid.UUID) -> Organiza
     if org is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
     return org
+
+
+def _as_bool(v: object) -> bool | None:
+    return v if isinstance(v, bool) else None
+
+
+def _as_str(v: object) -> str | None:
+    return v if isinstance(v, str) else None
+
+
+def _as_int(v: object) -> int | None:
+    return v if isinstance(v, int) and not isinstance(v, bool) else None
 
 
 # ── Routes ─────────────────────────────────────────────────────────────────
@@ -320,3 +345,47 @@ async def put_wazuh_credentials(
         scope_detail=probe.scope_detail,
         warnings=warnings,
     )
+
+
+@router.get(
+    "/{organization_id}/wazuh-credentials/history",
+    response_model=list[WazuhCredentialHistoryEntry],
+)
+async def get_wazuh_credentials_history(
+    organization_id: uuid.UUID,
+    _superuser: Annotated[User, Depends(require_superuser)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    limit: int = 20,
+) -> list[WazuhCredentialHistoryEntry]:
+    """This org's Wazuh credential-change audit trail (rotation log).
+
+    Org-scoped projection of the install-wide audit — newest first, capped.
+    Never returns credentials (the audit row never stored any).
+    """
+    await _require_org(db, organization_id)
+    rows = (
+        await db.scalars(
+            select(AuditEvent)
+            .where(
+                AuditEvent.organization_id == organization_id,
+                AuditEvent.event_type == "organization.wazuh_credentials.updated",
+            )
+            .order_by(AuditEvent.created_at.desc())
+            .limit(max(1, min(limit, 100)))
+        )
+    ).all()
+    entries: list[WazuhCredentialHistoryEntry] = []
+    for row in rows:
+        data: dict[str, object] = row.event_data if isinstance(row.event_data, dict) else {}
+        entries.append(
+            WazuhCredentialHistoryEntry(
+                id=str(row.id),
+                created_at=row.created_at,
+                user_id=str(row.user_id) if row.user_id else None,
+                probe_ok=_as_bool(data.get("probe_ok")),
+                index_filter=_as_str(data.get("index_filter")),
+                agent_count=_as_int(data.get("agent_count")),
+                group_count=_as_int(data.get("group_count")),
+            )
+        )
+    return entries

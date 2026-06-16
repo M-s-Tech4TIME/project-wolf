@@ -166,6 +166,51 @@ export type WazuhTopologySaveResponse = WazuhTopologyResponse & {
   warnings: string[];
 };
 
+// ── Per-org Wazuh credentials (Phase 6.6-c/d) ───────────────────────────────
+// Mirror services/server/wolf_server/api/wazuh_credentials.py.
+
+export type WazuhCredentialsResponse = {
+  configured: boolean;
+  organization_id: string | null;
+  indexer_user: string | null;
+  server_api_user: string | null;
+  wazuh_index_filter: string | null;
+  wazuh_agent_groups: string[] | null;
+  inject_organization_filter: boolean | null;
+  validated_at: string | null;
+  updated_at: string | null;
+};
+
+export type WazuhCredentialsUpdate = {
+  indexer_user: string;
+  // null/omitted keeps the stored password; required on first save.
+  indexer_password: string | null;
+  server_api_user: string;
+  server_api_password: string | null;
+  wazuh_index_filter: string;
+  wazuh_agent_groups: string[] | null;
+  inject_organization_filter: boolean;
+};
+
+export type WazuhCredentialsSaveResponse = WazuhCredentialsResponse & {
+  probe_ok: boolean;
+  probe_results: WazuhProbeResult[];
+  agent_count: number | null;
+  group_count: number | null;
+  scope_detail: string | null;
+  warnings: string[];
+};
+
+export type WazuhCredentialHistoryEntry = {
+  id: string;
+  created_at: string;
+  user_id: string | null;
+  probe_ok: boolean | null;
+  index_filter: string | null;
+  agent_count: number | null;
+  group_count: number | null;
+};
+
 // ── Per-org user management (Phase 6.5-e) ──────────────────────────────────
 // Mirror services/server/wolf_server/api/org_management.py. All org-scoped
 // (the active-org header rides on every call).

@@ -17,6 +17,7 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { WazuhCredentialsCard } from "@/components/wazuh-credentials-card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -539,6 +540,8 @@ export default function OrganizationDetailPage() {
           )}
         </CardContent>
       </Card>
+
+      {org ? <WazuhCredentialsCard orgId={orgId} orgActive={org.is_active} /> : null}
 
       {/* Request access dialog */}
       <Dialog open={reqOpen} onOpenChange={(o) => !reqBusy && setReqOpen(o)}>

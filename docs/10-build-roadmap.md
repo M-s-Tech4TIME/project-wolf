@@ -713,9 +713,23 @@ this UI uses it. 5 sub-slices, **3-5 sessions estimated**.
    and drops them. 14 tests; 490 backend / 0 skip green, `alembic check`
    clean + 0012 round-trips. Commits `<this>`.
 
-4. **6.6-d — UI: per-org Wazuh credentials tab** — Superuser-only
-   "Wazuh Credentials" tab within each org's settings; form +
-   probe + save flow; rotation log display.
+4. **6.6-d — UI: per-org Wazuh credentials tab** — ✅
+   **SHIPPED 2026-06-17.** A "Wazuh credentials" card on each org's
+   Superuser detail page (`/superuser/organizations/[id]`,
+   `components/wazuh-credentials-card.tsx`): indexer + Server-API
+   user/password fields (write-only — usernames shown, blank password =
+   "keep existing"), index filter, optional comma-separated agent groups,
+   inject-organization-filter toggle. **"Test & save"** is soft-fail —
+   it saves even when the probe fails (so the Superuser can configure
+   before the Wazuh-side user exists), surfacing per-endpoint probe
+   results + the **scope summary** + warnings; "verified"/"not yet
+   verified" status. A **409** (no install topology yet) renders a guided
+   message linking to the Wazuh-ecosystem page. **Rotation log** backed
+   by a small new Superuser endpoint `GET /api/v1/superuser/organizations/
+   {id}/wazuh-credentials/history` (org-scoped `organization.wazuh_credentials
+   .*` audit projection, never credentials) + a test. tsc + eslint(0) green;
+   live per-org route compiles + serves 200; 492 backend / 0 skip green.
+   Commits `<this>`.
 
 5. **6.6-e — Runtime: per-query credential + topology resolution** —
    update the Wazuh query path to read topology + credentials fresh
