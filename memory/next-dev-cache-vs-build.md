@@ -40,12 +40,31 @@ start the service — next dev recompiles from current source. Verify the served
 client chunk actually contains your change:
 `grep -rl "<your new symbol>" services/dashboard/.next/dev/static/chunks/`.
 
+**Also hit 2026-06-16 (6.5-h.2 follow-up) — the STALE TS-SERVER `.next/types`
+trap:** `next build` generates route/type files under **`.next/types/`** (build
+location), while `next dev` generates them under **`.next/dev/types/`** (Next 16
+dev location); the dashboard `tsconfig.json` `include` lists BOTH. So a *local*
+`npm run build` creates `.next/types/{routes.d.ts,validator.ts,cache-life.d.ts}`,
+the editor's TS-server enumerates them into its program, and then the
+`rm -rf .next` clear deletes them → VSCode's PROBLEMS tab shows "File
+'.next/types/…' not found … matched by include pattern" (3 stale diagnostics).
+It is NOT a code/config bug — `tsc --noEmit` is clean (the glob harmlessly
+matches nothing in pure dev, where only `.next/dev/types/` exists). **Fix:** the
+on-disk state self-heals (dev only writes `.next/dev/types/`); the operator just
+needs a one-time **"TypeScript: Restart TS Server"** (or reload window) to drop
+the stale in-memory program. **Prevent it:** prefer NOT to run `next build` in
+the live workspace — `tsc --noEmit` + `eslint` validate locally and CI's
+`frontend` job runs the real build. If you must build locally, after the
+`rm -rf .next` clear also delete the (gitignored) `tsconfig.tsbuildinfo`.
+
 **How to apply:** the frontend gate's `tsc --noEmit` + `eslint` are safe to run
 against the live dev server (they don't write `.next`, and it hot-reloads
-edits, so the UI is validated live anyway). Only run the production
-`npm run build` with the service STOPPED, and if the operator still needs the
-dev server afterward (e.g. a web-test), clear `.next` while stopped before
-restarting `next dev` — otherwise it serves the stale prod bundle. If the dev
+edits, so the UI is validated live anyway) — prefer these over a local
+`npm run build` (CI runs the full build). If you DO run the production
+`npm run build`, do it with the service STOPPED, and if the operator still needs
+the dev server afterward (e.g. a web-test), clear `.next` while stopped before
+restarting `next dev` — otherwise it serves the stale prod bundle (and reload
+the editor's TS server to clear the `.next/types` diagnostics above). If the dev
 proxy returns 000, restart the dashboard — it rebuilds the dev cache fresh (~2s
 + first-request recompile). Confirm with an unauth probe:
 `curl -sk https://localhost:3000/api/v1/auth/me` → 401. (A 502 instead means
