@@ -679,13 +679,27 @@ this UI uses it. 5 sub-slices, **3-5 sessions estimated**.
    topology builder; per-endpoint probe results; hard-fail save
    if any endpoint probe fails.
 
-3. **6.6-c — Backend: per-org Wazuh credentials refactor** —
-   migrate existing `connection_profiles` to per-org credential
-   model; API `GET / PUT /api/v1/organizations/{id}/wazuh-credentials`
-   (Superuser-only; Admin/Engineer rejected at decorator); probe
-   logic for per-org credentials (returns scope summary); soft-
-   fail save when probe fails (so Superuser can save credentials
-   before Wazuh-side admin provisions them).
+3. **6.6-c — Backend: per-org Wazuh credentials refactor** — ✅
+   **SHIPPED 2026-06-16.** API `GET / PUT /api/v1/superuser/
+   organizations/{id}/wazuh-credentials` (Superuser-only; an org
+   Admin/Engineer is rejected at the `require_superuser` dependency).
+   New `wazuh/credentials.py`: `probe_org_credentials` (reuses 6.6-a's
+   indexer/manager probes for auth + adds a **scope summary** — agents/
+   groups the Server-API credential can see) + `resolve_endpoints_from_
+   topology`. **Soft-fail save** (ADR decision 3): credentials persist
+   even when the probe fails (`validated_at` stays null), so the
+   Superuser can save before the Wazuh-side user is provisioned. URLs
+   come from the install topology (6.6-a) — a PUT without a configured
+   topology is a 409. Audit `organization.wazuh_credentials.updated`
+   (org-scoped, never logs creds); "omit password ⇒ keep existing".
+   Migration 0012 adds optional `wazuh_agent_groups` (additive). **Two
+   credential pairs per org** (Indexer + Server-API) kept — Wazuh
+   separates those auth backends; the ADR's single `wazuh_api_user` was
+   a simplification. **Coherence bridge:** the per-org row keeps its URL
+   columns (sourced from the topology on save) so the current runtime
+   resolver is untouched until 6.6-e reads the topology fresh per query
+   and drops them. 14 tests; 490 backend / 0 skip green, `alembic check`
+   clean + 0012 round-trips. Commits `<this>`.
 
 4. **6.6-d — UI: per-org Wazuh credentials tab** — Superuser-only
    "Wazuh Credentials" tab within each org's settings; form +

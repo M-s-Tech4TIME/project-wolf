@@ -84,6 +84,12 @@ class OrganizationWazuhConfig(Base):
     # common case), the credential alone provides isolation.
     inject_organization_filter: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
+    # OPTIONAL list of Wazuh agent groups this org is scoped to (Phase 6.6-c,
+    # ADR 0020 per-org credential fields).  Null/empty means "any group the
+    # credential can see" — Wazuh-side RBAC remains the authority; this is a
+    # Wolf-side hint surfaced in the credentials UI + scope summary.
+    wazuh_agent_groups: Mapped[list[str] | None] = mapped_column(_JSON_TYPE, nullable=True)
+
     # Provisioning validation timestamp — null until the platform has connected
     # with the credentials and confirmed the deployment identity (doc 05).
     validated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

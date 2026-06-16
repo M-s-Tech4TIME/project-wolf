@@ -19,9 +19,9 @@ decision 7).
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, TypeAdapter, field_validator
 
 _MAX_URL = 500
 _MAX_NAME = 200
@@ -88,3 +88,8 @@ WazuhTopology = Annotated[
     SingleHostTopology | DistributedTopology,
     Field(discriminator="kind"),
 ]
+
+# Single shared adapter for parsing a stored topology document (the JSONB row)
+# back into the typed discriminated union.  Used by the topology + credentials
+# APIs so there is exactly one parser.
+WAZUH_TOPOLOGY_ADAPTER: TypeAdapter[Any] = TypeAdapter(WazuhTopology)

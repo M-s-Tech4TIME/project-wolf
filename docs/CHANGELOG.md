@@ -49,6 +49,61 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-16 — 6.6-c SHIPPED: per-org Wazuh credentials backend (refactor, ADR 0020)
+
+Phase 6.6 continues: the **per-org credentials** layer (backend only). The
+Superuser configures, per organization, the Wazuh credentials that org uses to
+query the install ecosystem (the URLs of which come from 6.6-a's install
+topology).
+
+- **`wolf_server/wazuh/credentials.py`** (new) — `probe_org_credentials(...)`
+  reuses 6.6-a's `probe_indexer` / `probe_manager_api` for the auth checks,
+  then fetches a **scope summary** (authenticate → JWT → `/agents?limit=1` +
+  `/groups?limit=1` → `total_affected_items`; best-effort, degrades
+  gracefully, never raises) per ADR 0020's "Test credentials" contract.
+  `resolve_endpoints_from_topology(row)` derives `(indexer_url, manager_url,
+  verify_tls)` from the install topology (first indexer node + manager master
+  for distributed; random per-query routing is 6.6-e). Optional `client=` for
+  no-network tests.
+- **`wolf_server/api/wazuh_credentials.py`** (new router) — `GET`/`PUT
+  /api/v1/superuser/organizations/{id}/wazuh-credentials`, **Superuser-only**
+  (an org Admin/Engineer is rejected at `require_superuser`). PUT = **soft-fail
+  save** (ADR decision 3): credentials persist even when the probe fails, so
+  the Superuser can save before the Wazuh-side user is provisioned;
+  `validated_at` is stamped only on a successful probe, and a warning + scope
+  summary ride back in the response. URLs come from the install topology — a
+  PUT with **no configured topology is a 409** ("configure the Wazuh ecosystem
+  first"). Audit `organization.wazuh_credentials.updated` (org-scoped, never
+  logs credentials); "omit password ⇒ keep existing" (422 on first save if
+  omitted). Mounted in main.py.
+- **Migration 0012 + ORM** — add optional `wazuh_agent_groups` (JSONB,
+  nullable) to `organization_wazuh_configs`. Additive; null = "any group the
+  credential can see".
+- **Three decisions (flagged):** (1) **two credential pairs per org**
+  (Indexer + Server-API), NOT the ADR's literal single `wazuh_api_user` —
+  Wazuh genuinely separates those auth backends and the existing model +
+  bootstrap validator already do two; collapsing would break the separation.
+  (2) **Coherence bridge** — the per-org row keeps its URL columns, **sourced
+  from the install topology on save**, so the current runtime resolver is
+  untouched until **6.6-e** reads the topology fresh per query and drops the
+  (now-redundant) columns. So 6.6-c is additive, not a destructive schema
+  change. Transitional caveat: a per-org row's cached URLs go stale if the
+  topology changes before re-save — exactly what 6.6-e's read-fresh fixes
+  (documented in code + migration). (3) **PUT requires a topology first**
+  (409) — you can't hold credentials for an unconfigured ecosystem; soft-fail
+  applies to the probe, not this prerequisite.
+- **Gate:** ruff + mypy --strict (`wolf_server/wazuh` + `wolf_server/api`
+  already in the strict set) + **490 backend / 0 skip / 0 warning** (was 476;
+  +14 — 2 probe/scope via httpx.MockTransport, 2 topology-resolver pure, 10
+  API) + cross-org isolation (18) green; `alembic check` clean ("No new
+  upgrade operations detected") + 0012 downgrade round-trips on Postgres; no
+  new dependency (dep-audit unaffected). **No CI workflow change needed.**
+  Commits `<this>`.
+- **Deferred operator web-test (tracked, not skipped):** the live functional
+  test (configure real per-org Wazuh credentials via the GUI + a real probe +
+  scope summary) lands with 6.6-d (UI) / 6.6-e (runtime) and needs a real
+  Wazuh.
+
 ## 2026-06-16 — 6.6-a SHIPPED: install-level Wazuh ecosystem topology (backend, ADR 0020)
 
 Phase 6.6 kickoff (Superuser-owned Wazuh component mapping, ADR 0020). Slice
