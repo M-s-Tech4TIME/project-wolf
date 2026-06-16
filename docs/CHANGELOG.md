@@ -49,6 +49,24 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-16 — Security: starlette 1.2.1 → 1.3.1 (CVE-2026-54282 + CVE-2026-54283)
+
+**Session type:** claude-code
+**Phase:** 6.5-h closeout
+**Branch / commit:** main (this commit)
+
+The `dep-audit` (pip-audit) CI gate flagged two newly-disclosed starlette
+advisories on the 6.5-h push (`a9f5108`): **CVE-2026-54283** (`request.form()`
+ignores `max_fields`/`max_part_size` for `application/x-www-form-urlencoded` →
+event-loop/memory DoS; fixed 1.3.1) and **CVE-2026-54282** (request path not
+validated before `request.url` reconstruction → attacker-controlled
+`url.hostname`/`netloc`; fixed 1.3.0). starlette is transitive via fastapi, so
+landed an explicit floor `starlette>=1.3.1` in `services/server/pyproject.toml`
++ `services/gateway/pyproject.toml` (the "pin the floor by hand" pattern) and
+re-ran `uv lock` (1.2.1 → 1.3.1). `uv lock --check` consistent; `uv run
+pip-audit` now clean; full backend suite green on 1.3.1. Same gate that caught
+the 1.0.0 → 1.2.1 CVE earlier — working as intended.
+
 ## 2026-06-16 — 6.5-h SHIPPED: Invite-link verification flow (ADR 0018 item 9, split)
 
 **Session type:** claude-code (operator-directed)
