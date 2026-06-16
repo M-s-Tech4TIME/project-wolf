@@ -38,10 +38,12 @@ ACCEPTED after multi-round operator reviews:
 slice.**
 
 **Phase 6+ (Approval Gateway and beyond): designed but not yet
-started.** Sub-phase ordering 6.4 → 6.5 → 6 → 6.6 → 6.7 → 6.8 → 7
+started.** Sub-phase ordering 6.4 → 6.5 → 6 → 6.6 → 6.9 → 6.7 → 6.8 → 7
 → 7.5 → 8 → 8.5 → 9 → 9.5 → 10 → 11 → 11.5 → 12 → 13. Reflects the ADR-
 derived sequencing; see `## Phase ordering — divergence from the
-original plan` below.
+original plan` below. (6.9 — outbound email — executes before 6.7
+despite the higher number, so notifications ship with an email channel;
+ADR 0022.)
 
 ---
 
@@ -674,8 +676,9 @@ operation touches a user:
 
 **v1 delivery** reuses the 6.5-f banner pattern (poll + on-action +
 window-focus) — useful before any streaming transport exists. UI:
-per-user feed + a notification bell. Email/SMTP delivery stays
-deferred to the future SMTP phase.
+per-user feed + a notification bell. **Email delivery** rides on
+Phase 6.9 (SMTP, ADR 0022), which lands first — so the bell can also
+notify by email from day one.
 
 ## Phase 6.8 — Real-time push (SSE)
 
@@ -685,6 +688,45 @@ channel that pushes notification + Superuser-access-banner state
 SSE, so the transport is familiar ground. Upgrades the 6.7
 notification bell + the 6.5-f banner from poll → real-time without
 changing their semantics.
+
+## Phase 6.9 — Outbound email (SMTP)
+
+**Per ADR 0022 (PROPOSED 2026-06-16), operator-requested.** Wolf
+gains outbound system email. **Executes before 6.7** despite the
+higher number, so the notification feature ships with an email
+delivery channel rather than retrofitting one.
+
+- **Wolf is an SMTP *client*, never an MTA** — it relays through an
+  operator-configured, **provider-agnostic generic SMTP** endpoint
+  (host / port / encryption / user / pass / from / reply-to).
+  Recommended relays are **free-tier transactional ESPs** — Brevo
+  (~300/day forever), SMTP2GO (~1k/mo), Resend / MailerSend (~3k/mo)
+  — with Amazon SES or any paid SMTP as a drop-in later. Switching
+  providers is config only, never code.
+- **Deliverability is a documented contract:** the operator
+  authenticates a sending domain with **SPF + DKIM + DMARC**; Wolf
+  ships a **`wolf-mail doctor`** check that verifies those records
+  and warns on misconfiguration. (Inbox placement is ~90% domain
+  auth + reputation; self-hosting an MTA is what gets blocked.)
+- **Architecture:** a `MailService` core + **`wolf-mail` shell
+  wrapper** (shell-wrapper pattern); **web-first config** (Superuser
+  dashboard, DB source of truth, CLI↔GUI synced, audited) with the
+  SMTP password in the **secrets backend**; a durable `email_outbox`
+  table (queue + retry + history) drained by an **in-process poller**
+  (no broker dependency in v1); **Jinja multipart text+HTML
+  templates** versioned in-repo.
+- **First consumer:** verification/invite email — extends 6.5-h
+  (and the future Superuser invite-link flow). Email **augments**
+  the copy-link flow, never replaces it (copy-link stays the
+  no-SMTP / air-gapped fallback). Reports = on-demand "email me
+  this" first; scheduled digests later.
+- **Audit vs notification:** email *sends* are audited
+  (`email.sent` / `email.failed`) — a system action, distinct from
+  ADR 0021's notification-isolation rule. Bounce handling: v1
+  log-and-suppress; ESP-webhook ingestion as a fast-follow.
+- **Security:** TLS required, creds in the secrets backend,
+  header/CRLF-injection defense (server-resolved recipients), no
+  open relay, per-org + global rate limits.
 
 ## Phase 7 — Cases and reporting (wolf-hunt foundation)
 

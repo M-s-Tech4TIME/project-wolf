@@ -89,6 +89,7 @@ implies. Any rollback path.
 | 0015 | `grounding-yellow-vs-red-and-judge-on-constrained-gpu.md` — split the grounding marker (yellow vs red), keep judge on qwen3:8b under the 6 GB GPU constraint. | accepted |
 | 0016 | `wolf-component-architecture-and-packaging.md` — Wazuh-style three-component model (`wolf-dashboard`, `wolf-server`, `wolf-database`), shared CA + mTLS between machine components, FHS install layout, systemd-managed lifecycle, `/bin` for shipped CLIs, APT/RPM packaging deferred to release phase. The contract Phases 5.5 → 5.8 build against. | accepted |
 | 0021 | `notification-infrastructure-and-realtime-push.md` — dedicated future phases: in-app Notification infrastructure (Phase 6.7, poll-delivered v1) then SSE real-time push (Phase 6.8); notifications STRICTLY isolated from audit/logs. | proposed |
+| 0022 | `outbound-email-smtp.md` — Phase 6.9 outbound email: Wolf is a provider-agnostic SMTP *client* (never an MTA) relaying through a free-tier ESP (Brevo/SMTP2GO/Resend/SES); deliverability = operator-authenticated sending domain (SPF/DKIM/DMARC) checked by `wolf-mail doctor`; outbox table + Jinja templates + secrets-backed creds + web-first config; lands before 6.7 so notifications ship with an email channel. | proposed |
 
 _Update this table whenever you add a new ADR._
 _(Index trails ADRs 0017–0020 — pre-existing gap, backfill when next touched.)_
