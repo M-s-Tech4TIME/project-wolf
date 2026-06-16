@@ -8,7 +8,7 @@
 // in the install-admin surface → /chat. ADR 0018: the Superuser is an
 // install-level identity with no org data access.
 
-import { Building2, MessageSquare, ScrollText, ShieldCheck } from "lucide-react";
+import { Building2, MessageSquare, Network, ScrollText, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, type ReactNode } from "react";
@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 const NAV = [
   { href: "/superuser/dashboard", label: "Dashboard", icon: ShieldCheck },
   { href: "/superuser/organizations", label: "Organizations", icon: Building2 },
+  { href: "/superuser/wazuh", label: "Wazuh ecosystem", icon: Network },
   { href: "/superuser/audit", label: "Audit log", icon: ScrollText },
 ];
 

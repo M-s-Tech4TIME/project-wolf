@@ -38,6 +38,9 @@ import type {
   RegenerateInviteResponse,
   SuperuserAccessGrant,
   SuperuserAccessRequest,
+  WazuhTopologyResponse,
+  WazuhTopologySaveResponse,
+  WazuhTopologyUpdate,
 } from "./types";
 
 // All API calls are same-origin under `/api/v1/...`. No `apiBase()`
@@ -330,6 +333,28 @@ export function recoverOrganizationAdmin(
     method: "POST",
     body: JSON.stringify(body),
   }).then(unwrap<RecoveryAdminResponse>);
+}
+
+// ── Install-level Wazuh ecosystem topology (Phase 6.6-a/b) ──────────────────
+// Superuser-only (require_superuser); org-less, so no X-Organization-Id header.
+
+export function fetchWazuhTopology(): Promise<WazuhTopologyResponse> {
+  return apiFetch("/api/v1/superuser/wazuh-topology").then(
+    unwrap<WazuhTopologyResponse>,
+  );
+}
+
+/** Configure / re-configure the install's Wazuh ecosystem topology. The
+ *  backend probes every endpoint (validate-before-persist, HARD fail) — a
+ *  400 ApiError means a required endpoint failed and nothing was saved. On
+ *  success the response carries per-endpoint probe results + worker warnings. */
+export function saveWazuhTopology(
+  body: WazuhTopologyUpdate,
+): Promise<WazuhTopologySaveResponse> {
+  return apiFetch("/api/v1/superuser/wazuh-topology", {
+    method: "PUT",
+    body: JSON.stringify(body),
+  }).then(unwrap<WazuhTopologySaveResponse>);
 }
 
 export function fetchInstallAudit(

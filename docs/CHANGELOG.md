@@ -49,6 +49,45 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-16 — 6.6-b SHIPPED: install-level Wazuh Ecosystem UI (frontend, ADR 0020)
+
+The Superuser GUI for the install topology shipped by 6.6-a. Frontend-only.
+
+- **`app/superuser/wazuh/page.tsx`** (new) — Superuser-only Wazuh Ecosystem
+  page, reached from a new **"Wazuh ecosystem"** nav item in the install-admin
+  shell (`app/superuser/layout.tsx`). A **Single host / Distributed** segmented
+  builder:
+  - single → indexer / manager / dashboard URL fields;
+  - distributed → a **dynamic indexer-node list** (url + cluster name, add/
+    remove), manager **master** URL, a **dynamic worker list** (add/remove,
+    "a failed worker is a warning, not a blocker"), and the dashboard URL.
+  - **Write-only credentials:** indexer-admin + manager-API usernames are
+    shown; password fields are blank with a "•••• (unchanged)" placeholder
+    when already configured — blank means "keep the stored secret". Verify-TLS
+    checkbox.
+  - **"Test & save"** → `PUT`. On the backend's validate-before-persist
+    **HARD-fail 400**, the guided `detail` (which endpoints failed) renders in
+    a destructive alert and nothing is saved; on success a per-endpoint
+    **probe-result list** (✓/✗ + detail) + any **worker warnings** + a "last
+    verified <relative time>" line render. Client-side validation mirrors the
+    backend (http(s) scheme, required usernames, passwords required on first
+    save).
+- **`lib/types.ts`** — Wazuh-topology types (single/distributed shapes,
+  response, update, probe result) mirroring the 6.6-a API. **`lib/api.ts`** —
+  `fetchWazuhTopology` + `saveWazuhTopology` (Superuser-only; org-less, no
+  `X-Organization-Id` header).
+- **Gate:** `tsc --noEmit` clean + `eslint .` 0 warnings/errors (fixed a
+  `react-hooks/set-state-in-effect` by dropping a redundant synchronous
+  `setLoading(true)`); live dev route compiles + serves **200** through the
+  real proxy; the called endpoints return 401 unauth (confirmed). No
+  `npm run build` locally (CI's `frontend` job runs it — memory
+  `next-dev-cache-vs-build`); no backend change, no new dependency, **no CI
+  workflow change needed**. Commits `<this>`.
+- **Deferred operator web-test (tracked, not skipped):** the live end-to-end
+  test (log in as Superuser, fill the form against a **real Wazuh**, observe
+  hard-fail vs success + probe results) lands with 6.6-e (runtime) + a real
+  Wazuh — same bar as the 6.5-h.2 gate test.
+
 ## 2026-06-16 — 6.6-c SHIPPED: per-org Wazuh credentials backend (refactor, ADR 0020)
 
 Phase 6.6 continues: the **per-org credentials** layer (backend only). The

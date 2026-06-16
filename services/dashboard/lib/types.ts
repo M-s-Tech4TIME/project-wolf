@@ -110,6 +110,62 @@ export type InstallAuditPage = {
   offset: number;
 };
 
+// ── Install-level Wazuh ecosystem topology (Phase 6.6-a/b) ──────────────────
+// Mirror services/server/wolf_server/api/wazuh_topology.py + wazuh/topology.py.
+
+export type WazuhIndexerNode = { url: string; cluster_name: string };
+
+export type WazuhSingleTopology = {
+  kind: "single";
+  indexer_url: string;
+  manager_url: string;
+  dashboard_url: string;
+};
+
+export type WazuhDistributedTopology = {
+  kind: "distributed";
+  indexer_nodes: WazuhIndexerNode[];
+  manager_master_url: string;
+  manager_worker_urls: string[];
+  dashboard_url: string;
+};
+
+export type WazuhTopologyShape = WazuhSingleTopology | WazuhDistributedTopology;
+
+export type WazuhTopologyResponse = {
+  configured: boolean;
+  kind: "single" | "distributed" | null;
+  topology: WazuhTopologyShape | null;
+  indexer_admin_user: string | null;
+  manager_api_user: string | null;
+  verify_tls: boolean | null;
+  validated_at: string | null;
+  updated_at: string | null;
+};
+
+export type WazuhTopologyUpdate = {
+  topology: WazuhTopologyShape;
+  indexer_admin_user: string;
+  // null/omitted keeps the stored password; required on first save.
+  indexer_admin_password: string | null;
+  manager_api_user: string;
+  manager_api_password: string | null;
+  verify_tls: boolean;
+};
+
+export type WazuhProbeResult = {
+  role: string;
+  url: string;
+  ok: boolean;
+  detail: string;
+  status_code: number | null;
+};
+
+export type WazuhTopologySaveResponse = WazuhTopologyResponse & {
+  probe_results: WazuhProbeResult[];
+  warnings: string[];
+};
+
 // ── Per-org user management (Phase 6.5-e) ──────────────────────────────────
 // Mirror services/server/wolf_server/api/org_management.py. All org-scoped
 // (the active-org header rides on every call).

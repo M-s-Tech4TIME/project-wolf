@@ -674,10 +674,22 @@ this UI uses it. 5 sub-slices, **3-5 sessions estimated**.
    model+API); 476 backend / 0 skip green, `alembic check` clean +
    0011 round-trips. Commits `<this>`.
 
-2. **6.6-b — UI: install-level Wazuh ecosystem page** — Superuser-
-   only Settings → Wazuh Ecosystem page; Single/Distributed
-   topology builder; per-endpoint probe results; hard-fail save
-   if any endpoint probe fails.
+2. **6.6-b — UI: install-level Wazuh ecosystem page** — ✅
+   **SHIPPED 2026-06-16.** Superuser-only `/superuser/wazuh` page
+   (new "Wazuh ecosystem" nav item in the install-admin shell):
+   Single/Distributed segmented builder (single = indexer/manager/
+   dashboard URLs; distributed = dynamic indexer-node list with
+   cluster names + manager master + dynamic worker list + dashboard);
+   write-only credential fields (usernames shown, passwords blank =
+   "keep existing"); verify-TLS toggle. "Test & save" → PUT; on the
+   backend's HARD-fail 400 the guided `detail` (the failing endpoints)
+   renders, on success the per-endpoint probe-result list + any worker
+   warnings + "last verified" render. Client-side validation mirrors
+   the backend (http(s) scheme, required fields, first-save passwords).
+   New `lib/types.ts` Wazuh-topology types + `lib/api.ts`
+   `fetchWazuhTopology`/`saveWazuhTopology`. Frontend-only; gate: tsc +
+   eslint(0) green, live dev route compiles + serves 200 through the
+   proxy. Commits `<this>`.
 
 3. **6.6-c — Backend: per-org Wazuh credentials refactor** — ✅
    **SHIPPED 2026-06-16.** API `GET / PUT /api/v1/superuser/
