@@ -58,13 +58,20 @@ case "$1" in
          WOLF_SERVER_URL=https://localhost:7860
        (Or the wolf-server host's URL for distributed deploys.)
 
+       For HTTPS (recommended), also set the TLS edge-proxy paths
+       (Phase 6.5-h.2 — the proxy terminates TLS in front of Next):
+         WOLF_DASHBOARD_TLS_CERT=/etc/wolf-dashboard/tls/cert.pem
+         WOLF_DASHBOARD_TLS_KEY=/etc/wolf-dashboard/tls/key.pem
+       Without them the dashboard serves plain HTTP on PORT.
+
     2. Start the service:
 
          sudo systemctl enable --now wolf-dashboard
 
-       The dashboard binds 0.0.0.0:3000 by default. Browser at
-       https://<host>:3000/ will log in via the same flow as the
-       dev workflow (Phase 5.6 mTLS reverse-proxy substrate).
+       The dashboard binds 0.0.0.0:3000 by default (PORT). Browser
+       at https://<host>:3000/ logs in via the same flow as the dev
+       workflow (Phase 5.6 mTLS reverse-proxy substrate); the edge
+       proxy stamps the client IP for the same-network gate.
 
 EOF
         ;;

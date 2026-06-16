@@ -57,6 +57,8 @@ jobs:
         # live on its routes (org CRUD, user management, consent gate).
         # Phase 6.5-g: wolf_server/auth added — session middleware, JWT
         # helpers, and the session blacklist live there.
+        # Phase 6.5-h.2: wolf_server/network added — the same-network
+        # verification gate's NIC-CIDR enumeration + membership check.
         run: |
           uv run mypy packages/common/wolf_common \
                        packages/secrets/wolf_secrets \
@@ -68,6 +70,7 @@ jobs:
                        services/server/wolf_server/audit \
                        services/server/wolf_server/bootstrap \
                        services/server/wolf_server/models \
+                       services/server/wolf_server/network \
                        services/server/wolf_server/wazuh \
                        services/server/wolf_server/guardrails \
                        services/server/wolf_server/agent \
@@ -683,6 +686,10 @@ jobs:
           done
           test -f /usr/lib/wolf-dashboard/server.js \
               || { echo "FAIL: wolf-dashboard standalone server.js missing"; exit 1; }
+          # Phase 6.5-h.2: the shim runs the edge proxy (not server.js
+          # directly); it must ship alongside the standalone build.
+          test -f /usr/lib/wolf-dashboard/edge-proxy.mjs \
+              || { echo "FAIL: wolf-dashboard edge-proxy.mjs missing"; exit 1; }
           echo "OK: wolf-database + wolf-server venvs + wolf-dashboard standalone all present"
       - name: Verify CLI shims work
         run: |

@@ -49,6 +49,68 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-16 — 6.5-h.2 SHIPPED: same-network verification gate (ADR 0018 item 9 / ADR 0023)
+
+**Session type:** claude-code
+**Phase:** 6.5-h.2
+**Branch / commit:** main @ `<this>`
+
+### What we did
+- **Dashboard edge proxy** (`services/dashboard/scripts/edge-proxy.mjs`, Node
+  stdlib only): terminates TLS on the public bind, strips client-supplied
+  `x-wolf-client-ip`/`x-forwarded-for`/`x-real-ip`, stamps the real
+  `socket.remoteAddress` as `X-Wolf-Client-IP` (+ `x-forwarded-proto: https`),
+  forwards to an UNMODIFIED `next dev` / standalone `server.js` on a loopback
+  inner port. Streams responses (SSE preserved) + splices WS upgrades (HMR).
+  Rewired `scripts/dev.mjs` (drops `--experimental-https`; runs next on the
+  inner port + the proxy on the public bind). Prod: shim runs the proxy (spawns
+  `server.js` inner), `debian/wolf-dashboard.install` ships the proxy file, unit
+  comments + postinst env hint updated (`WOLF_DASHBOARD_TLS_CERT/_KEY`, `PORT`,
+  `WOLF_DASHBOARD_INNER_PORT`).
+- **wolf-server gate**: new `wolf_server/network/local_network.py`
+  (`local_cidrs()` via `ifaddr` + loopback, `client_ip_in_local_network()`);
+  `verify-invite` resolves the client IP (`_resolve_gate_client_ip`) — trusts
+  `X-Wolf-Client-IP` only when mTLS-authenticated as the dashboard, else the TCP
+  peer — and CIDR-checks it. Out-of-network → 403 `wrong_network` WITHOUT
+  consuming the token. Config flag `same_network_gate_enabled` (default
+  **False** — MSSP-safe; `SAME_NETWORK_GATE_ENABLED=1` to enable on on-prem
+  single-network deploys); startup banner prints the state. `/verify` page
+  gains a network hint.
+- **Tests**: `tests/test_local_network.py` (NIC enumeration, membership,
+  v4-mapped normalisation, fail-closed, trust rule) + 3 gate integration tests
+  in `test_rbac.py` (off-network 403 + token kept, gate-off allows any,
+  spoofed header ignored without mTLS). `ifaddr>=0.2` added (+ `uv lock`).
+- **CI**: `wolf_server/network` added to the mypy strict-set (ci.yml + Makefile);
+  smoke-deb-install asserts `edge-proxy.mjs` ships.
+
+### What we decided
+- **TLS edge proxy, not a custom Next server** (operator-approved) — keeps
+  Turbopack-dev + `output: standalone` prod 100% stock. See **ADR 0023**.
+- **Gate default flipped ON → OFF (MSSP).** Mid-slice the operator surfaced the
+  MSSP gap: the gate checks membership in *wolf-server's* network, so in an MSSP
+  deployment (wolf-server in the provider's datacenter, client orgs remote) a
+  default-ON gate permanently blocks every remote client from verifying. MSSP is
+  a first-class target → OFF is the safe default; on-prem operators opt in. The
+  gate ships as **inert-but-ready machinery** (env-only).
+- **Two follow-ups recorded** (operator-approved): a **Superuser config-settings
+  system** (synced web/CLI/env, Settings GUI, Superuser-only — implements
+  ADR 0019; roadmap **Phase 6.10**) turns the gate into a GUI toggle, and
+  **per-org trusted networks** becomes the MSSP-correct gate. Standing rule
+  captured: *all* Wolf management/config is Superuser-only; other settings are
+  role-scoped.
+
+### What broke / what we discovered
+- httpx `ASGITransport` defaults the client to `127.0.0.1` (loopback → always
+  in-network), so the gate is transparent to the existing verify tests — no
+  conftest override needed. `ifaddr` 0.2 ships type info (the `type: ignore` was
+  unused). `torch` (opt-in `embeddings-local` extra) carries CVE-2025-3000 with
+  no fix yet — out of CI's dep-audit scope (not in the default .deb).
+
+### What's next
+- 6.6 (Superuser Wazuh component mapping) or Phase 6.9 (SMTP), per operator.
+
+---
+
 ## 2026-06-16 — Security: starlette 1.2.1 → 1.3.1 (CVE-2026-54282 + CVE-2026-54283)
 
 **Session type:** claude-code

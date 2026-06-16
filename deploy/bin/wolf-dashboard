@@ -1,12 +1,23 @@
 #!/bin/sh
-# /usr/bin/wolf-dashboard — shipped CLI shim. Phase 5.8-c.
+# /usr/bin/wolf-dashboard — shipped CLI shim. Phase 5.8-c;
+# edge-proxy topology added Phase 6.5-h.2.
 #
 # Operator-facing entry point for the wolf-dashboard production
-# server. Execs Next.js's standalone server build (produced by
-# `npm run build` at packaging time — Phase 5.9 / 5.10 .deb
-# post-install). The systemd unit at
-# /lib/systemd/system/wolf-dashboard.service (Phase 5.8-b) invokes
-# this shim for ExecStart=.
+# server. Execs the edge proxy (scripts/edge-proxy.mjs), which spawns
+# Next.js's standalone server build on a loopback inner port and
+# fronts it with a TLS-terminating proxy on the public bind. The
+# proxy owns the browser's TCP socket so it can stamp the trusted
+# X-Wolf-Client-IP header the same-network verification gate needs
+# (Next 16 hides the socket from route handlers — see ADR 0018 item 9
+# / Phase 6.5-h.2). The standalone build is produced by `npm run
+# build` at packaging time (Phase 5.9-d .deb). The systemd unit at
+# /lib/systemd/system/wolf-dashboard.service invokes this shim.
+#
+# Env the edge proxy reads (set in /etc/wolf-dashboard/env):
+#   PORT                     public bind port (default 3000)
+#   WOLF_DASHBOARD_INNER_PORT loopback port for next (default 3001)
+#   WOLF_DASHBOARD_TLS_CERT  PEM cert → serve HTTPS (HTTP if unset)
+#   WOLF_DASHBOARD_TLS_KEY   PEM key
 #
 # Why Next.js standalone:
 #   `next build` with `output: "standalone"` in next.config.ts
@@ -19,6 +30,7 @@ set -eu
 
 INSTALL_DIR="/usr/lib/wolf-dashboard"
 SERVER_JS="${INSTALL_DIR}/server.js"
+EDGE_PROXY="${INSTALL_DIR}/edge-proxy.mjs"
 NODE_BIN="${WOLF_DASHBOARD_NODE:-/usr/bin/node}"
 
 if [ ! -f "${SERVER_JS}" ]; then
@@ -26,6 +38,12 @@ if [ ! -f "${SERVER_JS}" ]; then
     echo "  Install the wolf-dashboard package (apt install wolf-dashboard)" >&2
     echo "  or run from a dev workspace via:" >&2
     echo "    cd services/dashboard && npm run dev" >&2
+    exit 2
+fi
+
+if [ ! -f "${EDGE_PROXY}" ]; then
+    echo "FAIL: wolf-dashboard edge proxy not found at ${EDGE_PROXY}." >&2
+    echo "  Reinstall the wolf-dashboard package." >&2
     exit 2
 fi
 
@@ -37,9 +55,10 @@ fi
 
 # wolf-dashboard.deb's postinst lays out the standalone build's
 # CONTENTS at the top level of INSTALL_DIR (not under
-# .next/standalone/), and copies .next/static + public alongside.
-# This is the conventional Next.js standalone deployment layout
-# the framework expects: server.js + node_modules/ + .next/static/
-# + public/ all at <cwd>.
+# .next/standalone/), and copies .next/static + public + the edge
+# proxy alongside. This is the conventional Next.js standalone
+# deployment layout the framework expects: server.js + node_modules/
+# + .next/static/ + public/ all at <cwd>. The edge proxy spawns
+# `node server.js` relative to this cwd.
 cd "${INSTALL_DIR}"
-exec "${NODE_BIN}" server.js
+exec "${NODE_BIN}" edge-proxy.mjs

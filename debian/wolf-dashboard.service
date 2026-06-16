@@ -17,9 +17,12 @@ WorkingDirectory=/usr/lib/wolf-dashboard
 # from /etc/wolf-dashboard/env. Mode 0640 wolf-dashboard:wolf.
 EnvironmentFile=/etc/wolf-dashboard/env
 
-# Production build: `npm run start` (vs `npm run dev` for the
-# user-level unit). Build happens at packaging time, NOT at unit
-# start — the .deb post-install runs `npm run build` once.
+# Phase 6.5-h.2: the shim runs the TLS edge proxy, which fronts the
+# Next.js standalone server (built at packaging time, NOT at unit
+# start) with a terminator that stamps the trusted X-Wolf-Client-IP
+# header for the same-network verification gate. TLS + ports come
+# from /etc/wolf-dashboard/env (WOLF_DASHBOARD_TLS_CERT/_KEY, PORT,
+# WOLF_DASHBOARD_INNER_PORT).
 ExecStart=/usr/bin/wolf-dashboard
 
 Restart=on-failure

@@ -7,6 +7,14 @@
 # CLI shim.
 deploy/bin/wolf-dashboard  usr/bin/
 
+# Phase 6.5-h.2: the TLS edge proxy. The shim runs this instead of
+# `node server.js` directly; it spawns the standalone server on a
+# loopback inner port and fronts it, stamping the trusted
+# X-Wolf-Client-IP header (Next 16 hides the socket from route
+# handlers — ADR 0018 item 9). Node stdlib only → no node_modules
+# tracing needed; ship the one file alongside server.js.
+services/dashboard/scripts/edge-proxy.mjs  usr/lib/wolf-dashboard/
+
 # The Next.js standalone build's CONTENTS go at the top level of
 # /usr/lib/wolf-dashboard/ (not under .next/standalone/). This is
 # the conventional Next.js production layout — server.js +

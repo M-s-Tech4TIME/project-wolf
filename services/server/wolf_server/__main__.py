@@ -146,6 +146,21 @@ def main() -> None:
             f"{settings.mtls_ca_path} (run `wolf-cert init` to enable)",
         )
 
+    # Phase 6.5-h.2: the same-network verification gate. Always print one
+    # line (ENABLED or DISABLED) so the absence of the keyword is itself
+    # diagnostic, mirroring the mTLS banner above.
+    if settings.same_network_gate_enabled:
+        print(
+            "  same-network gate: ENABLED — invite verification only from "
+            "Wolf's own NIC CIDRs (set SAME_NETWORK_GATE_ENABLED=0 to disable "
+            "for remote-admin deploys)",
+        )
+    else:
+        print(
+            "  same-network gate: DISABLED — invite verification allowed from "
+            "any network (set SAME_NETWORK_GATE_ENABLED=1 to enforce)",
+        )
+
     uvicorn.run(
         "wolf_server.main:app",
         host=settings.bind_host,

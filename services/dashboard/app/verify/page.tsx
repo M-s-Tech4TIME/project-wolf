@@ -136,6 +136,13 @@ export default function VerifyPage() {
               <Button type="submit" className="w-full" disabled={submitting}>
                 {submitting ? "Verifying…" : "Verify"}
               </Button>
+
+              {/* Phase 6.5-h.2: verification is gated to Wolf's own network.
+                  A surprised "wrong network" error reads better with this
+                  expectation set up front. */}
+              <p className="text-center text-xs text-muted-foreground">
+                Verify from a device on your organization&apos;s network.
+              </p>
             </form>
           </CardContent>
         </Card>

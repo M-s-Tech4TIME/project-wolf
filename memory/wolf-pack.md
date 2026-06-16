@@ -17,11 +17,12 @@ OUTBOUND from Wolf via the wolf-gateway approval flow (the new scope).
 
 - **Phase**: now formally **Phase 12 (renamed)** in
   `docs/10-build-roadmap.md`
-- **Detailed design**: future dedicated ADR expected ~0023 at
-  phase-open time (numbering shifted from the original
-  ADR-0017-draft suggestion of 0020 because 0018/0019/0020 are now
-  used by Bootstrap-Superuser+RBAC / Web-first-configurability /
-  Wazuh-component-mapping respectively)
+- **Detailed design**: future dedicated ADR expected ~0024+ at
+  phase-open time — it takes the next free number then (0023 went to
+  the dashboard TLS edge-proxy ADR for 6.5-h.2; earlier numbering had
+  shifted from the original ADR-0017-draft suggestion of 0020 because
+  0018/0019/0020 are now Bootstrap-Superuser+RBAC / Web-first-
+  configurability / Wazuh-component-mapping respectively)
 - **Naming**: working names below ("wolf-relay") are obsolete; the
   agent is `wolf-pack`. References below to "wolf-relay" can be
   read as "wolf-pack" — the body of this memory is preserved as the
@@ -38,8 +39,8 @@ OUTBOUND from Wolf via the wolf-gateway approval flow (the new scope).
 The rest of this file is the original 2026-05-30 brainstorm,
 preserved for historical context + the detailed source-category
 catalog (Categories A-G). When Phase 12 opens, the dedicated ADR
-~0023 will be the source of truth + this memory entry will be
-referenced for background.
+(~0024+, next free number) will be the source of truth + this memory
+entry will be referenced for background.
 
 ---
 

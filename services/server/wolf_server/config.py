@@ -154,6 +154,27 @@ class Settings(BaseSettings):
     def mtls_allowed_client_cn_list(self) -> list[str]:
         return [cn.strip() for cn in self.mtls_allowed_client_cns.split(",") if cn.strip()]
 
+    # ── Same-network verification gate (Phase 6.5-h.2, ADR 0018 item 9) ──────
+    # When enabled, the invite-verification endpoint (api/auth.py
+    # verify-invite) only flips an account to `verified` if the request's
+    # real client IP falls inside one of wolf-server's own NIC CIDRs (the
+    # IP is propagated by the dashboard edge proxy over mTLS).
+    #
+    # OFF by default. This gate is intrinsically an ON-PREM, single-network
+    # control: it checks membership in *wolf-server's* network. In an MSSP
+    # deployment wolf-server lives in the provider's datacenter while client
+    # orgs are remote — so a default-ON gate would permanently block every
+    # remote client from verifying. MSSP is a first-class Wolf target, so the
+    # safe default is OFF; on-prem single-network operators opt in with
+    # `SAME_NETWORK_GATE_ENABLED=1`. The MSSP-correct evolution is per-org
+    # trusted networks (each org's own CIDRs) — a later phase.
+    #
+    # Today this is env-only; the future Superuser config-settings system
+    # (DB source of truth ⇄ Web Settings GUI ⇄ Wolf CLI ⇄ env, Superuser-only,
+    # audited — ADR 0019 web-first-configurability) makes it a synced toggle.
+    # The startup banner prints the live state + this var name.
+    same_network_gate_enabled: bool = False
+
     # ── Model defaults (per-organization overrides come in a later phase) ────────
     default_model_provider: str = "ollama"  # anthropic | openai | ollama
     # Default model: qwen3:4b (Apache 2.0).  Switched from llama3.2 on

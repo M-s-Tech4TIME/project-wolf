@@ -31,6 +31,7 @@ from wolf_server.auth.oidc import get_authorization_url, oidc_is_configured
 from wolf_server.bootstrap.superuser import SUPERUSER_EMAIL, SUPERUSER_USERNAME
 from wolf_server.config import get_settings
 from wolf_server.database import get_db
+from wolf_server.network.local_network import client_ip_in_local_network
 from wolf_server.organization.context import ORG_HEADER
 from wolf_server.organization.models import Organization, User, UserOrganization
 
@@ -383,6 +384,25 @@ class VerifyInviteRequest(BaseModel):
     token: str = Field(min_length=1, max_length=512)
 
 
+def _resolve_gate_client_ip(
+    *, mtls_cert_cn: str | None, header_ip: str | None, source_ip: str | None
+) -> str | None:
+    """Pick which IP the same-network gate (Phase 6.5-h.2) should judge.
+
+    The dashboard edge proxy propagates the real browser IP as
+    ``X-Wolf-Client-IP``, but it's only trustworthy when the request is
+    mTLS-authenticated as the dashboard (``mtls_cert_cn`` set by
+    MtlsMiddleware) — a direct caller to wolf-server has no dashboard cert
+    and could otherwise forge the header. When the request isn't mTLS-
+    trusted, or the trusted header is absent, fall back to the real TCP
+    peer (``source_ip``): loopback for a co-located box, the dashboard's
+    own address otherwise — never a client-controlled value.
+    """
+    if mtls_cert_cn is not None and header_ip:
+        return header_ip
+    return source_ip
+
+
 @router.post("/verify-invite", response_model=MeResponse)
 async def verify_invite(
     body: VerifyInviteRequest,
@@ -450,11 +470,40 @@ async def verify_invite(
         )
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=detail)
 
-    # ── Phase 6.5-h.2 hook: same-network gate goes here ──────────────────
-    # Verify the request originates from inside Wolf's network (compare the
-    # real client IP — propagated by the dashboard tier — against Wolf's own
-    # NIC CIDRs).  On failure raise 403 WITHOUT consuming the token, so the
+    # ── Phase 6.5-h.2: same-network gate (ADR 0018 item 9) ───────────────
+    # Verify the request originates from inside Wolf's network. The real
+    # browser IP is propagated by the dashboard edge proxy as the
+    # X-Wolf-Client-IP header, but we only trust that header when the
+    # request is mTLS-authenticated as the dashboard (request.state
+    # .mtls_cert_cn, set by MtlsMiddleware) — otherwise a direct caller to
+    # wolf-server could forge it. With mTLS off (dev no-certs), or if the
+    # trusted header is somehow absent, fall back to the real TCP peer
+    # (request.client.host) — loopback for a co-located box, and not
+    # spoofable. On failure raise 403 WITHOUT consuming the token, so the
     # user can retry from the right network with the same link.
+    if _settings.same_network_gate_enabled:
+        client_ip = _resolve_gate_client_ip(
+            mtls_cert_cn=getattr(request.state, "mtls_cert_cn", None),
+            header_ip=request.headers.get("x-wolf-client-ip"),
+            source_ip=source_ip,
+        )
+        if not client_ip_in_local_network(client_ip):
+            await write_event(
+                db,
+                event_type="auth.invite_verification.failed",
+                event_data={"reason": "wrong_network"},
+                user_id=user.id,
+                session_id=session_id,
+                source_ip=source_ip,
+            )
+            await db.commit()
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    "Verify from a device on Wolf's network. This invitation "
+                    "link only works from inside your organization's network."
+                ),
+            )
 
     user.verification_status = "verified"
     user.verification_token_hash = None

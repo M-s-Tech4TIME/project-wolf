@@ -24,6 +24,10 @@ dependencies = [
     # operator's own (never a .deb dependency); the in-memory backend is the
     # default and Redis activates only when REDIS_URL is set.
     "redis>=5.0",
+    # NIC-CIDR enumeration for the same-network verification gate (Phase
+    # 6.5-h.2). Pure-Python (no C ext), so it stays inside the lean-wheels
+    # posture (ADR 0007) — preferred over psutil for this one read-only use.
+    "ifaddr>=0.2",
     "wolf-common",
     "wolf-secrets",
     "wolf-schema",

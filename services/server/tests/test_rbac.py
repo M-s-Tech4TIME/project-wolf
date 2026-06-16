@@ -18,10 +18,12 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import pytest
 import pytest_asyncio
 from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from wolf_server.api import auth as auth_module
 from wolf_server.audit.models import AuditEvent
 from wolf_server.auth.local import hash_password
 from wolf_server.bootstrap.superuser import SUPERUSER_EMAIL, SUPERUSER_USERNAME
@@ -1435,3 +1437,86 @@ async def test_regenerate_is_cross_org_isolated(
     )
     resp = await client.post(f"/api/v1/organization/users/{user_id}/regenerate-invite-link")
     assert resp.status_code == 404
+
+
+# ── Phase 6.5-h.2: same-network verification gate ────────────────────────────
+# The TestClient connects from 127.0.0.1 (loopback → always in-network), so the
+# gate is transparent to the existing verify tests above. These drive the gate
+# explicitly by patching the CIDR check in the auth module's namespace.
+
+
+async def test_verify_invite_blocked_off_network_keeps_token(
+    client: AsyncClient, db: AsyncSession, org_with_members: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    org_id = org_with_members["organization_id"]
+    email = f"invitee-{uuid.uuid4().hex[:8]}@test.example"
+    body = await _create_member(client, org_with_members, email)
+    password, token = body["new_password"], body["invite_token"]
+    await _login_email(client, email, password, organization_id=org_id)
+
+    # Gate is OFF by default (MSSP-safe); turn it on for this test.
+    monkeypatch.setattr(auth_module._settings, "same_network_gate_enabled", True)
+    # Simulate a verify attempt from outside Wolf's network.
+    monkeypatch.setattr(auth_module, "client_ip_in_local_network", lambda _ip: False)
+    blocked = await client.post("/api/v1/auth/verify-invite", json={"token": token})
+    assert blocked.status_code == 403
+    assert "network" in blocked.json()["detail"].lower()
+
+    events = await _audit_events(db, "auth.invite_verification.failed")
+    assert any(e.event_data.get("reason") == "wrong_network" for e in events)
+
+    # The token was NOT consumed: back on-network, the same link still works.
+    monkeypatch.setattr(auth_module, "client_ip_in_local_network", lambda _ip: True)
+    retry = await client.post("/api/v1/auth/verify-invite", json={"token": token})
+    assert retry.status_code == 200
+    assert retry.json()["verification_status"] == "verified"
+
+
+async def test_verify_invite_gate_disabled_allows_any_network(
+    client: AsyncClient, org_with_members: dict[str, Any], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    org_id = org_with_members["organization_id"]
+    email = f"invitee-{uuid.uuid4().hex[:8]}@test.example"
+    body = await _create_member(client, org_with_members, email)
+    password, token = body["new_password"], body["invite_token"]
+    await _login_email(client, email, password, organization_id=org_id)
+
+    # Gate OFF: verification succeeds even when the IP would be out-of-network.
+    monkeypatch.setattr(auth_module._settings, "same_network_gate_enabled", False)
+    monkeypatch.setattr(auth_module, "client_ip_in_local_network", lambda _ip: False)
+    ok = await client.post("/api/v1/auth/verify-invite", json={"token": token})
+    assert ok.status_code == 200
+    assert ok.json()["verification_status"] == "verified"
+
+
+async def test_verify_invite_ignores_spoofed_client_ip_without_mtls(
+    client: AsyncClient, org_with_members: dict[str, Any], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    org_id = org_with_members["organization_id"]
+    email = f"invitee-{uuid.uuid4().hex[:8]}@test.example"
+    body = await _create_member(client, org_with_members, email)
+    password, token = body["new_password"], body["invite_token"]
+    await _login_email(client, email, password, organization_id=org_id)
+
+    # Gate is OFF by default (MSSP-safe); turn it on so the gate runs.
+    monkeypatch.setattr(auth_module._settings, "same_network_gate_enabled", True)
+    # Spy on the CIDR check to capture which IP the gate actually judged.
+    seen: dict[str, str | None] = {}
+    real = auth_module.client_ip_in_local_network
+
+    def spy(ip: str | None) -> bool:
+        seen["ip"] = ip
+        return real(ip)
+
+    monkeypatch.setattr(auth_module, "client_ip_in_local_network", spy)
+
+    # The request is NOT mTLS-authenticated (no middleware in tests), so the
+    # forged header must be ignored in favour of the real peer (127.0.0.1).
+    resp = await client.post(
+        "/api/v1/auth/verify-invite",
+        json={"token": token},
+        headers={"X-Wolf-Client-IP": "8.8.8.8"},
+    )
+    assert resp.status_code == 200
+    assert seen["ip"] == "127.0.0.1"  # peer used, spoofed header discarded

@@ -554,20 +554,47 @@ estimated**:
      users. No CI workflow change needed (touched modules already in the
      strict-mypy set; alembic-check covers 0010). Commits `<this>`.
 
-9b. **6.5-h.2 — Same-network verification gate (deferred from 6.5-h).**
-    ADR 0018's "verify only from inside Wolf's network" check. **Why it's
-    its own slice:** the browser only ever talks to the dashboard
-    (single-origin, ADR 0016); the proxy forwards to wolf-server via
-    undici, so wolf-server sees the *dashboard's* IP, not the browser's.
-    Next 16 exposes no socket to route handlers, and its
-    `x-forwarded-for ??= socket.remoteAddress` PRESERVES a client-supplied
-    XFF — so a script with a stolen cookie+token can spoof it. A robust
-    gate needs a **custom dashboard server** to strip client forwarding
-    headers and stamp the real socket IP, forwarded to wolf-server over
-    mTLS, where the CIDR check runs (the spot is already marked with a
-    comment in `verify-invite`). Touches the dev launcher + standalone
-    packaging + SSE/HTTPS wiring → its own integrity gate + web-test.
-    Out of scope (later): operator-configurable `WOLF_TRUSTED_ADDITIONAL_CIDRS`.
+9b. **6.5-h.2 — Same-network verification gate — ✅ SHIPPED 2026-06-16.**
+    ADR 0018's "verify only from inside Wolf's network" check (see
+    **ADR 0023** for the topology decision). **Why it was its own slice:**
+    the browser only ever talks to the dashboard (single-origin, ADR 0016);
+    the proxy forwards to wolf-server, so wolf-server sees the *dashboard's*
+    IP, not the browser's. Next 16 exposes no socket to route handlers, and
+    its `x-forwarded-for ??= socket.remoteAddress` PRESERVES a client-supplied
+    XFF — so reading XFF inside Next is spoofable.
+    - **Edge proxy (not a custom Next server):** a small Node TLS proxy
+      (`services/dashboard/scripts/edge-proxy.mjs`, stdlib-only) terminates
+      TLS, owns the browser socket, **strips** any client
+      `x-wolf-client-ip`/`x-forwarded-for`/`x-real-ip` and **stamps** the
+      real `socket.remoteAddress` as `X-Wolf-Client-IP`, then forwards to an
+      UNMODIFIED `next dev` / standalone `server.js` on a loopback inner
+      port. Next stays 100% stock (Turbopack dev + standalone prod
+      untouched). `scripts/dev.mjs` rewired; prod shim + `debian/*.install`
+      + unit comments updated; SSE streaming preserved (verified: chunks
+      arrive incrementally through the proxy).
+    - **Gate (wolf-server):** new `wolf_server/network/local_network.py`
+      enumerates the host's NIC CIDRs (via `ifaddr`) + loopback;
+      `verify-invite` trusts `X-Wolf-Client-IP` **only** when the request is
+      mTLS-authenticated as the dashboard (`request.state.mtls_cert_cn`),
+      else falls back to the real TCP peer — a direct caller can't forge it.
+      Out-of-network → 403 `wrong_network` **without consuming the token**
+      (retry from the right network). **OFF by default** — the gate is an
+      on-prem single-network control and a default-ON would block remote
+      **MSSP** client orgs (wolf-server lives in the provider's network);
+      on-prem operators opt in with `SAME_NETWORK_GATE_ENABLED=1` (startup
+      banner prints the state). Env-only for now → becomes a synced Superuser
+      toggle in the **config-settings phase** (below); **per-org trusted
+      networks** is the MSSP-correct evolution. `/verify` page gains a
+      "verify from your org's network" hint.
+    - **Gate (CI):** ruff + mypy --strict (+`wolf_server/network`) + 449
+      backend / 72 package tests (0 skip) + cross-org isolation + dep-audit
+      (`ifaddr` clean) green; frontend tsc/eslint/build green; edge proxy
+      strip/stamp + no-buffering validated in isolation; live HTTPS + login
+      (mTLS) + spoof-strip confirmed. smoke-deb-install asserts edge-proxy.mjs
+      ships. Commits `<this>`.
+    - Out of scope (later): operator-configurable `WOLF_TRUSTED_ADDITIONAL_CIDRS`
+      (cloud/multi-network) + a Superuser GUI toggle for the gate
+      (web-first-configurability debt — env-only this slice).
 
 10. **6.5-i — Input-validation + exception-handling hardening pass —
     ✅ SHIPPED 2026-06-15** (operator-mandated 2026-06-15; see memory
@@ -727,6 +754,37 @@ delivery channel rather than retrofitting one.
 - **Security:** TLS required, creds in the secrets backend,
   header/CRLF-injection defense (server-resolved recipients), no
   open relay, per-org + global rate limits.
+
+## Phase 6.10 — Superuser config-settings system (web ⇄ CLI ⇄ env sync)
+
+The implementation of **ADR 0019** (web-first-configurability) for
+runtime knobs, prompted 2026-06-16 by the same-network gate needing a
+GUI toggle. Today config is **env-only** (`config.py` pydantic
+settings) — there's no DB settings table, no config API, no config CLI,
+and the dashboard `/settings` area is only `access` + `users`. This
+phase builds the missing substrate:
+
+- **DB as source of truth** for operator-settable knobs + a config API;
+  a **Superuser Settings GUI page**; a **Wolf config CLI** (shell-wrapper
+  pattern, `shell-wrapper-required-pattern` memory). All three surfaces
+  (OS terminal/env ⇄ CLI ⇄ Web-GUI) stay **identical + synced**, every
+  change **audited** (ADR 0019's GUI↔CLI-sync mandate).
+- **Authorization model (operator-stated 2026-06-16):** *all* Wolf
+  management/configuration is **Superuser-only**; org management →
+  org admins; user settings → users; every config surface scoped to its
+  role. Generalizes `wolf-bootstrap-superuser-flow`.
+- **First consumer:** the **same-network gate** toggle (6.5-h.2 shipped
+  the gate env-only + default-OFF; this turns it into a synced Superuser
+  on/off switch). Other env knobs migrate in as catalogued by ADR 0019.
+- **Follow-up (MSSP-correct gate):** **per-org trusted networks** — each
+  org defines its own CIDRs; verification checks the user's IP against
+  *their* org's networks (not the provider's). Resolves the MSSP gap the
+  global gate can't (open question: Superuser-set vs org-admin-set).
+
+Ordering: foundational enabler; slots when the configurable-surface
+count justifies it (the gate toggle is reason enough to start). ADR
+0019 already governs the design; a focused implementation ADR can follow
+at phase-open if the data model warrants.
 
 ## Phase 7 — Cases and reporting (wolf-hunt foundation)
 
