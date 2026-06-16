@@ -105,6 +105,22 @@ class User(Base):
         DateTime(timezone=True), nullable=False, default=_now, onupdate=_now
     )
 
+    # Phase 6.5-h: invite-link verification (ADR 0018 item 9).  An
+    # Admin-created account starts "unverified" and carries a single-use
+    # invite token; the user pastes the invite link after logging in to
+    # flip to "verified" (see auth/invite.py + api/auth.py verify-invite).
+    # The verification gate in organization/context.py blocks unverified
+    # users from all org data.  Bootstrap / recovery accounts are created
+    # "verified" directly.  Only the SHA-256 hash of the token is stored —
+    # the raw token is shown once at generation and never again.
+    verification_status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="unverified"
+    )
+    verification_token_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
+    verification_token_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     user_organizations: Mapped[list["UserOrganization"]] = relationship(
         "UserOrganization", back_populates="user", cascade="all, delete-orphan"
     )

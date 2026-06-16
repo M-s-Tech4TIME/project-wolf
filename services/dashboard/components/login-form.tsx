@@ -40,8 +40,12 @@ export function LoginForm() {
   // Non-null once login returned needs_org_selection: the same card
   // swaps to the org picker (the session cookie is already issued).
   const [pendingMemberships, setPendingMemberships] = useState<MembershipInfo[] | null>(null);
+  // Phase 6.5-h: where to land after org selection. An unverified user goes
+  // straight to /verify (no /chat → /verify hop) — but org selection still
+  // happens first so they land in the right org once verified.
+  const [postAuthDest, setPostAuthDest] = useState("/chat");
 
-  async function enterOrganization(organizationId: string) {
+  async function enterOrganization(organizationId: string, dest: string) {
     setActiveOrganization(organizationId);
     try {
       // Audit-only (ADR 0018): routing is header-driven; a failure here
@@ -51,7 +55,7 @@ export function LoginForm() {
       console.warn("select-organization audit call failed", err);
     }
     await refresh();
-    router.push("/chat");
+    router.push(dest);
   }
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
@@ -80,8 +84,13 @@ export function LoginForm() {
         return;
       }
 
+      // Phase 6.5-h: an unverified org user lands on /verify (org selection
+      // still happens first so they're in the right org post-verify).
+      const dest = res.verification_status === "verified" ? "/chat" : "/verify";
+      setPostAuthDest(dest);
+
       if (res.auto_selected_organization) {
-        await enterOrganization(res.auto_selected_organization.organization_id);
+        await enterOrganization(res.auto_selected_organization.organization_id, dest);
         return;
       }
 
@@ -120,7 +129,7 @@ export function LoginForm() {
               key={m.organization_id}
               variant="outline"
               className="w-full justify-start gap-3"
-              onClick={() => void enterOrganization(m.organization_id)}
+              onClick={() => void enterOrganization(m.organization_id, postAuthDest)}
             >
               <Building2 className="h-4 w-4 shrink-0" />
               <span className="truncate">{m.organization_name}</span>

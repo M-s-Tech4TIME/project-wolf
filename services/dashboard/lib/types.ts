@@ -28,6 +28,8 @@ export type LoginResponse = {
   auto_selected_organization: MembershipInfo | null;
   needs_org_selection: boolean;
   memberships: MembershipInfo[] | null;
+  /** Phase 6.5-h: route an unverified user straight to /verify. */
+  verification_status: string;
 };
 
 export type MeResponse = {
@@ -38,6 +40,9 @@ export type MeResponse = {
    *  null for org-less sessions (Superuser, pre-selection). */
   organization_id: string | null;
   role: string;
+  /** Phase 6.5-h: "unverified" / "verified". An unverified non-superuser
+   *  is routed to the paste-your-invite-link screen. */
+  verification_status: string;
 };
 
 export type OrganizationMembership = {
@@ -121,6 +126,10 @@ export type Member = {
   role: string;
   is_active: boolean;
   member_since: string;
+  /** Phase 6.5-h: "unverified" / "verified". The raw token is never
+   *  exposed here — only the status + the current token's expiry. */
+  verification_status: string;
+  invite_token_expires_at: string | null;
 };
 
 export type MemberCreate = {
@@ -130,9 +139,17 @@ export type MemberCreate = {
 };
 
 /** POST /organization/users response — extends Member with a one-time
- *  password set only when a brand-new account was created. */
+ *  password (new account only) and the raw invite token, both shown once. */
 export type MemberCreateResponse = Member & {
   new_password: string | null;
+  invite_token: string | null;
+};
+
+/** POST /organization/users/{id}/regenerate-invite-link response — a fresh
+ *  single-use invite token, returned once (the old one is invalidated). */
+export type RegenerateInviteResponse = {
+  invite_token: string;
+  invite_token_expires_at: string;
 };
 
 export type RoleChange = {

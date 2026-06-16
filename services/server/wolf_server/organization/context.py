@@ -159,6 +159,29 @@ async def require_organization_context(
             detail="You are not a member of this organization",
         )
 
+    # Phase 6.5-h (ADR 0018 item 9): the invite-verification gate.  An
+    # Admin-created account is "unverified" until the user pastes their
+    # invite link (POST /api/v1/auth/verify-invite).  This dependency is
+    # the chokepoint for ALL org data (chat, member management, audit, …),
+    # so enforcing here covers every org-scoped endpoint in one place —
+    # `binding.user` is already eager-loaded above, so this costs no extra
+    # query.  ADR 0018 framed this as middleware; the per-request authz
+    # chokepoint is the cleaner fit for this codebase (it mirrors the
+    # lazy-expiry hook just above) and naturally exempts exactly the
+    # self-service endpoints an unverified user still needs — /me,
+    # /me/organizations, verify-invite, logout (they read the raw session,
+    # not this dependency).  Superuser-only endpoints (organizations.py,
+    # superuser.py) gate on require_superuser and the Superuser is always
+    # "verified", so they are exempt by construction.
+    if binding.user.verification_status != "verified":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Verify your account with the invitation link your "
+                "administrator sent you before accessing this organization."
+            ),
+        )
+
     return OrganizationContext(
         organization_id=organization_id,
         organization_slug=binding.organization.slug,

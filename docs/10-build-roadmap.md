@@ -508,12 +508,64 @@ estimated**:
      6.7) and **SSE real-time push** (Phase 6.8) — see ADR 0021.
      The banner's in-app+poll model is the v1 placeholder.
 
-9. **6.5-h — Invite-link verification flow + same-network gate** —
-   `User.verification_status` enum + verification token; Admin
-   generates + copies invite link via dashboard (no SMTP);
-   verification gate on every authenticated endpoint; dynamic
-   same-network detection (Wolf enumerates own NICs per-request +
-   matches source IP against any CIDR Wolf is on).
+9. **6.5-h — Invite-link verification flow — ✅ SHIPPED 2026-06-16.**
+   ADR 0018 item 9 was **split** (operator decision 2026-06-15): the
+   invite-verification flow ships here; the same-network gate becomes
+   **6.5-h.2** (see below) because a robust gate needs dashboard-tier
+   work the verify flow doesn't.
+   - **DB (migration 0010):** `User.verification_status`
+     (`unverified`/`verified`) + `verification_token_hash` (SHA-256 of a
+     256-bit single-use token; only the hash is stored) +
+     `verification_token_expires_at` (7 days). Migration backfills every
+     pre-existing row to `verified` so no current user is locked out.
+   - **Gate:** enforced in `require_organization_context`
+     (organization/context.py) — the chokepoint for ALL org data; it
+     already eager-loads `binding.user`, so the check is zero extra query.
+     `/me`, `/me/organizations`, `verify-invite`, `logout` stay reachable
+     so an unverified user can escape the gate. Bootstrap / recovery /
+     Superuser accounts are created `verified` (4 `User(...)` sites set it
+     explicitly); the gate never affects them.
+   - **Endpoints:** `create_member` mints `unverified` + a token (raw
+     returned ONCE beside the one-time password); new
+     `POST /organization/users/{id}/regenerate-invite-link` (Admin, recover
+     a lost link — old token invalidated; 409 if already verified); new
+     authenticated `POST /auth/verify-invite {token}` (409 already-verified;
+     403 missing/expired/mismatch — token NOT consumed on failure; on
+     success flip to `verified`, clear the token, audit). `MeResponse` +
+     `LoginResponse` carry `verification_status`.
+   - **UI:** `/verify` paste-the-link screen (extracts the token from a
+     pasted link or bare token); routing guards send an unverified
+     non-superuser to `/verify` (login routes there directly — no
+     `/chat` hop — and the chat layout redirects as defense-in-depth);
+     Users page shows a Verified/Unverified badge (+ invite expiry) and a
+     "Generate invite link" action; Add-member + invite reveals copy the
+     link once. Dialog primitive hardened (frosted backdrop matching the
+     chats overlay, content-sized + scroll-safe, wider modals, full link
+     wrapped — operator UI/UX pass).
+   - **Audit (isolated from notifications):** `…invite_generated` (in
+     member.added data), `organization.member.invite_regenerated`,
+     `auth.invite_verification.succeeded` / `…failed{reason}`.
+   - **Gate:** 431 backend + cross-org isolation + mypy --strict green;
+     `alembic check` clean (0010 round-trips on Postgres); frontend
+     tsc/eslint(0)/build green; operator web-tested + a headless-Chrome
+     check confirmed login→`/verify` and `/chat`→`/verify` for unverified
+     users. No CI workflow change needed (touched modules already in the
+     strict-mypy set; alembic-check covers 0010). Commits `<this>`.
+
+9b. **6.5-h.2 — Same-network verification gate (deferred from 6.5-h).**
+    ADR 0018's "verify only from inside Wolf's network" check. **Why it's
+    its own slice:** the browser only ever talks to the dashboard
+    (single-origin, ADR 0016); the proxy forwards to wolf-server via
+    undici, so wolf-server sees the *dashboard's* IP, not the browser's.
+    Next 16 exposes no socket to route handlers, and its
+    `x-forwarded-for ??= socket.remoteAddress` PRESERVES a client-supplied
+    XFF — so a script with a stolen cookie+token can spoof it. A robust
+    gate needs a **custom dashboard server** to strip client forwarding
+    headers and stamp the real socket IP, forwarded to wolf-server over
+    mTLS, where the CIDR check runs (the spot is already marked with a
+    comment in `verify-invite`). Touches the dev launcher + standalone
+    packaging + SSE/HTTPS wiring → its own integrity gate + web-test.
+    Out of scope (later): operator-configurable `WOLF_TRUSTED_ADDITIONAL_CIDRS`.
 
 10. **6.5-i — Input-validation + exception-handling hardening pass —
     ✅ SHIPPED 2026-06-15** (operator-mandated 2026-06-15; see memory

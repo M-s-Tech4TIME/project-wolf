@@ -42,6 +42,7 @@ async def seed_superuser(db: AsyncSession) -> dict[str, Any]:
             hashed_password=hash_password(_WOLF_PASSWORD),
             is_active=True,
             is_superuser=True,
+            verification_status="verified",
             created_at=datetime.now(UTC),
             updated_at=datetime.now(UTC),
         )

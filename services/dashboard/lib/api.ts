@@ -35,6 +35,7 @@ import type {
   OrgAuditPage,
   RecoveryAdminRequest,
   RecoveryAdminResponse,
+  RegenerateInviteResponse,
   SuperuserAccessGrant,
   SuperuserAccessRequest,
 } from "./types";
@@ -397,6 +398,27 @@ export function resetMemberPassword(userId: string): Promise<MemberPasswordReset
   return apiFetch(`/api/v1/organization/users/${userId}/password-reset`, {
     method: "POST",
   }).then(unwrap<MemberPasswordReset>);
+}
+
+/** Admin reissues a member's invite link (Phase 6.5-h) — the only way to
+ *  recover a lost link, since only the token hash is stored. The old link
+ *  stops working. Returns the raw token once. Throws ApiError(409) if the
+ *  member is already verified, 404 if not a member of this org. */
+export function regenerateInvite(userId: string): Promise<RegenerateInviteResponse> {
+  return apiFetch(`/api/v1/organization/users/${userId}/regenerate-invite-link`, {
+    method: "POST",
+  }).then(unwrap<RegenerateInviteResponse>);
+}
+
+/** Consume an invite token to verify the current account (Phase 6.5-h).
+ *  Authenticated: the user logs in first, then pastes the link their Admin
+ *  delivered. Returns the refreshed identity. Throws ApiError(403) for an
+ *  invalid/expired token, 409 if already verified. */
+export function verifyInvite(token: string): Promise<MeResponse> {
+  return apiFetch("/api/v1/auth/verify-invite", {
+    method: "POST",
+    body: JSON.stringify({ token }),
+  }).then(unwrap<MeResponse>);
 }
 
 /** Break-glass: Superuser resets a user's password by EMAIL (6.5-e.2) — the

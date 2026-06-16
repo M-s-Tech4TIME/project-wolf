@@ -15,6 +15,9 @@ export default function ChatLayout({ children }: { children: ReactNode }) {
   // dashboard — its Chat nav unlocks the moment a grant lands. Regular org
   // users always hold ≥1 membership, so this never affects them.
   const superuserWithoutOrg = me?.role === "superuser" && organizations.length === 0;
+  // Phase 6.5-h: an unverified org user can't reach chat (the backend gate
+  // 403s every org call) — send them to paste their invite link instead.
+  const unverified = !!me && me.role !== "superuser" && me.verification_status !== "verified";
 
   useEffect(() => {
     if (isLoading) return;
@@ -22,10 +25,12 @@ export default function ChatLayout({ children }: { children: ReactNode }) {
       router.replace("/login");
     } else if (superuserWithoutOrg) {
       router.replace("/superuser/dashboard");
+    } else if (unverified) {
+      router.replace("/verify");
     }
-  }, [isLoading, me, superuserWithoutOrg, router]);
+  }, [isLoading, me, superuserWithoutOrg, unverified, router]);
 
-  if (isLoading || !me || superuserWithoutOrg) {
+  if (isLoading || !me || superuserWithoutOrg || unverified) {
     return (
       <div className="flex h-screen items-center justify-center text-muted-foreground">
         Loading…

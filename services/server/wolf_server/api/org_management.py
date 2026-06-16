@@ -47,6 +47,7 @@ from sqlalchemy.orm import selectinload
 from wolf_server.audit.log import write_dual_event
 from wolf_server.audit.models import AuditEvent
 from wolf_server.auth.blacklist import get_session_blacklist
+from wolf_server.auth.invite import new_invite_token
 from wolf_server.auth.local import hash_password
 from wolf_server.config import get_settings
 from wolf_server.database import get_db
@@ -91,6 +92,11 @@ class MemberResponse(BaseModel):
     role: str
     is_active: bool
     member_since: datetime
+    # Phase 6.5-h: invite-verification state.  The raw token is NEVER
+    # exposed in the list — only the verification status + the current
+    # token's expiry (so the UI can show "expires in N days").
+    verification_status: str
+    invite_token_expires_at: datetime | None
 
 
 class MemberCreateRequest(BaseModel):
@@ -103,6 +109,17 @@ class MemberCreateResponse(MemberResponse):
     # Set only when a brand-new user account was created; returned once
     # for out-of-band delivery, never logged or persisted in plaintext.
     new_password: str | None
+    # Phase 6.5-h: the raw invite token for a newly created (unverified)
+    # account, returned ONCE for out-of-band delivery.  Null when an
+    # existing user was merely added to this org (no new account, no token).
+    invite_token: str | None
+
+
+class RegenerateInviteResponse(BaseModel):
+    # Phase 6.5-h: a freshly minted invite token (the only way to recover a
+    # lost link — we store only the hash).  Raw token returned ONCE.
+    invite_token: str
+    invite_token_expires_at: datetime
 
 
 class PasswordResetResponse(BaseModel):
@@ -255,6 +272,8 @@ def _member_response(binding: UserOrganization) -> MemberResponse:
         role=binding.role,
         is_active=binding.user.is_active,
         member_since=binding.created_at,
+        verification_status=binding.user.verification_status,
+        invite_token_expires_at=binding.user.verification_token_expires_at,
     )
 
 
@@ -293,9 +312,14 @@ async def create_member(
 
     now = datetime.now(UTC)
     new_password: str | None = None
+    invite_token: str | None = None
     user = await db.scalar(select(User).where(User.email == body.email))
     if user is None:
         new_password = secrets.token_urlsafe(_PASSWORD_BYTES)
+        # Phase 6.5-h: a brand-new account starts UNVERIFIED and carries a
+        # single-use invite token.  The raw token is returned once below
+        # for out-of-band delivery; only its hash is persisted.
+        invite_token, token_hash, token_expires = new_invite_token()
         user = User(
             id=uuid.uuid4(),
             email=body.email,
@@ -303,6 +327,9 @@ async def create_member(
             hashed_password=hash_password(new_password),
             is_active=True,
             is_superuser=False,
+            verification_status="unverified",
+            verification_token_hash=token_hash,
+            verification_token_expires_at=token_expires,
             created_at=now,
             updated_at=now,
         )
@@ -343,6 +370,7 @@ async def create_member(
             "member_email": user.email,
             "role": body.role,
             "created_new_user": new_password is not None,
+            "invite_generated": invite_token is not None,
         },
         source_ip=_source_ip(request),
     )
@@ -361,7 +389,67 @@ async def create_member(
         role=body.role,
         is_active=user.is_active,
         member_since=now,
+        verification_status=user.verification_status,
+        invite_token_expires_at=user.verification_token_expires_at,
         new_password=new_password,
+        invite_token=invite_token,
+    )
+
+
+@router.post(
+    "/users/{user_id}/regenerate-invite-link",
+    response_model=RegenerateInviteResponse,
+)
+async def regenerate_invite_link(
+    user_id: uuid.UUID,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    ctx: Annotated[OrganizationContext, Depends(require_capability(Capability.USERS_MANAGE))],
+) -> RegenerateInviteResponse:
+    """Mint a fresh invite link for an unverified member (Phase 6.5-h).
+
+    The original link is unrecoverable (only its hash is stored), so this
+    is how an Admin reissues one when the first is lost.  Issuing a new
+    token invalidates the previous one.  Refused once the user is verified
+    — there is nothing left to invite them to.
+    """
+    binding = await _get_binding(db, ctx.organization_id, user_id)
+    if binding is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="That user is not a member of this organization",
+        )
+    if binding.user.verification_status == "verified":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This member is already verified — no invite link is needed.",
+        )
+
+    invite_token, token_hash, token_expires = new_invite_token()
+    binding.user.verification_token_hash = token_hash
+    binding.user.verification_token_expires_at = token_expires
+    binding.user.updated_at = datetime.now(UTC)
+
+    await _write_dual_audit(
+        db,
+        ctx,
+        event_type="organization.member.invite_regenerated",
+        event_data={
+            "member_user_id": str(user_id),
+            "member_email": binding.user.email,
+        },
+        source_ip=_source_ip(request),
+    )
+    await db.commit()
+
+    logger.info(
+        "organization_member_invite_regenerated",
+        organization_id=str(ctx.organization_id),
+        member_user_id=str(user_id),
+    )
+    return RegenerateInviteResponse(
+        invite_token=invite_token,
+        invite_token_expires_at=token_expires,
     )
 
 

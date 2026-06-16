@@ -159,6 +159,9 @@ async def seed_organization_and_user(db: AsyncSession) -> dict[str, Any]:
         hashed_password=hash_password("password123"),
         is_active=True,
         is_superuser=False,
+        # Onboarded user — verified, so the 6.5-h verification gate
+        # (organization/context.py) lets it reach org data.
+        verification_status="verified",
         created_at=datetime.now(UTC),
         updated_at=datetime.now(UTC),
     )

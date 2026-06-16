@@ -49,6 +49,86 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-16 — 6.5-h SHIPPED: Invite-link verification flow (ADR 0018 item 9, split)
+
+**Session type:** claude-code (operator-directed)
+**Phase:** 6.5-h
+**Branch / commit:** main (this commit)
+
+### What we did
+ADR 0018 item 9's onboarding gate, minus the same-network check (split to
+6.5-h.2 — see below). An Admin-created account is now **unverified** until the
+user pastes the invite link their Admin delivered out of band.
+
+- **Backend (migration 0010):** `users` gains `verification_status`
+  (`unverified`/`verified`), `verification_token_hash` (SHA-256 of a 256-bit
+  single-use token — only the hash is stored), `verification_token_expires_at`
+  (7 days). The migration backfills every existing row to `verified` so no
+  current account (incl. the bootstrap Superuser) is locked out;
+  `alembic check` clean + round-trips on Postgres.
+- **Verification gate** lives in `require_organization_context` — the
+  chokepoint for all org data, which already eager-loads `binding.user`, so
+  the check costs no extra query. `/me`, `/me/organizations`, `verify-invite`,
+  `logout` stay reachable (they read the raw session, not this dependency) so
+  an unverified user can escape the gate; Superuser/Admin-recovery/bootstrap
+  accounts are created `verified` (4 `User(...)` sites set it explicitly). ADR
+  said "middleware"; the per-request authz chokepoint is the cleaner fit here
+  (mirrors 6.5-f's lazy-expiry hook) and exempts exactly the right endpoints.
+- **Endpoints:** new `wolf_server/auth/invite.py` (token mint/hash/verify);
+  `create_member` returns the raw invite token ONCE beside the one-time
+  password; new `POST /organization/users/{id}/regenerate-invite-link` (Admin,
+  recover a lost link — old token invalidated, 409 if verified); new
+  authenticated `POST /auth/verify-invite {token}` (single-use, 7-day, 403 on
+  missing/expired/mismatch WITHOUT consuming the token, 409 already-verified;
+  a `# same-network gate goes here` comment marks the 6.5-h.2 hook).
+  `MeResponse` + `LoginResponse` carry `verification_status`.
+- **Frontend:** `/verify` paste-link screen (parses token from a pasted link
+  or bare token); routing guards send unverified non-superusers to `/verify`
+  (login routes there DIRECTLY — no `/chat` hop — chat layout redirects as
+  defense-in-depth); Users page badge (Verified/Unverified + invite expiry) +
+  "Generate invite link" action; invite link revealed once on create/regen.
+- **Dialog UI/UX pass (operator-found):** the radix `Dialog` primitive now
+  uses a frosted backdrop (`bg-foreground/40 backdrop-blur-sm`, matching the
+  chats overlay / confirm-dialog), is responsive + scroll-safe
+  (`max-h`/`overflow`) so footers never escape, and the invite modals are
+  wider (`sm:max-w-2xl`) with the full link wrapped (`break-all`) so it shows
+  in one glance.
+- **Audit (isolated from the future notification phase):** `…invite_generated`
+  (in member.added data), `organization.member.invite_regenerated`,
+  `auth.invite_verification.succeeded` / `…failed{reason}`.
+
+### What we decided
+- **Split ADR 0018 item 9** (operator, 2026-06-15): ship the invite-verification
+  flow now; defer the **same-network gate to 6.5-h.2**. A robust gate needs the
+  browser's true IP, which only the dashboard tier sees — and Next 16 exposes no
+  socket to route handlers (its `x-forwarded-for ??= socket.remoteAddress`
+  PRESERVES a client-supplied XFF, so it's spoofable). 6.5-h.2 will add a custom
+  dashboard server that sanitizes forwarding headers + stamps the real socket IP
+  over mTLS, where the CIDR check runs.
+- **Route login → `/verify` directly** for unverified users (operator, 2026-06-16):
+  `LoginResponse.verification_status` drives it; org selection still happens first
+  so the user lands in the right org once verified.
+
+### What broke / what we discovered
+- The new gate caught several test-seeding sites that built users WITHOUT a
+  verification status (→ model default `unverified` → 403). Fixed by setting
+  `verification_status="verified"` at every onboarded-user test seed
+  (conftest + per-file `seed_superuser`/`multi_org_user`), mirroring the
+  migration backfill. The bootstrap-CLI test now asserts the Superuser is
+  created `verified`.
+- **Stale-dev-bundle trap:** running `npm run build` writes production
+  artifacts into `.next/`; restarting `wolf-dashboard.service` (which runs
+  `next dev`) on top of that served a STALE login-form (old `/chat` route),
+  which looked like the login→`/verify` change "not working." Fix: clear
+  `.next` while the service is stopped, then restart `next dev`. Verified the
+  fix end-to-end with a headless-Chrome (puppeteer-core, `--no-save`) test of
+  both login→`/verify` and `/chat`→`/verify`. Memory updated.
+
+### What's next
+- 6.5-h.2 (same-network gate) when scheduled; 6.6 (Wazuh component mapping) per
+  ordering. SMTP service (system email) planned as a future phase — discussion
+  in progress.
+
 ## 2026-06-15 — 6.5-f SHIPPED: Superuser-membership consent gate (request → approve → time-limited grant)
 
 **Session type:** claude-code (operator-directed)

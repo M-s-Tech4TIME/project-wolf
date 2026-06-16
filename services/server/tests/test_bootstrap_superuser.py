@@ -108,6 +108,10 @@ async def test_create_superuser_when_absent(
     assert wolf.is_superuser is True
     assert wolf.is_active is True
     assert wolf.hashed_password is not None
+    # Phase 6.5-h: the Superuser is created VERIFIED — it never goes
+    # through the invite flow, and a granted consent-gate membership must
+    # not be locked out by the verification gate (organization/context.py).
+    assert wolf.verification_status == "verified"
     assert [e.event_type for e in events] == ["superuser.bootstrap.created"]
 
 

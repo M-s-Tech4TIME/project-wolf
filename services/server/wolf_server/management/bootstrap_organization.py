@@ -103,6 +103,9 @@ async def _upsert_user(db: AsyncSession, email: str, password: str, display_name
         hashed_password=hash_password(password),
         is_active=True,
         is_superuser=False,
+        # Bootstrap-provisioned accounts skip the invite-verification flow
+        # (6.5-h) — they're created out-of-band by the operator, not invited.
+        verification_status="verified",
         created_at=datetime.now(UTC),
         updated_at=datetime.now(UTC),
     )

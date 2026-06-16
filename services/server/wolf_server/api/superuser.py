@@ -419,6 +419,9 @@ async def recover_organization_admin(
             hashed_password=hash_password(new_password),
             is_active=True,
             is_superuser=False,
+            # Break-glass recovery admin: immediate access is the whole
+            # point, so skip the invite-verification flow (6.5-h).
+            verification_status="verified",
             created_at=now,
             updated_at=now,
         )

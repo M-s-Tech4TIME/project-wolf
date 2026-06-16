@@ -179,6 +179,10 @@ async def ensure_superuser(*, rotate_password: bool = False) -> int:
                 hashed_password=hash_password(password),
                 is_active=True,
                 is_superuser=True,
+                # The Superuser is created at install, not via an Admin
+                # invite — it must be verified or the consent-gate
+                # membership (6.5-f) would be locked out by the 6.5-h gate.
+                verification_status="verified",
                 created_at=datetime.now(UTC),
                 updated_at=datetime.now(UTC),
             )

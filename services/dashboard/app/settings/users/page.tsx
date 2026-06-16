@@ -9,7 +9,7 @@
 // (409) is the hard stop — the UI surfaces its message rather than
 // reimplementing the rule.
 
-import { Check, ChevronDown, Copy, KeyRound, Plus, Trash2, Users } from "lucide-react";
+import { Check, ChevronDown, Copy, KeyRound, Link2, Plus, Trash2, Users } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
@@ -48,11 +48,12 @@ import {
   createMember,
   fetchOrgAudit,
   listMembers,
+  regenerateInvite,
   removeMember,
   resetMemberPassword,
 } from "@/lib/api";
 import { copyText } from "@/lib/clipboard";
-import { absoluteTimeTitle, relativeTime } from "@/lib/format";
+import { absoluteTimeTitle, relativeTime, timeUntil } from "@/lib/format";
 import { isValidEmail } from "@/lib/utils";
 import {
   ORG_ROLES,
@@ -60,6 +61,13 @@ import {
   type MemberPasswordReset,
   type OrgAuditEvent,
 } from "@/lib/types";
+
+/** Build the copyable invite link from a raw token (Phase 6.5-h). The user
+ *  pastes this on the /verify screen; window.location.origin keeps it on
+ *  whatever host the dashboard is served from. */
+function inviteLink(token: string): string {
+  return `${window.location.origin}/verify?token=${encodeURIComponent(token)}`;
+}
 
 function summarizeMemberEvent(e: OrgAuditEvent): string {
   const d = e.event_data ?? {};
@@ -91,7 +99,14 @@ export default function UsersPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [createdPassword, setCreatedPassword] = useState<string | null>(null);
   const [createdEmail, setCreatedEmail] = useState<string | null>(null);
+  const [createdInvite, setCreatedInvite] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [inviteCopied, setInviteCopied] = useState(false);
+
+  // Regenerate invite link: confirm step → reveal step (mirrors password reset)
+  const [regenConfirm, setRegenConfirm] = useState<Member | null>(null);
+  const [regenResult, setRegenResult] = useState<{ email: string; token: string } | null>(null);
+  const [regenCopied, setRegenCopied] = useState(false);
 
   // Per-row role-change in flight
   const [roleBusyId, setRoleBusyId] = useState<string | null>(null);
@@ -132,6 +147,7 @@ export default function UsersPage() {
     setFormError(null);
     setCreatedPassword(null);
     setCreatedEmail(null);
+    setCreatedInvite(null);
     setAddOpen(true);
   }
 
@@ -156,6 +172,7 @@ export default function UsersPage() {
       if (res.new_password) {
         setCreatedEmail(res.email);
         setCreatedPassword(res.new_password);
+        setCreatedInvite(res.invite_token);
       } else {
         setAddOpen(false);
       }
@@ -200,6 +217,39 @@ export default function UsersPage() {
     if (await copyText(createdPassword)) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
+    }
+  }
+
+  async function copyCreatedInvite() {
+    if (!createdInvite) return;
+    if (await copyText(inviteLink(createdInvite))) {
+      setInviteCopied(true);
+      setTimeout(() => setInviteCopied(false), 2000);
+    }
+  }
+
+  async function confirmRegen() {
+    if (!regenConfirm) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await regenerateInvite(regenConfirm.user_id);
+      setRegenResult({ email: regenConfirm.email, token: res.invite_token });
+      setRegenConfirm(null);
+      load();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Failed to generate invite link.");
+      setRegenConfirm(null);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function copyRegenInvite() {
+    if (!regenResult) return;
+    if (await copyText(inviteLink(regenResult.token))) {
+      setRegenCopied(true);
+      setTimeout(() => setRegenCopied(false), 2000);
     }
   }
 
@@ -327,14 +377,37 @@ export default function UsersPage() {
                       {relativeTime(m.member_since)}
                     </TableCell>
                     <TableCell>
-                      {m.is_active ? (
-                        <Badge variant="secondary">Active</Badge>
-                      ) : (
-                        <Badge variant="outline">Inactive</Badge>
-                      )}
+                      <div className="flex flex-col items-start gap-1">
+                        {m.is_active ? (
+                          <Badge variant="secondary">Active</Badge>
+                        ) : (
+                          <Badge variant="outline">Inactive</Badge>
+                        )}
+                        {m.verification_status === "verified" ? (
+                          <span className="text-xs text-muted-foreground">Verified</span>
+                        ) : (
+                          <span className="text-xs text-amber-600 dark:text-amber-500">
+                            Unverified
+                            {m.invite_token_expires_at
+                              ? ` · invite ${timeUntil(m.invite_token_expires_at)}`
+                              : null}
+                          </span>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
+                        {m.verification_status !== "verified" ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setRegenConfirm(m)}
+                            title="Generate invite link"
+                          >
+                            <Link2 className="h-4 w-4" />
+                            <span className="sr-only">Generate invite link</span>
+                          </Button>
+                        ) : null}
                         <Button
                           variant="ghost"
                           size="sm"
@@ -392,7 +465,7 @@ export default function UsersPage() {
 
       {/* Add member */}
       <Dialog open={addOpen} onOpenChange={(o) => !busy && setAddOpen(o)}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Add member</DialogTitle>
             <DialogDescription>
@@ -425,6 +498,23 @@ export default function UsersPage() {
                   Deliver this out of band. Wolf never shows it again.
                 </p>
               </div>
+              {createdInvite ? (
+                <div className="space-y-1.5">
+                  <Label>Invitation link (shown once — copy it now)</Label>
+                  <div className="flex items-start gap-2">
+                    <code className="flex-1 break-all rounded-md bg-muted px-3 py-2 font-mono text-xs">
+                      {inviteLink(createdInvite)}
+                    </code>
+                    <Button variant="outline" size="sm" onClick={copyCreatedInvite}>
+                      {inviteCopied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                      {inviteCopied ? "Copied" : "Copy"}
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    They sign in, then paste this link to verify their account.
+                  </p>
+                </div>
+              ) : null}
               <DialogFooter>
                 <Button onClick={() => setAddOpen(false)}>Done</Button>
               </DialogFooter>
@@ -562,6 +652,52 @@ export default function UsersPage() {
           </div>
           <DialogFooter>
             <Button onClick={() => setResetResult(null)}>Done</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Generate invite link — confirm */}
+      <ConfirmDialog
+        open={regenConfirm !== null}
+        title="Generate a new invite link?"
+        description={
+          <>
+            A fresh invitation link will be generated for{" "}
+            <span className="font-medium">{regenConfirm?.display_name}</span> (
+            {regenConfirm?.email}). Any previous link stops working. You&apos;ll
+            get the new link to share with them.
+          </>
+        }
+        confirmLabel="Generate link"
+        onConfirm={confirmRegen}
+        onCancel={() => setRegenConfirm(null)}
+      />
+
+      {/* Generate invite link — one-time reveal */}
+      <Dialog open={regenResult !== null} onOpenChange={(o) => !o && setRegenResult(null)}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Invitation link</DialogTitle>
+            <DialogDescription>
+              Share this link with <span className="font-medium">{regenResult?.email}</span>{" "}
+              out of band. They sign in, then paste it to verify their account.
+              Wolf never shows it again.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1.5">
+            <Label>Invitation link</Label>
+            <div className="flex items-start gap-2">
+              <code className="flex-1 break-all rounded-md bg-muted px-3 py-2 font-mono text-xs">
+                {regenResult ? inviteLink(regenResult.token) : ""}
+              </code>
+              <Button variant="outline" size="sm" onClick={copyRegenInvite}>
+                {regenCopied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                {regenCopied ? "Copied" : "Copy"}
+              </Button>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setRegenResult(null)}>Done</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

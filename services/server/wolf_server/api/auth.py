@@ -12,6 +12,7 @@ GET  /api/v1/auth/oidc/callback  — OIDC code exchange (when configured)
 
 import time
 import uuid
+from datetime import UTC, datetime
 from typing import Annotated, Any
 
 import structlog
@@ -23,6 +24,7 @@ from sqlalchemy.orm import selectinload
 
 from wolf_server.audit.log import write_event
 from wolf_server.auth.blacklist import get_session_blacklist
+from wolf_server.auth.invite import verify_invite_token
 from wolf_server.auth.local import create_access_token, create_refresh_token, verify_password
 from wolf_server.auth.middleware import COOKIE_NAME
 from wolf_server.auth.oidc import get_authorization_url, oidc_is_configured
@@ -82,6 +84,9 @@ class LoginResponse(BaseModel):
     auto_selected_organization: MembershipInfo | None = None
     needs_org_selection: bool = False
     memberships: list[MembershipInfo] | None = None
+    # Phase 6.5-h: lets the client route an unverified user straight to the
+    # invite-link screen instead of bouncing through /chat → /verify.
+    verification_status: str = "verified"
 
 
 class MeResponse(BaseModel):
@@ -90,6 +95,9 @@ class MeResponse(BaseModel):
     display_name: str
     organization_id: uuid.UUID | None
     role: str
+    # Phase 6.5-h: "unverified" / "verified".  The dashboard routes an
+    # unverified non-superuser to the paste-your-invite-link screen.
+    verification_status: str
 
 
 # ── Routes ───────────────────────────────────────────────────────────────────
@@ -231,6 +239,7 @@ async def login(
         auto_selected_organization=auto_selected,
         needs_org_selection=needs_org_selection,
         memberships=memberships,
+        verification_status=user.verification_status,
     )
 
 
@@ -351,6 +360,7 @@ async def me(
             display_name=user.display_name or "",
             organization_id=header_org_id,
             role=binding.role,
+            verification_status=user.verification_status,
         )
 
     # Header absent: an org-less view of the session (the Superuser, or a
@@ -362,6 +372,112 @@ async def me(
         display_name=user.display_name or "",
         organization_id=None,
         role="superuser" if user.is_superuser else "",
+        verification_status=user.verification_status,
+    )
+
+
+class VerifyInviteRequest(BaseModel):
+    # The raw invite token the user pastes (the dashboard extracts it from a
+    # pasted link before sending).  Bounded per the standing input-validation
+    # rule; no min beyond non-empty so we never probe token shape.
+    token: str = Field(min_length=1, max_length=512)
+
+
+@router.post("/verify-invite", response_model=MeResponse)
+async def verify_invite(
+    body: VerifyInviteRequest,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> MeResponse:
+    """Consume an invite token to flip the current account to verified.
+
+    Phase 6.5-h (ADR 0018 item 9).  Authenticated: the user logs in first
+    (credentials), then pastes the invite link their Admin delivered out of
+    band.  The token is bound to THIS user (matched against the hash on
+    their row), single-use, and time-limited.  On success the account
+    becomes ``verified`` and the verification gate in
+    organization/context.py stops blocking it.
+    """
+    session: dict[str, Any] = getattr(request.state, "session", {})
+    user_id_raw = session.get("user_id")
+    if not user_id_raw:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+    user_id = uuid.UUID(str(user_id_raw))
+    session_id = str(session.get("session_id", ""))
+    source_ip = request.client.host if request.client else None
+
+    user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Stale session")
+
+    if user.verification_status == "verified":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Your account is already verified.",
+        )
+
+    # Validate the token without consuming it (so a wrong/expired paste can
+    # be retried).  SQLite (test DB) may hand back a naive datetime even
+    # though the column is tz-aware; treat naive as UTC — same pattern as
+    # organization/superuser_access.expire_if_past.
+    expires_at = user.verification_token_expires_at
+    if expires_at is not None and expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=UTC)
+
+    failure_reason: str | None = None
+    if user.verification_token_hash is None:
+        failure_reason = "no_token"
+    elif expires_at is None or expires_at <= datetime.now(UTC):
+        failure_reason = "expired"
+    elif not verify_invite_token(body.token, user.verification_token_hash):
+        failure_reason = "invalid_token"
+
+    if failure_reason is not None:
+        await write_event(
+            db,
+            event_type="auth.invite_verification.failed",
+            event_data={"reason": failure_reason},
+            user_id=user.id,
+            session_id=session_id,
+            source_ip=source_ip,
+        )
+        await db.commit()
+        detail = (
+            "This invitation link has expired. Ask your administrator to send a new one."
+            if failure_reason == "expired"
+            else "That invitation link isn't valid. Check it and try again, "
+            "or ask your administrator to send a new one."
+        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=detail)
+
+    # ── Phase 6.5-h.2 hook: same-network gate goes here ──────────────────
+    # Verify the request originates from inside Wolf's network (compare the
+    # real client IP — propagated by the dashboard tier — against Wolf's own
+    # NIC CIDRs).  On failure raise 403 WITHOUT consuming the token, so the
+    # user can retry from the right network with the same link.
+
+    user.verification_status = "verified"
+    user.verification_token_hash = None
+    user.verification_token_expires_at = None
+    user.updated_at = datetime.now(UTC)
+    await write_event(
+        db,
+        event_type="auth.invite_verification.succeeded",
+        event_data={},
+        user_id=user.id,
+        session_id=session_id,
+        source_ip=source_ip,
+    )
+    await db.commit()
+
+    logger.info("invite_verification_succeeded", user_id=str(user.id))
+    return MeResponse(
+        user_id=user_id,
+        email=user.email or "",
+        display_name=user.display_name or "",
+        organization_id=None,
+        role="superuser" if user.is_superuser else "",
+        verification_status=user.verification_status,
     )
 
 

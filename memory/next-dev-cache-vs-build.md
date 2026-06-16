@@ -1,6 +1,6 @@
 ---
 name: next-dev-cache-vs-build
-description: "Don't `rm -rf .next` OR run `npm run build` while wolf-dashboard.service (next dev / Turbopack) is running — both disturb the live dev cache (proxy 000s); restart the dashboard to recover"
+description: "Don't `rm -rf .next` OR run `npm run build` while wolf-dashboard.service (next dev / Turbopack) is running — both disturb the live dev cache (proxy 000s). And after a prod build, next dev restarted on top serves a STALE client bundle — clear .next while STOPPED before restarting dev"
 metadata: 
   node_type: memory
   type: project
@@ -29,12 +29,25 @@ the proxy went to HTTP 000 even with NO `rm`. So the hazard isn't just deleting
 concurrent `next build` writing into it corrupts/invalidates its cache
 mid-flight.
 
+**Also hit 2026-06-16 during 6.5-h — the STALE-BUNDLE trap (worst one):**
+after `npm run build` writes production artifacts into `.next/`, restarting
+`wolf-dashboard.service` (`next dev`) ON TOP of that prod build makes next dev
+serve a STALE client bundle — the OLD compiled JS, not your current source. It
+looks like your latest frontend change "didn't take" (e.g. a login-routing fix
+that still routes the old way). The page loads fine (no 000), it's just running
+old code. **Fix:** stop the service, `rm -rf .next` (safe while STOPPED), then
+start the service — next dev recompiles from current source. Verify the served
+client chunk actually contains your change:
+`grep -rl "<your new symbol>" services/dashboard/.next/dev/static/chunks/`.
+
 **How to apply:** the frontend gate's `tsc --noEmit` + `eslint` are safe to run
-against the live dev server (and it hot-reloads edits, so the UI is validated
-live anyway). For the production `npm run build`, stop `wolf-dashboard.service`
-first, or just expect to `systemctl --user restart wolf-dashboard.service`
-afterward. If the dev proxy returns 000, restart the dashboard — it rebuilds the
-dev cache fresh (~2s + first-request recompile). Confirm with an unauth probe:
+against the live dev server (they don't write `.next`, and it hot-reloads
+edits, so the UI is validated live anyway). Only run the production
+`npm run build` with the service STOPPED, and if the operator still needs the
+dev server afterward (e.g. a web-test), clear `.next` while stopped before
+restarting `next dev` — otherwise it serves the stale prod bundle. If the dev
+proxy returns 000, restart the dashboard — it rebuilds the dev cache fresh (~2s
++ first-request recompile). Confirm with an unauth probe:
 `curl -sk https://localhost:3000/api/v1/auth/me` → 401. (A 502 instead means
 the dashboard is up but wolf-server is down — restart `wolf-server.service`.)
-Related: [[per-slice-web-test-checkpoints]].
+Related: [[per-slice-web-test-checkpoints]], [[ci-audit-before-push]].

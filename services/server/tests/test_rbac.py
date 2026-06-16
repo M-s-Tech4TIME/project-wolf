@@ -40,7 +40,13 @@ _MEMBER_PASSWORD = "password123"
 # ─── Fixtures ────────────────────────────────────────────────────────────────
 
 
-def _new_user(email: str, *, is_superuser: bool = False) -> User:
+def _new_user(
+    email: str, *, is_superuser: bool = False, verification_status: str = "verified"
+) -> User:
+    # Seeded test members are "verified" by default — they stand in for
+    # already-onboarded users (mirrors migration 0010's backfill of
+    # pre-existing rows).  Pass verification_status="unverified" to model a
+    # freshly invited account for the 6.5-h gate/flow tests.
     now = datetime.now(UTC)
     return User(
         id=uuid.uuid4(),
@@ -49,6 +55,7 @@ def _new_user(email: str, *, is_superuser: bool = False) -> User:
         hashed_password=hash_password(_MEMBER_PASSWORD),
         is_active=True,
         is_superuser=is_superuser,
+        verification_status=verification_status,
         created_at=now,
         updated_at=now,
     )
@@ -1168,3 +1175,263 @@ async def test_every_org_role_keeps_chat_access_gate(
         await _login_as(client, org_with_members, role)
         resp = await client.post("/api/v1/chat", json={})
         assert resp.status_code not in (401, 403), role
+
+
+# ─── Invite-link verification (Phase 6.5-h, ADR 0018 item 9) ─────────────────
+
+
+async def _login_email(
+    client: AsyncClient, email: str, password: str, *, organization_id: uuid.UUID | None
+) -> None:
+    """Log in as an arbitrary account by email/password (for freshly
+    created members whose role key isn't in the org fixture)."""
+    resp = await client.post(
+        "/api/v1/auth/login", json={"email": email, "password": password}
+    )
+    assert resp.status_code == 200, resp.text
+    if organization_id is not None:
+        client.headers["X-Organization-Id"] = str(organization_id)
+    else:
+        client.headers.pop("X-Organization-Id", None)
+
+
+async def _create_member(
+    client: AsyncClient, org_with_members: dict[str, Any], email: str, role: str = "analyst"
+) -> dict[str, Any]:
+    """Admin creates a new member; returns the create response JSON
+    (carries the one-time password + raw invite token)."""
+    await _login_as(client, org_with_members, "admin")
+    resp = await client.post(
+        "/api/v1/organization/users",
+        json={"email": email, "display_name": email.split("@")[0], "role": role},
+    )
+    assert resp.status_code == 201, resp.text
+    body: dict[str, Any] = resp.json()
+    return body
+
+
+async def test_create_member_starts_unverified_with_invite_token(
+    client: AsyncClient, org_with_members: dict[str, Any]
+) -> None:
+    email = f"invitee-{uuid.uuid4().hex[:8]}@test.example"
+    body = await _create_member(client, org_with_members, email)
+    assert body["verification_status"] == "unverified"
+    assert body["invite_token"]  # raw token returned once
+    assert body["invite_token_expires_at"] is not None
+    assert body["new_password"]  # still a brand-new account
+
+    # Login carries verification_status so the client can route an
+    # unverified user straight to /verify (no /chat → /verify hop).
+    login = await client.post(
+        "/api/v1/auth/login", json={"email": email, "password": body["new_password"]}
+    )
+    assert login.status_code == 200
+    assert login.json()["verification_status"] == "unverified"
+
+
+async def test_member_list_exposes_status_never_raw_token(
+    client: AsyncClient, org_with_members: dict[str, Any]
+) -> None:
+    email = f"invitee-{uuid.uuid4().hex[:8]}@test.example"
+    await _create_member(client, org_with_members, email)
+    resp = await client.get("/api/v1/organization/users")
+    assert resp.status_code == 200
+    row = next(m for m in resp.json() if m["email"] == email)
+    assert row["verification_status"] == "unverified"
+    assert row["invite_token_expires_at"] is not None
+    # The raw token (and its hash) must never leak through the list.
+    assert "invite_token" not in row
+    assert "verification_token_hash" not in row
+
+
+async def test_regenerate_invite_requires_users_manage(
+    client: AsyncClient, org_with_members: dict[str, Any]
+) -> None:
+    email = f"invitee-{uuid.uuid4().hex[:8]}@test.example"
+    body = await _create_member(client, org_with_members, email)
+    user_id = body["user_id"]
+    # A non-admin role lacks USERS_MANAGE.
+    await _login_as(client, org_with_members, "analyst")
+    denied = await client.post(
+        f"/api/v1/organization/users/{user_id}/regenerate-invite-link"
+    )
+    assert denied.status_code == 403
+    # The admin can.
+    await _login_as(client, org_with_members, "admin")
+    ok = await client.post(f"/api/v1/organization/users/{user_id}/regenerate-invite-link")
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["invite_token"]
+    assert ok.json()["invite_token_expires_at"]
+
+
+async def test_regenerate_invalidates_old_token(
+    client: AsyncClient, org_with_members: dict[str, Any]
+) -> None:
+    org_id = org_with_members["organization_id"]
+    email = f"invitee-{uuid.uuid4().hex[:8]}@test.example"
+    body = await _create_member(client, org_with_members, email)
+    user_id, password, old_token = body["user_id"], body["new_password"], body["invite_token"]
+
+    await _login_as(client, org_with_members, "admin")
+    regen = await client.post(f"/api/v1/organization/users/{user_id}/regenerate-invite-link")
+    new_token = regen.json()["invite_token"]
+    assert new_token != old_token
+
+    await _login_email(client, email, password, organization_id=org_id)
+    stale = await client.post("/api/v1/auth/verify-invite", json={"token": old_token})
+    assert stale.status_code == 403  # old link no longer valid
+    fresh = await client.post("/api/v1/auth/verify-invite", json={"token": new_token})
+    assert fresh.status_code == 200, fresh.text
+    assert fresh.json()["verification_status"] == "verified"
+
+
+async def test_regenerate_rejected_once_verified(
+    client: AsyncClient, org_with_members: dict[str, Any]
+) -> None:
+    org_id = org_with_members["organization_id"]
+    email = f"invitee-{uuid.uuid4().hex[:8]}@test.example"
+    body = await _create_member(client, org_with_members, email)
+    user_id, password, token = body["user_id"], body["new_password"], body["invite_token"]
+
+    await _login_email(client, email, password, organization_id=org_id)
+    verified = await client.post("/api/v1/auth/verify-invite", json={"token": token})
+    assert verified.status_code == 200
+
+    await _login_as(client, org_with_members, "admin")
+    resp = await client.post(f"/api/v1/organization/users/{user_id}/regenerate-invite-link")
+    assert resp.status_code == 409
+
+
+async def test_regenerate_unknown_member_is_404(
+    client: AsyncClient, org_with_members: dict[str, Any]
+) -> None:
+    await _login_as(client, org_with_members, "admin")
+    resp = await client.post(
+        f"/api/v1/organization/users/{uuid.uuid4()}/regenerate-invite-link"
+    )
+    assert resp.status_code == 404
+
+
+async def test_verify_invite_success_consumes_token_and_audits(
+    client: AsyncClient, db: AsyncSession, org_with_members: dict[str, Any]
+) -> None:
+    org_id = org_with_members["organization_id"]
+    email = f"invitee-{uuid.uuid4().hex[:8]}@test.example"
+    body = await _create_member(client, org_with_members, email)
+    password, token = body["new_password"], body["invite_token"]
+
+    await _login_email(client, email, password, organization_id=org_id)
+    ok = await client.post("/api/v1/auth/verify-invite", json={"token": token})
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["verification_status"] == "verified"
+
+    # Token is single-use: the hash + expiry are cleared on success.
+    db.expire_all()
+    user = await db.scalar(select(User).where(User.email == email))
+    assert user is not None
+    user_id = user.id  # capture before _audit_events' expire_all() detaches it
+    assert user.verification_status == "verified"
+    assert user.verification_token_hash is None
+    assert user.verification_token_expires_at is None
+
+    # A second attempt with the same token is refused (already verified).
+    again = await client.post("/api/v1/auth/verify-invite", json={"token": token})
+    assert again.status_code == 409
+
+    events = await _audit_events(db, "auth.invite_verification.succeeded")
+    assert any(e.user_id == user_id for e in events)
+
+
+async def test_verify_invite_wrong_token_does_not_consume(
+    client: AsyncClient, org_with_members: dict[str, Any]
+) -> None:
+    org_id = org_with_members["organization_id"]
+    email = f"invitee-{uuid.uuid4().hex[:8]}@test.example"
+    body = await _create_member(client, org_with_members, email)
+    password, token = body["new_password"], body["invite_token"]
+
+    await _login_email(client, email, password, organization_id=org_id)
+    bad = await client.post("/api/v1/auth/verify-invite", json={"token": "not-the-token"})
+    assert bad.status_code == 403
+    # The real token still works — a wrong paste didn't burn it.
+    good = await client.post("/api/v1/auth/verify-invite", json={"token": token})
+    assert good.status_code == 200
+
+
+async def test_verify_invite_expired_token(
+    client: AsyncClient, db: AsyncSession, org_with_members: dict[str, Any]
+) -> None:
+    org_id = org_with_members["organization_id"]
+    email = f"invitee-{uuid.uuid4().hex[:8]}@test.example"
+    body = await _create_member(client, org_with_members, email)
+    password, token = body["new_password"], body["invite_token"]
+
+    # Backdate the token's expiry.
+    user = await db.scalar(select(User).where(User.email == email))
+    assert user is not None
+    user.verification_token_expires_at = datetime.now(UTC) - timedelta(hours=1)
+    await db.commit()
+
+    await _login_email(client, email, password, organization_id=org_id)
+    resp = await client.post("/api/v1/auth/verify-invite", json={"token": token})
+    assert resp.status_code == 403
+    assert "expired" in resp.json()["detail"].lower()
+
+    # Expired path is logged and does NOT consume the token.
+    events = await _audit_events(db, "auth.invite_verification.failed")
+    assert any(e.event_data.get("reason") == "expired" for e in events)
+    db.expire_all()
+    user = await db.scalar(select(User).where(User.email == email))
+    assert user is not None and user.verification_token_hash is not None
+
+
+async def test_unverified_member_blocked_but_self_endpoints_reachable(
+    client: AsyncClient, org_with_members: dict[str, Any]
+) -> None:
+    org_id = org_with_members["organization_id"]
+    email = f"invitee-{uuid.uuid4().hex[:8]}@test.example"
+    body = await _create_member(client, org_with_members, email, role="admin")
+    password = body["new_password"]
+
+    await _login_email(client, email, password, organization_id=org_id)
+    # Org data is gated: chat is in every role's baseline, so a 403 here is
+    # the verification gate (a verified admin would get 422 on the empty body).
+    gated = await client.post("/api/v1/chat", json={})
+    assert gated.status_code == 403
+    # Self-service endpoints stay reachable so the user can escape the gate.
+    me = await client.get("/api/v1/auth/me")
+    assert me.status_code == 200
+    assert me.json()["verification_status"] == "unverified"
+    assert (await client.get("/api/v1/auth/me/organizations")).status_code == 200
+
+
+async def test_verify_invite_clears_the_gate(
+    client: AsyncClient, org_with_members: dict[str, Any]
+) -> None:
+    org_id = org_with_members["organization_id"]
+    email = f"invitee-{uuid.uuid4().hex[:8]}@test.example"
+    body = await _create_member(client, org_with_members, email, role="admin")
+    password, token = body["new_password"], body["invite_token"]
+
+    await _login_email(client, email, password, organization_id=org_id)
+    assert (await client.get("/api/v1/organization/users")).status_code == 403  # gated
+    unlocked = await client.post("/api/v1/auth/verify-invite", json={"token": token})
+    assert unlocked.status_code == 200
+    assert (await client.get("/api/v1/organization/users")).status_code == 200  # unlocked
+
+
+async def test_regenerate_is_cross_org_isolated(
+    client: AsyncClient, db: AsyncSession, org_with_members: dict[str, Any]
+) -> None:
+    # A member created in org-A is invisible to org-B's Admin: regenerating
+    # their invite from org-B returns 404 (not a member of *this* org).
+    email = f"invitee-{uuid.uuid4().hex[:8]}@test.example"
+    body = await _create_member(client, org_with_members, email)
+    user_id = body["user_id"]
+
+    other = await _make_org_with_admin(db)
+    await _login_email(
+        client, other["admin"]["email"], _MEMBER_PASSWORD, organization_id=other["organization_id"]
+    )
+    resp = await client.post(f"/api/v1/organization/users/{user_id}/regenerate-invite-link")
+    assert resp.status_code == 404
