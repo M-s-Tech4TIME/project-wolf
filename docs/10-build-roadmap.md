@@ -740,11 +740,28 @@ this UI uses it. 5 sub-slices, **3-5 sessions estimated**.
    live per-org route compiles + serves 200; 492 backend / 0 skip green.
    Commits `<this>`.
 
-5. **6.6-e — Runtime: per-query credential + topology resolution** —
-   update the Wazuh query path to read topology + credentials fresh
-   per query; random-indexer-node routing for distributed
-   deployments; end-to-end test from a chat query through the
-   per-org credentials hitting the actual Wazuh ecosystem.
+5. **6.6-e — Runtime: per-query credential + topology resolution** — ✅
+   **SHIPPED 2026-06-17.** `resolver.get_wazuh_connection` rewired: the
+   **URLs + TLS posture come from the install ecosystem topology**, read
+   **fresh per query** (single → the one indexer/manager; distributed →
+   a **random** indexer node per ADR 0020 decision 1 + the manager master);
+   only the per-org **credentials + index filter + organization-filter flag**
+   come from `organization_wazuh_configs`. New `WazuhTopologyMissingError`
+   (404) when no topology is configured; existing `WazuhConfigMissingError`
+   when the org has no credentials. New `tests/test_resolver.py` (4) proves
+   topology URLs override the now-vestigial per-org URL columns, distributed
+   picks a real node, and both missing-state errors. 499 backend / 0 skip;
+   mypy --strict (43) + cross-org isolation (18) green; wolf-server restarts
+   clean. The **Category-2 functional web-test** (real probe success + scope +
+   chat→Wazuh) runs against the operator's Wazuh to close the phase.
+   - **Deferred (tracked) follow-up:** the per-org URL columns
+     (`opensearch_url` / `server_api_url` / `verify_tls`) are now **vestigial**
+     (the resolver reads topology instead) — still written by the bootstrap
+     CLI + the 6.6-c credentials API to satisfy NOT-NULL. A small cleanup
+     should drop them + modernise `bootstrap_organization` (its `--*-url`
+     args), AND add **indexer-node fallback-on-failure** (ADR decision 1's
+     resilience half — random selection ships now; retry-other-nodes needs a
+     multi-node cluster to exercise).
 
 **Exit criteria:** Superuser configures Wazuh ecosystem topology
 (single-host OR distributed) via the GUI; for each Organization,

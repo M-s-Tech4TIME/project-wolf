@@ -49,6 +49,46 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-17 — 6.6-e SHIPPED: runtime per-query topology + credential resolution (ADR 0020)
+
+The last build slice of Phase 6.6 — wires the two backends + two UIs into the
+live query path. Both Wazuh backends are now actually used at runtime.
+
+- **`resolver.get_wazuh_connection` rewired** — the **URLs + TLS posture now
+  come from the install ecosystem topology** (6.6-a), read **fresh per query**;
+  only the per-org **credentials + index filter + organization-filter flag**
+  come from `organization_wazuh_configs` (6.6-c). Signature unchanged
+  (`ctx, db, secrets → WazuhConnection`), so `chat.py` and the clients are
+  untouched.
+- **Random indexer-node routing** (ADR 0020 decision 1) — distributed
+  deployments pick a **random** indexer node per query (even load spread)
+  via `_resolve_runtime_endpoints`; single-host uses its one indexer/manager.
+  The manager master serves the Server API.
+- **New `WazuhTopologyMissingError` (404)** when no ecosystem topology is
+  configured (a `WolfError`, surfaced by the global handler exactly like the
+  existing `WazuhConfigMissingError`). You must configure the topology before
+  any org can query Wazuh — the intended ADR 0020 migration.
+- **`tests/test_resolver.py` (4, new)** — proves: topology URLs + verify_tls
+  override the (stale) per-org URL columns; the per-org index filter + creds +
+  org-filter flag are used; distributed picks a real indexer node (sampled);
+  and both missing-state errors fire.
+- **Vestigial per-org URL columns** — `opensearch_url` / `server_api_url` /
+  `verify_tls` on `organization_wazuh_configs` are **no longer read** (still
+  written by the bootstrap CLI + the 6.6-c API to satisfy NOT-NULL). Tracked
+  follow-up: drop them + modernise `bootstrap_organization`'s `--*-url` args,
+  and add **indexer-node fallback-on-failure** (random selection ships now;
+  the retry-other-nodes half needs a multi-node cluster to exercise).
+- **Gate:** ruff + mypy --strict (43 files) + **499 backend / 0 skip / 0
+  warning** (was 495; +4 resolver) + cross-org isolation (18) green; no
+  migration; no new dependency; wolf-server restarts clean with the rewired
+  resolver. **No CI workflow change needed.** Commits `<this>`.
+- **Phase 6.6 — Superuser-owned Wazuh component mapping — feature-complete:**
+  6.6-a (topology backend) + 6.6-b/b.1 (topology UI) + 6.6-c (per-org creds
+  backend) + 6.6-d (per-org creds UI) + 6.6-e (runtime) all shipped + CI-green.
+  The phase **exit criteria** is met pending the operator's **Category-2
+  functional web-test** against a real Wazuh (configure topology → per-org
+  creds → an org user chats and Wolf queries that org's Wazuh data).
+
 ## 2026-06-17 — 6.6-b.1: distributed topology refinement (operator web-test feedback)
 
 Operator web-tested 6.6-b + 6.6-d (Category-1 UI pass) — all checkpoints
