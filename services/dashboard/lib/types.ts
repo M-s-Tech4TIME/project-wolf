@@ -176,8 +176,9 @@ export type WazuhCredentialsResponse = {
   indexer_user: string | null;
   server_api_user: string | null;
   wazuh_index_filter: string | null;
-  wazuh_agent_groups: string[] | null;
-  inject_organization_filter: boolean | null;
+  // The agent.labels.group value(s) the indexer-query filter scopes to.
+  agent_group_labels: string[] | null;
+  inject_group_label_filter: boolean | null;
   validated_at: string | null;
   updated_at: string | null;
 };
@@ -189,8 +190,8 @@ export type WazuhCredentialsUpdate = {
   server_api_user: string;
   server_api_password: string | null;
   wazuh_index_filter: string;
-  wazuh_agent_groups: string[] | null;
-  inject_organization_filter: boolean;
+  agent_group_labels: string[] | null;
+  inject_group_label_filter: boolean;
 };
 
 export type WazuhCredentialsSaveResponse = WazuhCredentialsResponse & {
@@ -198,6 +199,8 @@ export type WazuhCredentialsSaveResponse = WazuhCredentialsResponse & {
   probe_results: WazuhProbeResult[];
   agent_count: number | null;
   group_count: number | null;
+  // Distinct groups the Server-API credential is scoped to (from RBAC policies).
+  groups: string[] | null;
   scope_detail: string | null;
   warnings: string[];
 };

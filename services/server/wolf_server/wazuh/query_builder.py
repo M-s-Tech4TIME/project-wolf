@@ -1,29 +1,28 @@
 """Organization-scoped OpenSearch query builder.
 
-The single guarantee of this module: **every query built here carries the
-organization filter.**  There is no method that produces a query without it.
+Isolation is two-layered (doc 05 §Four enforcement points):
 
-The forced filter is two-layered, matching doc 05 §Four enforcement points:
+  1. Credential isolation (PRIMARY): the connection uses the org's own Wazuh
+     credential, whose Wazuh-side RBAC + index DLS decide what it can read — the
+     cluster physically rejects anything out of scope.  This alone is the
+     boundary for the common per-org-credential deployment.
+  2. Optional query layer (Phase 6.6-f, ADR 0020): when an org's credential is
+     NOT itself DLS-scoped, the builder can inject
+     `terms: {agent.labels.group: [<labels>]}` — the REAL Wazuh field — into
+     every query, scoping it to the org's configured group label(s).  Off by
+     default; when on, no method produces a query without the clause.
 
-  1. Credential isolation: the connection itself uses organization-A credentials,
-     so the cluster physically rejects a misrouted query.
-  2. Query layer: even with shared credentials (pooled-index deployments),
-     the builder injects `term: {organization_id: <ctx.organization_id>}` into every
-     query.  Organizations that do not stamp a `organization_id` field on alerts will
-     simply have an extra filter against a field that does not exist — which
-     yields zero results, fail-closed, never cross-organization exposure.
-
-Callers pass *what* to search; the builder decides *where*, and "where"
-always includes the organization wall.
+Callers pass *what* to search; the builder decides *where*.
 """
 
 import uuid
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Any
 
 
 class OrganizationScopedQueryBuilder:
-    """Build OpenSearch queries that always include the organization filter.
+    """Build OpenSearch queries, optionally forcing the group-label filter.
 
     Construct one per request, bound to the request's organization context.
     Reusing a builder across organizations is a bug — there is no setter for
@@ -34,10 +33,12 @@ class OrganizationScopedQueryBuilder:
         self,
         organization_id: uuid.UUID,
         *,
-        inject_organization_filter: bool = False,
+        inject_group_label_filter: bool = False,
+        agent_group_labels: Sequence[str] = (),
     ) -> None:
         self._organization_id = str(organization_id)
-        self._inject_organization_filter = inject_organization_filter
+        self._inject_group_label_filter = inject_group_label_filter
+        self._agent_group_labels = list(agent_group_labels)
 
     # ── Public query constructors ─────────────────────────────────────────
 
@@ -191,25 +192,30 @@ class OrganizationScopedQueryBuilder:
     # ── Internal builders ─────────────────────────────────────────────────
 
     @property
-    def inject_organization_filter(self) -> bool:
-        """Whether this builder adds the term:{organization_id} filter to queries."""
-        return self._inject_organization_filter
+    def inject_group_label_filter(self) -> bool:
+        """Whether this builder forces the agent.labels.group filter on queries."""
+        return self._inject_group_label_filter
+
+    @property
+    def agent_group_labels(self) -> list[str]:
+        """The group label(s) the forced filter scopes to (empty when not set)."""
+        return list(self._agent_group_labels)
 
     def _mandatory_filters(self) -> list[dict[str, Any]]:
         """The forced filter clauses prepended to every query.
 
-        When `inject_organization_filter` is TRUE, contains the `organization_id`
-        term filter — required for pooled-index multi-organization deployments
-        where every alert is stamped with `organization_id` at ingest.
+        When `inject_group_label_filter` is TRUE and at least one label is
+        configured, contains a `terms: {agent.labels.group: [<labels>]}` clause
+        — the real Wazuh field, OR-combined across labels — scoping every query
+        to the org's agent group label(s).
 
-        When FALSE (default), returns an empty list.  Vanilla Wazuh
-        alerts do NOT carry a `organization_id` field, so the filter would
-        silently match zero docs — fail-closed is wrong here because the
-        per-organization *credential* is the actual isolation boundary.
+        When FALSE (default) or no labels are configured, returns an empty list:
+        the per-org *credential* (its Wazuh RBAC/DLS) is the isolation boundary,
+        so no Wolf-side filter is imposed.
         """
-        if not self._inject_organization_filter:
+        if not self._inject_group_label_filter or not self._agent_group_labels:
             return []
-        return [{"term": {"organization_id": self._organization_id}}]
+        return [{"terms": {"agent.labels.group": list(self._agent_group_labels)}}]
 
     def _timestamp_range(self, time_from: datetime, time_to: datetime) -> dict[str, Any]:
         return {

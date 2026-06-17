@@ -75,20 +75,22 @@ class OrganizationWazuhConfig(Base):
     # required to disable for self-signed certs (doc 07 §Transport security).
     verify_tls: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
-    # Whether to inject a `term: {organization_id: <id>}` clause into every
-    # OpenSearch query.  Default FALSE because vanilla Wazuh alert
-    # documents do not carry a `organization_id` field — the filter would
-    # silently match zero docs.  Set TRUE only for pooled-index multi-
-    # organization deployments where you have stamped `organization_id` onto every
-    # alert at ingest time.  For separate-deployment-per-organization (the
-    # common case), the credential alone provides isolation.
-    inject_organization_filter: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Whether to inject a `terms: {agent.labels.group: [<labels>]}` clause into
+    # every OpenSearch query (Phase 6.6-f, ADR 0020).  Default FALSE because the
+    # per-org *credential* (its Wazuh RBAC + index DLS) is already the isolation
+    # boundary — Wolf should not impose a static filter on top.  Set TRUE only
+    # when the org's indexer credential is NOT itself DLS-scoped and you want
+    # Wolf to scope it by the real Wazuh `agent.labels.group` field instead.
+    # Requires a non-empty `agent_group_labels`.
+    inject_group_label_filter: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
-    # OPTIONAL list of Wazuh agent groups this org is scoped to (Phase 6.6-c,
-    # ADR 0020 per-org credential fields).  Null/empty means "any group the
-    # credential can see" — Wazuh-side RBAC remains the authority; this is a
-    # Wolf-side hint surfaced in the credentials UI + scope summary.
-    wazuh_agent_groups: Mapped[list[str] | None] = mapped_column(_JSON_TYPE, nullable=True)
+    # OPTIONAL list of Wazuh `agent.labels.group` values this org is scoped to
+    # (Phase 6.6-f).  When `inject_group_label_filter` is TRUE these are
+    # OR-combined into the forced `terms` filter; an org's agents can belong to
+    # more than one label, hence a list.  Null/empty + filter ON is rejected at
+    # the API.  Surfaced in the credentials UI; not itself an authority when the
+    # filter is OFF.
+    agent_group_labels: Mapped[list[str] | None] = mapped_column(_JSON_TYPE, nullable=True)
 
     # Provisioning validation timestamp — null until the platform has connected
     # with the credentials and confirmed the deployment identity (doc 05).

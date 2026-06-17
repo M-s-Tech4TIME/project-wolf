@@ -55,7 +55,7 @@ export function WazuhCredentialsCard({
   const [serverUser, setServerUser] = useState("");
   const [serverPassword, setServerPassword] = useState("");
   const [indexFilter, setIndexFilter] = useState("wazuh-alerts-*");
-  const [agentGroups, setAgentGroups] = useState(""); // comma-separated
+  const [groupLabels, setGroupLabels] = useState(""); // comma-separated
   const [injectFilter, setInjectFilter] = useState(false);
 
   const [saving, setSaving] = useState(false);
@@ -78,9 +78,9 @@ export function WazuhCredentialsCard({
         if (c.indexer_user) setIndexerUser(c.indexer_user);
         if (c.server_api_user) setServerUser(c.server_api_user);
         if (c.wazuh_index_filter) setIndexFilter(c.wazuh_index_filter);
-        if (c.wazuh_agent_groups) setAgentGroups(c.wazuh_agent_groups.join(", "));
-        if (c.inject_organization_filter !== null)
-          setInjectFilter(c.inject_organization_filter);
+        if (c.agent_group_labels) setGroupLabels(c.agent_group_labels.join(", "));
+        if (c.inject_group_label_filter !== null)
+          setInjectFilter(c.inject_group_label_filter);
       })
       .catch((e) =>
         setLoadError(e instanceof ApiError ? e.message : "Failed to load credentials"),
@@ -93,18 +93,20 @@ export function WazuhCredentialsCard({
     loadHistory();
   }, [load, loadHistory]);
 
-  function parseGroups(): string[] | null {
-    const groups = agentGroups
+  function parseLabels(): string[] | null {
+    const labels = groupLabels
       .split(",")
       .map((g) => g.trim())
       .filter(Boolean);
-    return groups.length ? groups : null;
+    return labels.length ? labels : null;
   }
 
   function validate(): string | null {
     if (!indexerUser.trim()) return "Indexer username is required.";
     if (!serverUser.trim()) return "Server API username is required.";
     if (!indexFilter.trim()) return "Index filter is required (e.g. wazuh-alerts-*).";
+    if (injectFilter && !parseLabels())
+      return "Provide at least one agent group label, or uncheck the group-label filter.";
     if (!configured) {
       if (!indexerPassword) return "Indexer password is required on first save.";
       if (!serverPassword) return "Server API password is required on first save.";
@@ -128,8 +130,8 @@ export function WazuhCredentialsCard({
       server_api_user: serverUser.trim(),
       server_api_password: serverPassword ? serverPassword : null,
       wazuh_index_filter: indexFilter.trim(),
-      wazuh_agent_groups: parseGroups(),
-      inject_organization_filter: injectFilter,
+      agent_group_labels: parseLabels(),
+      inject_group_label_filter: injectFilter,
     };
     try {
       const res = await saveOrgWazuhCredentials(orgId, body);
@@ -203,8 +205,8 @@ export function WazuhCredentialsCard({
                 disabled={!orgActive} />
               <Field id="cred-index" label="Index filter" value={indexFilter}
                 onChange={setIndexFilter} placeholder="wazuh-alerts-*" disabled={!orgActive} />
-              <Field id="cred-groups" label="Agent groups (optional, comma-separated)"
-                value={agentGroups} onChange={setAgentGroups} placeholder="default, acme"
+              <Field id="cred-groups" label="Agent group label(s) (comma-separated)"
+                value={groupLabels} onChange={setGroupLabels} placeholder="acme"
                 mono={false} disabled={!orgActive} />
             </div>
 
@@ -216,9 +218,10 @@ export function WazuhCredentialsCard({
                 disabled={!orgActive}
                 className="h-4 w-4 rounded border-foreground/30"
               />
-              Inject an organization_id filter into every indexer query
+              Restrict indexer queries to these group label(s)
               <span className="text-xs text-muted-foreground">
-                (only for pooled-index multi-org Wazuh setups)
+                (adds agent.labels.group; only if this credential isn&apos;t already
+                DLS-scoped in Wazuh)
               </span>
             </label>
 
@@ -265,6 +268,16 @@ export function WazuhCredentialsCard({
                   </div>
                   {result.scope_detail ? (
                     <p className="text-sm text-muted-foreground">{result.scope_detail}</p>
+                  ) : null}
+                  {result.groups && result.groups.length > 0 ? (
+                    <div className="flex flex-wrap items-center gap-1 text-sm">
+                      <span className="text-muted-foreground">Scoped to:</span>
+                      {result.groups.map((g) => (
+                        <Badge key={g} variant="outline" className="font-mono">
+                          {g}
+                        </Badge>
+                      ))}
+                    </div>
                   ) : null}
                   {result.warnings.length > 0 ? (
                     <ul className="list-disc pl-5 text-amber-600 dark:text-amber-400">

@@ -26,4 +26,9 @@ class WazuhConnection:
     server_api_username: str
     server_api_password: str
     verify_tls: bool
-    inject_organization_filter: bool = False
+    # When True, inject a `terms:{agent.labels.group:[...]}` clause (the real
+    # Wazuh field) into every indexer query, scoped to `agent_group_labels`.
+    # Default False — the per-org credential's own Wazuh RBAC/DLS is the
+    # isolation boundary (Phase 6.6-f, ADR 0020).
+    inject_group_label_filter: bool = False
+    agent_group_labels: tuple[str, ...] = ()

@@ -1,8 +1,8 @@
 """Per-org Wazuh credentials API — Phase 6.6-c, ADR 0020.
 
 GET  /api/v1/superuser/organizations/{id}/wazuh-credentials
-    Return the org's Wazuh credential configuration (usernames, index filter,
-    agent groups, validation timestamp).  Passwords are never returned.
+    Return the org's Wazuh credential configuration (usernames, index pattern,
+    group-label filter, validation timestamp).  Passwords are never returned.
 
 PUT  /api/v1/superuser/organizations/{id}/wazuh-credentials
     Configure / rotate the org's Wazuh credentials.  **Soft fail** (ADR 0020
@@ -26,7 +26,7 @@ from typing import Annotated, Any
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -46,6 +46,18 @@ router = APIRouter(prefix="/api/v1/superuser/organizations", tags=["superuser-wa
 _DEFAULT_INDEX_FILTER = "wazuh-alerts-*"
 
 
+def _clean_labels(labels: list[str] | None) -> list[str]:
+    """Trim, drop blanks, and de-dupe (order-preserving) group labels."""
+    if not labels:
+        return []
+    seen: list[str] = []
+    for raw in labels:
+        value = raw.strip()
+        if value and value not in seen:
+            seen.append(value)
+    return seen
+
+
 # ── Schemas ────────────────────────────────────────────────────────────────
 
 
@@ -58,8 +70,21 @@ class WazuhCredentialsUpdate(BaseModel):
     server_api_user: str = Field(min_length=1, max_length=200)
     server_api_password: str | None = Field(default=None, max_length=1024)
     wazuh_index_filter: str = Field(default=_DEFAULT_INDEX_FILTER, min_length=1, max_length=200)
-    wazuh_agent_groups: list[str] | None = None
-    inject_organization_filter: bool = False
+    # The agent.labels.group value(s) to scope indexer queries to when the
+    # filter is enabled (Phase 6.6-f).  Multiple labels are OR-combined.
+    agent_group_labels: list[str] | None = None
+    inject_group_label_filter: bool = False
+
+    @model_validator(mode="after")
+    def _validate_group_labels(self) -> "WazuhCredentialsUpdate":
+        cleaned = _clean_labels(self.agent_group_labels)
+        self.agent_group_labels = cleaned or None
+        if self.inject_group_label_filter and not cleaned:
+            raise ValueError(
+                "Provide at least one agent group label to restrict indexer "
+                "queries, or disable the group-label filter."
+            )
+        return self
 
 
 class ProbeResultOut(BaseModel):
@@ -75,8 +100,8 @@ class WazuhCredentialsResponse(BaseModel):
     indexer_user: str | None = None
     server_api_user: str | None = None
     wazuh_index_filter: str | None = None
-    wazuh_agent_groups: list[str] | None = None
-    inject_organization_filter: bool | None = None
+    agent_group_labels: list[str] | None = None
+    inject_group_label_filter: bool | None = None
     validated_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -86,6 +111,7 @@ class WazuhCredentialsSaveResponse(WazuhCredentialsResponse):
     probe_results: list[ProbeResultOut] = Field(default_factory=list)
     agent_count: int | None = None
     group_count: int | None = None
+    groups: list[str] | None = None
     scope_detail: str | None = None
     warnings: list[str] = Field(default_factory=list)
 
@@ -192,8 +218,8 @@ async def get_wazuh_credentials(
         indexer_user=await _load_username(row.opensearch_credential_key),
         server_api_user=await _load_username(row.server_api_credential_key),
         wazuh_index_filter=row.opensearch_index_pattern,
-        wazuh_agent_groups=row.wazuh_agent_groups,
-        inject_organization_filter=row.inject_organization_filter,
+        agent_group_labels=row.agent_group_labels,
+        inject_group_label_filter=row.inject_group_label_filter,
         validated_at=row.validated_at,
         updated_at=row.updated_at,
     )
@@ -238,6 +264,7 @@ async def put_wazuh_credentials(
         indexer_url=indexer_url,
         indexer_user=indexer_user,
         indexer_password=indexer_password,
+        index_pattern=payload.wazuh_index_filter,
         server_api_url=manager_url,
         server_api_user=server_user,
         server_api_password=server_password,
@@ -268,8 +295,8 @@ async def put_wazuh_credentials(
             server_api_url=manager_url,
             server_api_credential_key=api_key,
             verify_tls=verify_tls,
-            inject_organization_filter=payload.inject_organization_filter,
-            wazuh_agent_groups=payload.wazuh_agent_groups,
+            inject_group_label_filter=payload.inject_group_label_filter,
+            agent_group_labels=payload.agent_group_labels,
             validated_at=validated_at,
             created_at=now,
             updated_at=now,
@@ -282,8 +309,8 @@ async def put_wazuh_credentials(
         row.server_api_url = manager_url
         row.verify_tls = verify_tls
         row.opensearch_index_pattern = payload.wazuh_index_filter
-        row.inject_organization_filter = payload.inject_organization_filter
-        row.wazuh_agent_groups = payload.wazuh_agent_groups
+        row.inject_group_label_filter = payload.inject_group_label_filter
+        row.agent_group_labels = payload.agent_group_labels
         row.validated_at = validated_at
         row.updated_at = now
 
@@ -304,8 +331,8 @@ async def put_wazuh_credentials(
         source_ip=_source_ip(request),
         event_data={
             "index_filter": payload.wazuh_index_filter,
-            "agent_groups": payload.wazuh_agent_groups,
-            "inject_organization_filter": payload.inject_organization_filter,
+            "agent_group_labels": payload.agent_group_labels,
+            "inject_group_label_filter": payload.inject_group_label_filter,
             "probe_ok": probe.ok,
             "indexer_ok": probe.indexer.ok,
             "server_api_ok": probe.manager.ok,
@@ -321,8 +348,8 @@ async def put_wazuh_credentials(
         indexer_user=indexer_user,
         server_api_user=server_user,
         wazuh_index_filter=payload.wazuh_index_filter,
-        wazuh_agent_groups=payload.wazuh_agent_groups,
-        inject_organization_filter=payload.inject_organization_filter,
+        agent_group_labels=payload.agent_group_labels,
+        inject_group_label_filter=payload.inject_group_label_filter,
         validated_at=validated_at,
         updated_at=now,
         probe_ok=probe.ok,
@@ -342,6 +369,7 @@ async def put_wazuh_credentials(
         ],
         agent_count=probe.agent_count,
         group_count=probe.group_count,
+        groups=probe.groups,
         scope_detail=probe.scope_detail,
         warnings=warnings,
     )

@@ -10,6 +10,7 @@ import httpx
 from wolf_server.wazuh.probe import (
     probe_dashboard,
     probe_indexer,
+    probe_indexer_read,
     probe_manager_api,
 )
 
@@ -58,6 +59,54 @@ async def test_probe_indexer_unreachable_fails_closed() -> None:
 
     async with _client(boom) as c:
         r = await probe_indexer("https://idx:9200", "u", "p", verify_tls=False, client=c)
+    assert r.ok is False
+    assert r.status_code is None
+    assert "unreachable" in r.detail.lower()
+
+
+# ── Indexer read probe (per-org credential — Phase 6.6-f) ───────────────────
+
+
+async def test_probe_indexer_read_ok_reports_count() -> None:
+    async with _client(lambda req: httpx.Response(200, json={"count": 27})) as c:
+        r = await probe_indexer_read(
+            "https://idx:9200", "u", "p", "wazuh-alerts-*", verify_tls=False, client=c
+        )
+    assert r.ok is True
+    assert r.status_code == 200
+    assert "27 alert(s)" in r.detail
+    assert "wazuh-alerts-*" in r.detail
+
+
+async def test_probe_indexer_read_403_is_denied_not_ok() -> None:
+    # The key fix: a 403 on the index is a *failure*, not "authenticated".
+    async with _client(lambda req: httpx.Response(403)) as c:
+        r = await probe_indexer_read(
+            "https://idx:9200", "u", "p", "wazuh-alerts-*", verify_tls=False, client=c
+        )
+    assert r.ok is False
+    assert r.status_code == 403
+    assert "denied read" in r.detail.lower()
+
+
+async def test_probe_indexer_read_401_is_bad_creds() -> None:
+    async with _client(lambda req: httpx.Response(401)) as c:
+        r = await probe_indexer_read(
+            "https://idx:9200", "u", "bad", "wazuh-alerts-*", verify_tls=False, client=c
+        )
+    assert r.ok is False
+    assert r.status_code == 401
+    assert "rejected" in r.detail.lower()
+
+
+async def test_probe_indexer_read_unreachable_fails_closed() -> None:
+    def boom(req: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("simulated", request=req)
+
+    async with _client(boom) as c:
+        r = await probe_indexer_read(
+            "https://idx:9200", "u", "p", "wazuh-alerts-*", verify_tls=False, client=c
+        )
     assert r.ok is False
     assert r.status_code is None
     assert "unreachable" in r.detail.lower()

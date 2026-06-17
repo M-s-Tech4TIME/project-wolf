@@ -115,6 +115,93 @@ async def probe_indexer(
             await client.aclose()
 
 
+async def probe_indexer_read(
+    url: str,
+    username: str,
+    password: str,
+    index_pattern: str,
+    *,
+    verify_tls: bool,
+    client: httpx.AsyncClient | None = None,
+) -> EndpointProbeResult:
+    """Probe whether a per-org Indexer credential can actually READ alerts.
+
+    Unlike :func:`probe_indexer` (which hits ``GET /`` and needs the
+    ``cluster:monitor`` permission a *correctly scoped* per-org role lacks —
+    yielding a misleading 403), this issues ``GET /<index_pattern>/_count``,
+    which is exactly the access the credential exists to have.  200 = the
+    credential can read the index (we report the visible count); 401 = bad
+    credentials; 403 = authenticated but denied read on the pattern (the
+    indexer role needs ``read``/``search`` on it); other = unexpected.
+    """
+    owns_client = client is None
+    client = client or _client(verify_tls)
+    count_url = f"{url.rstrip('/')}/{index_pattern}/_count"
+    try:
+        try:
+            response = await client.get(count_url, auth=(username, password))
+        except httpx.RequestError as exc:
+            return EndpointProbeResult(
+                role="indexer",
+                url=url,
+                ok=False,
+                detail=f"Indexer at {url} is unreachable: {type(exc).__name__}: {exc}",
+            )
+        if response.status_code == 401:
+            return EndpointProbeResult(
+                role="indexer",
+                url=url,
+                ok=False,
+                status_code=401,
+                detail=(
+                    f"Indexer at {url} rejected the credentials (HTTP 401). "
+                    f"Verify the user exists in the OpenSearch security plugin "
+                    f"and the password is correct."
+                ),
+            )
+        if response.status_code == 403:
+            return EndpointProbeResult(
+                role="indexer",
+                url=url,
+                ok=False,
+                status_code=403,
+                detail=(
+                    f"Indexer credential authenticated but is denied read on "
+                    f"'{index_pattern}' (HTTP 403). Grant the indexer role "
+                    f"read/search on this index pattern."
+                ),
+            )
+        if response.status_code != 200:
+            return EndpointProbeResult(
+                role="indexer",
+                url=url,
+                ok=False,
+                status_code=response.status_code,
+                detail=(
+                    f"Indexer at {url} returned unexpected HTTP "
+                    f"{response.status_code} reading '{index_pattern}'; expected 200."
+                ),
+            )
+        count: int | None = None
+        try:
+            body = response.json()
+            if isinstance(body, dict) and isinstance(body.get("count"), int):
+                count = int(body["count"])
+        except ValueError:
+            count = None
+        visible = f"{count} alert(s)" if count is not None else "alerts"
+        return EndpointProbeResult(
+            role="indexer",
+            url=url,
+            ok=True,
+            status_code=200,
+            detail=f"Indexer credential can read {visible} in '{index_pattern}' (HTTP 200).",
+        )
+    finally:
+        if owns_client:
+            await client.aclose()
+
+
 async def probe_manager_api(
     url: str,
     username: str,

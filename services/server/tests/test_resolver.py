@@ -60,7 +60,8 @@ async def _seed_org_with_creds(
             server_api_url="https://stale-mgr:55000",
             server_api_credential_key=api_key,
             verify_tls=True,  # vestigial — topology's verify_tls wins
-            inject_organization_filter=False,
+            inject_group_label_filter=False,
+            agent_group_labels=None,
             validated_at=None,
             created_at=now,
             updated_at=now,
@@ -102,13 +103,14 @@ async def test_resolver_uses_topology_urls_not_stale_per_org(db: AsyncSession) -
     assert conn.opensearch_url == "https://real-idx:9200"
     assert conn.server_api_url == "https://real-mgr:55000"
     assert conn.verify_tls is False
-    # Credentials + index filter + org-filter flag come from the per-org config.
+    # Credentials + index pattern + group-label flag come from the per-org config.
     assert conn.opensearch_index_pattern == "wazuh-alerts-acme-*"
     assert conn.opensearch_username == "idx-user"
     assert conn.opensearch_password == "idx-pw"
     assert conn.server_api_username == "api-user"
     assert conn.server_api_password == "api-pw"
-    assert conn.inject_organization_filter is False
+    assert conn.inject_group_label_filter is False
+    assert conn.agent_group_labels == ()
     assert conn.organization_id == ctx.organization_id
 
 

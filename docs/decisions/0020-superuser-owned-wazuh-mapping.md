@@ -179,6 +179,30 @@ Superuser.
 | `wazuh_index_filter` | OPTIONAL explicit index pattern (for orgs that span multiple Wazuh indices, e.g., `wazuh-alerts-customer-acme-*`) |
 | `wazuh_agent_groups` | OPTIONAL list of Wazuh agent groups this org sees (defaults to "any group accessible by the credential") |
 
+> **Addendum (Phase 6.6-f, 2026-06-18):** real per-org RBAC setup against a live
+> cluster (Wazuh's "give a user permissions to read and manage a group of
+> agents" use case) showed `wazuh_agent_groups` + a static `organization_id`
+> query filter (the original ADR 0010 indexer-query mechanism) were the wrong
+> tools. Wazuh alerts never carry `organization_id`, and the per-org
+> credential's own Wazuh RBAC + index DLS already isolate it *dynamically*. So:
+> - `wazuh_agent_groups` → **`agent_group_labels`** (`list[str]`): the real
+>   Wazuh `agent.labels.group` value(s) the org's agents carry.
+> - the static `organization_id` indexer filter → an **optional, opt-in**
+>   `inject_group_label_filter` that injects `terms:{agent.labels.group:[...]}`
+>   (the real field, OR-combined across labels) — a belt-and-suspenders for
+>   credentials that aren't themselves DLS-scoped. **Default OFF**: the
+>   credential is the isolation boundary. (The DB-side forced `organization_id`
+>   SQL filter for audit/knowledge is a *separate* layer and is unchanged.)
+> - the per-org **indexer probe** now tests *index read* (`_count` on the
+>   pattern) instead of `GET /` — a correctly scoped role is *denied* cluster
+>   root (`cluster:monitor`), which the old probe surfaced as a misleading
+>   "authenticated (HTTP 403)".
+> - the **scope summary** derives groups from the credential's own effective
+>   RBAC policies (`GET /security/users/me/policies`), reporting the TRUE scope
+>   (e.g. `acme`), not the incidental multi-group membership of its agents
+>   (which over-reported `default`/`BIS`). Multi-group credentials are
+>   supported (several `agent:group:*` resources → several labels).
+
 ### Runtime usage
 
 When the org's Engineer / Analyst chats with Wolf:

@@ -22,6 +22,11 @@ from wolf_server.wazuh.query_builder import OrganizationScopedQueryBuilder
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 
 
+def _label_for(organization_id: uuid.UUID) -> str:
+    """A distinct agent.labels.group value per organization."""
+    return f"org-{organization_id}"
+
+
 def _connection_for(organization_id: uuid.UUID) -> WazuhConnection:
     return WazuhConnection(
         organization_id=organization_id,
@@ -33,7 +38,8 @@ def _connection_for(organization_id: uuid.UUID) -> WazuhConnection:
         server_api_username=f"organization-{organization_id}-api",
         server_api_password="secret",  # noqa: S106 — test fixture
         verify_tls=True,
-        inject_organization_filter=True,
+        inject_group_label_filter=True,
+        agent_group_labels=(_label_for(organization_id),),
     )
 
 
@@ -41,13 +47,17 @@ def _connection_for(organization_id: uuid.UUID) -> WazuhConnection:
 
 
 def test_two_organization_builders_with_filter_produce_distinct_queries() -> None:
-    """Pinning the multi-organization pooled-index mode: filter is per-organization."""
-    a = OrganizationScopedQueryBuilder(uuid.uuid4(), inject_organization_filter=True)
-    b = OrganizationScopedQueryBuilder(uuid.uuid4(), inject_organization_filter=True)
+    """With the group-label filter on, each org's queries carry its own label."""
+    a = OrganizationScopedQueryBuilder(
+        uuid.uuid4(), inject_group_label_filter=True, agent_group_labels=["org-a"]
+    )
+    b = OrganizationScopedQueryBuilder(
+        uuid.uuid4(), inject_group_label_filter=True, agent_group_labels=["org-b"]
+    )
     now = datetime.now(UTC)
     qa = a.search_alerts(time_from=now - timedelta(hours=1), time_to=now)
     qb = b.search_alerts(time_from=now - timedelta(hours=1), time_to=now)
-    # The two queries differ in the term:{organization_id} clause.
+    # The two queries differ in the terms:{agent.labels.group} clause.
     assert qa != qb
 
 
@@ -56,11 +66,15 @@ def test_two_organization_builders_with_filter_produce_distinct_queries() -> Non
 
 @pytest.mark.asyncio
 async def test_organization_a_client_rejects_organization_b_query() -> None:
-    """A query built for Organization B cannot be executed by Organization A's client."""
+    """A query carrying Organization B's label cannot run on Organization A's client."""
     organization_a = uuid.uuid4()
     organization_b = uuid.uuid4()
 
-    builder_b = OrganizationScopedQueryBuilder(organization_b)
+    builder_b = OrganizationScopedQueryBuilder(
+        organization_b,
+        inject_group_label_filter=True,
+        agent_group_labels=[_label_for(organization_b)],
+    )
     now = datetime.now(UTC)
     bad_query = builder_b.search_alerts(time_from=now - timedelta(hours=1), time_to=now)
 
@@ -75,7 +89,7 @@ async def test_organization_a_client_rejects_organization_b_query() -> None:
         timeout=5.0,
     )
     client = WazuhOpenSearchClient(_connection_for(organization_a), client=http)
-    with pytest.raises(OrganizationMismatchError, match="organization_id filter"):
+    with pytest.raises(OrganizationMismatchError, match="agent.labels.group filter"):
         await client.execute(bad_query)
 
 
@@ -84,7 +98,7 @@ async def test_organization_a_client_rejects_organization_b_query() -> None:
 
 @pytest.mark.asyncio
 async def test_organization_a_client_rejects_returned_organization_b_doc() -> None:
-    """If a query somehow returns a doc whose source organization_id is B, fail closed."""
+    """If a query somehow returns a doc with Organization B's group label, fail closed."""
     organization_a = uuid.uuid4()
     organization_b = uuid.uuid4()
 
@@ -96,7 +110,7 @@ async def test_organization_a_client_rejects_returned_organization_b_doc() -> No
                     {
                         "_id": "leaked",
                         "_source": {
-                            "organization_id": str(organization_b),
+                            "agent": {"labels": {"group": _label_for(organization_b)}},
                             "rule": {"id": "5710"},
                         },
                     }
@@ -113,7 +127,7 @@ async def test_organization_a_client_rejects_returned_organization_b_doc() -> No
     client = WazuhOpenSearchClient(_connection_for(organization_a), client=http)
     now = datetime.now(UTC)
     good_query = client.query_builder.search_alerts(time_from=now - timedelta(hours=1), time_to=now)
-    with pytest.raises(OrganizationMismatchError, match="returned doc"):
+    with pytest.raises(OrganizationMismatchError, match="agent.labels.group"):
         await client.execute(good_query)
 
 

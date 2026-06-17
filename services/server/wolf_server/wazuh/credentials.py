@@ -26,7 +26,7 @@ import httpx
 
 from wolf_server.wazuh.probe import (
     EndpointProbeResult,
-    probe_indexer,
+    probe_indexer_read,
     probe_manager_api,
 )
 from wolf_server.wazuh.topology import (
@@ -49,6 +49,7 @@ class OrgCredentialProbeResult:
     manager: EndpointProbeResult
     agent_count: int | None
     group_count: int | None
+    groups: list[str] | None
     scope_detail: str
 
     @property
@@ -88,43 +89,98 @@ def _total_affected(response: httpx.Response) -> int | None:
     return int(total) if isinstance(total, int) else None
 
 
+_AGENT_GROUP_PREFIX = "agent:group:"
+_UNRESTRICTED_RESOURCES = frozenset({"agent:group:*", "agent:id:*", "*:*:*"})
+
+
+def _scoped_groups_from_policies(response: httpx.Response) -> tuple[list[str] | None, bool]:
+    """Parse ``GET /security/users/me/policies`` → ``(groups, unrestricted)``.
+
+    The endpoint returns the *current* user's effective, processed policies as
+    ``data = {action: {resource: effect}}`` and needs no special permission (a
+    correctly-scoped per-org user CAN call it about itself).  We read the
+    ``agent:read`` action's allowed resources: ``agent:group:<name>`` entries
+    are the groups the credential is genuinely SCOPED to — the authoritative
+    answer, NOT the incidental multi-group membership of the agents it happens
+    to see.  A credential scoped to several groups yields several names.
+    ``agent:group:*`` / ``agent:id:*`` / ``*:*:*`` means it is not restricted to
+    specific groups (``unrestricted=True``).  Any parse failure → ``(None, False)``.
+    """
+    try:
+        data = response.json()
+    except ValueError:
+        return None, False
+    if not isinstance(data, dict):
+        return None, False
+    inner = data.get("data")
+    if not isinstance(inner, dict):
+        return None, False
+    res_map = inner.get("agent:read")
+    if not isinstance(res_map, dict):
+        return None, False
+    groups: set[str] = set()
+    unrestricted = False
+    for resource, effect in res_map.items():
+        if effect != "allow" or not isinstance(resource, str):
+            continue
+        if resource in _UNRESTRICTED_RESOURCES:
+            unrestricted = True
+        elif resource.startswith(_AGENT_GROUP_PREFIX):
+            name = resource[len(_AGENT_GROUP_PREFIX) :]
+            if name and name != "*":
+                groups.add(name)
+    return sorted(groups), unrestricted
+
+
 async def _fetch_scope(
     client: httpx.AsyncClient,
     server_api_url: str,
     username: str,
     password: str,
-) -> tuple[int | None, int | None, str]:
-    """Best-effort agent/group counts the Server API credential can see.
+) -> tuple[int | None, int | None, list[str] | None, str]:
+    """Best-effort agent count + the groups the Server API credential is SCOPED to.
 
-    Authenticates for a JWT, then queries ``/agents`` and ``/groups`` with a
-    ``limit=1`` so we read ``total_affected_items`` without pulling data.
-    Degrades gracefully — any failure yields ``(None, None, <reason>)``.
+    Authenticates for a JWT, reads the visible agent count from ``/agents``
+    (``total_affected_items``), and the *true* group scope from
+    ``/security/users/me/policies`` (see :func:`_scoped_groups_from_policies`).
+    Degrades gracefully — any failure yields ``(None, None, None, <reason>)``.
     """
     base = server_api_url.rstrip("/")
     try:
         auth = await client.post(base + "/security/user/authenticate", auth=(username, password))
         if auth.status_code != 200:
-            return None, None, "Scope unavailable — Server API authentication failed."
+            return None, None, None, "Scope unavailable — Server API authentication failed."
         token = auth.json().get("data", {}).get("token")
         if not token:
-            return None, None, "Scope unavailable — no token issued."
+            return None, None, None, "Scope unavailable — no token issued."
         headers = {"Authorization": f"Bearer {token}"}
         agents = await client.get(base + "/agents", params={"limit": 1}, headers=headers)
-        groups = await client.get(base + "/groups", params={"limit": 1}, headers=headers)
+        policies = await client.get(base + "/security/users/me/policies", headers=headers)
     except httpx.RequestError:
-        return None, None, "Scope unavailable — Server API unreachable while reading scope."
+        return None, None, None, "Scope unavailable — Server API unreachable while reading scope."
 
     agent_count = _total_affected(agents)
-    group_count = _total_affected(groups)
-    if agent_count is None and group_count is None:
-        return None, None, "Authenticated, but scope (agents/groups) could not be read."
+    groups, unrestricted = _scoped_groups_from_policies(policies)
     agents_txt = (
         f"{agent_count} agent(s)" if agent_count is not None else "an unknown number of agents"
     )
-    groups_txt = (
-        f"{group_count} group(s)" if group_count is not None else "an unknown number of groups"
-    )
-    return agent_count, group_count, f"Credential sees {agents_txt} across {groups_txt}."
+    if unrestricted:
+        # Not restricted to specific groups — a specific count would understate.
+        return (
+            agent_count,
+            None,
+            None,
+            f"Credential sees {agents_txt}, not restricted to specific agent groups.",
+        )
+    if groups:
+        shown = ", ".join(groups[:10])
+        more = "" if len(groups) <= 10 else f" (+{len(groups) - 10} more)"
+        scope_txt = f"scoped to {len(groups)} group(s): {shown}{more}"
+        return agent_count, len(groups), groups, f"Credential sees {agents_txt}, {scope_txt}."
+    if agent_count is None and groups is None:
+        return None, None, None, "Authenticated, but the credential scope could not be read."
+    # Authenticated, agent:read present but no agent:group:* resource resolved.
+    return agent_count, 0, [], f"Credential sees {agents_txt}; no agent-group scope detected."
 
 
 async def probe_org_credentials(
@@ -132,29 +188,37 @@ async def probe_org_credentials(
     indexer_url: str,
     indexer_user: str,
     indexer_password: str,
+    index_pattern: str,
     server_api_url: str,
     server_api_user: str,
     server_api_password: str,
     verify_tls: bool,
     client: httpx.AsyncClient | None = None,
 ) -> OrgCredentialProbeResult:
-    """Probe an org's Indexer + Server API credentials and summarise scope."""
+    """Probe an org's Indexer + Server API credentials and summarise scope.
+
+    The indexer leg tests **index read** (``_count`` on ``index_pattern``) — the
+    access the per-org credential actually exists to have — not cluster root,
+    so a correctly-scoped credential is reported ``ok`` instead of a misleading
+    403 (Phase 6.6-f).
+    """
     owns_client = client is None
     client = client or httpx.AsyncClient(verify=verify_tls, timeout=_TIMEOUT)
     try:
-        indexer = await probe_indexer(
-            indexer_url, indexer_user, indexer_password, verify_tls=verify_tls, client=client
+        indexer = await probe_indexer_read(
+            indexer_url, indexer_user, indexer_password, index_pattern,
+            verify_tls=verify_tls, client=client,
         )
         manager = await probe_manager_api(
             server_api_url, server_api_user, server_api_password,
             verify_tls=verify_tls, client=client,
         )
         if manager.ok:
-            agent_count, group_count, scope_detail = await _fetch_scope(
+            agent_count, group_count, groups, scope_detail = await _fetch_scope(
                 client, server_api_url, server_api_user, server_api_password
             )
         else:
-            agent_count, group_count = None, None
+            agent_count, group_count, groups = None, None, None
             scope_detail = "Scope unavailable — Server API credentials failed to authenticate."
     finally:
         if owns_client:
@@ -165,5 +229,6 @@ async def probe_org_credentials(
         manager=manager,
         agent_count=agent_count,
         group_count=group_count,
+        groups=groups,
         scope_detail=scope_detail,
     )

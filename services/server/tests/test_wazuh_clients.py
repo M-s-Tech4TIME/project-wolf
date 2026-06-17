@@ -2,8 +2,10 @@
 
 Uses an httpx MockTransport so the tests don't hit a real Wazuh.  Focus is
 on the safety-critical paths:
-  - OpenSearch rejects queries missing the organization filter (defense in depth)
-  - OpenSearch raises OrganizationMismatchError when a returned doc has wrong organization_id
+  - OpenSearch rejects queries missing the group-label filter when an org has
+    opted into it (defense in depth)
+  - OpenSearch raises OrganizationMismatchError when a returned doc's
+    agent.labels.group is outside the allowed labels
   - Server API client is read-only (no POST/PUT/DELETE)
   - Server API client transparently authenticates and refreshes on 401
 """
@@ -38,7 +40,8 @@ def connection(organization_id: uuid.UUID) -> WazuhConnection:
         server_api_username="wolf_api",
         server_api_password="secret",  # noqa: S106 — test fixture
         verify_tls=True,
-        inject_organization_filter=True,
+        inject_group_label_filter=True,
+        agent_group_labels=("acme",),
     )
 
 
@@ -59,10 +62,10 @@ def _make_os_client(
 
 
 @pytest.mark.asyncio
-async def test_opensearch_rejects_query_missing_organization_filter(
+async def test_opensearch_rejects_query_missing_group_label_filter(
     connection: WazuhConnection,
 ) -> None:
-    """A hand-crafted query without the organization filter must be rejected."""
+    """A hand-crafted query without the group-label filter must be rejected."""
 
     async def _never_called(_req: httpx.Request) -> httpx.Response:
         raise AssertionError("Request must not reach transport")
@@ -70,23 +73,28 @@ async def test_opensearch_rejects_query_missing_organization_filter(
     transport = httpx.MockTransport(_never_called)
     client = _make_os_client(connection, transport)
     bad_query: dict[str, Any] = {"query": {"bool": {"filter": []}}}
-    with pytest.raises(OrganizationMismatchError, match="organization_id filter"):
+    with pytest.raises(OrganizationMismatchError, match="agent.labels.group filter"):
         await client.execute(bad_query)
 
 
 @pytest.mark.asyncio
-async def test_opensearch_rejects_returned_doc_with_wrong_organization(
+async def test_opensearch_rejects_returned_doc_with_wrong_group_label(
     connection: WazuhConnection, organization_id: uuid.UUID
 ) -> None:
-    """Defense in depth: doc whose _source.organization_id mismatches must hard-fail."""
-    other = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    """Defense in depth: a doc whose agent.labels.group is out of scope hard-fails."""
 
     async def _handler(request: httpx.Request) -> httpx.Response:
         body = {
             "hits": {
                 "total": {"value": 1},
                 "hits": [
-                    {"_id": "doc1", "_source": {"organization_id": other, "rule": {"id": "5710"}}}
+                    {
+                        "_id": "doc1",
+                        "_source": {
+                            "agent": {"labels": {"group": "evil"}},
+                            "rule": {"id": "5710"},
+                        },
+                    }
                 ],
             }
         }
@@ -94,14 +102,14 @@ async def test_opensearch_rejects_returned_doc_with_wrong_organization(
 
     transport = httpx.MockTransport(_handler)
     client = _make_os_client(connection, transport)
-    # Build the query via the organization builder so the outbound check passes.
+    # Build the query via the org builder so the outbound check passes.
     from datetime import UTC, datetime, timedelta
 
     q = client.query_builder.search_alerts(
         time_from=datetime.now(UTC) - timedelta(hours=1),
         time_to=datetime.now(UTC),
     )
-    with pytest.raises(OrganizationMismatchError, match="OpenSearch returned doc"):
+    with pytest.raises(OrganizationMismatchError, match="agent.labels.group"):
         await client.execute(q)
 
 

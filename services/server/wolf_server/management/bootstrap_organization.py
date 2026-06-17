@@ -235,7 +235,8 @@ async def _upsert_wazuh_config(
     server_api_url: str,
     server_api_credential_key: str,  # noqa: A002
     verify_tls: bool,
-    inject_organization_filter: bool,
+    inject_group_label_filter: bool,
+    agent_group_labels: list[str] | None,
     validated: bool,
 ) -> OrganizationWazuhConfig:
     now = datetime.now(UTC)
@@ -251,7 +252,8 @@ async def _upsert_wazuh_config(
         existing.server_api_url = server_api_url
         existing.server_api_credential_key = server_api_credential_key
         existing.verify_tls = verify_tls
-        existing.inject_organization_filter = inject_organization_filter
+        existing.inject_group_label_filter = inject_group_label_filter
+        existing.agent_group_labels = agent_group_labels
         existing.validated_at = now if validated else None
         existing.updated_at = now
         return existing
@@ -264,7 +266,8 @@ async def _upsert_wazuh_config(
         server_api_url=server_api_url,
         server_api_credential_key=server_api_credential_key,
         verify_tls=verify_tls,
-        inject_organization_filter=inject_organization_filter,
+        inject_group_label_filter=inject_group_label_filter,
+        agent_group_labels=agent_group_labels,
         validated_at=now if validated else None,
         created_at=now,
         updated_at=now,
@@ -322,7 +325,8 @@ async def bootstrap_organization(
     server_api_username: str,
     server_api_password: str,
     verify_tls: bool,
-    inject_organization_filter: bool,
+    inject_group_label_filter: bool,
+    agent_group_labels: list[str] | None = None,
     update: bool = False,
     skip_validation: bool = False,
 ) -> dict[str, Any]:
@@ -339,6 +343,12 @@ async def bootstrap_organization(
     but the Wazuh config row is updated in place and a new
     `validated_at` is stamped on success.
     """
+    agent_group_labels = [label.strip() for label in (agent_group_labels or []) if label.strip()]
+    if inject_group_label_filter and not agent_group_labels:
+        raise ValueError(
+            "--inject-group-label-filter requires at least one --agent-group-label."
+        )
+
     settings = get_settings()
     await _ensure_schema(settings.database_url)
 
@@ -391,7 +401,8 @@ async def bootstrap_organization(
             server_api_url=server_api_url,
             server_api_credential_key=api_key,
             verify_tls=verify_tls,
-            inject_organization_filter=inject_organization_filter,
+            inject_group_label_filter=inject_group_label_filter,
+            agent_group_labels=agent_group_labels,
             validated=validated,
         )
         await db.commit()
@@ -416,7 +427,8 @@ async def bootstrap_organization(
         "user_id": str(user_id),
         "user_email": admin_email,
         "verify_tls": verify_tls,
-        "inject_organization_filter": inject_organization_filter,
+        "inject_group_label_filter": inject_group_label_filter,
+        "agent_group_labels": agent_group_labels,
         "validated": validated,
         "mode": "update" if (exists and has_validated_config) else "create",
     }
@@ -457,27 +469,37 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
 
     tf = p.add_mutually_exclusive_group()
     tf.add_argument(
-        "--inject-organization-filter",
-        dest="inject_organization_filter",
+        "--inject-group-label-filter",
+        dest="inject_group_label_filter",
         action="store_true",
         help=(
-            "Inject `term:{organization_id:<id>}` into every OpenSearch query. "
-            "Use only for pooled-index multi-organization Wazuh setups where every "
-            "alert is stamped with organization_id at ingest."
+            "Inject `terms:{agent.labels.group:[<labels>]}` into every OpenSearch "
+            "query, scoping it to --agent-group-label (repeatable). Use only when "
+            "the org's indexer credential is NOT itself DLS-scoped; requires at "
+            "least one --agent-group-label."
         ),
     )
     tf.add_argument(
-        "--no-inject-organization-filter",
-        dest="inject_organization_filter",
+        "--no-inject-group-label-filter",
+        dest="inject_group_label_filter",
         action="store_false",
         help=(
-            "Do NOT inject the organization_id filter (default). For "
-            "separate-deployment-per-organization the credential is the "
-            "isolation boundary; filtering on a missing field would "
-            "silently return zero hits."
+            "Do NOT inject the agent.labels.group filter (default). The per-org "
+            "credential's own Wazuh RBAC/DLS is the isolation boundary."
         ),
     )
-    p.set_defaults(inject_organization_filter=False)
+    p.set_defaults(inject_group_label_filter=False)
+    p.add_argument(
+        "--agent-group-label",
+        dest="agent_group_labels",
+        action="append",
+        default=[],
+        metavar="LABEL",
+        help=(
+            "An agent.labels.group value to scope indexer queries to when "
+            "--inject-group-label-filter is set. Repeat for multiple labels."
+        ),
+    )
 
     # Phase 4 Slice 2 — re-bootstrap and skip-validation flags.
     p.add_argument(
@@ -522,7 +544,8 @@ def main(argv: list[str] | None = None) -> int:
                 server_api_username=args.server_api_username,
                 server_api_password=args.server_api_password,
                 verify_tls=args.verify_tls,
-                inject_organization_filter=args.inject_organization_filter,
+                inject_group_label_filter=args.inject_group_label_filter,
+                agent_group_labels=args.agent_group_labels or None,
                 update=args.update,
                 skip_validation=args.skip_validation,
             )

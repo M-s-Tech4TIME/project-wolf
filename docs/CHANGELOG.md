@@ -49,6 +49,49 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-18 — 6.6-f SHIPPED: dynamic per-org scoping — drop static org-id filter, add `agent.labels.group` (ADR 0020)
+
+Operator wired real per-org Wazuh RBAC (the official "read + manage a group of
+agents" use case) and found three problems, diagnosed live against the cluster
+with admin + per-org creds:
+
+1. **Static `organization_id` filter is the wrong tool.** Wazuh alerts never
+   carry `organization_id`; the per-org credential's own RBAC + index DLS (e.g.
+   `wolf-acme`'s role has `wazuh-alerts*` DLS `match agent.labels.group:acme` →
+   sees 36 alerts vs admin's 216k) already isolate it. Replaced the static
+   filter with an **optional, opt-in** `inject_group_label_filter` that injects
+   `terms:{agent.labels.group:[...]}` — the *real* Wazuh field, multi-label,
+   OR-combined. Default OFF (credential is the boundary). `wazuh_agent_groups`
+   → `agent_group_labels`.
+2. **Probe Bug — "authenticated (HTTP 403)".** `probe_indexer` hit `GET /`
+   (needs `cluster:monitor`, which a scoped role is correctly denied). New
+   `probe_indexer_read` tests `_count` on the index pattern → honest
+   "can read N alert(s)" / "denied read". (`probe_indexer` kept for the
+   install-topology/admin probe.)
+3. **Scope Bug — "across 0 group(s)".** Scope called `/groups` (needs
+   `group:read`, correctly absent). Now reads `GET /security/users/me/policies`
+   (allowed for self) → the credential's TRUE `agent:group:*` RBAC scope
+   (`acme`), not the incidental multi-group membership of its agents
+   (`default`/`BIS`). Multi-group credentials supported.
+
+**Files:** model + migration `0013` (rename `inject_organization_filter` →
+`inject_group_label_filter`, `wazuh_agent_groups` → `agent_group_labels`);
+`probe.py` (`probe_indexer_read`); `credentials.py` (scope from policies);
+`config.py`/`resolver.py`/`query_builder.py`/`opensearch.py` (group-label
+injection + renamed safety re-checks); `api/wazuh_credentials.py` (422 when the
+filter is on with no labels); `bootstrap_organization.py` (CLI flags). Frontend:
+credentials card relabel ("Agent group label(s)" + "Restrict indexer queries to
+these label(s)" + scoped-group badges) + types. ADR 0020 addendum.
+
+**Verified:** 580 backend tests pass (0 skips), ruff + mypy --strict clean,
+`tsc`/`eslint` clean, migration `0013` up/down round-trips on live Postgres +
+`alembic check` clean. **Live re-probe against the real distributed cluster:**
+acme → "can read 36 alert(s)" + "scoped to 1 group(s): acme"; beta → "0
+alert(s)" + "scoped to 1 group(s): beta"; injection acme/label=acme → 36 hits
+all `agent.labels.group=acme` (return-check passed); label=does-not-exist → 0
+hits. The cross-org isolation gate was re-expressed against `agent.labels.group`
+and stays meaningful.
+
 ## 2026-06-17 — 6.6-e SHIPPED: runtime per-query topology + credential resolution (ADR 0020)
 
 The last build slice of Phase 6.6 — wires the two backends + two UIs into the

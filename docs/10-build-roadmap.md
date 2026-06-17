@@ -763,6 +763,23 @@ this UI uses it. 5 sub-slices, **3-5 sessions estimated**.
      resilience half — random selection ships now; retry-other-nodes needs a
      multi-node cluster to exercise).
 
+6. **6.6-f — Dynamic per-org scoping (post-functional-test refinement)** — ✅
+   **SHIPPED 2026-06-18.** Real per-org RBAC setup on the live cluster surfaced
+   that the static `organization_id` indexer filter was the wrong tool (Wazuh
+   alerts don't carry it; the credential's own RBAC + DLS already isolate
+   dynamically). **Dropped it**; added an **optional, opt-in**
+   `inject_group_label_filter` injecting `terms:{agent.labels.group:[...]}` —
+   the real field, multi-label, default OFF. `wazuh_agent_groups` →
+   `agent_group_labels`. Fixed two probe/scope bugs: per-org **indexer probe**
+   now tests *index read* (`_count`) not `GET /` (so a scoped role isn't a
+   misleading "authenticated 403"); **scope summary** reads the credential's
+   own RBAC policies (`/security/users/me/policies`) → TRUE scope (e.g. `acme`),
+   not the incidental multi-group membership of its agents. Migration `0013`.
+   580 backend / 0 skip; mypy --strict + cross-org gate (re-expressed against
+   `agent.labels.group`) green; `0013` round-trips on Postgres + `alembic check`
+   clean. **Live-verified** against the real distributed cluster (acme/beta
+   probe + scope + group-label injection + return-check).
+
 **Exit criteria:** Superuser configures Wazuh ecosystem topology
 (single-host OR distributed) via the GUI; for each Organization,
 Superuser configures per-org Wazuh API credentials; an Analyst in

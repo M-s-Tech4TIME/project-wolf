@@ -45,8 +45,8 @@ _BODY = {
     "server_api_user": "wazuh-wui",
     "server_api_password": "api-secret",
     "wazuh_index_filter": "wazuh-alerts-acme-*",
-    "wazuh_agent_groups": ["default", "acme"],
-    "inject_organization_filter": False,
+    "agent_group_labels": ["acme"],
+    "inject_group_label_filter": False,
 }
 
 
@@ -127,8 +127,11 @@ def _stub_probe(
     indexer_ok: bool = True,
     manager_ok: bool = True,
     agents: int | None = 3,
-    groups: int | None = 2,
+    groups: int | None = 1,
+    group_names: list[str] | None = None,
 ) -> None:
+    names = group_names if group_names is not None else ["acme"]
+
     async def fake(**kwargs: Any) -> OrgCredentialProbeResult:
         ind = EndpointProbeResult(
             role="indexer", url=kwargs["indexer_url"], ok=indexer_ok,
@@ -143,6 +146,7 @@ def _stub_probe(
             manager=mgr,
             agent_count=agents if manager_ok else None,
             group_count=groups if manager_ok else None,
+            groups=names if manager_ok else None,
             scope_detail="scope summary",
         )
 
@@ -198,30 +202,102 @@ def test_resolve_endpoints_distributed_picks_first_node_and_master() -> None:
 
 
 async def test_probe_org_credentials_ok_with_scope() -> None:
+    # Scope groups come from /security/users/me/policies (the credential's true
+    # RBAC scope), NOT from the incidental group membership of its agents.
     def handler(request: httpx.Request) -> httpx.Response:
         path = request.url.path
+        if path.endswith("/_count"):  # indexer read probe
+            return httpx.Response(200, json={"count": 27})
         if path.endswith("/security/user/authenticate"):
             return httpx.Response(200, json={"data": {"token": "t"}})
+        if path.endswith("/security/users/me/policies"):
+            return httpx.Response(
+                200,
+                json={"data": {"agent:read": {"agent:group:acme": "allow"}}},
+            )
         if path.endswith("/agents"):
             return httpx.Response(200, json={"data": {"total_affected_items": 5}})
-        if path.endswith("/groups"):
-            return httpx.Response(200, json={"data": {"total_affected_items": 3}})
-        return httpx.Response(200, json={})  # indexer GET "/"
+        return httpx.Response(200, json={})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as c:
         result = await probe_org_credentials(
             indexer_url="https://idx:9200", indexer_user="u", indexer_password="p",
+            index_pattern="wazuh-alerts-*",
             server_api_url="https://mgr:55000", server_api_user="wui", server_api_password="p",
             verify_tls=False, client=c,
         )
     assert result.ok is True
+    assert result.indexer.status_code == 200
+    assert "27 alert(s)" in result.indexer.detail
     assert result.agent_count == 5
-    assert result.group_count == 3
+    assert result.group_count == 1
+    assert result.groups == ["acme"]
     assert "5 agent" in result.scope_detail
+    assert "acme" in result.scope_detail
+
+
+async def test_probe_org_credentials_scope_ignores_incidental_agent_groups() -> None:
+    # Even though the agents belong to extra groups, the scope reflects only the
+    # credential's RBAC resources (acme + acme-eu here).
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path.endswith("/_count"):
+            return httpx.Response(200, json={"count": 3})
+        if path.endswith("/security/user/authenticate"):
+            return httpx.Response(200, json={"data": {"token": "t"}})
+        if path.endswith("/security/users/me/policies"):
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "agent:read": {
+                            "agent:group:acme": "allow",
+                            "agent:group:acme-eu": "allow",
+                        }
+                    }
+                },
+            )
+        if path.endswith("/agents"):
+            return httpx.Response(200, json={"data": {"total_affected_items": 4}})
+        return httpx.Response(200, json={})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as c:
+        result = await probe_org_credentials(
+            indexer_url="https://idx:9200", indexer_user="u", indexer_password="p",
+            index_pattern="wazuh-alerts-*",
+            server_api_url="https://mgr:55000", server_api_user="wui", server_api_password="p",
+            verify_tls=False, client=c,
+        )
+    assert result.groups == ["acme", "acme-eu"]
+    assert result.group_count == 2
+
+
+async def test_probe_org_credentials_indexer_403_is_not_ok() -> None:
+    # The 6.6-f fix: a 403 reading the index is a failure, not "authenticated".
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/_count"):
+            return httpx.Response(403)
+        if request.url.path.endswith("/security/user/authenticate"):
+            return httpx.Response(200, json={"data": {"token": "t"}})
+        return httpx.Response(200, json={"data": {"total_affected_items": 1}})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as c:
+        result = await probe_org_credentials(
+            indexer_url="https://idx:9200", indexer_user="u", indexer_password="p",
+            index_pattern="wazuh-alerts-*",
+            server_api_url="https://mgr:55000", server_api_user="wui", server_api_password="p",
+            verify_tls=False, client=c,
+        )
+    assert result.indexer.ok is False
+    assert result.indexer.status_code == 403
+    assert "denied read" in result.indexer.detail.lower()
+    assert result.ok is False
 
 
 async def test_probe_org_credentials_manager_auth_fail_no_scope() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/_count"):
+            return httpx.Response(200, json={"count": 0})
         if request.url.path.endswith("/security/user/authenticate"):
             return httpx.Response(401)
         return httpx.Response(200, json={})
@@ -229,6 +305,7 @@ async def test_probe_org_credentials_manager_auth_fail_no_scope() -> None:
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as c:
         result = await probe_org_credentials(
             indexer_url="https://idx:9200", indexer_user="u", indexer_password="p",
+            index_pattern="wazuh-alerts-*",
             server_api_url="https://mgr:55000", server_api_user="wui", server_api_password="bad",
             verify_tls=False, client=c,
         )
@@ -236,6 +313,7 @@ async def test_probe_org_credentials_manager_auth_fail_no_scope() -> None:
     assert result.manager.ok is False
     assert result.ok is False
     assert result.agent_count is None
+    assert result.groups is None
 
 
 # ── Authorization ────────────────────────────────────────────────────────────
@@ -331,8 +409,53 @@ async def test_put_happy_path_probe_ok(
     assert row.opensearch_url == "https://wz:9200"
     assert row.server_api_url == "https://wz:55000"
     assert row.opensearch_index_pattern == "wazuh-alerts-acme-*"
-    assert row.wazuh_agent_groups == ["default", "acme"]
+    assert row.agent_group_labels == ["acme"]
+    assert row.inject_group_label_filter is False
     assert row.validated_at is not None
+
+
+async def test_put_inject_on_without_labels_is_422(
+    client: AsyncClient,
+    db: AsyncSession,
+    seed_superuser: dict[str, Any],
+    with_topology: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Enabling the group-label filter with no labels is rejected (can't inject empty)."""
+    _stub_probe(monkeypatch)
+    org_id = await _make_org(db)
+    assert (await _login(client, SUPERUSER_USERNAME, _WOLF_PASSWORD)).status_code == 200
+
+    payload = {**_BODY, "inject_group_label_filter": True, "agent_group_labels": []}
+    resp = await client.put(
+        f"/api/v1/superuser/organizations/{org_id}/wazuh-credentials", json=payload
+    )
+    assert resp.status_code == 422
+    assert "at least one agent group label" in resp.text.lower()
+
+
+async def test_put_inject_on_with_labels_persists(
+    client: AsyncClient,
+    db: AsyncSession,
+    seed_superuser: dict[str, Any],
+    with_topology: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_probe(monkeypatch)
+    org_id = await _make_org(db)
+    assert (await _login(client, SUPERUSER_USERNAME, _WOLF_PASSWORD)).status_code == 200
+
+    payload = {**_BODY, "inject_group_label_filter": True, "agent_group_labels": ["acme", "acme"]}
+    resp = await client.put(
+        f"/api/v1/superuser/organizations/{org_id}/wazuh-credentials", json=payload
+    )
+    assert resp.status_code == 200, resp.text
+    row = await db.scalar(
+        select(OrganizationWazuhConfig).where(OrganizationWazuhConfig.organization_id == org_id)
+    )
+    assert row is not None
+    assert row.inject_group_label_filter is True
+    assert row.agent_group_labels == ["acme"]  # de-duped
 
 
 async def test_put_soft_fail_saves_with_warning(

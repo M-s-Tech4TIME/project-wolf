@@ -7,7 +7,7 @@ This is the only sanctioned way to obtain a `WazuhConnection`.  It enforces:
 
 Phase 6.6-e (ADR 0020) — the **URLs come from the install-level ecosystem
 topology**, fetched fresh per query; only the per-org *credentials* (+ index
-filter + organization-filter flag) come from `organization_wazuh_configs`.
+pattern + the optional group-label filter) come from `organization_wazuh_configs`.
 For a distributed deployment a **random** indexer node is chosen per query
 (ADR 0020 decision 1 — even load spread across the cluster).  The per-org row
 still carries legacy URL columns (written by the bootstrap CLI + the 6.6-c
@@ -81,7 +81,7 @@ async def get_wazuh_connection(
 
     Combines the install-level ecosystem topology (URLs + TLS posture, read
     fresh per query) with the per-org credential config (credential keys,
-    index filter, organization-filter flag).  Returns a frozen
+    index pattern, optional group-label filter).  Returns a frozen
     `WazuhConnection` carrying the organization_id straight from the context.
     """
     row = await db.scalar(
@@ -115,7 +115,8 @@ async def get_wazuh_connection(
         server_api_username=server_api_creds["username"],
         server_api_password=server_api_creds["password"],
         verify_tls=verify_tls,
-        inject_organization_filter=row.inject_organization_filter,
+        inject_group_label_filter=row.inject_group_label_filter,
+        agent_group_labels=tuple(row.agent_group_labels or ()),
     )
 
 
