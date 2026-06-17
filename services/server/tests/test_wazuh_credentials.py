@@ -179,12 +179,12 @@ def test_resolve_endpoints_distributed_picks_first_node_and_master() -> None:
         topology={
             "kind": "distributed",
             "indexer_nodes": [
-                {"url": "https://idx1:9200", "cluster_name": "wazuh"},
-                {"url": "https://idx2:9200", "cluster_name": "wazuh"},
+                {"url": "https://idx1:9200", "name": "indexer-1"},
+                {"url": "https://idx2:9200"},
             ],
-            "manager_master_url": "https://master:55000",
-            "manager_worker_urls": ["https://worker:55000"],
-            "dashboard_url": "https://dash",
+            "manager_master": {"url": "https://master:55000", "name": "master"},
+            "manager_workers": [{"url": "https://worker:55000"}],
+            "dashboards": [{"url": "https://dash"}],
         },
         verify_tls=False,
     )

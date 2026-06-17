@@ -30,7 +30,7 @@ from wolf_server.organization.models import User
 from wolf_server.secrets_factory import get_secrets_backend
 from wolf_server.wazuh.models import WazuhEcosystemTopology
 from wolf_server.wazuh.probe import EndpointProbeResult
-from wolf_server.wazuh.topology import DistributedTopology, SingleHostTopology
+from wolf_server.wazuh.topology import DistributedTopology, SingleHostTopology, WazuhNode
 
 _WOLF_PASSWORD = "test-wolf-password-32-chars-long!!"
 
@@ -52,12 +52,18 @@ _DISTRIBUTED = {
     "topology": {
         "kind": "distributed",
         "indexer_nodes": [
-            {"url": "https://idx1:9200", "cluster_name": "wazuh"},
-            {"url": "https://idx2:9200", "cluster_name": "wazuh"},
+            {"url": "https://idx1:9200", "name": "indexer-1"},
+            {"url": "https://idx2:9200"},
         ],
-        "manager_master_url": "https://master:55000",
-        "manager_worker_urls": ["https://worker1:55000", "https://worker2:55000"],
-        "dashboard_url": "https://dash:443",
+        "manager_master": {"url": "https://master:55000", "name": "master"},
+        "manager_workers": [
+            {"url": "https://worker1:55000"},
+            {"url": "https://worker2:55000", "name": "worker-2"},
+        ],
+        "dashboards": [
+            {"url": "https://dash1:443", "name": "primary"},
+            {"url": "https://dash2:443"},
+        ],
     },
     "indexer_admin_user": "admin",
     "indexer_admin_password": "idx-secret",
@@ -159,19 +165,40 @@ def test_distributed_requires_at_least_one_indexer_node() -> None:
     with pytest.raises(ValidationError):
         DistributedTopology(
             indexer_nodes=[],
-            manager_master_url="https://master:55000",
-            dashboard_url="https://dash",
+            manager_master=WazuhNode(url="https://master:55000"),
+            dashboards=[WazuhNode(url="https://dash")],
+        )
+
+
+def test_distributed_requires_at_least_one_dashboard() -> None:
+    with pytest.raises(ValidationError):
+        DistributedTopology(
+            indexer_nodes=[WazuhNode(url="https://idx:9200")],
+            manager_master=WazuhNode(url="https://master:55000"),
+            dashboards=[],
         )
 
 
 def test_distributed_validates_worker_urls() -> None:
     with pytest.raises(ValidationError):
         DistributedTopology(
-            indexer_nodes=[{"url": "https://idx:9200", "cluster_name": "wazuh"}],  # type: ignore[list-item]
-            manager_master_url="https://master:55000",
-            manager_worker_urls=["not-a-url"],
-            dashboard_url="https://dash",
+            indexer_nodes=[WazuhNode(url="https://idx:9200")],
+            manager_master=WazuhNode(url="https://master:55000"),
+            manager_workers=[WazuhNode(url="not-a-url")],
+            dashboards=[WazuhNode(url="https://dash")],
         )
+
+
+def test_distributed_node_name_is_optional_and_blank_coerces_to_none() -> None:
+    t = DistributedTopology(
+        indexer_nodes=[WazuhNode(url="https://idx:9200")],
+        manager_master=WazuhNode(url="https://master:55000", name="  "),
+        manager_workers=[],
+        dashboards=[WazuhNode(url="https://dash", name="primary")],
+    )
+    assert t.indexer_nodes[0].name is None  # omitted
+    assert t.manager_master.name is None  # blank → None
+    assert t.dashboards[0].name == "primary"
 
 
 # ── Authorization ────────────────────────────────────────────────────────────
@@ -281,9 +308,21 @@ async def test_put_distributed_happy_path(
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["kind"] == "distributed"
-    # 2 indexer nodes + master + dashboard + 2 workers = 6 probes total.
-    assert len(body["probe_results"]) == 6
+    # 2 indexer nodes + master + 2 dashboards + 2 workers = 7 probes total.
+    assert len(body["probe_results"]) == 7
     assert body["warnings"] == []
+
+
+async def test_put_distributed_dashboard_failure_blocks(
+    client: AsyncClient,
+    seed_superuser: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A listed dashboard is a blocker (like the single-host dashboard).
+    _install_probe_stubs(monkeypatch, fail_urls=frozenset({"https://dash2:443"}))
+    assert (await _login(client, SUPERUSER_USERNAME, _WOLF_PASSWORD)).status_code == 200
+    resp = await client.put("/api/v1/superuser/wazuh-topology", json=_DISTRIBUTED)
+    assert resp.status_code == 400
 
 
 async def test_put_distributed_worker_failure_is_warning_not_block(

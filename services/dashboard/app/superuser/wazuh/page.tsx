@@ -1,15 +1,15 @@
 "use client";
 
-// Install-level Wazuh Ecosystem — Phase 6.6-b (ADR 0020).
+// Install-level Wazuh Ecosystem — Phase 6.6-b (+ 6.6-b.1 refinement, ADR 0020).
 //
 // Superuser-only page to configure where the install's Wazuh indexer(s),
-// manager(s) and dashboard physically live. Two shapes: single-host and
-// distributed. Save is validate-before-persist with a HARD fail — the backend
-// probes every required endpoint and rejects the save if any blocker fails
-// (distributed worker probes are warnings). Credentials are write-only:
-// usernames are shown, passwords are entered to set/rotate and left blank to
-// keep the stored value. The per-org credentials that query this ecosystem
-// live on each org's own page (6.6-d).
+// manager(s) and dashboard(s) physically live. Two shapes: single-host and
+// distributed. Distributed components each carry an OPTIONAL friendly name
+// (Indexer name / Master node name / Worker node name / Dashboard name) and a
+// cluster may declare multiple dashboards. Save is validate-before-persist
+// with a HARD fail — the backend probes every required endpoint and rejects
+// the save if any blocker fails (distributed worker probes are warnings).
+// Credentials are write-only: usernames shown, passwords blank = keep.
 
 import {
   CheckCircle2,
@@ -36,16 +36,20 @@ import { Label } from "@/components/ui/label";
 import { ApiError, fetchWazuhTopology, saveWazuhTopology } from "@/lib/api";
 import { absoluteTimeTitle, relativeTime } from "@/lib/format";
 import type {
-  WazuhIndexerNode,
+  WazuhNode,
   WazuhProbeResult,
   WazuhTopologyShape,
   WazuhTopologyUpdate,
 } from "@/lib/types";
 
 type Kind = "single" | "distributed";
+// Form-state node: name is a plain string ("" = no name → null on save).
+type NodeForm = { url: string; name: string };
 
 const HTTP_RE = /^https?:\/\/.+/;
 const isUrl = (v: string) => HTTP_RE.test(v.trim());
+const toNode = (n: NodeForm): WazuhNode => ({ url: n.url.trim(), name: n.name.trim() || null });
+const fromNode = (n: WazuhNode): NodeForm => ({ url: n.url, name: n.name ?? "" });
 
 export default function WazuhEcosystemPage() {
   const [loading, setLoading] = useState(true);
@@ -58,16 +62,16 @@ export default function WazuhEcosystemPage() {
   // Single-host
   const [indexerUrl, setIndexerUrl] = useState("");
   const [managerUrl, setManagerUrl] = useState("");
+  const [dashboardUrl, setDashboardUrl] = useState("");
 
   // Distributed
-  const [indexerNodes, setIndexerNodes] = useState<WazuhIndexerNode[]>([
-    { url: "", cluster_name: "" },
-  ]);
+  const [indexerNodes, setIndexerNodes] = useState<NodeForm[]>([{ url: "", name: "" }]);
   const [masterUrl, setMasterUrl] = useState("");
-  const [workerUrls, setWorkerUrls] = useState<string[]>([]);
+  const [masterName, setMasterName] = useState("");
+  const [workers, setWorkers] = useState<NodeForm[]>([]);
+  const [dashboards, setDashboards] = useState<NodeForm[]>([{ url: "", name: "" }]);
 
-  // Shared
-  const [dashboardUrl, setDashboardUrl] = useState("");
+  // Shared credentials
   const [indexerUser, setIndexerUser] = useState("");
   const [indexerPassword, setIndexerPassword] = useState("");
   const [managerApiUser, setManagerApiUser] = useState("");
@@ -91,18 +95,24 @@ export default function WazuhEcosystemPage() {
         const shape = t.topology;
         if (shape) {
           setKind(shape.kind);
-          setDashboardUrl(shape.dashboard_url);
           if (shape.kind === "single") {
             setIndexerUrl(shape.indexer_url);
             setManagerUrl(shape.manager_url);
+            setDashboardUrl(shape.dashboard_url);
           } else {
             setIndexerNodes(
               shape.indexer_nodes.length
-                ? shape.indexer_nodes
-                : [{ url: "", cluster_name: "" }],
+                ? shape.indexer_nodes.map(fromNode)
+                : [{ url: "", name: "" }],
             );
-            setMasterUrl(shape.manager_master_url);
-            setWorkerUrls(shape.manager_worker_urls);
+            setMasterUrl(shape.manager_master.url);
+            setMasterName(shape.manager_master.name ?? "");
+            setWorkers(shape.manager_workers.map(fromNode));
+            setDashboards(
+              shape.dashboards.length
+                ? shape.dashboards.map(fromNode)
+                : [{ url: "", name: "" }],
+            );
           }
         }
       })
@@ -127,13 +137,10 @@ export default function WazuhEcosystemPage() {
     }
     return {
       kind: "distributed",
-      indexer_nodes: indexerNodes.map((n) => ({
-        url: n.url.trim(),
-        cluster_name: n.cluster_name.trim(),
-      })),
-      manager_master_url: masterUrl.trim(),
-      manager_worker_urls: workerUrls.map((w) => w.trim()).filter(Boolean),
-      dashboard_url: dashboardUrl.trim(),
+      indexer_nodes: indexerNodes.map(toNode),
+      manager_master: { url: masterUrl.trim(), name: masterName.trim() || null },
+      manager_workers: workers.filter((w) => w.url.trim()).map(toNode),
+      dashboards: dashboards.filter((d) => d.url.trim()).map(toNode),
     };
   }
 
@@ -145,19 +152,23 @@ export default function WazuhEcosystemPage() {
       if (!indexerPassword) return "Indexer admin password is required on first save.";
       if (!managerApiPassword) return "Manager API password is required on first save.";
     }
-    if (!isUrl(dashboardUrl)) return "Dashboard URL must start with http:// or https://.";
     if (kind === "single") {
       if (!isUrl(indexerUrl)) return "Indexer URL must start with http:// or https://.";
       if (!isUrl(managerUrl)) return "Manager URL must start with http:// or https://.";
+      if (!isUrl(dashboardUrl)) return "Dashboard URL must start with http:// or https://.";
     } else {
       if (indexerNodes.length === 0) return "Add at least one indexer node.";
       for (const n of indexerNodes) {
         if (!isUrl(n.url)) return "Each indexer node needs a valid http(s) URL.";
-        if (!n.cluster_name.trim()) return "Each indexer node needs a cluster name.";
       }
       if (!isUrl(masterUrl)) return "Manager master URL must start with http:// or https://.";
-      for (const w of workerUrls) {
-        if (w.trim() && !isUrl(w)) return "Each manager worker URL must be valid http(s).";
+      for (const w of workers) {
+        if (w.url.trim() && !isUrl(w.url)) return "Each worker URL must be valid http(s).";
+      }
+      const dash = dashboards.filter((d) => d.url.trim());
+      if (dash.length === 0) return "Add at least one dashboard.";
+      for (const d of dash) {
+        if (!isUrl(d.url)) return "Each dashboard URL must be valid http(s).";
       }
     }
     return null;
@@ -189,7 +200,6 @@ export default function WazuhEcosystemPage() {
       setProbeResults(res.probe_results);
       setWarnings(res.warnings);
       setSavedOk(true);
-      // Clear the password inputs — stored now; blank means "keep".
       setIndexerPassword("");
       setManagerApiPassword("");
     } catch (e) {
@@ -214,8 +224,8 @@ export default function WazuhEcosystemPage() {
         </h1>
         <p className="text-sm text-muted-foreground">
           Configure where the install&apos;s Wazuh indexer(s), manager(s), and
-          dashboard live. Per-organization credentials that query this ecosystem
-          are set on each organization&apos;s page.
+          dashboard(s) live. Per-organization credentials that query this
+          ecosystem are set on each organization&apos;s page.
         </p>
         {configured ? (
           <p className="mt-1 text-xs text-muted-foreground">
@@ -262,113 +272,60 @@ export default function WazuhEcosystemPage() {
           <CardDescription>
             {kind === "single"
               ? "All components on one host."
-              : "Indexer cluster + manager master/workers + dashboard."}
+              : "Indexer cluster + manager master/workers + one or more dashboards. Names are optional labels."}
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-5">
           {kind === "single" ? (
             <>
               <Field id="indexer-url" label="Indexer URL" value={indexerUrl}
                 onChange={setIndexerUrl} placeholder="https://wazuh.example:9200" />
               <Field id="manager-url" label="Manager URL" value={managerUrl}
                 onChange={setManagerUrl} placeholder="https://wazuh.example:55000" />
+              <Field id="dashboard-url" label="Dashboard URL" value={dashboardUrl}
+                onChange={setDashboardUrl} placeholder="https://wazuh.example" />
             </>
           ) : (
             <>
-              <div className="space-y-2">
-                <Label>Indexer nodes</Label>
-                {indexerNodes.map((node, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <Input
-                      value={node.url}
-                      onChange={(e) =>
-                        setIndexerNodes((ns) =>
-                          ns.map((n, j) => (j === i ? { ...n, url: e.target.value } : n)),
-                        )
-                      }
-                      placeholder="https://idx-1:9200"
-                      className="font-mono"
-                    />
-                    <Input
-                      value={node.cluster_name}
-                      onChange={(e) =>
-                        setIndexerNodes((ns) =>
-                          ns.map((n, j) =>
-                            j === i ? { ...n, cluster_name: e.target.value } : n,
-                          ),
-                        )
-                      }
-                      placeholder="cluster name"
-                      className="max-w-[10rem]"
-                    />
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() =>
-                        setIndexerNodes((ns) =>
-                          ns.length > 1 ? ns.filter((_, j) => j !== i) : ns,
-                        )
-                      }
-                      disabled={indexerNodes.length <= 1}
-                      title="Remove node"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                ))}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    setIndexerNodes((ns) => [...ns, { url: "", cluster_name: "" }])
-                  }
-                >
-                  <Plus className="h-4 w-4" />
-                  Add indexer node
-                </Button>
+              <NodeList
+                label="Indexer nodes"
+                nodes={indexerNodes}
+                setNodes={setIndexerNodes}
+                urlPlaceholder="https://idx-1:9200"
+                namePlaceholder="Indexer name (optional)"
+                addLabel="Add indexer node"
+                minOne
+              />
+              <div className="space-y-1.5">
+                <Label>Manager master</Label>
+                <div className="flex items-center gap-2">
+                  <Input value={masterUrl} onChange={(e) => setMasterUrl(e.target.value)}
+                    placeholder="https://master:55000" className="font-mono" autoComplete="off" />
+                  <Input value={masterName} onChange={(e) => setMasterName(e.target.value)}
+                    placeholder="Master node name (optional)" className="max-w-[14rem]"
+                    autoComplete="off" />
+                </div>
               </div>
-              <Field id="master-url" label="Manager master URL" value={masterUrl}
-                onChange={setMasterUrl} placeholder="https://master:55000" />
-              <div className="space-y-2">
-                <Label>Manager worker URLs (optional)</Label>
-                {workerUrls.map((w, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <Input
-                      value={w}
-                      onChange={(e) =>
-                        setWorkerUrls((ws) =>
-                          ws.map((x, j) => (j === i ? e.target.value : x)),
-                        )
-                      }
-                      placeholder="https://worker:55000"
-                      className="font-mono"
-                    />
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setWorkerUrls((ws) => ws.filter((_, j) => j !== i))}
-                      title="Remove worker"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                ))}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setWorkerUrls((ws) => [...ws, ""])}
-                >
-                  <Plus className="h-4 w-4" />
-                  Add worker
-                </Button>
-                <p className="text-xs text-muted-foreground">
-                  A worker that fails the probe is a warning, not a blocker.
-                </p>
-              </div>
+              <NodeList
+                label="Manager workers (optional)"
+                nodes={workers}
+                setNodes={setWorkers}
+                urlPlaceholder="https://worker:55000"
+                namePlaceholder="Worker node name (optional)"
+                addLabel="Add worker"
+                hint="A worker that fails the probe is a warning, not a blocker."
+              />
+              <NodeList
+                label="Dashboards"
+                nodes={dashboards}
+                setNodes={setDashboards}
+                urlPlaceholder="https://dashboard:443"
+                namePlaceholder="Dashboard name (optional)"
+                addLabel="Add dashboard"
+                minOne
+              />
             </>
           )}
-          <Field id="dashboard-url" label="Dashboard URL" value={dashboardUrl}
-            onChange={setDashboardUrl} placeholder="https://wazuh.example" />
         </CardContent>
       </Card>
 
@@ -452,6 +409,77 @@ export default function WazuhEcosystemPage() {
           {saving ? "Testing & saving…" : "Test & save"}
         </Button>
       </div>
+    </div>
+  );
+}
+
+/** A dynamic list of {url, name} rows with add/remove. */
+function NodeList({
+  label,
+  nodes,
+  setNodes,
+  urlPlaceholder,
+  namePlaceholder,
+  addLabel,
+  hint,
+  minOne = false,
+}: {
+  label: string;
+  nodes: NodeForm[];
+  setNodes: React.Dispatch<React.SetStateAction<NodeForm[]>>;
+  urlPlaceholder: string;
+  namePlaceholder: string;
+  addLabel: string;
+  hint?: string;
+  minOne?: boolean;
+}) {
+  return (
+    <div className="space-y-2">
+      <Label>{label}</Label>
+      {nodes.map((node, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <Input
+            value={node.url}
+            onChange={(e) =>
+              setNodes((ns) => ns.map((n, j) => (j === i ? { ...n, url: e.target.value } : n)))
+            }
+            placeholder={urlPlaceholder}
+            className="font-mono"
+            autoComplete="off"
+          />
+          <Input
+            value={node.name}
+            onChange={(e) =>
+              setNodes((ns) => ns.map((n, j) => (j === i ? { ...n, name: e.target.value } : n)))
+            }
+            placeholder={namePlaceholder}
+            className="max-w-[14rem]"
+            autoComplete="off"
+          />
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() =>
+              setNodes((ns) =>
+                minOne && ns.length <= 1 ? ns : ns.filter((_, j) => j !== i),
+              )
+            }
+            disabled={minOne && nodes.length <= 1}
+            title="Remove"
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
+      ))}
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => setNodes((ns) => [...ns, { url: "", name: "" }])}
+      >
+        <Plus className="h-4 w-4" />
+        {addLabel}
+      </Button>
+      {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
     </div>
   );
 }

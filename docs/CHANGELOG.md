@@ -49,6 +49,42 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-17 — 6.6-b.1: distributed topology refinement (operator web-test feedback)
+
+Operator web-tested 6.6-b + 6.6-d (Category-1 UI pass) — all checkpoints
+passed. Two change requests on the install-topology builder, implemented here
+(refines ADR 0020; addendum added):
+
+- **Optional, component-specific names.** The required indexer-only
+  `cluster_name` is replaced by a uniform **`WazuhNode {url, name?}`** — every
+  distributed component carries an **optional** friendly `name`, surfaced in
+  the UI as **Indexer name / Master node name / Worker node name / Dashboard
+  name**. Blank/whitespace coerces to null. (`wazuh/topology.py`.)
+- **Multiple dashboards.** A cluster can declare **N dashboards** — the single
+  `dashboard_url` became a **`dashboards` list** (≥1), with the same add/remove
+  UI as indexer nodes and workers. Each listed dashboard is a probe **blocker**
+  (same rule as the single-host dashboard); workers remain warnings.
+- Distributed shape is now `indexer_nodes: [{url,name?}]` (≥1),
+  `manager_master: {url,name?}`, `manager_workers: [{url,name?}]` (0+),
+  `dashboards: [{url,name?}]` (≥1). **Single-host is unchanged**
+  (`indexer_url` / `manager_url` / `dashboard_url`). **No migration** — the
+  topology is a JSON document and no real data existed.
+- Backend: `_probe_topology` probes every dashboard (blockers) +
+  `resolve_endpoints_from_topology` reads `manager_master.url`. Frontend: the
+  topology page's distributed builder rewritten with a reusable `NodeList`
+  (url + optional name rows) for indexer nodes / workers / dashboards + a
+  named master.
+- Also clarified to the operator: the topology page's *"Saved, but the last
+  probe did not pass."* status line is a **seed artifact** — in real use a
+  hard-fail save always records a passing probe, so the line reads "Last
+  verified …". Left the defensive branch in place.
+- **Gate:** backend ruff + mypy --strict (43 files) + **495 backend / 0 skip /
+  0 warning** (was 492; +3 — require-a-dashboard, optional-name coercion,
+  dashboard-failure-blocks) + cross-org isolation (18); frontend `tsc` +
+  `eslint .` 0 warnings; live: wolf-server restarted clean, topology page
+  recompiles + serves 200, PUT 401-gated. No migration, no new dependency, no
+  CI workflow change. Commits `<this>`.
+
 ## 2026-06-17 — 6.6-d SHIPPED: per-org Wazuh Credentials UI + rotation log (ADR 0020)
 
 The per-org credentials GUI for the 6.6-c backend, plus a small companion

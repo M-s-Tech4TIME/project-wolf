@@ -113,7 +113,8 @@ export type InstallAuditPage = {
 // ── Install-level Wazuh ecosystem topology (Phase 6.6-a/b) ──────────────────
 // Mirror services/server/wolf_server/api/wazuh_topology.py + wazuh/topology.py.
 
-export type WazuhIndexerNode = { url: string; cluster_name: string };
+// One addressable Wazuh component; `name` is an optional friendly label.
+export type WazuhNode = { url: string; name?: string | null };
 
 export type WazuhSingleTopology = {
   kind: "single";
@@ -124,10 +125,10 @@ export type WazuhSingleTopology = {
 
 export type WazuhDistributedTopology = {
   kind: "distributed";
-  indexer_nodes: WazuhIndexerNode[];
-  manager_master_url: string;
-  manager_worker_urls: string[];
-  dashboard_url: string;
+  indexer_nodes: WazuhNode[];
+  manager_master: WazuhNode;
+  manager_workers: WazuhNode[];
+  dashboards: WazuhNode[];
 };
 
 export type WazuhTopologyShape = WazuhSingleTopology | WazuhDistributedTopology;

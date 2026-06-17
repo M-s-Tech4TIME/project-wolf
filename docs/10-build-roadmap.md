@@ -690,6 +690,15 @@ this UI uses it. 5 sub-slices, **3-5 sessions estimated**.
    `fetchWazuhTopology`/`saveWazuhTopology`. Frontend-only; gate: tsc +
    eslint(0) green, live dev route compiles + serves 200 through the
    proxy. Commits `<this>`.
+   - **6.6-b.1 — distributed topology refinement (operator web-test
+     feedback, 2026-06-17):** the per-node label became an **optional**
+     `name` on every component (UI: *Indexer / Master node / Worker node /
+     Dashboard name*), replacing the required indexer-only `cluster_name`;
+     and a cluster may declare **multiple dashboards** (single `dashboard_url`
+     → a `dashboards` list, each a probe blocker). Uniform `WazuhNode
+     {url, name?}`; single-host unchanged; no migration (JSON shape). Refines
+     ADR 0020 (addendum added). ruff + mypy --strict + 495 backend / 0 skip;
+     frontend tsc + eslint(0); live route 200. Commits `<this>`.
 
 3. **6.6-c — Backend: per-org Wazuh credentials refactor** — ✅
    **SHIPPED 2026-06-16.** API `GET / PUT /api/v1/superuser/

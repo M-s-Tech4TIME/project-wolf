@@ -67,7 +67,7 @@ def resolve_endpoints_from_topology(row: WazuhEcosystemTopology) -> tuple[str, s
     if isinstance(shape, SingleHostTopology):
         return shape.indexer_url, shape.manager_url, row.verify_tls
     if isinstance(shape, DistributedTopology):
-        return shape.indexer_nodes[0].url, shape.manager_master_url, row.verify_tls
+        return shape.indexer_nodes[0].url, shape.manager_master.url, row.verify_tls
     raise ValueError(f"Unknown topology kind: {row.kind!r}")  # pragma: no cover
 
 

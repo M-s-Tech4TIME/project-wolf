@@ -7,7 +7,12 @@ Wazuh's own docs:
   - **single** — one host runs the indexer, manager (master, no workers) and
     dashboard.
   - **distributed** — an indexer cluster (1+ nodes), a manager cluster (master
-    + N workers) and a dashboard host.
+    + N workers) and 1+ dashboard hosts.
+
+Distributed nodes carry an OPTIONAL human-friendly ``name`` label (operator
+feedback 2026-06-17, refining ADR 0020 — the original per-indexer-node
+``cluster_name`` was required + indexer-only; it is now an optional label on
+every component, and a cluster may declare multiple dashboards).
 
 These pydantic models are the single source of truth for the *structural* shape
 (URLs + cluster membership).  They are shared by the API request/response layer
@@ -44,13 +49,27 @@ def _validate_http_url(value: str) -> str:
     return stripped
 
 
-class IndexerNode(BaseModel):
-    """One node of a distributed indexer cluster."""
+class WazuhNode(BaseModel):
+    """One addressable Wazuh component in a distributed cluster.
+
+    ``name`` is an OPTIONAL human-friendly label (e.g. "indexer-eu-1",
+    "master", "dashboard-dr") — surfaced per-component in the UI ("Indexer
+    name", "Master node name", "Worker node name", "Dashboard name"). It is
+    metadata only; routing/probing use ``url``.
+    """
 
     url: str
-    cluster_name: str = Field(min_length=1, max_length=_MAX_NAME)
+    name: str | None = Field(default=None, max_length=_MAX_NAME)
 
     _check_url = field_validator("url")(_validate_http_url)
+
+    @field_validator("name")
+    @classmethod
+    def _clean_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
 
 
 class SingleHostTopology(BaseModel):
@@ -67,20 +86,19 @@ class SingleHostTopology(BaseModel):
 
 
 class DistributedTopology(BaseModel):
-    """Indexer cluster + manager cluster (master + workers) + dashboard."""
+    """Indexer cluster + manager cluster (master + workers) + 1+ dashboards.
+
+    Every component is a :class:`WazuhNode` (url + optional name). At least one
+    indexer node and at least one dashboard are required; workers are optional
+    (0+). A worker that fails its probe is a warning, not a save blocker;
+    indexer nodes, the master and every dashboard are blockers.
+    """
 
     kind: Literal["distributed"] = "distributed"
-    indexer_nodes: list[IndexerNode] = Field(min_length=1)
-    manager_master_url: str
-    manager_worker_urls: list[str] = Field(default_factory=list)
-    dashboard_url: str
-
-    _check_urls = field_validator("manager_master_url", "dashboard_url")(_validate_http_url)
-
-    @field_validator("manager_worker_urls")
-    @classmethod
-    def _check_worker_urls(cls, value: list[str]) -> list[str]:
-        return [_validate_http_url(v) for v in value]
+    indexer_nodes: list[WazuhNode] = Field(min_length=1)
+    manager_master: WazuhNode
+    manager_workers: list[WazuhNode] = Field(default_factory=list)
+    dashboards: list[WazuhNode] = Field(min_length=1)
 
 
 # Discriminated union — ``kind`` selects the shape on the way in and out.

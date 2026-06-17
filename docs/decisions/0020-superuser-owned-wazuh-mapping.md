@@ -129,18 +129,27 @@ Simple form. One probe-on-save validates all five endpoints respond.
 ```
 
 Wolf configuration fields:
-- `indexer_nodes` (list of `{url, cluster_name}`)
+- `indexer_nodes` (list of `{url, name?}`)
 - `indexer_admin_user` + `indexer_admin_password` (one set; shared
   across cluster)
-- `manager_master_url`
-- `manager_worker_urls` (list; declared as cluster members)
+- `manager_master` (`{url, name?}`)
+- `manager_workers` (list of `{url, name?}`; declared as cluster members)
 - `manager_api_user` + `manager_api_password`
-- `dashboard_url`
+- `dashboards` (list of `{url, name?}`; one or more)
+
+> **Refinement 2026-06-17 (operator web-test feedback, implemented in
+> 6.6-b.1):** the per-component label is now an **optional** `name` on every
+> node (surfaced in the UI as *Indexer name / Master node name / Worker node
+> name / Dashboard name*) rather than the original required indexer-only
+> `cluster_name`; and a cluster may declare **multiple dashboards** (the
+> original single `dashboard_url` became a `dashboards` list). The single-host
+> shape is unchanged (one `indexer_url` / `manager_url` / `dashboard_url`).
+> No migration — the topology is a JSON document (no real data existed).
 
 Probe-on-save validates each indexer node, the master, each worker, and
-the dashboard. Per-endpoint pass/fail surfaces in the UI; save blocked
-if master or dashboard fails (worker failures are warnings, not blockers
-— a worker can be temporarily down).
+**every dashboard**. Per-endpoint pass/fail surfaces in the UI; save blocked
+if the master or **any dashboard** fails (worker failures are warnings, not
+blockers — a worker can be temporarily down).
 
 ### Topology re-configuration
 

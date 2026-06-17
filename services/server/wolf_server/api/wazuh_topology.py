@@ -201,17 +201,18 @@ async def _probe_topology(
                 )
             blocking.append(
                 await probe_manager_api(
-                    topology.manager_master_url, manager_user, manager_password,
+                    topology.manager_master.url, manager_user, manager_password,
                     verify_tls=verify_tls, client=client,
                 )
             )
-            blocking.append(
-                await probe_dashboard(topology.dashboard_url, verify_tls=verify_tls, client=client)
-            )
-            for worker_url in topology.manager_worker_urls:
+            for dashboard in topology.dashboards:
+                blocking.append(
+                    await probe_dashboard(dashboard.url, verify_tls=verify_tls, client=client)
+                )
+            for worker in topology.manager_workers:
                 warnings.append(
                     await probe_manager_api(
-                        worker_url, manager_user, manager_password,
+                        worker.url, manager_user, manager_password,
                         verify_tls=verify_tls, client=client,
                     )
                 )
