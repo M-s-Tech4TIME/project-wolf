@@ -123,23 +123,39 @@ async def probe_indexer_read(
     *,
     verify_tls: bool,
     client: httpx.AsyncClient | None = None,
+    group_labels: list[str] | None = None,
 ) -> EndpointProbeResult:
     """Probe whether a per-org Indexer credential can actually READ alerts.
 
     Unlike :func:`probe_indexer` (which hits ``GET /`` and needs the
     ``cluster:monitor`` permission a *correctly scoped* per-org role lacks —
-    yielding a misleading 403), this issues ``GET /<index_pattern>/_count``,
-    which is exactly the access the credential exists to have.  200 = the
-    credential can read the index (we report the visible count); 401 = bad
-    credentials; 403 = authenticated but denied read on the pattern (the
-    indexer role needs ``read``/``search`` on it); other = unexpected.
+    yielding a misleading 403), this issues ``<index_pattern>/_count``, which is
+    exactly the access the credential exists to have.  200 = the credential can
+    read the index (we report the visible count); 401 = bad credentials; 403 =
+    authenticated but denied read on the pattern; other = unexpected.
+
+    When ``group_labels`` is given, the count is taken THROUGH the same
+    ``terms: {agent.labels.group: [...]}`` filter Wolf injects at query time
+    (the opt-in group-label filter) — so the reported count is the *effective*
+    number of docs Wolf would actually see, not the credential's raw reach.
     """
     owns_client = client is None
     client = client or _client(verify_tls)
     count_url = f"{url.rstrip('/')}/{index_pattern}/_count"
+    scoped = bool(group_labels)
+    filter_body = (
+        {"query": {"bool": {"filter": [{"terms": {"agent.labels.group": group_labels}}]}}}
+        if scoped
+        else None
+    )
     try:
         try:
-            response = await client.get(count_url, auth=(username, password))
+            # POST carries the filter body when scoped; GET (no body) otherwise.
+            response = (
+                await client.post(count_url, json=filter_body, auth=(username, password))
+                if scoped
+                else await client.get(count_url, auth=(username, password))
+            )
         except httpx.RequestError as exc:
             return EndpointProbeResult(
                 role="indexer",
@@ -211,12 +227,16 @@ async def probe_indexer_read(
                 ),
             )
         visible = f"{count} doc(s)" if count is not None else "documents"
+        if scoped:
+            labels = ", ".join(group_labels or [])
+            detail = (
+                f"Indexer credential can read '{index_pattern}' — {visible} "
+                f"matching agent.labels.group: {labels}."
+            )
+        else:
+            detail = f"Indexer credential can read '{index_pattern}' ({visible})."
         return EndpointProbeResult(
-            role="indexer",
-            url=url,
-            ok=True,
-            status_code=200,
-            detail=f"Indexer credential can read '{index_pattern}' ({visible}).",
+            role="indexer", url=url, ok=True, status_code=200, detail=detail,
         )
     finally:
         if owns_client:

@@ -49,6 +49,29 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-18 — Probe reflects the opt-in group-label filter (Q4 refinement)
+
+Operator follow-up: with the "Restrict indexer queries to these group label(s)"
+box ticked, "Test & Save" showed the SAME per-index doc counts as with it
+unticked — the probe did a raw `GET /<pattern>/_count` regardless. Now the
+per-index counts are taken THROUGH the same `terms:{agent.labels.group:[...]}`
+filter Wolf injects at query time, so the card shows the *effective* (scoped)
+view — exactly like the Q4 definitive validation.
+
+- `probe_indexer_read(..., group_labels=[...])`: when labels are given, the
+  `_count` is a POST carrying the filter body; the detail reads "N doc(s)
+  matching agent.labels.group: <labels>". `probe_org_credentials` gains
+  `inject_group_label_filter` + `agent_group_labels` and threads the labels
+  through `_probe_indexes` per pattern. API passes them from the payload. Card
+  labels the "Index access" section as scoped when the filter is on.
+- Verified live (admin = broad `read *`/no-DLS credential): OFF → wazuh-alerts-*
+  216,627 / wazuh-monitoring-* 75,125 / `*` 580,943; ON acme → 138 / 0 / 138
+  ("matching agent.labels.group: acme"). The monitoring→0 honestly shows the
+  filter doesn't match monitoring docs (they use `group`, not
+  `agent.labels.group`).
+- ruff + mypy --strict + tsc + eslint clean; +2 tests (scoped probe at the
+  probe + credentials levels). No behavior change when the box is off.
+
 ## 2026-06-18 — Per-index access checking + multiple index patterns (6.6 follow-up, Q2)
 
 Operator follow-up after Phase 6.6 close: the index field should accept multiple

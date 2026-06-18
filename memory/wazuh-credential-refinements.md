@@ -48,6 +48,12 @@ checkpoints:
 - `wolf-acme` (DLS-scoped on `wazuh-alerts*`) → 132 either way (filter redundant,
   matching the UI hint "only if this credential isn't already DLS-scoped").
 So the opt-in genuinely scopes a non-DLS credential to the org's label.
+**The "Test & Save" probe now REFLECTS the opt-in** (2026-06-18 refinement):
+when the box is ticked, each per-index `_count` is taken THROUGH the
+`terms:{agent.labels.group:[...]}` filter (POST body), so the card shows the
+effective scoped counts (e.g. admin `*` → 580,943 OFF vs 138 ON acme), not the
+credential's raw reach. `probe_org_credentials` gained `inject_group_label_filter`
++ `agent_group_labels`.
 
 **Forward implication (track for tool-enrichment / Wolf's growing query surface):**
 the Wazuh-doc per-org recipe grants `read *` with NO DLS, so a per-org user is

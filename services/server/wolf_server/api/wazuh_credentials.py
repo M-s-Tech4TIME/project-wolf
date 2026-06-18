@@ -309,6 +309,8 @@ async def put_wazuh_credentials(
         server_api_user=server_user,
         server_api_password=server_password,
         verify_tls=verify_tls,
+        inject_group_label_filter=payload.inject_group_label_filter,
+        agent_group_labels=payload.agent_group_labels,
     )
 
     # Persist credentials that changed, then the config row.

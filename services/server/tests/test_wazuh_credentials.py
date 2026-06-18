@@ -329,6 +329,42 @@ async def test_probe_org_credentials_manager_auth_fail_no_scope() -> None:
     assert result.groups is None
 
 
+async def test_probe_org_credentials_scoped_counts_when_inject_on() -> None:
+    """Opt-in ON: per-index counts come THROUGH the agent.labels.group filter.
+
+    Mirrors the Q4 definitive validation — a broad credential's raw count is
+    huge, but the scoped (filtered) count is what the probe reports.
+    """
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path.endswith("/_count"):
+            # POST (scoped/filtered) → small; GET (raw) → huge.
+            scoped = request.method == "POST"
+            return httpx.Response(
+                200, json={"count": 12 if scoped else 99999, "_shards": {"total": 5}}
+            )
+        if path.endswith("/security/user/authenticate"):
+            return httpx.Response(200, json={"data": {"token": "t"}})
+        if path.endswith("/security/users/me/policies"):
+            return httpx.Response(200, json={"data": {"agent:read": {"agent:group:*": "allow"}}})
+        if path.endswith("/agents"):
+            return httpx.Response(200, json={"data": {"total_affected_items": 4}})
+        return httpx.Response(200, json={})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as c:
+        result = await probe_org_credentials(
+            indexer_url="https://idx:9200", indexer_user="u", indexer_password="p",
+            index_patterns=["*"],
+            server_api_url="https://mgr:55000", server_api_user="wui", server_api_password="p",
+            verify_tls=False, client=c,
+            inject_group_label_filter=True, agent_group_labels=["acme"],
+        )
+    assert result.index_results[0].ok is True
+    # The scoped (filtered) count, not the raw 99999.
+    assert "12 doc(s)" in result.index_results[0].detail
+    assert "agent.labels.group" in result.index_results[0].detail
+
+
 async def test_probe_org_credentials_per_index_mixed_access() -> None:
     """Multiple patterns: one readable, one with 0 shards → per-index breakdown."""
     def handler(request: httpx.Request) -> httpx.Response:

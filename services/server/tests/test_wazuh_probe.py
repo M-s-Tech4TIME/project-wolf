@@ -78,6 +78,24 @@ async def test_probe_indexer_read_ok_reports_count() -> None:
     assert "wazuh-alerts-*" in r.detail
 
 
+async def test_probe_indexer_read_scoped_by_group_labels() -> None:
+    # With group_labels, the count is taken THROUGH the agent.labels.group filter
+    # (POST + body) and the detail reflects the scoped count, not the raw reach.
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.method == "POST":  # scoped probe carries the filter body
+            return httpx.Response(200, json={"count": 5, "_shards": {"total": 3}})
+        return httpx.Response(200, json={"count": 999, "_shards": {"total": 3}})
+
+    async with _client(handler) as c:
+        r = await probe_indexer_read(
+            "https://idx:9200", "u", "p", "*", verify_tls=False, client=c,
+            group_labels=["acme"],
+        )
+    assert r.ok is True
+    assert "5 doc(s)" in r.detail
+    assert "agent.labels.group" in r.detail and "acme" in r.detail
+
+
 async def test_probe_indexer_read_zero_shards_is_no_readable_index() -> None:
     # do_not_fail_on_forbidden clusters return 200 + 0 shards for a forbidden /
     # non-matching pattern — Wolf must treat that as "no readable index", not ok.

@@ -290,6 +290,9 @@ export function WazuhCredentialsCard({
                     <div className="mt-1 space-y-1">
                       <p className="text-xs font-medium text-muted-foreground">
                         Index access
+                        {result.inject_group_label_filter
+                          ? " (scoped to agent.labels.group — the effective view Wolf queries)"
+                          : ""}
                       </p>
                       {result.index_results.map((ix) => (
                         <div key={ix.pattern} className="flex items-center gap-2 text-sm">

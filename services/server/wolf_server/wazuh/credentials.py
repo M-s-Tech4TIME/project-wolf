@@ -203,14 +203,17 @@ async def _probe_indexes(
     index_patterns: list[str],
     *,
     verify_tls: bool,
+    group_labels: list[str] | None = None,
 ) -> tuple[EndpointProbeResult, list[IndexAccessResult]]:
     """Check read access to EACH configured index pattern, plus an overall verdict.
 
     Each pattern gets its own ``_count`` probe (Phase 6.6-f follow-up) so the UI
-    can show a per-index pass/fail. A 401/transport failure on any pattern means
-    the credential itself is bad/unreachable — we stop and surface that as the
-    overall verdict. Otherwise the overall is ``ok`` only when EVERY configured
-    pattern is readable; a partial failure names the unreadable patterns.
+    can show a per-index pass/fail. When ``group_labels`` is set (the opt-in
+    filter is on), each count is taken THROUGH that ``agent.labels.group`` filter
+    so the reported doc counts are what Wolf would actually see. A 401/transport
+    failure on any pattern means the credential itself is bad/unreachable — we
+    stop and surface that as the overall verdict. Otherwise the overall is
+    ``ok`` only when EVERY configured pattern is readable.
     """
     patterns = index_patterns or ["wazuh-alerts-*"]
     index_results: list[IndexAccessResult] = []
@@ -218,7 +221,7 @@ async def _probe_indexes(
     for pattern in patterns:
         r = await probe_indexer_read(
             indexer_url, indexer_user, indexer_password, pattern,
-            verify_tls=verify_tls, client=client,
+            verify_tls=verify_tls, client=client, group_labels=group_labels,
         )
         index_results.append(
             IndexAccessResult(pattern=pattern, ok=r.ok, detail=r.detail, status_code=r.status_code)
@@ -275,6 +278,8 @@ async def probe_org_credentials(
     server_api_user: str,
     server_api_password: str,
     verify_tls: bool,
+    inject_group_label_filter: bool = False,
+    agent_group_labels: list[str] | None = None,
     client: httpx.AsyncClient | None = None,
 ) -> OrgCredentialProbeResult:
     """Probe an org's Indexer + Server API credentials and summarise scope.
@@ -284,13 +289,23 @@ async def probe_org_credentials(
     not cluster root — so a correctly-scoped credential is reported ``ok``
     instead of a misleading 403, and the caller learns per-index whether the
     credential can reach each pattern (Phase 6.6-f + follow-up).
+
+    When ``inject_group_label_filter`` is on (with labels), the per-index counts
+    are taken THROUGH the same ``agent.labels.group`` filter Wolf injects at
+    query time, so the probe shows the *effective* (scoped) view — matching what
+    the org's users will actually see.
     """
+    group_labels = (
+        list(agent_group_labels)
+        if (inject_group_label_filter and agent_group_labels)
+        else None
+    )
     owns_client = client is None
     client = client or httpx.AsyncClient(verify=verify_tls, timeout=_TIMEOUT)
     try:
         indexer, index_results = await _probe_indexes(
             client, indexer_url, indexer_user, indexer_password, index_patterns,
-            verify_tls=verify_tls,
+            verify_tls=verify_tls, group_labels=group_labels,
         )
         manager = await probe_manager_api(
             server_api_url, server_api_user, server_api_password,
