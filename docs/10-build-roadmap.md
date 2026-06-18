@@ -887,6 +887,81 @@ count justifies it (the gate toggle is reason enough to start). ADR
 0019 already governs the design; a focused implementation ADR can follow
 at phase-open if the data model warrants.
 
+## Phase 6.11 — Wolf-assisted Wazuh RBAC provisioning & diagnostics (Superuser-only)
+
+Prompted 2026-06-18 by the operator after hand-crafting per-org Wazuh RBAC
+(Wazuh's official "give a user permissions to read + manage a group of agents"
+use case) and finding it critical + complex. During Phase 6.6-f Wolf already
+**derived** the exact recipe when it diagnosed the live cluster — it read back
+each credential's effective policies, found the index DLS, and explained the
+`cluster:monitor` / `group:read` nuances. This phase encodes that recipe so the
+**Superuser** no longer hand-builds it. Two halves, both Superuser-only, both
+using the install-topology Wazuh admin creds (`indexer_admin` + `manager_api`)
+Wolf already holds — the operator's convention of reserving the Wazuh
+superusers for install-level work (memory `phase-6.6-web-test-plan`):
+
+- **Provision (generative).** Given an org + its `agent.labels.group` label,
+  Wolf creates the full isolation set: the **agent group**; the **Server-API**
+  policy + role + dedicated `wolf-<org>` user scoped to `agent:group:<org>`;
+  the **Indexer** internal user + role (`wazuh-alerts*` read/search) + **DLS**
+  `match agent.labels.group:<org>` + role mapping. It then writes the generated
+  dedicated credentials straight into Wolf's per-org secrets + stamps the 6.6-f
+  credential config, and probes to confirm — onboarding an org becomes one
+  Superuser action, not a dozen manual Wazuh API calls.
+- **Doctor (diagnostic).** Point Wolf at an existing per-org credential and it
+  runs the exact introspection 6.6-f shipped (`/security/users/me/policies`,
+  index `_count`, DLS presence, group membership, role mapping) → reports
+  misconfigurations + remediation ("indexer role has no DLS → alerts aren't
+  scoped"; "credential can't read the index — grant read/search"). Optionally
+  auto-fixes.
+
+**ADR-worthy — the first time Wolf gains *write* authority over a customer's
+Wazuh security config** (today Wolf is strictly read-only against Wazuh). The
+future ADR must bound it: Superuser-only + **audited every API call**;
+**preview/dry-run before apply** (show the exact objects it will create —
+transparent, not magic); idempotent + `--update`-safe; **never touches the
+Wazuh default superusers**; a **deprovision** path for org offboarding; and a
+**"manual recipe export"** fallback that emits the exact API/curl steps for a
+Superuser who prefers to run them by hand. Ships as Python core + shell wrapper
+(`shell-wrapper-required-pattern`) + a Superuser GUI surface
+(`web-first-configurability`); Wolf owns a deterministic naming scheme
+(`wolf-<org>`, `organization_polices_<org>`, …).
+
+Dependencies: ADR 0020 + the install topology admin creds (6.6-a, shipped).
+Natural completion of the Superuser Wazuh-mapping story; can open any time
+after 6.6. The read-only **Doctor** half is low-risk and could ship first as a
+standalone slice.
+
+## Phase 6.12 — Cross-role assistance & escalation (per-org ↔ Superuser collaboration)
+
+Prompted 2026-06-18 by the operator: per-org Analysts/Engineers will hit
+scenarios — troubleshooting, analytics, case work — where resolution needs the
+Superuser's authority or cross-org visibility (a Wazuh-side change, broader
+context, an action the org's own scope can't perform). This phase lets a per-org
+user **request the Superuser's help from inside their work** and lets the two
+**collaborate** to resolve it, without breaking isolation.
+
+- **Raise** an assistance request from within a conversation/case — it carries
+  context (the thread, the org, what's blocked) to the Superuser.
+- **Superuser assistance inbox** (notification-driven) → open the request with
+  the org's scoped context, respond, co-investigate, or take a scoped action /
+  hand back guidance.
+- **Collaborative thread** between the per-org user and the Superuser on that
+  request, so both work the issue together.
+
+Builds on the existing **time-limited Superuser-access grant + transparency
+banner** (ADR 0018 / Phase 6.5-f, `superuser_access`) — the substrate for the
+Superuser briefly + visibly stepping into an org to help, here driven by an
+org-initiated *request* rather than only an admin-initiated *grant*. Isolation
+is non-negotiable: every cross-org view/action inside an assistance context is
+**audited + scoped to the request**, and the transparency banner shows the org
+when a Superuser is engaged.
+
+Dependencies: **Notification infra (6.7) + SSE push (6.8)** for delivery —
+sequences AFTER them. Notifications stay isolated from audit/logs
+(`notification-and-realtime-phases`). Likely its own ADR (the collaboration
+model + the cross-org isolation rules for assisted sessions).
+
 ## Phase 7 — Cases and reporting (wolf-hunt foundation)
 
 This was the original Phase 5 — bumped here because the
