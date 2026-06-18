@@ -41,4 +41,25 @@ checkpoints:
   in citations. Adding it (+ other useful agent labels) belongs in the
   tool-enrichment/refinement phase — see [[grounding-enrichment-tools-future-phase]].
 
+**Opt-in group-label filter — VALIDATED 2026-06-18** against the operator's
+`read *` (no-DLS) scenario, via Wolf's real query path on the live cluster:
+- broad credential (`admin`, `read *`, no DLS) on `wazuh-alerts-*`: filter OFF →
+  10000+ alerts (everything); filter ON `acme` → 132 (scoped); ON `beta` → 0.
+- `wolf-acme` (DLS-scoped on `wazuh-alerts*`) → 132 either way (filter redundant,
+  matching the UI hint "only if this credential isn't already DLS-scoped").
+So the opt-in genuinely scopes a non-DLS credential to the org's label.
+
+**Forward implication (track for tool-enrichment / Wolf's growing query surface):**
+the Wazuh-doc per-org recipe grants `read *` with NO DLS, so a per-org user is
+DLS-scoped ONLY on the index families that have an explicit DLS block
+(`wazuh-alerts*`, `wazuh-monitoring*`). It reads everything else (e.g.
+`wazuh-states-inventory-*`, future vuln/SCA indices) UNSCOPED — verified:
+`wolf-acme` and `admin` return the SAME count on
+`wazuh-states-inventory-hardware-*`. Today Wolf only queries `wazuh-alerts-*`
+(safe), but when tools query those other families, isolation must come from
+EITHER per-index DLS on those indices OR Wolf's opt-in group-label filter
+applied to those queries. The 6.11 provisioning phase
+[[wazuh-provisioning-and-collaboration-phases]] should add DLS to all queried
+index families, not just alerts.
+
 All bounded by [[single-org-mssp-parity]] and [[wolf-unrestricted-full-power]].
