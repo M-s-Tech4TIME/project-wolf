@@ -31,6 +31,21 @@ env-only + default-OFF in 6.5-h.2; this turns it into a synced Superuser
 switch — the toggle's sole job is enable/disable the gate). Other env knobs
 migrate in per ADR 0019's catalogue.
 
+**Second concrete consumer (ADR 0024, 2026-06-18):** a **"Model posture"**
+setting — *split* (`qwen3:4b` chat / `qwen3:8b` judge, the data-backed DEFAULT)
+vs *unified* (`qwen3:8b` for both). Today these are the env knobs
+`DEFAULT_MODEL_ID` + `GROUNDING_JUDGE_MODEL_ID`; 6.10 promotes them to a
+Superuser GUI radio/toggle (same shape as the Wazuh single-vs-distributed
+selector). ADR 0024 measured the trade LIVE on the 6 GB GPU: split is ~6 s
+faster/grounded-turn + streams chat 3.4× faster (61.8 vs 18.0 tok/s); the
+4b↔8b swap is only ~2–3 s warm (NOT the bottleneck); the judge leg (~22 s) is
+posture-independent (8b either way) so the real grounding-latency levers are
+judge-output length / evidence window / keep-warm. Unified-8b stays valid
+(max answer-quality / idle-resilient) → hence a SELECTABLE setting, not a hard
+default. Keep BOTH embedders (`nomic-embed-text` + `nomic-embed-text-v2-moe`,
+ADR 0014 — neither self-sufficient). Revisit the default if a ≥10 GB GPU lets
+4b+8b stay co-resident (then split has zero swap, strictly best).
+
 **Adjacent follow-up:** **per-org trusted networks** (each org's own CIDRs) —
 the MSSP-correct form of the same-network gate; open question whether
 Superuser-set or org-admin-set.

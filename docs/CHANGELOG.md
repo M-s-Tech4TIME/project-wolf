@@ -49,6 +49,40 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-18 — Model posture measured + decided (ADR 0024); pre-Phase-6 checkpoint
+
+Before opening Phase 6 (wolf-gateway) the operator interrogated Wolf's runtime
+model posture and hypothesised that **unifying on `qwen3:8b` for both chat +
+grounding** would be *faster* (kill the per-grounded-turn 4b↔8b swap). We
+measured first, then decided.
+
+- **Measured live on the dev host** (RTX 4050, 6 GB, warm cache) via Ollama API
+  timing metrics. Headline: the hypothesis is wrong on this hardware.
+  - `qwen3:4b` chat **61.8 tok/s** vs `qwen3:8b` chat **18.0 tok/s** (3.4× slower).
+  - Warm grounded turn: **split 29.3 s** vs **unified-8b 35.5 s** — split is ~6 s
+    faster. The swap is only ~1.8–2.8 s warm (not the villain); the 8b-chat
+    slowdown costs more than the swap it would save.
+  - The judge leg (~22 s) is 3.9 s prompt-eval + ~17 s generating at 11.8 tok/s —
+    **identical in every posture** (judge is 8b either way), so posture is not the
+    grounding-latency lever; judge output length / evidence window / keep-warm are.
+  - ADR 0015's "2 m 44 s" was the cold-page-cache edge case, not steady state.
+- **Decided (ADR 0024):** keep the **split** (`qwen3:4b` chat / `qwen3:8b` judge)
+  as the **default** — faster *and* preserves the independent judge (ADR 0013).
+  **No runtime change** — the split is already live (`.env`), so this makes the
+  posture evidence-backed rather than assumed.
+- **Embeddings — keep both** (`nomic-embed-text` + `nomic-embed-text-v2-moe`).
+  ADR 0014's data is decisive: dual RRF precision@5 60% vs 35% single; v2-moe
+  alone truncates ~3.5% of long chunks. Neither is self-sufficient.
+- **Queued into Phase 6.10:** a Superuser-only, audited, synced **"Model posture"**
+  setting (split vs unified-8b) via the existing `DEFAULT_MODEL_ID` +
+  `GROUNDING_JUDGE_MODEL_ID` knobs — a second concrete consumer alongside the
+  same-network-gate toggle. Unified-8b stays a valid *selectable* option (max
+  answer-quality / idle-resilient; align `num_ctx` if chosen).
+
+**What's next:** open Phase 6 (wolf-gateway, capability-driven) — or 6.10 / 6.9
+per operator. Grounding-latency levers tracked as a future optimization
+independent of posture. Docs-only slice; no code/CI change.
+
 ## 2026-06-18 — 6.6-g: vestigial URL-column cleanup + indexer-node fallback
 
 Retires the last structural debt from the 6.6 line (the tracked 6.6-e

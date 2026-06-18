@@ -888,6 +888,14 @@ phase builds the missing substrate:
 - **First consumer:** the **same-network gate** toggle (6.5-h.2 shipped
   the gate env-only + default-OFF; this turns it into a synced Superuser
   on/off switch). Other env knobs migrate in as catalogued by ADR 0019.
+- **Second concrete consumer (ADR 0024):** a **"Model posture"** setting —
+  *split* (`qwen3:4b` chat / `qwen3:8b` judge, the data-backed default) vs
+  *unified* (`qwen3:8b` for both). Today these are the env knobs
+  `DEFAULT_MODEL_ID` + `GROUNDING_JUDGE_MODEL_ID`; 6.10 promotes them to a
+  Superuser GUI radio/toggle (same shape as the Wazuh single-vs-distributed
+  selector). ADR 0024 measured the trade live (split is ~6 s faster/turn +
+  streams chat 3.4× faster; unified is max answer-quality/idle-resilient) —
+  hence a *selectable* setting, not a hard default.
 - **Follow-up (MSSP-correct gate):** **per-org trusted networks** — each
   org defines its own CIDRs; verification checks the user's IP against
   *their* org's networks (not the provider's). Resolves the MSSP gap the
