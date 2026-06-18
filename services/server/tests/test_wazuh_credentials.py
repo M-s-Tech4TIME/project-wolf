@@ -539,6 +539,68 @@ async def test_put_keeps_existing_password_when_omitted(
     assert raw is not None and json.loads(raw)["password"] == "idx-secret"
 
 
+async def test_put_username_change_without_password_is_422(
+    client: AsyncClient,
+    db: AsyncSession,
+    seed_superuser: dict[str, Any],
+    with_topology: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Switching a username with a blank password must NOT reuse the old creds."""
+    _stub_probe(monkeypatch)
+    org_id = await _make_org(db)
+    assert (await _login(client, SUPERUSER_USERNAME, _WOLF_PASSWORD)).status_code == 200
+
+    # First save (wolf_ro / wazuh-wui with passwords).
+    assert (
+        await client.put(
+            f"/api/v1/superuser/organizations/{org_id}/wazuh-credentials", json=_BODY
+        )
+    ).status_code == 200
+
+    # Change ONLY the indexer username, omit passwords → 422 (can't reuse acme's pw).
+    changed = {**_BODY, "indexer_user": "wolf-beta",
+               "indexer_password": None, "server_api_password": None}
+    resp = await client.put(
+        f"/api/v1/superuser/organizations/{org_id}/wazuh-credentials", json=changed
+    )
+    assert resp.status_code == 422
+    assert "username requires its password" in resp.text.lower()
+
+    # The stored credential is unchanged (still the original user).
+    raw = await get_secrets_backend().get(opensearch_credential_key(org_id))
+    assert raw is not None and json.loads(raw)["username"] == "wolf_ro"
+
+
+async def test_put_username_change_with_password_succeeds(
+    client: AsyncClient,
+    db: AsyncSession,
+    seed_superuser: dict[str, Any],
+    with_topology: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_probe(monkeypatch)
+    org_id = await _make_org(db)
+    assert (await _login(client, SUPERUSER_USERNAME, _WOLF_PASSWORD)).status_code == 200
+    assert (
+        await client.put(
+            f"/api/v1/superuser/organizations/{org_id}/wazuh-credentials", json=_BODY
+        )
+    ).status_code == 200
+
+    # Username change WITH a password is accepted and stored.
+    changed = {**_BODY, "indexer_user": "wolf-beta", "indexer_password": "beta-idx-secret"}
+    resp = await client.put(
+        f"/api/v1/superuser/organizations/{org_id}/wazuh-credentials", json=changed
+    )
+    assert resp.status_code == 200, resp.text
+    raw = await get_secrets_backend().get(opensearch_credential_key(org_id))
+    assert raw is not None
+    blob = json.loads(raw)
+    assert blob["username"] == "wolf-beta"
+    assert blob["password"] == "beta-idx-secret"
+
+
 async def test_put_audit_carries_no_credentials(
     client: AsyncClient,
     db: AsyncSession,

@@ -49,6 +49,38 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-18 — Phase 6.6 CLOSED: web-test sign-off + credential-change fix + direction captured
+
+Operator web-tested 6.6-f and signed off ("all checkpoints working as described
+and as expected") — **Phase 6.6 (a/b/b.1/c/d/e/f) is CLOSED.** Four pieces of
+feedback handled:
+
+- **(Q1 — bug, FIXED)** Changing a per-org Wazuh username with a blank password
+  silently kept the OLD stored credential (`_resolve_credential` returned the
+  stored username+password, ignoring the typed new username). Now: keep-existing
+  applies ONLY when the username is unchanged; a username change with no password
+  → **422** ("Changing the {Indexer|Server API} username requires its password");
+  blank password + unchanged username still keeps the stored password. Client-side
+  inline validation mirrors it (the card tracks the loaded usernames). +2 tests
+  (22 in the credentials suite). ruff + mypy --strict + tsc + eslint clean.
+- **(Q2 — answered)** The index pattern is a *target selector* (which index to
+  `_search`), not a restriction — the credential's DLS scopes the data. Kept as a
+  default-`wazuh-alerts-*` advanced override; full dynamic index-discovery noted
+  as a tracked refinement (memory `wazuh-credential-refinements`).
+- **(Q3 — answered + principle captured)** Single-org (non-MSSP) is already fully
+  supported: one Wolf org + one broad-access credential (no DLS, filter OFF) → the
+  scope probe's `unrestricted` path. New standing principle
+  (`single-org-mssp-parity`): MSSP-achievable must also be single-org-achievable.
+- **(Q4 — answered)** `agent.labels.group` is only a query *filter* (opt-in), never
+  silently injected as data; the `AlertHit` citation model omits it. Surfacing it
+  in citations is a tool-enrichment item (tracked).
+
+**Direction shift (foundational, captured as memory `wolf-unrestricted-full-power`):**
+operator reframed Wolf from "read-only" to **fully unrestricted + empowered** —
+the restriction comes from Wazuh's own RBAC (the credential's capabilities), not
+from Wolf limiting itself. Reshapes Phase 6 (propose+approval → capability-driven),
+the read-only client posture, and Phase 13; to be landed via ADR when Phase 6 opens.
+
 ## 2026-06-18 — 6.6-f SHIPPED: dynamic per-org scoping — drop static org-id filter, add `agent.labels.group` (ADR 0020)
 
 Operator wired real per-org Wazuh RBAC (the official "read + manage a group of

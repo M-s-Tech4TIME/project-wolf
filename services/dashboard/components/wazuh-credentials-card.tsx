@@ -54,6 +54,10 @@ export function WazuhCredentialsCard({
   const [indexerPassword, setIndexerPassword] = useState("");
   const [serverUser, setServerUser] = useState("");
   const [serverPassword, setServerPassword] = useState("");
+  // The usernames last loaded from the server — a change to either with a blank
+  // password is rejected (a password belongs to a specific user).
+  const [loadedIndexerUser, setLoadedIndexerUser] = useState("");
+  const [loadedServerUser, setLoadedServerUser] = useState("");
   const [indexFilter, setIndexFilter] = useState("wazuh-alerts-*");
   const [groupLabels, setGroupLabels] = useState(""); // comma-separated
   const [injectFilter, setInjectFilter] = useState(false);
@@ -75,8 +79,14 @@ export function WazuhCredentialsCard({
       .then((c) => {
         setConfigured(c.configured);
         setValidatedAt(c.validated_at);
-        if (c.indexer_user) setIndexerUser(c.indexer_user);
-        if (c.server_api_user) setServerUser(c.server_api_user);
+        if (c.indexer_user) {
+          setIndexerUser(c.indexer_user);
+          setLoadedIndexerUser(c.indexer_user);
+        }
+        if (c.server_api_user) {
+          setServerUser(c.server_api_user);
+          setLoadedServerUser(c.server_api_user);
+        }
         if (c.wazuh_index_filter) setIndexFilter(c.wazuh_index_filter);
         if (c.agent_group_labels) setGroupLabels(c.agent_group_labels.join(", "));
         if (c.inject_group_label_filter !== null)
@@ -110,6 +120,12 @@ export function WazuhCredentialsCard({
     if (!configured) {
       if (!indexerPassword) return "Indexer password is required on first save.";
       if (!serverPassword) return "Server API password is required on first save.";
+    } else {
+      // Changing a username requires its password (can't reuse the old user's).
+      if (indexerUser.trim() !== loadedIndexerUser && !indexerPassword)
+        return "Changing the indexer username requires its password.";
+      if (serverUser.trim() !== loadedServerUser && !serverPassword)
+        return "Changing the Server API username requires its password.";
     }
     return null;
   }
@@ -138,6 +154,9 @@ export function WazuhCredentialsCard({
       setResult(res);
       setConfigured(true);
       setValidatedAt(res.validated_at);
+      // New baseline for the username-change-needs-password check.
+      setLoadedIndexerUser(body.indexer_user);
+      setLoadedServerUser(body.server_api_user);
       setIndexerPassword("");
       setServerPassword("");
       loadHistory();

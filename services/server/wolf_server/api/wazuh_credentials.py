@@ -158,8 +158,12 @@ async def _resolve_credential(
 ) -> tuple[str, str, str | None]:
     """``(probe_user, probe_password, blob_to_write_or_None)`` — keep-existing.
 
-    Omitted password keeps the stored blob verbatim (None write); on first
-    configuration an omitted password is a 422.
+    A provided password sets/rotates the credential. An omitted password keeps
+    the stored blob verbatim (None write) **only when the username is
+    unchanged** — a password belongs to a specific user, so switching the
+    username with a blank password (e.g. acme → beta) must NOT silently reuse
+    the previous user's password; that is a 422. On first configuration an
+    omitted password is also a 422.
     """
     if password:
         return username, password, json.dumps({"username": username, "password": password})
@@ -173,7 +177,17 @@ async def _resolve_credential(
             ),
         )
     data = json.loads(raw)
-    return str(data["username"]), str(data["password"]), None
+    stored_username = str(data["username"])
+    if username != stored_username:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=(
+                f"Changing the {label} username requires its password — a "
+                f"password belongs to a specific user and cannot be reused for "
+                f"a different one."
+            ),
+        )
+    return stored_username, str(data["password"]), None
 
 
 async def _require_org(db: AsyncSession, organization_id: uuid.UUID) -> Organization:
