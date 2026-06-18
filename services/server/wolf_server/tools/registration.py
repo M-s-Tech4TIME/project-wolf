@@ -16,6 +16,7 @@ from wolf_server.tools.alerts import (
 )
 from wolf_server.tools.cluster import GetClusterHealthTool
 from wolf_server.tools.knowledge import QueryRunbookTool
+from wolf_server.tools.propose_active_response import ProposeActiveResponseTool
 from wolf_server.tools.registry import runtime_registry
 from wolf_server.tools.rules import GetRuleDefinitionTool
 
@@ -43,3 +44,18 @@ def register_all_read_tools() -> None:
     for tool in tools:
         runtime_registry.register(tool)
     logger.info("read_tools_registered", count=len(tools), names=[t.name for t in tools])
+
+
+def register_all_propose_tools() -> None:
+    """Register Wolf's propose-tier tools (Phase 6, ADR 0025).
+
+    Propose tools are shown to the model (a proposal is just data) but change
+    nothing themselves — they queue a proposal a human must approve.  Execution
+    happens only in `wolf_server.gateway.execution`, post-approval.
+    """
+    tools = [
+        ProposeActiveResponseTool(),
+    ]
+    for tool in tools:
+        runtime_registry.register(tool)
+    logger.info("propose_tools_registered", count=len(tools), names=[t.name for t in tools])

@@ -53,10 +53,14 @@ async def lifespan(app: FastAPI) -> Any:  # noqa: ANN401
     await _wait_for_database()
     await _run_migrations()
 
-    # Register all Phase 2A read tools with the runtime + schema registries.
-    from wolf_server.tools.registration import register_all_read_tools  # noqa: PLC0415
+    # Register all read tools + Phase 6 propose tools with the runtime + schema registries.
+    from wolf_server.tools.registration import (  # noqa: PLC0415
+        register_all_propose_tools,
+        register_all_read_tools,
+    )
 
     register_all_read_tools()
+    register_all_propose_tools()
 
     logger.info("wolf_server_ready")
     yield
@@ -210,6 +214,9 @@ def create_app() -> FastAPI:
         )
 
     # ── Routers ─────────────────────────────────────────────────────────────
+    from wolf_server.api.action_proposals import (  # noqa: PLC0415
+        router as action_proposals_router,
+    )
     from wolf_server.api.auth import router as auth_router  # noqa: PLC0415
     from wolf_server.api.chat import router as chat_router  # noqa: PLC0415
     from wolf_server.api.org_management import router as org_management_router  # noqa: PLC0415
@@ -227,6 +234,7 @@ def create_app() -> FastAPI:
     app.include_router(org_management_router)
     app.include_router(wazuh_topology_router)
     app.include_router(wazuh_credentials_router)
+    app.include_router(action_proposals_router)
 
     # ── Error handlers ──────────────────────────────────────────────────────
 

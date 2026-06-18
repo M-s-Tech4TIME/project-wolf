@@ -59,6 +59,10 @@ jobs:
         # helpers, and the session blacklist live there.
         # Phase 6.5-h.2: wolf_server/network added — the same-network
         # verification gate's NIC-CIDR enumeration + membership check.
+        # Phase 6 (ADR 0025): wolf_server/gateway added — the in-process
+        # approval gateway (proposal state machine, approval, execution) is
+        # the most safety-critical code in the project; wolf_server/tools
+        # added so the propose tool + read tools are strict-typed too.
         run: |
           uv run mypy packages/common/wolf_common \
                        packages/secrets/wolf_secrets \
@@ -74,6 +78,8 @@ jobs:
                        services/server/wolf_server/wazuh \
                        services/server/wolf_server/guardrails \
                        services/server/wolf_server/agent \
+                       services/server/wolf_server/gateway \
+                       services/server/wolf_server/tools \
                        --strict
 
   test:

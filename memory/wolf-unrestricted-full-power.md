@@ -22,16 +22,33 @@ restart an agent / run active-response / manage groups, Wolf can drive that.
 see beyond `agent.labels.group:acme` no matter what Wolf does. Restriction is
 Wazuh's job; capability is Wolf's. The operator reframed the project on this.
 
-**How to apply (going forward):**
-- Reshapes **Phase 6 (Propose tools + Approval Gateway)** — the hard read-only
-  posture + propose-then-approve wall becomes capability-driven: Wolf may ACT
-  within what the Wazuh credential is authorized to do (gate/approval becomes a
-  policy choice, not a built-in cap). Consult the credential's effective
-  policies (`/security/users/me/policies`, the 6.6-f introspection) to know
-  what an action is even permitted before offering/doing it.
-- The currently **read-only** `WazuhServerApiClient` (rejects POST/PUT/DELETE)
-  will gain credential-bounded write paths. Do NOT rip this out ad-hoc — it's a
-  real architectural shift; land it via an ADR when Phase 6 opens.
+**LANDED 2026-06-18 — Phase 6 OPENED via ADR 0025 + foundational slice 6-a.**
+The reframe is now implemented (decisions: A2 execute in-process in wolf-server,
+NOT a separate gateway service; B1 every write needs explicit human approval, no
+autonomous writes in v1; C1 ADR + one action end-to-end). Shipped:
+`wazuh/capabilities.py` (RBAC introspection via `/security/users/me/policies` →
+`can()`/`available_action_classes()`, fail-closed); the in-process
+`wolf_server/gateway/` (proposal + state machine `0015`, validator hard gate,
+approval w/ separation-of-duties, execution = hash-integrity → freshness →
+bounded write → verification → audit); a deliberate capability-checked
+`WazuhServerApiActionClient` ALONGSIDE the kept read-only client (NOT an ad-hoc
+opening); `propose_active_response` (tier=propose); RBAC `ACTION_PROPOSE`/
+`ACTION_APPROVE` (no execute role). doc 04's safety machinery is preserved; only
+doc 03 fact #3 (credential physically read-only) was inverted. See ADR 0025 +
+CHANGELOG 2026-06-18.
+
+**How to apply (remaining):**
+- Reshapes **Phase 6** — the hard read-only + propose-then-approve WALL is now
+  capability-driven (gate/approval is a policy choice, not a built-in cap). The
+  pattern is set by slice 6-a; FOLLOW-ONS repeat it: the approval-queue GUI
+  (6-b), the other action classes (`rule_tuning`/`agent_action`/`config_change`),
+  and severity-tiered authority / four-eyes / crown-jewel (policy hooks; B1
+  default = approval-for-all). Always pre-flight the credential's effective
+  policies before offering/doing a write.
+- The read-only `WazuhServerApiClient` was KEPT; the write surface is the
+  separate capability-checked `WazuhServerApiActionClient`. Extend writes ONLY
+  by adding named, capability-checked methods there — never by widening the read
+  client's guard.
 - Relates to Phase 13 (auto-execution), [[wolf-pack]] (outbound actions), and
   the 6.11 provisioning phase [[wazuh-provisioning-and-collaboration-phases]]
   (Wolf's first WRITE authority over Wazuh — same philosophy).

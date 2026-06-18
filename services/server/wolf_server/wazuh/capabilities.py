@@ -1,0 +1,134 @@
+"""Wazuh credential capability introspection — Phase 6 (ADR 0025).
+
+Wolf is capability-driven: it acts only within what the per-org Wazuh
+credential's RBAC authorizes (`wolf-unrestricted-full-power`).  This module
+reads a credential's effective policies via ``GET /security/users/me/policies``
+(allowed for self — no special permission, the same endpoint 6.6-f uses for
+scope) and answers *"is this credential allowed <action> on <resource>?"* so
+Wolf offers + executes only authorized actions.
+
+Fail-closed by design: any parse/transport failure yields an empty policy map,
+so :meth:`CredentialCapabilities.can` returns ``False`` — Wolf never offers a
+write it could not confirm the credential is permitted.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any
+
+# Wazuh RBAC actions Wolf maps to its own action classes (v1: active-response).
+# The Server-API action that runs an active-response command on agents.
+ACTION_ACTIVE_RESPONSE = "active-response:command"
+
+# Map Wolf action class → the Wazuh RBAC action that gates it.  Extended as
+# more action classes land (rule_tuning, agent_action, config_change).
+WOLF_ACTION_CLASS_RBAC: dict[str, str] = {
+    "active_response": ACTION_ACTIVE_RESPONSE,
+}
+
+_ALLOW = "allow"
+_DENY = "deny"
+
+
+def _resource_matches(pattern: str, resource: str) -> bool:
+    """Segment-wise wildcard match of a Wazuh resource string.
+
+    Wazuh resources are ``type:field:value`` triples (``agent:id:001``,
+    ``agent:group:acme``); ``*`` matches any single segment and the bare
+    ``*`` / ``*:*:*`` match everything.  Matching is arity-exact otherwise.
+    """
+    if pattern in ("*", "*:*:*"):
+        return True
+    pat = pattern.split(":")
+    res = resource.split(":")
+    if len(pat) != len(res):
+        return False
+    return all(p == "*" or p == r for p, r in zip(pat, res, strict=True))
+
+
+@dataclass(frozen=True)
+class CredentialCapabilities:
+    """A Wazuh credential's effective ``action → {resource: effect}`` policy map."""
+
+    # action -> {resource_pattern -> "allow" | "deny"}
+    policies: dict[str, dict[str, str]]
+
+    def can(self, action: str, resource: str) -> bool:
+        """True iff the credential is allowed ``action`` on ``resource``.
+
+        Explicit ``deny`` on a matching resource wins over ``allow`` (Wazuh
+        RBAC semantics).  Unknown action or no matching allow → ``False``
+        (fail-closed).
+        """
+        res_map = self.policies.get(action)
+        if not res_map:
+            return False
+        allowed = False
+        for pattern, effect in res_map.items():
+            if _resource_matches(pattern, resource):
+                if effect == _DENY:
+                    return False
+                if effect == _ALLOW:
+                    allowed = True
+        return allowed
+
+    def available_actions(self) -> set[str]:
+        """Actions the credential is allowed on at least one resource."""
+        return {
+            action
+            for action, res_map in self.policies.items()
+            if any(effect == _ALLOW for effect in res_map.values())
+        }
+
+    def available_action_classes(self) -> set[str]:
+        """Wolf action classes this credential is RBAC-permitted to perform.
+
+        The intersection of Wolf's known action classes with the credential's
+        allowed Wazuh actions — what Wolf may even *offer*.  Resource-level
+        gating (which agent/group) is re-checked per proposal at execution.
+        """
+        actions = self.available_actions()
+        return {
+            wolf_class
+            for wolf_class, rbac_action in WOLF_ACTION_CLASS_RBAC.items()
+            if rbac_action in actions
+        }
+
+
+def _parse_policies(payload: Any) -> dict[str, dict[str, str]]:
+    """Parse ``GET /security/users/me/policies`` → ``{action: {resource: effect}}``.
+
+    The endpoint returns the current user's effective, processed policies as
+    ``data = {action: {resource: effect}}``.  Anything malformed is dropped;
+    a fully unparseable payload yields ``{}`` (fail-closed)."""
+    if not isinstance(payload, dict):
+        return {}
+    inner = payload.get("data")
+    if not isinstance(inner, dict):
+        return {}
+    out: dict[str, dict[str, str]] = {}
+    for action, res_map in inner.items():
+        if not isinstance(action, str) or not isinstance(res_map, dict):
+            continue
+        clean: dict[str, str] = {}
+        for resource, effect in res_map.items():
+            if isinstance(resource, str) and isinstance(effect, str):
+                clean[resource] = effect
+        if clean:
+            out[action] = clean
+    return out
+
+
+async def fetch_credential_capabilities(server_api: Any) -> CredentialCapabilities:
+    """Read a credential's effective RBAC policies via a read-only Server-API client.
+
+    ``server_api`` is a :class:`~wolf_server.wazuh.server_api.WazuhServerApiClient`
+    (only its read-only ``get`` is used).  Any failure → empty capabilities
+    (fail-closed: Wolf offers no writes it can't confirm).
+    """
+    try:
+        payload = await server_api.get("/security/users/me/policies")
+    except Exception:  # noqa: BLE001 — fail-closed on any introspection failure
+        return CredentialCapabilities(policies={})
+    return CredentialCapabilities(policies=_parse_policies(payload))

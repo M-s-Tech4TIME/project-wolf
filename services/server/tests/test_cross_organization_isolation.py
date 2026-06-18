@@ -2,7 +2,8 @@
 
 Per doc 05: as Organization A, attempts to read Organization B's data must **fail closed**.
 These tests cover the negative cases for the read tools/clients delivered in
-Phase 2A.  Propose tools and approval reads come in later phases.
+Phase 2A, plus the Phase 6 (ADR 0025) action-proposal queue — which is
+org-scoped and forced-filtered exactly like every other per-org table.
 
 Run in CI on every PR (see `tools/organization_isolation_test/` for the canonical
 home; this file is the implementation that the test job runs).
@@ -343,3 +344,43 @@ async def test_pgvector_search_call_path_includes_requesting_organization_id() -
     # And NOT with the other organization's id.
     assert other_organization not in vec_kwargs_or_args.args
     assert other_organization not in fts_kwargs_or_args.args
+
+
+# ─── Test: action proposals are organization-scoped (Phase 6, ADR 0025) ──────────
+#
+# The approval queue is per-org data; a proposal created for organization A must
+# be invisible to a query scoped to organization B (the forced organization_id
+# filter in api/action_proposals._load_proposal + list_proposals).
+
+
+@pytest.mark.asyncio
+async def test_action_proposals_are_organization_scoped(db: Any) -> None:
+    """A proposal for organization A is invisible to organization B's forced-filtered query."""
+    from sqlalchemy import select
+    from wolf_server.gateway.models import ActionProposal
+    from wolf_server.gateway.proposals import create_proposal
+
+    organization_a = uuid.uuid4()
+    organization_b = uuid.uuid4()
+
+    await create_proposal(
+        db,
+        organization_id=organization_a,
+        requested_by=uuid.uuid4(),
+        action_class="active_response",
+        target={"agent_id": "001"},
+        action="firewall-drop",
+        rationale="brute force",
+        expected_effect="drop the offending IP",
+    )
+    await db.commit()
+
+    # Organization B's forced-filtered query sees nothing.
+    stmt_b = select(ActionProposal).where(ActionProposal.organization_id == organization_b)
+    b_rows = (await db.execute(stmt_b)).scalars().all()
+    assert b_rows == []
+    # Organization A sees its own proposal.
+    stmt_a = select(ActionProposal).where(ActionProposal.organization_id == organization_a)
+    a_rows = (await db.execute(stmt_a)).scalars().all()
+    assert len(a_rows) == 1
+    assert a_rows[0].organization_id == organization_a

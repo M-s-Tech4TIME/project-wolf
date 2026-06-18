@@ -67,6 +67,11 @@ class ToolExecContext:
     # cache (e.g. agent_name → agent_id resolution) check for None
     # before using.
     cache: Any | None = None
+    # Phase 6 (ADR 0025) — the request DB session. Optional + typed Any to
+    # avoid an import cycle. Read tools never use it; PROPOSE tools need it to
+    # persist the proposal they emit into the approval queue. The dispatcher
+    # wires the live session; it commits with the rest of the request.
+    db: Any | None = None
 
 
 class ReadTool(ABC):
@@ -108,6 +113,21 @@ class ReadTool(ABC):
     ) -> Citation:
         """Build a citation for a result of this tool."""
         return Citation(tool=self.name, query=query, result_count=result_count)
+
+
+class ProposeTool(ReadTool):
+    """Abstract base for `propose`-tier tools (Phase 6, ADR 0025).
+
+    Structurally a tool like any other — same name/description/InputModel/
+    OutputModel/`run()` contract — but `tier = ToolTier.propose`, so its schema
+    IS shown to the model (a proposal is just data the model may request) while
+    it changes no Wazuh state itself: `run()` validates + persists a proposal
+    into the approval queue and returns a summary.  Actual execution happens
+    only later, after a human approval, inside `wolf_server.gateway.execution`
+    — never here, never by the model.
+    """
+
+    tier: ClassVar[ToolTier] = ToolTier.propose
 
 
 def sanitize_organization_id_from_args(

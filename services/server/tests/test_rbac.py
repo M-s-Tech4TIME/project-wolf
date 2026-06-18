@@ -193,7 +193,12 @@ def test_valid_roles_match_adr_0018() -> None:
 
 
 def test_capability_matrix_matches_adr_0018() -> None:
-    """Row-for-row mirror of the ADR 0018 capability matrix (6.5-b subset)."""
+    """Row-for-row mirror of the capability matrix.
+
+    ADR 0018 (6.5-b subset) + Phase 6 (ADR 0025): ``ACTION_PROPOSE`` (analyst+)
+    and ``ACTION_APPROVE`` (responder/engineer/admin) land with the
+    capability-driven action gateway.
+    """
     baseline = {Capability.CHAT, Capability.DATA_READ}
     assert ROLE_CAPABILITIES["admin"] == baseline | {
         Capability.SUPERUSER_MEMBERSHIP_GRANT,
@@ -201,14 +206,24 @@ def test_capability_matrix_matches_adr_0018() -> None:
         Capability.ORG_SETTINGS_CONFIGURE,
         Capability.WOLF_PACK_DEPLOY,
         Capability.AUDIT_LOG_VIEW,
+        Capability.ACTION_PROPOSE,
+        Capability.ACTION_APPROVE,
     }
     assert ROLE_CAPABILITIES["engineer"] == baseline | {
         Capability.ORG_SETTINGS_CONFIGURE,
         Capability.WOLF_PACK_DEPLOY,
+        Capability.ACTION_PROPOSE,
+        Capability.ACTION_APPROVE,
     }
-    assert ROLE_CAPABILITIES["responder"] == baseline | {Capability.AUDIT_LOG_VIEW}
-    assert ROLE_CAPABILITIES["analyst"] == baseline
-    # The Superuser's consented membership: read + chat, no governance.
+    assert ROLE_CAPABILITIES["responder"] == baseline | {
+        Capability.AUDIT_LOG_VIEW,
+        Capability.ACTION_PROPOSE,
+        Capability.ACTION_APPROVE,
+    }
+    # Analyst proposes but cannot approve (producer/approver split).
+    assert ROLE_CAPABILITIES["analyst"] == baseline | {Capability.ACTION_PROPOSE}
+    assert Capability.ACTION_APPROVE not in ROLE_CAPABILITIES["analyst"]
+    # The Superuser's consented membership: read + chat, no governance, no actions.
     assert ROLE_CAPABILITIES["superuser"] == baseline
     assert set(ROLE_CAPABILITIES) == VALID_ROLES
 

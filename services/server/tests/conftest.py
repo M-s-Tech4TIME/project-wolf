@@ -61,6 +61,7 @@ async def engine() -> AsyncGenerator[AsyncEngine]:
     import wolf_server.audit.models  # noqa: F401
 
     # Import all models so Base.metadata is populated.
+    import wolf_server.gateway.models  # noqa: F401
     import wolf_server.organization.models  # noqa: F401
     import wolf_server.wazuh.models  # noqa: F401
     from wolf_server.database import Base

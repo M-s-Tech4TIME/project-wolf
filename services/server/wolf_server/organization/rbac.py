@@ -1,11 +1,13 @@
 """Role-based access control — Phase 6.5-b, ADR 0018.
 
-The capability matrix from ADR 0018 §"Decision: per-organization RBAC",
-restricted to the rows that do NOT depend on Phase 6 (wolf-gateway).
-Propose / approve / execute capabilities are documented in the ADR and
-the role values for them already exist, but the decorators that enforce
-them ship with Phase 6 — no point wiring enforcement for a system that
-doesn't exist yet (operator direction, ADR 0018 Round 4).
+The capability matrix from ADR 0018 §"Decision: per-organization RBAC".
+The propose/approve rows land with Phase 6 (capability-driven action
+execution, ADR 0025): ``ACTION_PROPOSE`` (produce a reviewable proposal —
+low-risk, it's just data) and ``ACTION_APPROVE`` (sign a pending proposal so
+the in-process gateway may execute it).  There is intentionally no
+``ACTION_EXECUTE`` capability: execution is system-internal (the gateway,
+after a human approval), never a role a user is granted — doc 03's "no tier
+lets one actor both decide and perform a state change" survives the reframe.
 
 Roles attach to the UserOrganization membership row, never to the User:
 one person can be Admin in org A and Analyst in org B.  The "superuser"
@@ -40,10 +42,11 @@ from wolf_server.organization.models import User, UserOrganization
 
 
 class Capability(enum.StrEnum):
-    """Org-scoped capabilities enforceable today (Phase 6.5 subset).
+    """Org-scoped capabilities.
 
-    Phase-6-deferred rows (propose / approve / execute) are intentionally
-    absent — they arrive with the wolf-gateway approval plumbing.
+    Phase 6 (ADR 0025) added ``ACTION_PROPOSE`` + ``ACTION_APPROVE``.  There is
+    deliberately no ``ACTION_EXECUTE`` — execution is system-internal (gateway,
+    post-approval), never a user-granted role.
     """
 
     # Admin-only: the org-consent gate (ADR 0018) — granting/revoking the
@@ -64,6 +67,13 @@ class Capability(enum.StrEnum):
     AUDIT_LOG_VIEW = "audit_log_view"
     # All org members: read alerts / agents / knowledge.
     DATA_READ = "data_read"
+    # Phase 6 (ADR 0025): produce a reviewable action proposal (changes
+    # nothing itself — a proposal is just data placed in the approval queue).
+    ACTION_PROPOSE = "action_propose"
+    # Phase 6 (ADR 0025): sign a pending proposal so the in-process gateway
+    # may execute it.  Separation of duties (requester != approver) is enforced
+    # structurally in gateway/approval.py, on top of this role gate.
+    ACTION_APPROVE = "action_approve"
 
 
 _MEMBER_BASELINE = frozenset({Capability.CHAT, Capability.DATA_READ})
@@ -78,14 +88,25 @@ ROLE_CAPABILITIES: dict[str, frozenset[Capability]] = {
         Capability.ORG_SETTINGS_CONFIGURE,
         Capability.WOLF_PACK_DEPLOY,
         Capability.AUDIT_LOG_VIEW,
+        Capability.ACTION_PROPOSE,
+        Capability.ACTION_APPROVE,
     },
     "engineer": _MEMBER_BASELINE
     | {
         Capability.ORG_SETTINGS_CONFIGURE,
         Capability.WOLF_PACK_DEPLOY,
+        Capability.ACTION_PROPOSE,
+        Capability.ACTION_APPROVE,
     },
-    "responder": _MEMBER_BASELINE | {Capability.AUDIT_LOG_VIEW},
-    "analyst": _MEMBER_BASELINE,
+    "responder": _MEMBER_BASELINE
+    | {
+        Capability.AUDIT_LOG_VIEW,
+        Capability.ACTION_PROPOSE,
+        Capability.ACTION_APPROVE,
+    },
+    # Analyst proposes but does not approve — a natural producer/approver
+    # split on top of the structural separation-of-duties check.
+    "analyst": _MEMBER_BASELINE | {Capability.ACTION_PROPOSE},
     # The Superuser's consented org membership: read + chat only.  Org
     # governance (users, settings, audit) stays with the org's own roles.
     "superuser": _MEMBER_BASELINE,

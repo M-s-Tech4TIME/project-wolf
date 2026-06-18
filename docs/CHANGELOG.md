@@ -49,6 +49,50 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-18 — Phase 6 OPENED: capability-driven action execution (ADR 0025, slice 6-a)
+
+Phase 6 reframed per `wolf-unrestricted-full-power`: Wolf is NOT read-only — it
+acts within whatever the per-org Wazuh credential's RBAC authorizes; doc 04's
+safety machinery is preserved, only the "credential is physically read-only"
+premise (doc 03 fact #3) is inverted. Operator decisions: **A2** execute in
+wolf-server via an in-process gateway module (no separate service in v1); **B1**
+every write needs explicit human approval (no autonomous writes); **C1** ADR +
+one-action foundational slice.
+
+**Shipped (backend slice 6-a):**
+- **ADR 0025** — the reframe design contract (amends docs 03/04; the four
+  structural facts table; the bounded write surface).
+- **Capability introspection** (`wazuh/capabilities.py`) — reads the credential's
+  effective RBAC via `/security/users/me/policies` (the 6.6-f endpoint),
+  answers "can this credential do X on Y?", fail-closed.
+- **In-process gateway** (`wolf_server/gateway/`): `ActionProposal` + state
+  machine (migration `0015`), content-hash freezing, the **action validator**
+  (structural hard gate — resolved target / bounded blast radius / allow-listed
+  command), **approval** (separation of duties + `ACTION_APPROVE`), **execution**
+  (hash integrity → freshness re-check → bounded write → verification read →
+  audit every transition).
+- **Bounded write surface** — `WazuhServerApiActionClient.execute_active_response`
+  (capability-checked before issuing); the read-only `WazuhServerApiClient` kept
+  exactly as-is.
+- **`propose_active_response`** (tier=propose) — the model proposes; a human
+  approves; only then the gateway executes.
+- **RBAC** — `ACTION_PROPOSE` (analyst+) + `ACTION_APPROVE` (responder/engineer/
+  admin); no `ACTION_EXECUTE` role (execution is system-internal).
+- **API** — org-scoped, capability-gated list/get/approve/reject; the
+  `action_proposals` table joins the cross-organization isolation gate.
+
+**Verified:** 626 backend tests / 0 skip (incl. capability introspection, the
+validator, SoD, state machine, freshness, verification, the write-guard, and the
+cross-org proposal-isolation test); ruff + mypy --strict clean — `gateway` +
+`tools` added to the CI strict set; migration `0015` up/down round-trips on
+Postgres + `alembic check` clean; wolf-server boots clean (propose tool
+registered, all four routes mounted).
+
+**Follow-ons (tracked, not built):** 6-b approval-queue GUI (browser web-test);
+other action classes; severity-tiered authority / four-eyes / crown-jewel;
+auto-execution (Phase 13). The live propose→approve→**execute** smoke against the
+real cluster (a real state change) is deferred to operator go-ahead / 6-b.
+
 ## 2026-06-18 — Model posture measured + decided (ADR 0024); pre-Phase-6 checkpoint
 
 Before opening Phase 6 (wolf-gateway) the operator interrogated Wolf's runtime

@@ -268,10 +268,34 @@ end-state as the APT path.
 
 ## Phase 6 — Propose tools and the Approval Gateway
 
+**Reframed + OPENED 2026-06-18 (ADR 0025, `wolf-unrestricted-full-power`).**
+Wolf is NOT read-only: it acts within whatever the per-org Wazuh credential's
+RBAC authorizes; the boundary is Wazuh's RBAC, not Wolf limiting itself.
+doc 04's safety machinery is preserved (every write proposed → human-approved →
+executed → verified → audited); only the "credential is physically read-only"
+premise is inverted. Operator decisions: **A2** writes execute IN wolf-server
+via an in-process gateway module (the `services/gateway/` stub stays reserved —
+NOT a separate service in v1); **B1** every write needs explicit human approval
+(no autonomous writes); **C1** ADR + a foundational one-action slice first.
+
+**Foundational slice 6-a SHIPPED 2026-06-18:** capability introspection
+(`wazuh/capabilities.py`, RBAC → offered actions, fail-closed); the
+`action_proposals` queue + state machine (migration 0015); the
+`propose_active_response` tool (tier=propose); the action validator (structural
+hard gate); approval (separation of duties + `ACTION_APPROVE`); execution
+(content-hash integrity → freshness → bounded `WazuhServerApiActionClient` write
+→ verification read); org-scoped approval API. Read-only `WazuhServerApiClient`
+kept; a deliberate capability-checked write surface added alongside.
+
+**Follow-ons:** **6-b** the approval-queue GUI (the browser web-test checkpoint);
+the other action classes (`rule_tuning` / `agent_action` / `config_change`);
+severity-tiered authority / four-eyes / crown-jewel tagging (policy hooks, B1
+default = approval-for-all); auto-execution (Phase 13). The remaining original
+scope below stands as the target the follow-ons fill in.
+
 The most safety-critical work in the project. Built after the
 read-side platform is solid + the deployment substrate is in
-place. The wolf-gateway service (currently a Phase 0 stub at
-`services/gateway/wolf_gateway/`) becomes a real service here.
+place.
 
 Builds on Phase 5.6's mTLS substrate — wolf-gateway will get its
 own client cert (`wolf-gateway-client`, parallel to

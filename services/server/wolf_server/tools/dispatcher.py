@@ -139,6 +139,7 @@ async def dispatch_tool_call(
         server_api=server_api,
         knowledge_store=knowledge_store,
         cache=cache,
+        db=db,
     )
     try:
         result = await runner.run(exec_ctx, args_model)
