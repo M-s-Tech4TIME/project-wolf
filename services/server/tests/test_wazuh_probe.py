@@ -74,8 +74,35 @@ async def test_probe_indexer_read_ok_reports_count() -> None:
         )
     assert r.ok is True
     assert r.status_code == 200
-    assert "27 alert(s)" in r.detail
+    assert "27 doc(s)" in r.detail
     assert "wazuh-alerts-*" in r.detail
+
+
+async def test_probe_indexer_read_zero_shards_is_no_readable_index() -> None:
+    # do_not_fail_on_forbidden clusters return 200 + 0 shards for a forbidden /
+    # non-matching pattern — Wolf must treat that as "no readable index", not ok.
+    async with _client(
+        lambda req: httpx.Response(200, json={"count": 0, "_shards": {"total": 0}})
+    ) as c:
+        r = await probe_indexer_read(
+            "https://idx:9200", "u", "p", "bogus-*", verify_tls=False, client=c
+        )
+    assert r.ok is False
+    assert r.status_code == 200
+    assert "no readable index" in r.detail.lower()
+
+
+async def test_probe_indexer_read_shards_resolved_is_ok_even_if_empty() -> None:
+    # A real index that the credential CAN read but is empty (e.g. DLS → 0 docs):
+    # shards resolve (>0), so it's accessible, not "unknown".
+    async with _client(
+        lambda req: httpx.Response(200, json={"count": 0, "_shards": {"total": 5}})
+    ) as c:
+        r = await probe_indexer_read(
+            "https://idx:9200", "u", "p", "wazuh-alerts-*", verify_tls=False, client=c
+        )
+    assert r.ok is True
+    assert "0 doc(s)" in r.detail
 
 
 async def test_probe_indexer_read_403_is_denied_not_ok() -> None:

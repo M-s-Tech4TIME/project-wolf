@@ -42,6 +42,16 @@ _TIMEOUT = httpx.Timeout(connect=10.0, read=15.0, write=10.0, pool=10.0)
 
 
 @dataclass(frozen=True)
+class IndexAccessResult:
+    """Whether the indexer credential can read one configured index pattern."""
+
+    pattern: str
+    ok: bool
+    detail: str
+    status_code: int | None = None
+
+
+@dataclass(frozen=True)
 class OrgCredentialProbeResult:
     """Outcome of probing one org's Wazuh credentials against the topology."""
 
@@ -51,6 +61,8 @@ class OrgCredentialProbeResult:
     group_count: int | None
     groups: list[str] | None
     scope_detail: str
+    # Per-pattern indexer read check (one entry per configured index pattern).
+    index_results: list[IndexAccessResult]
 
     @property
     def ok(self) -> bool:
@@ -183,12 +195,82 @@ async def _fetch_scope(
     return agent_count, 0, [], f"Credential sees {agents_txt}; no agent-group scope detected."
 
 
+async def _probe_indexes(
+    client: httpx.AsyncClient,
+    indexer_url: str,
+    indexer_user: str,
+    indexer_password: str,
+    index_patterns: list[str],
+    *,
+    verify_tls: bool,
+) -> tuple[EndpointProbeResult, list[IndexAccessResult]]:
+    """Check read access to EACH configured index pattern, plus an overall verdict.
+
+    Each pattern gets its own ``_count`` probe (Phase 6.6-f follow-up) so the UI
+    can show a per-index pass/fail. A 401/transport failure on any pattern means
+    the credential itself is bad/unreachable — we stop and surface that as the
+    overall verdict. Otherwise the overall is ``ok`` only when EVERY configured
+    pattern is readable; a partial failure names the unreadable patterns.
+    """
+    patterns = index_patterns or ["wazuh-alerts-*"]
+    index_results: list[IndexAccessResult] = []
+    auth_or_transport_failure = False
+    for pattern in patterns:
+        r = await probe_indexer_read(
+            indexer_url, indexer_user, indexer_password, pattern,
+            verify_tls=verify_tls, client=client,
+        )
+        index_results.append(
+            IndexAccessResult(pattern=pattern, ok=r.ok, detail=r.detail, status_code=r.status_code)
+        )
+        # 401 (bad creds) or transport error (None) is a credential-level fault,
+        # not an index-level one — no point probing the remaining patterns.
+        if r.status_code == 401 or r.status_code is None:
+            auth_or_transport_failure = True
+            break
+
+    if auth_or_transport_failure:
+        last = index_results[-1]
+        overall = EndpointProbeResult(
+            role="indexer", url=indexer_url, ok=False,
+            status_code=last.status_code, detail=last.detail,
+        )
+    elif len(index_results) == 1:
+        # Single pattern (the common case): the overall verdict IS that pattern's
+        # result — preserve its real status code + detail.
+        only = index_results[0]
+        overall = EndpointProbeResult(
+            role="indexer", url=indexer_url, ok=only.ok,
+            status_code=only.status_code, detail=only.detail,
+        )
+    elif all(r.ok for r in index_results):
+        n = len(index_results)
+        detail = (
+            index_results[0].detail
+            if n == 1
+            else f"Credential can read all {n} configured index pattern(s)."
+        )
+        overall = EndpointProbeResult(
+            role="indexer", url=indexer_url, ok=True, status_code=200, detail=detail,
+        )
+    else:
+        bad = [r.pattern for r in index_results if not r.ok]
+        overall = EndpointProbeResult(
+            role="indexer", url=indexer_url, ok=False, status_code=200,
+            detail=(
+                f"Credential cannot read {len(bad)} of {len(index_results)} "
+                f"index pattern(s): {', '.join(bad)}."
+            ),
+        )
+    return overall, index_results
+
+
 async def probe_org_credentials(
     *,
     indexer_url: str,
     indexer_user: str,
     indexer_password: str,
-    index_pattern: str,
+    index_patterns: list[str],
     server_api_url: str,
     server_api_user: str,
     server_api_password: str,
@@ -197,17 +279,18 @@ async def probe_org_credentials(
 ) -> OrgCredentialProbeResult:
     """Probe an org's Indexer + Server API credentials and summarise scope.
 
-    The indexer leg tests **index read** (``_count`` on ``index_pattern``) — the
-    access the per-org credential actually exists to have — not cluster root,
-    so a correctly-scoped credential is reported ``ok`` instead of a misleading
-    403 (Phase 6.6-f).
+    The indexer leg tests **index read** (``_count``) against EACH configured
+    index pattern — the access the per-org credential actually exists to have,
+    not cluster root — so a correctly-scoped credential is reported ``ok``
+    instead of a misleading 403, and the caller learns per-index whether the
+    credential can reach each pattern (Phase 6.6-f + follow-up).
     """
     owns_client = client is None
     client = client or httpx.AsyncClient(verify=verify_tls, timeout=_TIMEOUT)
     try:
-        indexer = await probe_indexer_read(
-            indexer_url, indexer_user, indexer_password, index_pattern,
-            verify_tls=verify_tls, client=client,
+        indexer, index_results = await _probe_indexes(
+            client, indexer_url, indexer_user, indexer_password, index_patterns,
+            verify_tls=verify_tls,
         )
         manager = await probe_manager_api(
             server_api_url, server_api_user, server_api_password,
@@ -231,4 +314,5 @@ async def probe_org_credentials(
         group_count=group_count,
         groups=groups,
         scope_detail=scope_detail,
+        index_results=index_results,
     )

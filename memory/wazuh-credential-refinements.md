@@ -1,6 +1,6 @@
 ---
 name: wazuh-credential-refinements
-description: "Tracked Wazuh-integration refinements from the 6.6-f web-test (2026-06-18): (Q1) credential-change validation bug — FIXED this session; (Q2) index pattern is a target selector not a restriction — consider default-and-hide + dynamic index discovery; (Q4) surface agent.labels.group in alert citations — tool-enrichment item."
+description: "Wazuh-integration refinements from the 6.6-f web-test (2026-06-18): (Q1) credential-change validation bug — FIXED; (Q2) multiple comma-separated index patterns + per-index access checking — BUILT; (Q4) surface agent.labels.group in alert citations — still a tool-enrichment item. Plus: clean enumeration of a scoped user's readable indices is NOT available (listing APIs 403)."
 metadata:
   node_type: memory
   type: project
@@ -19,15 +19,19 @@ checkpoints:
   inline validation mirrors it. (In git/CHANGELOG — here only as the anchor for
   the other two.)
 
-- **(Q2) Index pattern is a *target selector*, not a restriction.**
-  `wazuh_index_filter` (`opensearch_index_pattern`) just says WHICH index to
-  `_search` (default `wazuh-alerts-*`); the credential's DLS does the scoping.
-  Operator asked why keep it / can't we discover it dynamically. Direction:
-  treat it as a sane default that's rarely touched (advanced/optional override
-  for pooled-index/custom-index setups). Full dynamic discovery of a user's
-  readable indices is partly possible (OpenSearch `authinfo`/account → roles)
-  but mapping roles→index-patterns generally needs admin, so it's a stretch.
-  Tracked refinement, not yet built.
+- **(Q2) Multiple index patterns + per-index access checking — BUILT
+  2026-06-18.** `wazuh_index_filter` now accepts **comma-separated** patterns
+  (trimmed/de-duped/normalized; the runtime search spans them via `/a,b/_search`
+  — httpx preserves the comma). `probe_indexer_read` uses `_shards.total` as the
+  access signal (empirically: this cluster runs `do_not_fail_on_forbidden`, so a
+  forbidden/non-matching pattern returns 200 + 0 shards, NOT 403; a wrong exact
+  index → 404). `probe_org_credentials(index_patterns=[...])` probes EACH and
+  returns `index_results` (per-pattern ✓/✗ in the card). **Clean enumeration of
+  a scoped user's readable indices is NOT possible** — `_cat/indices`/`_aliases`
+  → 403 for a scoped user, and `_resolve/index/*` over-reports (shows indices it
+  can't read); so Wolf checks the patterns you DEFINE rather than auto-listing.
+  The index pattern remains a *target selector*, not a restriction (DLS scopes
+  the data).
 
 - **(Q4) Surface `agent.labels.group` in citations — tool-enrichment item.**
   `agent.labels.group` is used only as a query FILTER (opt-in

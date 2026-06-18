@@ -222,8 +222,9 @@ export function WazuhCredentialsCard({
               <Field id="cred-api-pw" label="Server API password" value={serverPassword}
                 onChange={setServerPassword} placeholder={pwPlaceholder} type="password"
                 disabled={!orgActive} />
-              <Field id="cred-index" label="Index filter" value={indexFilter}
-                onChange={setIndexFilter} placeholder="wazuh-alerts-*" disabled={!orgActive} />
+              <Field id="cred-index" label="Index pattern(s) (comma-separated)"
+                value={indexFilter} onChange={setIndexFilter}
+                placeholder="wazuh-alerts-*, wazuh-archives-*" disabled={!orgActive} />
               <Field id="cred-groups" label="Agent group label(s) (comma-separated)"
                 value={groupLabels} onChange={setGroupLabels} placeholder="acme"
                 mono={false} disabled={!orgActive} />
@@ -285,6 +286,26 @@ export function WazuhCredentialsCard({
                       </div>
                     ))}
                   </div>
+                  {result.index_results.length > 0 ? (
+                    <div className="mt-1 space-y-1">
+                      <p className="text-xs font-medium text-muted-foreground">
+                        Index access
+                      </p>
+                      {result.index_results.map((ix) => (
+                        <div key={ix.pattern} className="flex items-center gap-2 text-sm">
+                          {ix.ok ? (
+                            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                          ) : (
+                            <XCircle className="h-3.5 w-3.5 text-destructive" />
+                          )}
+                          <Badge variant="outline" className="font-mono">
+                            {ix.pattern}
+                          </Badge>
+                          <span className="text-muted-foreground">{ix.detail}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                   {result.scope_detail ? (
                     <p className="text-sm text-muted-foreground">{result.scope_detail}</p>
                   ) : null}

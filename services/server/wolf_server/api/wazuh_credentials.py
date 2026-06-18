@@ -58,6 +58,16 @@ def _clean_labels(labels: list[str] | None) -> list[str]:
     return seen
 
 
+def _clean_index_patterns(raw: str) -> list[str]:
+    """Split a comma-separated index-pattern string → trimmed, de-duped list."""
+    seen: list[str] = []
+    for part in raw.split(","):
+        value = part.strip()
+        if value and value not in seen:
+            seen.append(value)
+    return seen
+
+
 # ── Schemas ────────────────────────────────────────────────────────────────
 
 
@@ -69,14 +79,20 @@ class WazuhCredentialsUpdate(BaseModel):
     indexer_password: str | None = Field(default=None, max_length=1024)
     server_api_user: str = Field(min_length=1, max_length=200)
     server_api_password: str | None = Field(default=None, max_length=1024)
-    wazuh_index_filter: str = Field(default=_DEFAULT_INDEX_FILTER, min_length=1, max_length=200)
+    # One or more comma-separated index patterns the org queries (the credential
+    # is checked against EACH; the runtime search spans them all).
+    wazuh_index_filter: str = Field(default=_DEFAULT_INDEX_FILTER, min_length=1, max_length=500)
     # The agent.labels.group value(s) to scope indexer queries to when the
     # filter is enabled (Phase 6.6-f).  Multiple labels are OR-combined.
     agent_group_labels: list[str] | None = None
     inject_group_label_filter: bool = False
 
     @model_validator(mode="after")
-    def _validate_group_labels(self) -> "WazuhCredentialsUpdate":
+    def _validate(self) -> "WazuhCredentialsUpdate":
+        patterns = _clean_index_patterns(self.wazuh_index_filter)
+        if not patterns:
+            raise ValueError("Provide at least one index pattern (e.g. wazuh-alerts-*).")
+        self.wazuh_index_filter = ",".join(patterns)  # normalized for storage + query
         cleaned = _clean_labels(self.agent_group_labels)
         self.agent_group_labels = cleaned or None
         if self.inject_group_label_filter and not cleaned:
@@ -89,6 +105,15 @@ class WazuhCredentialsUpdate(BaseModel):
 
 class ProbeResultOut(BaseModel):
     role: str
+    ok: bool
+    detail: str
+    status_code: int | None = None
+
+
+class IndexAccessOut(BaseModel):
+    """Per-index read-access verdict for the credentials card."""
+
+    pattern: str
     ok: bool
     detail: str
     status_code: int | None = None
@@ -112,6 +137,7 @@ class WazuhCredentialsSaveResponse(WazuhCredentialsResponse):
     agent_count: int | None = None
     group_count: int | None = None
     groups: list[str] | None = None
+    index_results: list[IndexAccessOut] = Field(default_factory=list)
     scope_detail: str | None = None
     warnings: list[str] = Field(default_factory=list)
 
@@ -278,7 +304,7 @@ async def put_wazuh_credentials(
         indexer_url=indexer_url,
         indexer_user=indexer_user,
         indexer_password=indexer_password,
-        index_pattern=payload.wazuh_index_filter,
+        index_patterns=_clean_index_patterns(payload.wazuh_index_filter),
         server_api_url=manager_url,
         server_api_user=server_user,
         server_api_password=server_password,
@@ -384,6 +410,12 @@ async def put_wazuh_credentials(
         agent_count=probe.agent_count,
         group_count=probe.group_count,
         groups=probe.groups,
+        index_results=[
+            IndexAccessOut(
+                pattern=ir.pattern, ok=ir.ok, detail=ir.detail, status_code=ir.status_code
+            )
+            for ir in probe.index_results
+        ],
         scope_detail=probe.scope_detail,
         warnings=warnings,
     )

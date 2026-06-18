@@ -201,8 +201,17 @@ export type WazuhCredentialsSaveResponse = WazuhCredentialsResponse & {
   group_count: number | null;
   // Distinct groups the Server-API credential is scoped to (from RBAC policies).
   groups: string[] | null;
+  // Per-index read-access verdict (one per configured index pattern).
+  index_results: WazuhIndexAccess[];
   scope_detail: string | null;
   warnings: string[];
+};
+
+export type WazuhIndexAccess = {
+  pattern: string;
+  ok: boolean;
+  detail: string;
+  status_code: number | null;
 };
 
 export type WazuhCredentialHistoryEntry = {

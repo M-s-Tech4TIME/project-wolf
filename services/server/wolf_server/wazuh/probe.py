@@ -182,20 +182,41 @@ async def probe_indexer_read(
                     f"{response.status_code} reading '{index_pattern}'; expected 200."
                 ),
             )
+        # 200: distinguish a genuinely readable index (shards resolved) from a
+        # pattern that matched nothing or is silently filtered out. Clusters with
+        # `do_not_fail_on_forbidden` (the common Wazuh default) return 200 with
+        # ZERO shards for a forbidden/non-matching pattern rather than a 403, so
+        # `_shards.total == 0` is our "no readable index" signal.
         count: int | None = None
+        shards_total: int | None = None
         try:
             body = response.json()
-            if isinstance(body, dict) and isinstance(body.get("count"), int):
-                count = int(body["count"])
+            if isinstance(body, dict):
+                if isinstance(body.get("count"), int):
+                    count = int(body["count"])
+                shards = body.get("_shards")
+                if isinstance(shards, dict) and isinstance(shards.get("total"), int):
+                    shards_total = int(shards["total"])
         except ValueError:
-            count = None
-        visible = f"{count} alert(s)" if count is not None else "alerts"
+            pass
+        if shards_total == 0:
+            return EndpointProbeResult(
+                role="indexer",
+                url=url,
+                ok=False,
+                status_code=200,
+                detail=(
+                    f"No readable index matches '{index_pattern}' — the pattern "
+                    f"matches nothing, or the credential cannot access it."
+                ),
+            )
+        visible = f"{count} doc(s)" if count is not None else "documents"
         return EndpointProbeResult(
             role="indexer",
             url=url,
             ok=True,
             status_code=200,
-            detail=f"Indexer credential can read {visible} in '{index_pattern}' (HTTP 200).",
+            detail=f"Indexer credential can read '{index_pattern}' ({visible}).",
         )
     finally:
         if owns_client:

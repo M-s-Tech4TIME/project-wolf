@@ -29,6 +29,7 @@ from wolf_server.bootstrap.superuser import SUPERUSER_EMAIL, SUPERUSER_USERNAME
 from wolf_server.organization.models import Organization, User
 from wolf_server.secrets_factory import get_secrets_backend
 from wolf_server.wazuh.credentials import (
+    IndexAccessResult,
     OrgCredentialProbeResult,
     probe_org_credentials,
     resolve_endpoints_from_topology,
@@ -148,9 +149,20 @@ def _stub_probe(
             group_count=groups if manager_ok else None,
             groups=names if manager_ok else None,
             scope_detail="scope summary",
+            index_results=[
+                IndexAccessResult(
+                    pattern=p, ok=indexer_ok, detail="index probe",
+                    status_code=200 if indexer_ok else 401,
+                )
+                for p in _clean_patterns(kwargs.get("index_patterns"))
+            ],
         )
 
     monkeypatch.setattr(wc, "probe_org_credentials", fake)
+
+
+def _clean_patterns(patterns: object) -> list[str]:
+    return list(patterns) if isinstance(patterns, list) and patterns else ["wazuh-alerts-*"]
 
 
 async def _login(client: AsyncClient, email: str, password: str) -> Any:
@@ -222,13 +234,14 @@ async def test_probe_org_credentials_ok_with_scope() -> None:
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as c:
         result = await probe_org_credentials(
             indexer_url="https://idx:9200", indexer_user="u", indexer_password="p",
-            index_pattern="wazuh-alerts-*",
+            index_patterns=["wazuh-alerts-*"],
             server_api_url="https://mgr:55000", server_api_user="wui", server_api_password="p",
             verify_tls=False, client=c,
         )
     assert result.ok is True
     assert result.indexer.status_code == 200
-    assert "27 alert(s)" in result.indexer.detail
+    assert "27 doc(s)" in result.indexer.detail
+    assert len(result.index_results) == 1 and result.index_results[0].ok is True
     assert result.agent_count == 5
     assert result.group_count == 1
     assert result.groups == ["acme"]
@@ -264,7 +277,7 @@ async def test_probe_org_credentials_scope_ignores_incidental_agent_groups() -> 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as c:
         result = await probe_org_credentials(
             indexer_url="https://idx:9200", indexer_user="u", indexer_password="p",
-            index_pattern="wazuh-alerts-*",
+            index_patterns=["wazuh-alerts-*"],
             server_api_url="https://mgr:55000", server_api_user="wui", server_api_password="p",
             verify_tls=False, client=c,
         )
@@ -284,7 +297,7 @@ async def test_probe_org_credentials_indexer_403_is_not_ok() -> None:
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as c:
         result = await probe_org_credentials(
             indexer_url="https://idx:9200", indexer_user="u", indexer_password="p",
-            index_pattern="wazuh-alerts-*",
+            index_patterns=["wazuh-alerts-*"],
             server_api_url="https://mgr:55000", server_api_user="wui", server_api_password="p",
             verify_tls=False, client=c,
         )
@@ -305,7 +318,7 @@ async def test_probe_org_credentials_manager_auth_fail_no_scope() -> None:
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as c:
         result = await probe_org_credentials(
             indexer_url="https://idx:9200", indexer_user="u", indexer_password="p",
-            index_pattern="wazuh-alerts-*",
+            index_patterns=["wazuh-alerts-*"],
             server_api_url="https://mgr:55000", server_api_user="wui", server_api_password="bad",
             verify_tls=False, client=c,
         )
@@ -314,6 +327,38 @@ async def test_probe_org_credentials_manager_auth_fail_no_scope() -> None:
     assert result.ok is False
     assert result.agent_count is None
     assert result.groups is None
+
+
+async def test_probe_org_credentials_per_index_mixed_access() -> None:
+    """Multiple patterns: one readable, one with 0 shards → per-index breakdown."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path.endswith("/security/user/authenticate"):
+            return httpx.Response(200, json={"data": {"token": "t"}})
+        if path.endswith("/security/users/me/policies"):
+            return httpx.Response(200, json={"data": {"agent:read": {"agent:group:*": "allow"}}})
+        if path.endswith("/agents"):
+            return httpx.Response(200, json={"data": {"total_affected_items": 9}})
+        # indexer _count: real index resolves shards; bogus one resolves none.
+        if "wazuh-alerts-" in path:
+            return httpx.Response(200, json={"count": 12, "_shards": {"total": 5}})
+        return httpx.Response(200, json={"count": 0, "_shards": {"total": 0}})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as c:
+        result = await probe_org_credentials(
+            indexer_url="https://idx:9200", indexer_user="u", indexer_password="p",
+            index_patterns=["wazuh-alerts-*", "bogus-*"],
+            server_api_url="https://mgr:55000", server_api_user="wui", server_api_password="p",
+            verify_tls=False, client=c,
+        )
+    assert len(result.index_results) == 2
+    by_pat = {r.pattern: r for r in result.index_results}
+    assert by_pat["wazuh-alerts-*"].ok is True
+    assert by_pat["bogus-*"].ok is False
+    assert "no readable index" in by_pat["bogus-*"].detail.lower()
+    # Overall indexer fails because one configured pattern is unreadable.
+    assert result.indexer.ok is False
+    assert "bogus-*" in result.indexer.detail
 
 
 # ── Authorization ────────────────────────────────────────────────────────────
@@ -412,6 +457,55 @@ async def test_put_happy_path_probe_ok(
     assert row.agent_group_labels == ["acme"]
     assert row.inject_group_label_filter is False
     assert row.validated_at is not None
+
+
+async def test_put_multiple_index_patterns_normalized_and_checked(
+    client: AsyncClient,
+    db: AsyncSession,
+    seed_superuser: dict[str, Any],
+    with_topology: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Comma-separated patterns are trimmed/de-duped + each gets an access result."""
+    _stub_probe(monkeypatch)
+    org_id = await _make_org(db)
+    assert (await _login(client, SUPERUSER_USERNAME, _WOLF_PASSWORD)).status_code == 200
+
+    payload = {
+        **_BODY,
+        "wazuh_index_filter": " wazuh-alerts-* , wazuh-archives-* , wazuh-alerts-* ",
+    }
+    resp = await client.put(
+        f"/api/v1/superuser/organizations/{org_id}/wazuh-credentials", json=payload
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    # Stored value is normalized (trimmed, de-duped, comma-joined).
+    row = await db.scalar(
+        select(OrganizationWazuhConfig).where(OrganizationWazuhConfig.organization_id == org_id)
+    )
+    assert row is not None
+    assert row.opensearch_index_pattern == "wazuh-alerts-*,wazuh-archives-*"
+    # One per-index access result per cleaned pattern.
+    assert [r["pattern"] for r in body["index_results"]] == ["wazuh-alerts-*", "wazuh-archives-*"]
+
+
+async def test_put_blank_index_pattern_is_422(
+    client: AsyncClient,
+    db: AsyncSession,
+    seed_superuser: dict[str, Any],
+    with_topology: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_probe(monkeypatch)
+    org_id = await _make_org(db)
+    assert (await _login(client, SUPERUSER_USERNAME, _WOLF_PASSWORD)).status_code == 200
+    payload = {**_BODY, "wazuh_index_filter": "  ,  "}
+    resp = await client.put(
+        f"/api/v1/superuser/organizations/{org_id}/wazuh-credentials", json=payload
+    )
+    assert resp.status_code == 422
+    assert "at least one index pattern" in resp.text.lower()
 
 
 async def test_put_inject_on_without_labels_is_422(

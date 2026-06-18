@@ -49,6 +49,40 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-18 — Per-index access checking + multiple index patterns (6.6 follow-up, Q2)
+
+Operator follow-up after Phase 6.6 close: the index field should accept multiple
+comma-separated patterns (like the group labels), and Wolf should tell — per
+pattern — whether the credential can actually read it, rather than a single
+generic indexer verdict. Empirically grounded against the live cluster first:
+
+- A wrong **exact** index → `404`; a wrong **wildcard** pattern → `200` with
+  **0 shards** (the cluster runs `do_not_fail_on_forbidden`, so forbidden/
+  non-matching patterns come back as a silent empty, not a 403). The `401` the
+  operator saw earlier was a wrong indexer *username*, not a wrong index.
+  Enumerating "all readable indices" isn't available to a scoped credential
+  (`_cat/indices` / `_aliases` → 403), but **per-index `_count` checking is**.
+
+- `probe_indexer_read` now uses `_shards.total` as the signal: shards resolved →
+  readable (reports doc count, incl. 0 for a DLS-empty index); `_shards.total==0`
+  → "no readable index matches '<pattern>'" (the access-unknown red ✗); `404` →
+  not found; `403` → denied; `401` → bad creds. `probe_org_credentials` takes
+  `index_patterns: list[str]`, probes EACH, and returns `index_results`
+  (per-pattern verdict) + an overall indexer verdict (single pattern passes its
+  real status through; multiple → "can read all N" or "cannot read M of N: …").
+
+- API: `wazuh_index_filter` accepts comma-separated patterns (trimmed, de-duped,
+  normalized for storage + query; blank → 422); the save response carries
+  `index_results`. The runtime search spans all patterns (`/a,b/_search` — httpx
+  preserves the comma, verified live: `count=512` across alerts+monitoring).
+  Card: field relabelled "Index pattern(s) (comma-separated)" + a per-index
+  ✓/✗ "Index access" breakdown.
+
+**Verified:** ruff + mypy --strict clean, `tsc`/`eslint` clean, +6 tests
+(per-index probe outcomes incl. 0-shards/404/403, mixed multi-index, normalization,
+blank→422). **Live:** acme → `wazuh-alerts-*` ✓ (124) / `bogus-*` ✗ "no readable
+index" / `wazuh-monitoring-*` ✓ (388); multi-index `_count`=512.
+
 ## 2026-06-18 — Phase 6.6 CLOSED: web-test sign-off + credential-change fix + direction captured
 
 Operator web-tested 6.6-f and signed off ("all checkpoints working as described
