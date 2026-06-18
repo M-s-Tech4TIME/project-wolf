@@ -155,6 +155,66 @@ async def test_opensearch_raises_on_http_error(
         await client.execute(q)
 
 
+@pytest.mark.asyncio
+async def test_opensearch_fails_over_to_fallback_node(organization_id: uuid.UUID) -> None:
+    """Phase 6.6-g: a transport error on the primary indexer retries the fallback."""
+    primary = "https://idx-primary.test:9200"
+    fallback = "https://idx-fallback.test:9200"
+    conn = WazuhConnection(
+        organization_id=organization_id,
+        opensearch_url=primary,
+        opensearch_index_pattern="wazuh-alerts-*",
+        opensearch_username="u", opensearch_password="p",  # noqa: S106
+        server_api_url="https://api.test:55000",
+        server_api_username="u", server_api_password="p",  # noqa: S106
+        verify_tls=True,
+        opensearch_fallback_urls=(fallback,),
+    )
+    seen: list[str] = []
+
+    async def _handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.host)
+        if request.url.host == "idx-primary.test":
+            raise httpx.ConnectError("primary down", request=request)
+        return httpx.Response(200, json={"hits": {"total": {"value": 0}, "hits": []}})
+
+    client = _make_os_client(conn, httpx.MockTransport(_handler))
+    from datetime import UTC, datetime, timedelta
+
+    q = client.query_builder.search_alerts(
+        time_from=datetime.now(UTC) - timedelta(hours=1), time_to=datetime.now(UTC),
+    )
+    body = await client.execute(q)
+    assert body == {"hits": {"total": {"value": 0}, "hits": []}}
+    assert seen == ["idx-primary.test", "idx-fallback.test"]  # tried primary, then fell over
+
+
+@pytest.mark.asyncio
+async def test_opensearch_all_nodes_down_raises(organization_id: uuid.UUID) -> None:
+    conn = WazuhConnection(
+        organization_id=organization_id,
+        opensearch_url="https://a.test:9200",
+        opensearch_index_pattern="wazuh-alerts-*",
+        opensearch_username="u", opensearch_password="p",  # noqa: S106
+        server_api_url="https://api.test:55000",
+        server_api_username="u", server_api_password="p",  # noqa: S106
+        verify_tls=True,
+        opensearch_fallback_urls=("https://b.test:9200",),
+    )
+
+    async def _handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("down", request=request)
+
+    client = _make_os_client(conn, httpx.MockTransport(_handler))
+    from datetime import UTC, datetime, timedelta
+
+    q = client.query_builder.search_alerts(
+        time_from=datetime.now(UTC) - timedelta(hours=1), time_to=datetime.now(UTC),
+    )
+    with pytest.raises(WazuhOpenSearchError, match="indexer node"):
+        await client.execute(q)
+
+
 # ─── Server API client ───────────────────────────────────────────────────────
 
 

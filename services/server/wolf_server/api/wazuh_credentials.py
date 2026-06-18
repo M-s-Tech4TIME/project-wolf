@@ -328,15 +328,15 @@ async def put_wazuh_credentials(
         )
     )
     if row is None:
+        # URLs + TLS are NOT stored per-org (6.6-g) — the runtime resolver reads
+        # them from the install ecosystem topology; we only persist credential
+        # keys + index pattern + scoping.
         row = OrganizationWazuhConfig(
             id=uuid.uuid4(),
             organization_id=organization_id,
-            opensearch_url=indexer_url,
             opensearch_index_pattern=payload.wazuh_index_filter,
             opensearch_credential_key=os_key,
-            server_api_url=manager_url,
             server_api_credential_key=api_key,
-            verify_tls=verify_tls,
             inject_group_label_filter=payload.inject_group_label_filter,
             agent_group_labels=payload.agent_group_labels,
             validated_at=validated_at,
@@ -345,11 +345,6 @@ async def put_wazuh_credentials(
         )
         db.add(row)
     else:
-        # Refresh the URL projection from the current topology (a transitional
-        # cache until 6.6-e reads the topology fresh per query).
-        row.opensearch_url = indexer_url
-        row.server_api_url = manager_url
-        row.verify_tls = verify_tls
         row.opensearch_index_pattern = payload.wazuh_index_filter
         row.inject_group_label_filter = payload.inject_group_label_filter
         row.agent_group_labels = payload.agent_group_labels

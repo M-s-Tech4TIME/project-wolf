@@ -32,3 +32,7 @@ class WazuhConnection:
     # isolation boundary (Phase 6.6-f, ADR 0020).
     inject_group_label_filter: bool = False
     agent_group_labels: tuple[str, ...] = ()
+    # Other indexer nodes to retry, in order, if `opensearch_url` fails
+    # (distributed topology; empty for single-host). Phase 6.6-g — ADR 0020
+    # decision 1's resilience half (random primary + fallback-on-failure).
+    opensearch_fallback_urls: tuple[str, ...] = ()

@@ -52,14 +52,11 @@ async def _seed_org_with_creds(
         OrganizationWazuhConfig(
             id=uuid.uuid4(),
             organization_id=org.id,
-            # Legacy URL columns seeded STALE on purpose — the resolver must
-            # ignore them and read the install topology instead.
-            opensearch_url="https://stale-idx:9200",
+            # URLs + TLS are NOT stored per-org (6.6-g) — the resolver reads them
+            # from the install topology; the row holds only creds + pattern + scope.
             opensearch_index_pattern=index_pattern,
             opensearch_credential_key=os_key,
-            server_api_url="https://stale-mgr:55000",
             server_api_credential_key=api_key,
-            verify_tls=True,  # vestigial — topology's verify_tls wins
             inject_group_label_filter=False,
             agent_group_labels=None,
             validated_at=None,
@@ -135,10 +132,15 @@ async def test_resolver_distributed_picks_an_indexer_node(db: AsyncSession) -> N
     await db.commit()
 
     # Random per-query selection: every pick is a real node; master is fixed.
+    # The primary + fallbacks together cover ALL nodes (the resilience half),
+    # the primary is never duplicated in the fallbacks, and master has none.
     for _ in range(12):
         conn = await get_wazuh_connection(ctx, db, get_secrets_backend())
         assert conn.opensearch_url in node_urls
         assert conn.server_api_url == "https://master:55000"
+        assert conn.opensearch_url not in conn.opensearch_fallback_urls
+        assert {conn.opensearch_url, *conn.opensearch_fallback_urls} == node_urls
+        assert len(conn.opensearch_fallback_urls) == 2
 
 
 async def test_resolver_raises_without_topology(db: AsyncSession) -> None:

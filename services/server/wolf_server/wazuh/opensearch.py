@@ -74,22 +74,59 @@ class WazuhOpenSearchClient:
     # ── Search execution ───────────────────────────────────────────────────
 
     async def execute(self, query: dict[str, Any]) -> dict[str, Any]:
-        """Run a pre-built query.  The query MUST come from `self.query_builder`."""
+        """Run a pre-built query.  The query MUST come from `self.query_builder`.
+
+        For a distributed topology the connection carries fallback indexer nodes
+        (Phase 6.6-g): if the primary node is unreachable (transport error) or
+        returns a 5xx, we retry the SAME query against the next node — absolute
+        URLs route through the same authenticated client. A 4xx (e.g. 403) is a
+        per-credential verdict, not a node fault, so it is NOT retried.
+        """
         self._assert_group_label_filter_present(query)
         index = self._connection.opensearch_index_pattern
-        response = await self._client.post(f"/{index}/_search", json=query)
-        if response.status_code >= 400:
-            logger.warning(
-                "wazuh_opensearch_http_error",
-                status_code=response.status_code,
-                organization_id=str(self._connection.organization_id),
-            )
-            raise WazuhOpenSearchError(
-                f"OpenSearch returned {response.status_code}: {response.text[:200]}"
-            )
-        body: dict[str, Any] = response.json()
-        self._assert_group_label_match(body)
-        return body
+        candidates = (self._connection.opensearch_url, *self._connection.opensearch_fallback_urls)
+        last_error: str | None = None
+        for attempt, base in enumerate(candidates):
+            is_last = attempt == len(candidates) - 1
+            try:
+                response = await self._client.post(
+                    f"{base.rstrip('/')}/{index}/_search", json=query
+                )
+            except httpx.RequestError as exc:
+                last_error = f"{type(exc).__name__}: {exc}"
+                logger.warning(
+                    "wazuh_opensearch_node_unreachable",
+                    node=base,
+                    error=last_error,
+                    organization_id=str(self._connection.organization_id),
+                )
+                if is_last:
+                    break
+                continue
+            if response.status_code >= 500 and not is_last:
+                last_error = f"HTTP {response.status_code}"
+                logger.warning(
+                    "wazuh_opensearch_node_5xx",
+                    node=base,
+                    status_code=response.status_code,
+                    organization_id=str(self._connection.organization_id),
+                )
+                continue
+            if response.status_code >= 400:
+                logger.warning(
+                    "wazuh_opensearch_http_error",
+                    status_code=response.status_code,
+                    organization_id=str(self._connection.organization_id),
+                )
+                raise WazuhOpenSearchError(
+                    f"OpenSearch returned {response.status_code}: {response.text[:200]}"
+                )
+            body: dict[str, Any] = response.json()
+            self._assert_group_label_match(body)
+            return body
+        raise WazuhOpenSearchError(
+            f"All {len(candidates)} indexer node(s) failed; last error: {last_error}"
+        )
 
     # ── Safety re-checks ───────────────────────────────────────────────────
 

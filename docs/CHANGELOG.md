@@ -49,6 +49,40 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-18 — 6.6-g: vestigial URL-column cleanup + indexer-node fallback
+
+Retires the last structural debt from the 6.6 line (the tracked 6.6-e
+follow-up), folded into one slice per operator direction.
+
+- **Dropped the per-org URL/TLS columns** `opensearch_url` / `server_api_url` /
+  `verify_tls` from `organization_wazuh_configs` (migration `0014`). Since 6.6-e
+  the runtime resolver reads URLs + TLS from the install ecosystem **topology**
+  (read fresh per query), so these were written-but-never-read. The per-org row
+  now holds only credential keys + index pattern + scoping. The credentials API
+  + `_upsert_wazuh_config` stop writing them.
+- **Modernised `bootstrap_organization`**: it now sources the indexer/manager
+  URLs + TLS from the install topology (requires one to validate, like the API
+  409s) and **dropped** its `--opensearch-url` / `--server-api-url` /
+  `--verify-tls` / `--no-verify-tls` args. The pure `_validate_wazuh_connection`
+  helper is unchanged (its tests stay green).
+- **Indexer-node fallback-on-failure** (ADR 0020 decision 1's resilience half):
+  `_resolve_runtime_endpoints` now **shuffles** the distributed indexer nodes —
+  the first is the per-query random pick (load spread) and the rest are ordered
+  fallbacks; `WazuhConnection` carries `opensearch_fallback_urls`;
+  `WazuhOpenSearchClient.execute` retries the SAME query against the next node on
+  a transport error / 5xx (a 4xx like 403 is a per-credential verdict and is NOT
+  retried). Single-host has no fallbacks; the manager still uses the master only.
+
+**Verified:** ruff + mypy --strict clean; affected suites + full backend green;
+`0014` up/down round-trips on live Postgres + `alembic check` clean. **Live on
+the real 3-node cluster:** healthy primary → OK; dead primary `.99` → logs
+`node_unreachable` + fails over to a real node → OK; all-dead → `WazuhOpenSearchError`.
+
+**Still tracked (NOT in this slice):** Q4 citation enrichment (surface
+`agent.labels.group` in `AlertHit`) — tool-enrichment phase; the `read *` leak
+forward-coverage (DLS on all queried index families) — Phase 6.11. Index-pattern
+*discovery* is closed-as-infeasible (scoped users can't enumerate indices).
+
 ## 2026-06-18 — Probe reflects the opt-in group-label filter (Q4 refinement)
 
 Operator follow-up: with the "Restrict indexer queries to these group label(s)"

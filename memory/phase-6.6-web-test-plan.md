@@ -49,7 +49,13 @@ credential layers exactly.
 
 **Remaining:** operator to confirm the new 6.6-f credentials-card behavior
 (honest probe messages + scoped-group badges + the group-label checkbox), then
-Phase 6.6 CLOSED. Tracked follow-up (separate slice): drop the vestigial per-org
-URL columns + modernize `bootstrap_organization` + indexer-node fallback.
+Phase 6.6 CLOSED. The tracked cleanup follow-up is **DONE in 6.6-g**
+(2026-06-18): dropped the vestigial per-org URL/TLS columns (migration 0014),
+modernized `bootstrap_organization` (sources URLs from topology; dropped
+`--*-url`/`--verify-tls` args), and added indexer-node fallback-on-failure
+(resolver shuffles distributed nodes → random primary + ordered fallbacks; the
+opensearch client retries the next node on transport-error/5xx) — live-verified
+on the 3-node cluster. Remaining trackers: Q4 citation enrichment + the `read *`
+leak forward-coverage — see [[wazuh-credential-refinements]].
 Per [[no-unaddressed-errors]] + [[per-slice-web-test-checkpoints]] these tests
 are tracked, not skipped.

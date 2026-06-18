@@ -56,19 +56,24 @@ class WazuhTopologyMissingError(WolfError):
     error_code = "wazuh_topology_missing"
 
 
-def _resolve_runtime_endpoints(topology: WazuhEcosystemTopology) -> tuple[str, str, bool]:
-    """Return ``(indexer_url, server_api_url, verify_tls)`` for a query.
+def _resolve_runtime_endpoints(
+    topology: WazuhEcosystemTopology,
+) -> tuple[str, tuple[str, ...], str, bool]:
+    """Return ``(indexer_url, indexer_fallback_urls, server_api_url, verify_tls)``.
 
-    Single-host → the one indexer + manager.  Distributed → a **random**
-    indexer node (load distribution) + the manager master.  ``verify_tls`` is
-    the install-wide topology setting.
+    Single-host → the one indexer (no fallbacks) + manager.  Distributed → the
+    indexer nodes **shuffled**: the first is the per-query random pick (load
+    distribution, ADR 0020 decision 1) and the rest are ordered fallbacks the
+    client retries on failure (decision 1's resilience half, Phase 6.6-g) + the
+    manager master.  ``verify_tls`` is the install-wide topology setting.
     """
     shape = WAZUH_TOPOLOGY_ADAPTER.validate_python(topology.topology)
     if isinstance(shape, SingleHostTopology):
-        return shape.indexer_url, shape.manager_url, topology.verify_tls
+        return shape.indexer_url, (), shape.manager_url, topology.verify_tls
     if isinstance(shape, DistributedTopology):
-        node = random.choice(shape.indexer_nodes)  # noqa: S311 — load spread, not security
-        return node.url, shape.manager_master.url, topology.verify_tls
+        nodes = [node.url for node in shape.indexer_nodes]
+        random.shuffle(nodes)  # noqa: S311 — load spread + fallback order, not security
+        return nodes[0], tuple(nodes[1:]), shape.manager_master.url, topology.verify_tls
     raise ValueError(f"Unknown topology kind: {topology.kind!r}")  # pragma: no cover
 
 
@@ -100,7 +105,9 @@ async def get_wazuh_connection(
             "Wazuh ecosystem topology is not configured for this install "
             "(Settings → Wazuh Ecosystem)."
         )
-    indexer_url, server_api_url, verify_tls = _resolve_runtime_endpoints(topology)
+    indexer_url, indexer_fallbacks, server_api_url, verify_tls = _resolve_runtime_endpoints(
+        topology
+    )
 
     opensearch_creds = await _load_credential_blob(secrets, row.opensearch_credential_key)
     server_api_creds = await _load_credential_blob(secrets, row.server_api_credential_key)
@@ -108,6 +115,7 @@ async def get_wazuh_connection(
     return WazuhConnection(
         organization_id=ctx.organization_id,
         opensearch_url=indexer_url,
+        opensearch_fallback_urls=indexer_fallbacks,
         opensearch_index_pattern=row.opensearch_index_pattern,
         opensearch_username=opensearch_creds["username"],
         opensearch_password=opensearch_creds["password"],

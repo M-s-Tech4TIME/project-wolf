@@ -52,7 +52,8 @@ from wolf_server.database import Base
 from wolf_server.organization.context import VALID_ROLES
 from wolf_server.organization.models import Organization, User, UserOrganization
 from wolf_server.secrets_factory import get_secrets_backend
-from wolf_server.wazuh.models import OrganizationWazuhConfig
+from wolf_server.wazuh.credentials import resolve_endpoints_from_topology
+from wolf_server.wazuh.models import OrganizationWazuhConfig, WazuhEcosystemTopology
 from wolf_server.wazuh.resolver import opensearch_credential_key, server_api_credential_key
 
 logger = structlog.get_logger(__name__)
@@ -229,16 +230,16 @@ async def _upsert_wazuh_config(
     db: AsyncSession,
     organization_id: uuid.UUID,
     *,
-    opensearch_url: str,
     opensearch_index_pattern: str,
     opensearch_credential_key: str,  # noqa: A002 — names the column
-    server_api_url: str,
     server_api_credential_key: str,  # noqa: A002
-    verify_tls: bool,
     inject_group_label_filter: bool,
     agent_group_labels: list[str] | None,
     validated: bool,
 ) -> OrganizationWazuhConfig:
+    # URLs + TLS are NOT stored per-org (6.6-g) — the runtime resolver reads them
+    # from the install ecosystem topology. Only credential keys + index pattern
+    # + scoping live on the row.
     now = datetime.now(UTC)
     existing = await db.scalar(
         select(OrganizationWazuhConfig).where(
@@ -246,12 +247,9 @@ async def _upsert_wazuh_config(
         )
     )
     if existing is not None:
-        existing.opensearch_url = opensearch_url
         existing.opensearch_index_pattern = opensearch_index_pattern
         existing.opensearch_credential_key = opensearch_credential_key
-        existing.server_api_url = server_api_url
         existing.server_api_credential_key = server_api_credential_key
-        existing.verify_tls = verify_tls
         existing.inject_group_label_filter = inject_group_label_filter
         existing.agent_group_labels = agent_group_labels
         existing.validated_at = now if validated else None
@@ -260,12 +258,9 @@ async def _upsert_wazuh_config(
     cfg = OrganizationWazuhConfig(
         id=uuid.uuid4(),
         organization_id=organization_id,
-        opensearch_url=opensearch_url,
         opensearch_index_pattern=opensearch_index_pattern,
         opensearch_credential_key=opensearch_credential_key,
-        server_api_url=server_api_url,
         server_api_credential_key=server_api_credential_key,
-        verify_tls=verify_tls,
         inject_group_label_filter=inject_group_label_filter,
         agent_group_labels=agent_group_labels,
         validated_at=now if validated else None,
@@ -317,14 +312,11 @@ async def bootstrap_organization(
     admin_password: str,
     admin_display_name: str,
     role: str,
-    opensearch_url: str,
     opensearch_username: str,
     opensearch_password: str,
     opensearch_index_pattern: str,
-    server_api_url: str,
     server_api_username: str,
     server_api_password: str,
-    verify_tls: bool,
     inject_group_label_filter: bool,
     agent_group_labels: list[str] | None = None,
     update: bool = False,
@@ -371,14 +363,27 @@ async def bootstrap_organization(
             f"loop will fail on any tool call that hits Wazuh."
         )
 
-    # Validate (or explicitly skip) BEFORE writing anything to the DB.
+    # Validate (or explicitly skip) BEFORE writing anything to the DB. The
+    # indexer/manager URLs + TLS posture come from the install ecosystem
+    # TOPOLOGY (6.6-e/6.6-g), NOT per-org — so a topology must exist to validate.
     validated = False
     if not skip_validation:
+        async with factory() as db:
+            topology = await db.scalar(select(WazuhEcosystemTopology))
+        if topology is None:
+            await engine.dispose()
+            raise ConnectionValidationError(
+                "No Wazuh ecosystem topology is configured — configure it first "
+                "(Settings → Wazuh Ecosystem); an organization's credentials "
+                "validate against that ecosystem. Or pass --skip-validation for "
+                "the 'no Wazuh yet' placeholder pattern."
+            )
+        indexer_url, manager_url, verify_tls = resolve_endpoints_from_topology(topology)
         await _validate_wazuh_connection(
-            opensearch_url=opensearch_url,
+            opensearch_url=indexer_url,
             opensearch_username=opensearch_username,
             opensearch_password=opensearch_password,
-            server_api_url=server_api_url,
+            server_api_url=manager_url,
             server_api_username=server_api_username,
             server_api_password=server_api_password,
             verify_tls=verify_tls,
@@ -395,12 +400,9 @@ async def bootstrap_organization(
         await _upsert_wazuh_config(
             db,
             organization.id,
-            opensearch_url=opensearch_url,
             opensearch_index_pattern=opensearch_index_pattern,
             opensearch_credential_key=os_key,
-            server_api_url=server_api_url,
             server_api_credential_key=api_key,
-            verify_tls=verify_tls,
             inject_group_label_filter=inject_group_label_filter,
             agent_group_labels=agent_group_labels,
             validated=validated,
@@ -426,7 +428,6 @@ async def bootstrap_organization(
         "organization_slug": organization_slug,
         "user_id": str(user_id),
         "user_email": admin_email,
-        "verify_tls": verify_tls,
         "inject_group_label_filter": inject_group_label_filter,
         "agent_group_labels": agent_group_labels,
         "validated": validated,
@@ -445,27 +446,14 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument("--admin-password", required=True)
     p.add_argument("--admin-display-name", default="Organization Admin")
     p.add_argument("--role", default="admin", choices=sorted(VALID_ROLES))
-    p.add_argument("--opensearch-url", required=True)
+    # Indexer/manager URLs + TLS posture come from the install ecosystem
+    # topology (6.6-g) — configure it via the Superuser "Wazuh Ecosystem" page,
+    # not here. This CLI only takes the org's per-endpoint CREDENTIALS.
     p.add_argument("--opensearch-index-pattern", default="wazuh-alerts-*")
     p.add_argument("--opensearch-username", required=True)
     p.add_argument("--opensearch-password", required=True)
-    p.add_argument("--server-api-url", required=True)
     p.add_argument("--server-api-username", required=True)
     p.add_argument("--server-api-password", required=True)
-    tls = p.add_mutually_exclusive_group()
-    tls.add_argument(
-        "--verify-tls",
-        dest="verify_tls",
-        action="store_true",
-        help="Validate TLS certificates (default).",
-    )
-    tls.add_argument(
-        "--no-verify-tls",
-        dest="verify_tls",
-        action="store_false",
-        help="Skip TLS validation (self-signed certs).",
-    )
-    p.set_defaults(verify_tls=True)
 
     tf = p.add_mutually_exclusive_group()
     tf.add_argument(
@@ -536,14 +524,11 @@ def main(argv: list[str] | None = None) -> int:
                 admin_password=args.admin_password,
                 admin_display_name=args.admin_display_name,
                 role=args.role,
-                opensearch_url=args.opensearch_url,
                 opensearch_index_pattern=args.opensearch_index_pattern,
                 opensearch_username=args.opensearch_username,
                 opensearch_password=args.opensearch_password,
-                server_api_url=args.server_api_url,
                 server_api_username=args.server_api_username,
                 server_api_password=args.server_api_password,
-                verify_tls=args.verify_tls,
                 inject_group_label_filter=args.inject_group_label_filter,
                 agent_group_labels=args.agent_group_labels or None,
                 update=args.update,

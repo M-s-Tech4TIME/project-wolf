@@ -754,14 +754,9 @@ this UI uses it. 5 sub-slices, **3-5 sessions estimated**.
    mypy --strict (43) + cross-org isolation (18) green; wolf-server restarts
    clean. The **Category-2 functional web-test** (real probe success + scope +
    chat→Wazuh) runs against the operator's Wazuh to close the phase.
-   - **Deferred (tracked) follow-up:** the per-org URL columns
-     (`opensearch_url` / `server_api_url` / `verify_tls`) are now **vestigial**
-     (the resolver reads topology instead) — still written by the bootstrap
-     CLI + the 6.6-c credentials API to satisfy NOT-NULL. A small cleanup
-     should drop them + modernise `bootstrap_organization` (its `--*-url`
-     args), AND add **indexer-node fallback-on-failure** (ADR decision 1's
-     resilience half — random selection ships now; retry-other-nodes needs a
-     multi-node cluster to exercise).
+   - **Deferred follow-up — ✅ DONE in 6.6-g** (below): drop the vestigial
+     per-org URL columns + modernise `bootstrap_organization` + add the
+     indexer-node fallback-on-failure.
 
 6. **6.6-f — Dynamic per-org scoping (post-functional-test refinement)** — ✅
    **SHIPPED 2026-06-18.** Real per-org RBAC setup on the live cluster surfaced
@@ -779,6 +774,22 @@ this UI uses it. 5 sub-slices, **3-5 sessions estimated**.
    `agent.labels.group`) green; `0013` round-trips on Postgres + `alembic check`
    clean. **Live-verified** against the real distributed cluster (acme/beta
    probe + scope + group-label injection + return-check).
+
+7. **6.6-g — Vestigial URL-column cleanup + indexer-node fallback** — ✅
+   **SHIPPED 2026-06-18.** Retires the last structural debt from the 6.6 line.
+   (a) **Dropped** the per-org `opensearch_url` / `server_api_url` / `verify_tls`
+   columns (migration `0014`) — since 6.6-e the resolver reads URLs + TLS from
+   the install **topology**, so these were written-but-never-read. (b)
+   **Modernised `bootstrap_organization`**: it now sources URLs + TLS from the
+   topology (requires one to validate, like the API) and dropped its
+   `--opensearch-url` / `--server-api-url` / `--verify-tls` args. (c) **Indexer-
+   node fallback-on-failure** (ADR 0020 decision 1's resilience half): the
+   resolver now **shuffles** the distributed indexer nodes (random primary +
+   ordered fallbacks); `WazuhOpenSearchClient.execute` retries the next node on
+   a transport error / 5xx (4xx is a credential verdict, not retried). Backend
+   suite green; `0014` round-trips on Postgres + `alembic check` clean.
+   **Live-verified** on the 3-node cluster: healthy primary OK; dead primary →
+   logs `node_unreachable` + fails over to a real node → OK; all-dead → raises.
 
 **Exit criteria:** Superuser configures Wazuh ecosystem topology
 (single-host OR distributed) via the GUI; for each Organization,

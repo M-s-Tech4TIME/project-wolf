@@ -487,8 +487,7 @@ async def test_put_happy_path_probe_ok(
         )
     )
     assert row is not None
-    assert row.opensearch_url == "https://wz:9200"
-    assert row.server_api_url == "https://wz:55000"
+    # URLs are no longer stored per-org (6.6-g) — only creds + pattern + scope.
     assert row.opensearch_index_pattern == "wazuh-alerts-acme-*"
     assert row.agent_group_labels == ["acme"]
     assert row.inject_group_label_filter is False

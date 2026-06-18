@@ -60,20 +60,18 @@ class OrganizationWazuhConfig(Base):
         index=True,
     )
 
-    # OpenSearch (Wazuh Indexer) — alerts and raw events live here.
-    opensearch_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    # OpenSearch (Wazuh Indexer) — alerts and raw events live here.  Phase
+    # 6.6-g dropped the per-org `opensearch_url`/`server_api_url`/`verify_tls`
+    # columns: since 6.6-e the runtime resolver reads URLs + TLS posture from
+    # the install-level Wazuh ecosystem TOPOLOGY (a single source of truth),
+    # not per-org.  Only the credential keys + index pattern + scoping live here.
     opensearch_index_pattern: Mapped[str] = mapped_column(
         String(200), nullable=False, default="wazuh-alerts-*"
     )
     opensearch_credential_key: Mapped[str] = mapped_column(String(200), nullable=False)
 
     # Wazuh Server API — fleet inventory, rule definitions, cluster health.
-    server_api_url: Mapped[str] = mapped_column(String(500), nullable=False)
     server_api_credential_key: Mapped[str] = mapped_column(String(200), nullable=False)
-
-    # TLS verification — defaults to True; an explicit operator override is
-    # required to disable for self-signed certs (doc 07 §Transport security).
-    verify_tls: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     # Whether to inject a `terms: {agent.labels.group: [<labels>]}` clause into
     # every OpenSearch query (Phase 6.6-f, ADR 0020).  Default FALSE because the
