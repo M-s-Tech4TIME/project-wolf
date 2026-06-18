@@ -317,20 +317,36 @@ jobs:
       - name: Verify models match migrations
         run: uv run --package wolf-server alembic -c services/server/alembic.ini check
 
-  # Verify no execute tools can be imported from wolf-server
+  # Verify the model can never reach a write.
+  #
+  # Phase 6 (ADR 0025) reframe: execution moved INTO wolf-server (the in-process
+  # approval gateway, decision A2), so the old "no execute_* string anywhere in
+  # wolf-server" grep no longer fits — the write method legitimately lives on the
+  # bounded WazuhServerApiActionClient and is invoked by wolf_server/gateway +
+  # its API, post human-approval. The SURVIVING guarantee (doc 03 facts #1/#2):
+  # the MODEL can never call a write. So the model-facing `tools/` package must
+  # contain NO execute-tier tool and NO direct reference to the write client —
+  # writes go through propose → human-approve → gateway, never a model tool.
   safety-check:
-    name: Safety check (no execute tools in wolf-server)
+    name: Safety check (model cannot reach a write)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - name: Check execute tools are absent from wolf-server
+      - name: Model-facing tools must never write directly
         run: |
-          # Scan wolf-server code (not tests — tests assert these names
-          # are REJECTED by the dispatcher, which requires referencing them).
-          if grep -rE "execute_active_response|execute_rule|execute_config" services/server/wolf_server/; then
-            echo "ERROR: Execute tool found in wolf-server!" && exit 1
+          # A reference to the write client (or its execute_* methods) from the
+          # model-facing tools package would let the model write WITHOUT the
+          # approval gateway. Those references belong only in gateway/ + api/.
+          if grep -rEn "execute_active_response|execute_rule_tuning|execute_config_change|WazuhServerApiActionClient" services/server/wolf_server/tools/; then
+            echo "ERROR: a model-facing tool references the write client — writes must go through the approval gateway!" && exit 1
           fi
-          echo "OK: No execute tools in wolf-server code."
+          # No execute-tier tool may exist in the model-facing tools package
+          # (model_tools() filters execute, but an execute-tier tool should never
+          # be authored here in the first place — execution is gateway-only).
+          if grep -rEn "ToolTier\.execute" services/server/wolf_server/tools/; then
+            echo "ERROR: an execute-tier tool exists in wolf-server/tools — execution is gateway-only, never a model tool!" && exit 1
+          fi
+          echo "OK: model catalog is read+propose only; writes are gated by the approval gateway."
 
   # Prove at least one local model path exists (no paid dependency required)
   local-model-check:
@@ -590,6 +606,11 @@ jobs:
     name: .deb install verification (Phase 5.9 / Gap 9)
     runs-on: ubuntu-latest
     needs: smoke-deb
+    # This job adds three external apt repos (PostgreSQL, deadsnakes PPA,
+    # NodeSource). add-apt-repository ppa:deadsnakes can hang on a slow
+    # launchpad/keyserver — with no timeout it wedges at GitHub's 6-hour
+    # default. Cap it so an infra hang fails fast in minutes, not hours.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
       - name: Download .debs from smoke-deb

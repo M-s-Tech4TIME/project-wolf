@@ -88,6 +88,20 @@ cross-org proposal-isolation test); ruff + mypy --strict clean — `gateway` +
 Postgres + `alembic check` clean; wolf-server boots clean (propose tool
 registered, all four routes mounted).
 
+**CI safety-check reframed (follow-up commit):** the `safety-check` job asserted
+"no `execute_*` string anywhere in wolf-server" — a premise ADR 0025 (A2)
+inverts, since execution now lives in-process (the bounded write client +
+gateway). Reframed to the *surviving* guarantee (doc 03 facts #1/#2): **the model
+can never reach a write** — the model-facing `tools/` package must contain no
+execute-tier tool and no reference to the write client; writes stay confined to
+`gateway/` + its API. (Caught by checking the Dependabot PR + main CI runs after
+the push — a CI-audit miss in the first commit.)
+
+**CI hardening (same commit):** the `smoke-deb-install` job hung for hours on
+`add-apt-repository ppa:deadsnakes` (a launchpad/keyserver network hang) because
+it had no `timeout-minutes` — GitHub's 6-hour default. Added `timeout-minutes: 15`
+so an external-repo hang fails fast. The wedged run on `0703989` was cancelled.
+
 **Follow-ons (tracked, not built):** 6-b approval-queue GUI (browser web-test);
 other action classes; severity-tiered authority / four-eyes / crown-jewel;
 auto-execution (Phase 13). The live propose→approve→**execute** smoke against the
