@@ -18,3 +18,9 @@ STANDING RULE (2026-06-15): the operator directed — verbatim intent — "from 
 4. **Add a test per constraint** (e.g. empty value → 422), per [[no-unaddressed-errors]].
 
 **Dedicated retrofit slice:** fields introduced before 2026-06-15 (Phase 6.4/6.5-a…e.2 and earlier — login, chat composer, org CRUD, member mgmt, password resets, etc.) are audited + brought up to this bar in a tracked slice in `docs/10-build-roadmap.md`. Related: [[quality-secure-coding-discipline]], [[integrity-across-the-stack]].
+
+**Broader discipline (from Phase 6.6, 2026-06-18):** validation/messaging is one
+half — also interrogate EVERY parameter/field/opt-in/scope for its full range of
+states, verify the real system's behavior empirically before designing, and make
+every behavior-affecting input visibly reflected in its test/result surface. See
+[[scope-and-validation-discipline]].
