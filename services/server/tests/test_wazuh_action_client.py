@@ -33,25 +33,37 @@ def _action_client(handler: httpx.MockTransport) -> WazuhServerApiActionClient:
     return WazuhServerApiActionClient(_connection(), client=http)
 
 
-@pytest.mark.asyncio
-async def test_active_response_refused_when_not_permitted() -> None:
-    """Empty capabilities → fail closed, and NO request reaches the transport."""
-
+def _never_transport() -> httpx.MockTransport:
     async def _never(_req: httpx.Request) -> httpx.Response:
         raise AssertionError("request must not be issued when capability is denied")
 
-    client = _action_client(httpx.MockTransport(_never))
+    return httpx.MockTransport(_never)
+
+
+@pytest.mark.asyncio
+async def test_active_response_refused_when_not_permitted() -> None:
+    """Empty capabilities (the wolf-beta case) → fail closed, NO request issued."""
+    client = _action_client(_never_transport())
     caps = CredentialCapabilities(policies={})
     with pytest.raises(WazuhActionNotPermittedError, match="not authorized"):
         await client.execute_active_response(
-            agent_id="001", command="firewall-drop", capabilities=caps
+            agent_id="001", command="firewall-drop", capabilities=caps, agent_groups=["acme"]
         )
 
 
 @pytest.mark.asyncio
-async def test_active_response_issues_put_when_permitted() -> None:
-    seen: dict[str, object] = {}
+async def test_active_response_refused_when_agent_not_in_granted_group() -> None:
+    """Group-scoped grant, but the target agent is NOT in that group → refused
+    before any request (cross-group denial)."""
+    client = _action_client(_never_transport())
+    caps = CredentialCapabilities(policies={ACTION_ACTIVE_RESPONSE: {"agent:group:acme": "allow"}})
+    with pytest.raises(WazuhActionNotPermittedError, match="not authorized"):
+        await client.execute_active_response(
+            agent_id="009", command="firewall-drop", capabilities=caps, agent_groups=["beta"]
+        )
 
+
+def _permitted_handler(seen: dict[str, object]) -> httpx.MockTransport:
     async def _handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/security/user/authenticate":
             return httpx.Response(200, json={"data": {"token": "jwt"}})
@@ -62,10 +74,34 @@ async def test_active_response_issues_put_when_permitted() -> None:
             200, json={"data": {"affected_items": ["001"], "total_affected_items": 1}}
         )
 
-    client = _action_client(httpx.MockTransport(_handler))
+    return httpx.MockTransport(_handler)
+
+
+@pytest.mark.asyncio
+async def test_active_response_issues_put_when_permitted_by_agent_id() -> None:
+    seen: dict[str, object] = {}
+    client = _action_client(_permitted_handler(seen))
     caps = CredentialCapabilities(policies={ACTION_ACTIVE_RESPONSE: {"agent:id:*": "allow"}})
     body = await client.execute_active_response(
-        agent_id="001", command="firewall-drop", capabilities=caps
+        agent_id="001", command="firewall-drop", capabilities=caps, agent_groups=[]
     )
     assert seen == {"method": "PUT", "path": "/active-response", "agents_list": "001"}
+    assert body["data"]["total_affected_items"] == 1
+
+
+@pytest.mark.asyncio
+async def test_active_response_issues_put_when_permitted_by_group() -> None:
+    """The real per-org case: AR granted on agent:group:acme, target IS in acme
+    → the PUT is issued (the 6-a.1 fix unblocks per-org execution)."""
+    seen: dict[str, object] = {}
+    client = _action_client(_permitted_handler(seen))
+    caps = CredentialCapabilities(policies={ACTION_ACTIVE_RESPONSE: {"agent:group:acme": "allow"}})
+    body = await client.execute_active_response(
+        agent_id="002",
+        command="firewall-drop",
+        capabilities=caps,
+        agent_groups=["default", "acme"],
+    )
+    assert seen["method"] == "PUT"
+    assert seen["agents_list"] == "002"
     assert body["data"]["total_affected_items"] == 1

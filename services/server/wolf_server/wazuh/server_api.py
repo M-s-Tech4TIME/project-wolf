@@ -10,6 +10,7 @@ Authentication: the Server API issues short-lived JWTs in exchange for
 username/password.  This client transparently refreshes the JWT on 401.
 """
 
+from collections.abc import Sequence
 from typing import Any
 
 import httpx
@@ -178,18 +179,23 @@ class WazuhServerApiActionClient:
         agent_id: str,
         command: str,
         capabilities: CredentialCapabilities,
+        agent_groups: Sequence[str],
         arguments: list[str] | None = None,
     ) -> dict[str, Any]:
         """Run an active-response command on one resolved agent.
 
-        Capability-checked: the credential must be RBAC-allowed
-        ``active-response:command`` on ``agent:id:<agent_id>`` — else
-        :class:`WazuhActionNotPermittedError` (fail-closed) BEFORE any request.
+        Capability-checked the way Wazuh RBAC evaluates it: the credential must
+        be allowed ``active-response:command`` on ``agent:id:<agent_id>`` OR on
+        ``agent:group:<g>`` for any group the agent belongs to (``agent_groups``,
+        resolved fresh by the caller) — else :class:`WazuhActionNotPermittedError`
+        (fail-closed) BEFORE any request.  A per-org credential grants by group,
+        so the group expansion is what makes a real per-org write reachable.
         """
-        resource = f"agent:id:{agent_id}"
-        if not capabilities.can(ACTION_ACTIVE_RESPONSE, resource):
+        if not capabilities.can_on_agent(ACTION_ACTIVE_RESPONSE, agent_id, agent_groups):
+            groups = ", ".join(agent_groups) or "none"
             raise WazuhActionNotPermittedError(
-                f"Credential is not authorized for active-response on {resource}."
+                f"Credential is not authorized for active-response on agent {agent_id} "
+                f"(groups: {groups})."
             )
         body: dict[str, Any] = {
             "command": command,

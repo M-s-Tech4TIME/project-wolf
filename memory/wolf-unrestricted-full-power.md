@@ -37,6 +37,25 @@ opening); `propose_active_response` (tier=propose); RBAC `ACTION_PROPOSE`/
 doc 03 fact #3 (credential physically read-only) was inverted. See ADR 0025 +
 CHANGELOG 2026-06-18.
 
+**6-a.1 (2026-06-19) — group-aware capability gate, found by the live smoke.**
+The read-only capability-denial smoke against the real cluster (run BEFORE 6-b)
+caught a correctness gap: a per-org credential grants `active-response:command`
+on **`agent:group:<org>`** (e.g. `wolf-acme` → `agent:group:acme`), NOT on
+`agent:id:*`. The id-only `can(AR, "agent:id:<id>")` pre-flight would have
+**falsely refused every AR acme was genuinely authorized for** — 6-b would have
+been dead-on-arrival. Fix: the gate mirrors Wazuh RBAC's agent resource
+expansion — allowed on `agent:id:<id>` (or wildcard) OR on `agent:group:<g>` for
+ANY group the target agent is in (`CredentialCapabilities.can_on_agent`,
+deny-wins across the union); the agent's groups are resolved FRESH at decision
+time (`resolve_agent_groups`, fail-closed) in both the propose pre-flight and
+execution. Operator validated by removing AR from `wolf-beta` (acme/beta
+otherwise identical): acme ALLOW on its group agent, REFUSE out-of-scope; beta
+REFUSE (no AR action class). **Lesson: capability checks must match how Wazuh
+ACTUALLY evaluates RBAC (group expansion), not a literal id lookup — verify
+against a real per-org credential, not just a broad/admin one.** Reinforces
+[[scope-and-validation-discipline]] (empirical, real-system validation) +
+[[single-org-mssp-parity]] (broad `agent:id:*` single-org cred still works).
+
 **How to apply (remaining):**
 - Reshapes **Phase 6** — the hard read-only + propose-then-approve WALL is now
   capability-driven (gate/approval is a policy choice, not a built-in cap). The
@@ -44,7 +63,8 @@ CHANGELOG 2026-06-18.
   (6-b), the other action classes (`rule_tuning`/`agent_action`/`config_change`),
   and severity-tiered authority / four-eyes / crown-jewel (policy hooks; B1
   default = approval-for-all). Always pre-flight the credential's effective
-  policies before offering/doing a write.
+  policies before offering/doing a write — via `can_on_agent` (group-aware) for
+  agent-targeted actions, never a literal `agent:id` lookup.
 - The read-only `WazuhServerApiClient` was KEPT; the write surface is the
   separate capability-checked `WazuhServerApiActionClient`. Extend writes ONLY
   by adding named, capability-checked methods there — never by widening the read

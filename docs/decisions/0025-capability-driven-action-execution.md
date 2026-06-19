@@ -90,6 +90,23 @@ RBAC** before issuing, and invoked **only** by `gateway/execution.py` (never the
 model, never the read path). This is the principled "gain write paths via an
 ADR" the directive demanded — not an ad-hoc opening of the read guard.
 
+### Capability check mirrors Wazuh's agent resource expansion (slice 6-a.1)
+
+The capability check on an agent-targeted action is **not** a literal
+`agent:id:<id>` lookup. The live smoke against the real cluster (2026-06-19)
+showed a per-org credential grants active-response on **`agent:group:<org>`**
+(e.g. `wolf-acme` → `agent:group:acme`), never on `agent:id:*` — so an id-only
+check falsely refused *every* agent the credential was genuinely authorized for.
+The gate now mirrors how Wazuh RBAC itself evaluates an agent action: **allowed
+on `agent:id:<id>` (or a matching wildcard) OR on `agent:group:<g>` for ANY
+group the target agent belongs to**, deny-wins across the whole candidate set
+(`CredentialCapabilities.can_on_agent`). The agent's groups are resolved
+**fresh** at decision time (`resolve_agent_groups`, fail-closed to `[]`), both in
+the propose-tool pre-flight and at execution — a stale proposal can't smuggle in
+a membership that has since changed. This keeps single-org ↔ MSSP parity: a
+broad single-org credential granted `agent:id:*` still works with no groups at
+all.
+
 ## Consequences
 
 - New in-process module `wolf_server/gateway/` (proposal model + state machine +

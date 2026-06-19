@@ -49,6 +49,65 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-19 — 6-a.1: group-aware capability gate (live-smoke fix before 6-b)
+
+**Session type:** claude-code
+**Phase:** 6 (capability-driven action execution — correction to slice 6-a)
+**Branch / commit:** main
+
+### What we did
+Ran **smoke (a)** — the read-only capability-denial check — against the real
+cluster before building 6-b. It mechanically passed (the write client refused
+`firewall-drop` before any PUT; the parser read 54 RBAC actions off the
+privileged `wazuh-wui` user), but it **caught a correctness gap** that would have
+made 6-b dead-on-arrival:
+
+- The per-org `wolf-acme` credential grants `active-response:command` on
+  **`agent:group:acme`**, NOT on `agent:id:*` (the 6.6-f isolation model). Its
+  fleet (agents 002–005) are all members of group `acme`.
+- Slice 6-a's pre-flight checked `can(AR, "agent:id:<id>")` — which can never
+  match a `agent:group:acme` grant — so it would have **falsely refused every
+  active-response acme is genuinely authorized to run.** The "denial" was a
+  *false* denial, not a missing capability.
+
+**The fix (6-a.1):** the capability check now mirrors how Wazuh RBAC actually
+evaluates an agent action — allowed on `agent:id:<id>` (or a matching wildcard)
+**OR** on `agent:group:<g>` for ANY group the target agent is in, deny-wins
+across the union.
+- `CredentialCapabilities.can_on_agent(action, agent_id, agent_groups)` — the
+  group-expanding check (the original `can()` kept for non-agent resources).
+- `resolve_agent_groups(server_api, agent_id)` — resolves the agent's live
+  groups (read-only, fail-closed to `[]`), called **fresh** at decision time in
+  both the propose-tool pre-flight and execution (`_perform`) — a stale proposal
+  can't smuggle in a membership that has since changed.
+- `WazuhServerApiActionClient.execute_active_response` now takes `agent_groups`
+  and gates via `can_on_agent`.
+
+### How we verified
+The operator improvised a clean control: **removed `active-response:command`
+from `wolf-beta`, leaving acme & beta otherwise identical.** Re-ran the live
+smoke (read-only, no PUT ever issued) across both credentials:
+
+| Credential | Target | `available_action_classes()` | Gate |
+|---|---|---|---|
+| `wolf-acme` | agent 002 (in `acme`) | `['active_response']` | **ALLOW** (was falsely refused pre-fix) |
+| `wolf-acme` | agent 001 (out of scope) | `['active_response']` | **REFUSE** (403→fail-closed) |
+| `wolf-beta` | agent 006 (visible to beta) | `[]` | **REFUSE** (capability absent) |
+
+`wolf-beta` proves the cleanest denial: it *can* see agent 006 and resolves its
+groups, but has no AR action class at all — the denial is the missing
+capability, not invisibility. ADR 0025 amended with the "agent resource
+expansion" subsection. **638 backend tests pass / 0 skip** (capability +
+action-client + propose suites extended with group-scoped allow, cross-group
+deny, and no-capability deny); ruff + mypy --strict clean; safety-check greps
+still clean (no write refs leaked into `tools/`). No schema change.
+
+### Follow-ons
+6-b approval-queue GUI next; then the live propose→approve→**execute** smoke
+(real state change) per operator go-ahead.
+
+---
+
 ## 2026-06-18 — Phase 6 OPENED: capability-driven action execution (ADR 0025, slice 6-a)
 
 Phase 6 reframed per `wolf-unrestricted-full-power`: Wolf is NOT read-only — it

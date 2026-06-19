@@ -15,7 +15,10 @@ write it could not confirm the credential is permitted.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 # Wazuh RBAC actions Wolf maps to its own action classes (v1: active-response).
 # The Server-API action that runs an active-response command on agents.
@@ -71,6 +74,36 @@ class CredentialCapabilities:
                     return False
                 if effect == _ALLOW:
                     allowed = True
+        return allowed
+
+    def can_on_agent(
+        self, action: str, agent_id: str, agent_groups: Iterable[str]
+    ) -> bool:
+        """True iff the credential is allowed ``action`` on the given agent.
+
+        Mirrors how Wazuh RBAC actually evaluates an agent-targeted action: it
+        is authorized on ``agent:id:<id>`` (or a matching wildcard) **OR** on
+        ``agent:group:<g>`` for ANY group the agent belongs to.  A per-org
+        credential grants by group (e.g. ``active-response:command`` on
+        ``agent:group:acme``), so an id-only check would falsely refuse every
+        agent it is genuinely authorized for (6.6-f isolation model).
+
+        Deny-wins across the WHOLE candidate set: an explicit ``deny`` on any
+        matching resource (id or group) refuses, even if another grants allow.
+        Unknown action / no matching allow → ``False`` (fail-closed).
+        """
+        res_map = self.policies.get(action)
+        if not res_map:
+            return False
+        candidates = [f"agent:id:{agent_id}", *(f"agent:group:{g}" for g in agent_groups)]
+        allowed = False
+        for resource in candidates:
+            for pattern, effect in res_map.items():
+                if _resource_matches(pattern, resource):
+                    if effect == _DENY:
+                        return False
+                    if effect == _ALLOW:
+                        allowed = True
         return allowed
 
     def available_actions(self) -> set[str]:
@@ -132,3 +165,32 @@ async def fetch_credential_capabilities(server_api: Any) -> CredentialCapabiliti
     except Exception:  # noqa: BLE001 — fail-closed on any introspection failure
         return CredentialCapabilities(policies={})
     return CredentialCapabilities(policies=_parse_policies(payload))
+
+
+async def resolve_agent_groups(server_api: Any, agent_id: str) -> list[str]:
+    """Resolve an agent's current group memberships (read-only) for a capability check.
+
+    Wazuh authorizes an agent action on ``agent:id:<id>`` OR on
+    ``agent:group:<g>`` for any group the agent is in, so
+    :meth:`CredentialCapabilities.can_on_agent` needs the agent's live groups —
+    resolved *fresh* at decision time (a stale proposal could name an agent
+    whose membership has since changed).  ``server_api`` is the read-only
+    :class:`~wolf_server.wazuh.server_api.WazuhServerApiClient`.
+
+    Any failure / unexpected shape → ``[]`` (fail-closed: an unknown group can
+    never broaden the grant)."""
+    try:
+        payload = await server_api.get(
+            "/agents", params={"agents_list": agent_id, "select": "group"}
+        )
+    except Exception:  # noqa: BLE001 — fail-closed on any read failure
+        return []
+    if not isinstance(payload, dict):
+        return []
+    items = payload.get("data", {}).get("affected_items", [])
+    if not isinstance(items, list) or not items or not isinstance(items[0], dict):
+        return []
+    groups = items[0].get("group", [])
+    if not isinstance(groups, list):
+        return []
+    return [str(g) for g in groups]

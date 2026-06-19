@@ -22,12 +22,24 @@ from wolf_server.wazuh.capabilities import ACTION_ACTIVE_RESPONSE
 
 
 class _StubServerApi:
-    """Returns a fixed effective-policies payload for the capability pre-flight."""
+    """Serves the two reads the pre-flight does: effective policies
+    (``/security/users/me/policies``) and the target agent's groups
+    (``/agents``)."""
 
-    def __init__(self, policies: dict[str, dict[str, str]]) -> None:
+    def __init__(
+        self, policies: dict[str, dict[str, str]], agent_groups: list[str] | None = None
+    ) -> None:
         self._policies = policies
+        self._agent_groups = agent_groups or []
 
-    async def get(self, _path: str, *, params: Any = None) -> Any:
+    async def get(self, path: str, *, params: Any = None) -> Any:
+        if path == "/agents":
+            return {
+                "data": {
+                    "affected_items": [{"id": "001", "group": self._agent_groups}],
+                    "total_affected_items": 1,
+                }
+            }
         return {"data": self._policies}
 
 
@@ -43,18 +55,22 @@ def _ctx(seed: dict[str, Any]) -> OrganizationContext:
 
 
 def _exec_ctx(
-    db: AsyncSession, ctx: OrganizationContext, policies: dict[str, dict[str, str]]
+    db: AsyncSession,
+    ctx: OrganizationContext,
+    policies: dict[str, dict[str, str]],
+    agent_groups: list[str] | None = None,
 ) -> ToolExecContext:
     return ToolExecContext(
         organization=ctx,
         limits=DEFAULT_LIMITS,
         opensearch=None,
-        server_api=_StubServerApi(policies),
+        server_api=_StubServerApi(policies, agent_groups),
         db=db,
     )
 
 
 _ALLOW = {ACTION_ACTIVE_RESPONSE: {"agent:id:*": "allow"}}
+_ALLOW_BY_GROUP = {ACTION_ACTIVE_RESPONSE: {"agent:group:acme": "allow"}}
 
 
 @pytest.mark.asyncio
@@ -80,6 +96,38 @@ async def test_propose_refused_when_credential_lacks_capability(
     tool = ProposeActiveResponseTool()
     out = await tool.run(
         _exec_ctx(db, ctx, {}),  # empty policies → fail closed
+        ProposeActiveResponseInput(agent_id="001", command="firewall-drop", rationale="x"),
+    )
+    assert out.permitted is False
+    assert "not authorized" in out.summary.lower() or "not authorized" in out.detail.lower()
+
+
+@pytest.mark.asyncio
+async def test_propose_allowed_when_agent_in_granted_group(
+    db: AsyncSession, seed_organization_and_user: dict[str, Any]
+) -> None:
+    """Per-org case: AR granted on agent:group:acme + target agent IS in acme →
+    the proposal is accepted (the 6-a.1 fix; an id-only check would refuse it)."""
+    ctx = _ctx(seed_organization_and_user)
+    tool = ProposeActiveResponseTool()
+    out = await tool.run(
+        _exec_ctx(db, ctx, _ALLOW_BY_GROUP, agent_groups=["default", "acme"]),
+        ProposeActiveResponseInput(agent_id="001", command="firewall-drop", rationale="x"),
+    )
+    assert out.permitted is True
+    assert out.state == "pending"
+
+
+@pytest.mark.asyncio
+async def test_propose_refused_when_agent_not_in_granted_group(
+    db: AsyncSession, seed_organization_and_user: dict[str, Any]
+) -> None:
+    """Cross-group: AR granted on agent:group:acme but the target agent is only
+    in 'beta' → refused at the pre-flight."""
+    ctx = _ctx(seed_organization_and_user)
+    tool = ProposeActiveResponseTool()
+    out = await tool.run(
+        _exec_ctx(db, ctx, _ALLOW_BY_GROUP, agent_groups=["default", "beta"]),
         ProposeActiveResponseInput(agent_id="001", command="firewall-drop", rationale="x"),
     )
     assert out.permitted is False

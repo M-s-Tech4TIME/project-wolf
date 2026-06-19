@@ -33,7 +33,7 @@ from wolf_server.gateway.models import ActionProposal, ProposalState
 from wolf_server.organization.context import OrganizationContext
 from wolf_server.organization.rbac import Capability, require_capability
 from wolf_server.secrets_factory import get_secrets_backend
-from wolf_server.wazuh.capabilities import fetch_credential_capabilities
+from wolf_server.wazuh.capabilities import fetch_credential_capabilities, resolve_agent_groups
 from wolf_server.wazuh.resolver import get_wazuh_connection
 from wolf_server.wazuh.server_api import WazuhServerApiActionClient, WazuhServerApiClient
 
@@ -198,12 +198,17 @@ async def approve(
                 return False, f"Agent {agent_id} is no longer visible to the credential."
 
             async def _perform(p: ActionProposal) -> dict[str, Any]:
+                agent_id = str(p.target.get("agent_id", ""))
                 raw_args = p.parameters.get("arguments", [])
                 arguments = [str(a) for a in raw_args] if isinstance(raw_args, list) else []
+                # Resolve the agent's groups fresh — the capability check expands
+                # the grant over current group membership (Wazuh RBAC semantics).
+                agent_groups = await resolve_agent_groups(read_api, agent_id)
                 return await action_api.execute_active_response(
-                    agent_id=str(p.target.get("agent_id", "")),
+                    agent_id=agent_id,
                     command=p.action,
                     capabilities=capabilities,
+                    agent_groups=agent_groups,
                     arguments=arguments,
                 )
 

@@ -22,6 +22,7 @@ from wolf_server.tools.base import ProposeTool, ToolExecContext
 from wolf_server.wazuh.capabilities import (
     ACTION_ACTIVE_RESPONSE,
     fetch_credential_capabilities,
+    resolve_agent_groups,
 )
 
 _ACTION_CLASS = "active_response"
@@ -84,15 +85,20 @@ class ProposeActiveResponseTool(ProposeTool):
                 detail=verdict.reason,
             )
 
-        # 2. Capability pre-flight — the credential must be RBAC-allowed this action.
+        # 2. Capability pre-flight — the credential must be RBAC-allowed this action,
+        #    expanded over the agent's live group memberships (Wazuh RBAC authorizes
+        #    an agent action by id OR by any group the agent is in).
         capabilities = await fetch_credential_capabilities(exec_ctx.server_api)
-        if not capabilities.can(ACTION_ACTIVE_RESPONSE, f"agent:id:{args.agent_id}"):
+        agent_groups = await resolve_agent_groups(exec_ctx.server_api, args.agent_id)
+        if not capabilities.can_on_agent(ACTION_ACTIVE_RESPONSE, args.agent_id, agent_groups):
+            groups = ", ".join(agent_groups) or "none"
             return ProposeActiveResponseOutput(
                 permitted=False,
                 state="rejected",
                 summary="Not proposed — the Wazuh credential is not authorized for this action.",
                 detail=(
-                    f"Credential lacks active-response permission on agent:id:{args.agent_id}. "
+                    f"Credential lacks active-response permission on agent {args.agent_id} "
+                    f"(groups: {groups}). "
                     "Wolf only offers actions the credential's Wazuh RBAC permits."
                 ),
             )
