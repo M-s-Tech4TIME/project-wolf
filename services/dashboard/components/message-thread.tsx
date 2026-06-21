@@ -557,6 +557,30 @@ function GroundingBadge({ node }: { node: AssistantMessageNode }) {
     grounding_uncertain,
     grounding_unverifiable,
   } = node;
+  // ADR 0026 — deferred/incremental: the answer settled before the judge ran.
+  // Show a "verifying…" indicator until the late grounding event patches the
+  // chips + counts onto this node.
+  if (
+    node.grounding_pending &&
+    grounding_supported === null &&
+    grounding_unsupported === null &&
+    grounding_uncertain === null &&
+    grounding_unverifiable === null
+  ) {
+    return (
+      <>
+        <span>·</span>
+        <Badge
+          variant="outline"
+          className="gap-1 text-muted-foreground"
+          title="Wolf is verifying this answer's claims against the evidence. Grounding runs asynchronously (ADR 0026) — the verdict chips appear here when it finishes."
+        >
+          <Loader2 className="h-3 w-3 animate-spin" />
+          verifying…
+        </Badge>
+      </>
+    );
+  }
   if (
     grounding_supported === null &&
     grounding_unsupported === null &&
@@ -618,6 +642,15 @@ function GroundingBadge({ node }: { node: AssistantMessageNode }) {
   );
 }
 
+// A soft blinking caret appended INLINE to the last streamed block (via
+// ::after on the Markdown wrapper's last child), so "still generating" reads
+// at the end of the current line rather than on a new line beneath it.
+const STREAM_CARET =
+  "[&>*:last-child]:after:ml-0.5 [&>*:last-child]:after:inline-block " +
+  "[&>*:last-child]:after:h-[1em] [&>*:last-child]:after:w-px " +
+  "[&>*:last-child]:after:animate-pulse [&>*:last-child]:after:bg-primary " +
+  "[&>*:last-child]:after:align-text-bottom [&>*:last-child]:after:content-['']";
+
 function StreamingView({ stream }: { stream: StreamState }) {
   const hasStreamingText = stream.streamingAnswer.trim().length > 0;
   const isRunning = stream.status.phase === "running";
@@ -667,13 +700,12 @@ function StreamingView({ stream }: { stream: StreamState }) {
              answer event doesn't shift the layout. A soft pulsing caret
              at the end hints "still generating" without being noisy. */
           <div className="rounded-lg border border-border bg-card px-4 py-3">
-            <Markdown>{stream.streamingAnswer}</Markdown>
-            {stream.status.phase === "running" ? (
-              <span
-                aria-hidden="true"
-                className="ml-0.5 inline-block h-3.5 w-px animate-pulse bg-primary align-baseline"
-              />
-            ) : null}
+            {/* The "still generating" caret is an inline ::after on the LAST
+                rendered block, so it sits at the END of the last streamed line
+                instead of dropping onto its own line below the text. */}
+            <Markdown className={isRunning ? STREAM_CARET : undefined}>
+              {stream.streamingAnswer}
+            </Markdown>
           </div>
         ) : null}
         {stream.status.phase === "error" && stream.error ? (

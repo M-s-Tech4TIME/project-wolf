@@ -15,6 +15,7 @@ import { activeOrgHeader } from "./org-context";
 import type {
   AccessApprove,
   AccessRequestCreate,
+  ActionProposal,
   ChatRequestBody,
   ChatResponseBody,
   InstallAuditPage,
@@ -588,4 +589,38 @@ export function fetchSuperuserAccess(): Promise<SuperuserAccessGrant | null> {
   return apiFetch("/api/v1/organization/superuser-access").then(
     unwrap<SuperuserAccessGrant | null>,
   );
+}
+
+// ── Action proposals — the approval queue (Phase 6, ADR 0025) ──────────────
+
+/** List this org's action proposals. `state="pending"` (default) is the
+ *  actionable queue; `state="all"` returns recent proposals across every
+ *  state for the activity history. Requires ACTION_PROPOSE (analyst+). */
+export function listActionProposals(
+  state: "pending" | "all" = "pending",
+): Promise<ActionProposal[]> {
+  return apiFetch(
+    `/api/v1/organization/action-proposals?state=${encodeURIComponent(state)}`,
+  ).then(unwrap<ActionProposal[]>);
+}
+
+/** Approve a pending proposal and execute it (separation of duties → freshness
+ *  re-check → bounded write → verification read, all server-side). Returns the
+ *  proposal in its terminal state with the verification result. Requires
+ *  ACTION_APPROVE; throws ApiError(403) on self-approval, 409 if stale/changed. */
+export function approveActionProposal(proposalId: string): Promise<ActionProposal> {
+  return apiFetch(`/api/v1/organization/action-proposals/${proposalId}/approve`, {
+    method: "POST",
+  }).then(unwrap<ActionProposal>);
+}
+
+/** Reject a pending proposal — nothing executes. Optional audit note. */
+export function rejectActionProposal(
+  proposalId: string,
+  reason?: string,
+): Promise<ActionProposal> {
+  return apiFetch(`/api/v1/organization/action-proposals/${proposalId}/reject`, {
+    method: "POST",
+    body: JSON.stringify({ reason: reason ?? "" }),
+  }).then(unwrap<ActionProposal>);
 }

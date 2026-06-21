@@ -33,6 +33,7 @@ from wolf_server.gateway.models import ActionProposal, ProposalState
 from wolf_server.organization.context import OrganizationContext
 from wolf_server.organization.rbac import Capability, require_capability
 from wolf_server.secrets_factory import get_secrets_backend
+from wolf_server.wazuh.active_response import interpret_ar_result
 from wolf_server.wazuh.capabilities import fetch_credential_capabilities, resolve_agent_groups
 from wolf_server.wazuh.resolver import get_wazuh_connection
 from wolf_server.wazuh.server_api import WazuhServerApiActionClient, WazuhServerApiClient
@@ -105,21 +106,29 @@ async def _load_proposal(
     return proposal
 
 
+_RECENT_LIMIT = 200
+
+
 @router.get("", response_model=list[ProposalOut])
 async def list_proposals(
     ctx: Annotated[OrganizationContext, Depends(require_capability(Capability.ACTION_PROPOSE))],
     db: Annotated[AsyncSession, Depends(get_db)],
     state: Annotated[str, Query()] = ProposalState.pending.value,
 ) -> list[ProposalOut]:
-    """List this org's proposals in ``state`` (default: pending)."""
-    stmt = (
-        select(ActionProposal)
-        .where(
-            ActionProposal.organization_id == ctx.organization_id,
-            ActionProposal.state == state,
-        )
-        .order_by(ActionProposal.created_at.desc())
+    """List this org's proposals, newest first.
+
+    ``state`` filters to one lifecycle state (default ``pending`` — the
+    actionable approval queue).  ``state=all`` returns recent proposals across
+    *every* state (the activity history that lets a reviewer see what was
+    executed / failed / rejected), capped at the most recent ``_RECENT_LIMIT``.
+    Always forced-filtered to the caller's organization.
+    """
+    stmt = select(ActionProposal).where(
+        ActionProposal.organization_id == ctx.organization_id
     )
+    if state != "all":
+        stmt = stmt.where(ActionProposal.state == state)
+    stmt = stmt.order_by(ActionProposal.created_at.desc()).limit(_RECENT_LIMIT)
     rows = (await db.execute(stmt)).scalars().all()
     return [ProposalOut.from_row(p) for p in rows]
 
@@ -199,8 +208,11 @@ async def approve(
 
             async def _perform(p: ActionProposal) -> dict[str, Any]:
                 agent_id = str(p.target.get("agent_id", ""))
-                raw_args = p.parameters.get("arguments", [])
+                params = p.parameters if isinstance(p.parameters, dict) else {}
+                raw_args = params.get("arguments", [])
                 arguments = [str(a) for a in raw_args] if isinstance(raw_args, list) else []
+                srcip = params.get("srcip")
+                username = params.get("username")
                 # Resolve the agent's groups fresh — the capability check expands
                 # the grant over current group membership (Wazuh RBAC semantics).
                 agent_groups = await resolve_agent_groups(read_api, agent_id)
@@ -209,19 +221,18 @@ async def approve(
                     command=p.action,
                     capabilities=capabilities,
                     agent_groups=agent_groups,
+                    srcip=srcip if isinstance(srcip, str) else None,
+                    username=username if isinstance(username, str) else None,
                     arguments=arguments,
                 )
 
             async def _verify(
                 p: ActionProposal, res: dict[str, Any]
             ) -> tuple[bool, dict[str, Any]]:
-                data = res.get("data", {}) if isinstance(res, dict) else {}
-                total = data.get("total_affected_items", 0)
-                detail = {
-                    "total_affected_items": total,
-                    "affected_items": data.get("affected_items", []),
-                }
-                return (bool(total) and total >= 1), detail
+                # Wazuh returns HTTP 200 even on failure — interpret_ar_result
+                # reads dispatch from the body (affected vs failed_items) and is
+                # honest that "dispatched" != "applied on the host".
+                return interpret_ar_result(res)
 
             await execute_proposal(
                 db,

@@ -11,6 +11,7 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { MessageThread } from "@/components/message-thread";
 import { SuperuserAccessBanner } from "@/components/superuser-access-banner";
 import {
+  type GroundingPatch,
   NEUTRAL_STREAM,
   useConversationStreams,
 } from "@/hooks/use-conversation-streams";
@@ -24,6 +25,7 @@ import {
   makeUserNode,
   selectPathTo,
   switchToSibling,
+  updateAssistantGrounding,
 } from "@/lib/branches";
 import type {
   AssistantMessageNode,
@@ -108,6 +110,13 @@ export function ChatShell() {
   // streams.
   const archivedKeysRef = useRef<Set<string>>(new Set());
 
+  // ADR 0026 — tracks the last grounding patch (by object identity) applied
+  // per conversation, so the apply-effect fires once per distinct patch and
+  // never re-applies on an unrelated render. Same ref-guard shape as
+  // `archivedKeysRef` — that guard is what keeps both effects' setState from
+  // tripping react-hooks/set-state-in-effect.
+  const appliedGroundingRef = useRef<Record<string, GroundingPatch>>({});
+
   // Layout persistence ---------------------------------------------------
   const [sidebarCollapsed, setSidebarCollapsed] = usePersistedState<boolean>(
     STORAGE_SIDEBAR_COLLAPSED,
@@ -169,6 +178,9 @@ export function ChatShell() {
             grounding_unsupported: completion.grounding_unsupported,
             grounding_uncertain: completion.grounding_uncertain,
             grounding_unverifiable: completion.grounding_unverifiable,
+            // ADR 0026 — deferred/incremental: archived before the judge ran;
+            // the apply-grounding effect below patches the verdicts in later.
+            grounding_pending: completion.grounding_pending,
           });
           const next = appendChildOf(
             c,
@@ -194,6 +206,43 @@ export function ChatShell() {
     // whole `streams` object would refire this effect every render
     // since the hook returns a fresh wrapper each time.
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [streams.streams]);
+
+  // ADR 0026 — apply a late grounding result (deferred/incremental modes) to
+  // the already-archived assistant node. The `answer` event settles the
+  // message before the judge runs; this patches the verdict chips + counts in
+  // place (matched by loop_id) once they arrive — we cannot re-append (the
+  // tree forbids duplicate ids), so it mutates the existing node. Mirrors the
+  // archive effect above: a functional updater reads the freshest tree, so we
+  // depend only on `streams.streams` (the patch arrives seconds after the
+  // answer settled the node, so it is always present by now).
+  useEffect(() => {
+    for (const [convoId, state] of Object.entries(streams.streams)) {
+      const patch = state.groundingPatch;
+      if (!patch) continue;
+      // Ref-guard (mirrors archivedKeysRef): apply each distinct patch once.
+      // For incremental mode the hook hands us a NEW patch object per batch,
+      // so each progressive snapshot applies exactly once.
+      if (appliedGroundingRef.current[convoId] === patch) continue;
+      appliedGroundingRef.current[convoId] = patch;
+      setConversations((prev) =>
+        prev.map((c) => {
+          if (c.id !== convoId) return c;
+          const node = Object.values(c.nodes).find(
+            (n) => n.role === "assistant" && n.loop_id === patch.loop_id,
+          );
+          if (!node) return c; // node not archived yet — leave unchanged
+          return updateAssistantGrounding(c, node.id, {
+            ran: patch.ran,
+            content: patch.content,
+            grounding_supported: patch.supported,
+            grounding_unsupported: patch.unsupported,
+            grounding_uncertain: patch.uncertain,
+            grounding_unverifiable: patch.unverifiable,
+          });
+        }),
+      );
+    }
   }, [streams.streams]);
 
   const activeConversation =

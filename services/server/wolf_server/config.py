@@ -205,6 +205,38 @@ class Settings(BaseSettings):
     # names the secret key holding the API token. Leave empty for ollama.
     grounding_judge_api_key_ref: str = ""
 
+    # ── Grounding execution mode (ADR 0026) ────────────────────────────────
+    # WHEN grounding runs relative to the answer stream. Orthogonal to the
+    # judge MODEL (ADR 0024 posture). Today env-only; Phase 6.10 promotes both
+    # to a Superuser GUI control (ADR 0019), the third concrete 6.10 consumer.
+    #   - blocking     (default): the judge is awaited BEFORE the `answer`
+    #                  event; the answer surfaces already annotated + counted.
+    #                  Today's verified behavior — zero regression.
+    #   - deferred     (recommended): the `answer` event fires immediately with
+    #                  raw content + grounding_pending; the judge then runs and
+    #                  a follow-up `grounding.completed` patches in the
+    #                  annotated content + counts. Time-to-readable-answer drops
+    #                  to the token stream alone; chips arrive a moment later.
+    #   - incremental: like deferred, but claims are judged in CONCURRENT
+    #                  batches and chips pop in progressively (one
+    #                  `grounding.partial` per batch). Real wall-clock win on
+    #                  OLLAMA_NUM_PARALLEL>=2 / ample VRAM; on a constrained
+    #                  single GPU the batches serialize and it degrades
+    #                  gracefully to ~deferred.
+    # Unknown values fall back to "blocking" (see grounding_mode_normalized).
+    # The live default is "deferred" (set in .env) per the 2026-06-21 web-test —
+    # the operator preferred its UX; this code default stays "blocking" as the
+    # conservative no-.env fallback. (An evidence-scope "cited" trim was tried
+    # and PULLED — it starved the judge; see ADR 0026 addendum. Smart evidence
+    # selection is deferred to the grounding-enrichment phase.)
+    grounding_mode: str = "blocking"
+
+    @property
+    def grounding_mode_normalized(self) -> str:
+        """Lower-cased, validated grounding mode. Unknown → 'blocking'."""
+        mode = self.grounding_mode.strip().lower()
+        return mode if mode in {"blocking", "deferred", "incremental"} else "blocking"
+
     # ── Embedding stack (Phase 3 — knowledge layer) ────────────────────────
     # `ollama` (default) reuses the Ollama daemon already running for the LLM
     # — no torch in wolf-server's wheel set; recommended per ADR 0007.

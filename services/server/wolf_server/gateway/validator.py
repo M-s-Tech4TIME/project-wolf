@@ -25,16 +25,22 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from wolf_server.wazuh.active_response import (
+    AR_COMMANDS,
+    TARGET_SRCIP,
+    TARGET_USERNAME,
+    classify_os,
+    get_ar_command,
+    is_valid_ip,
+)
+
 # Wildcard / fleet-wide target tokens that must never appear in a single
 # proposal's resolved target or agents_list.
 _BLAST_TOKENS = frozenset({"*", "all"})
 
-# Allowed active-response commands (v1).  In a later slice this is sourced from
-# the live `GET /active-response` command list per ADR 0020 / doc 04 ("a command
-# id returned by list_active_response_commands — never an invented command").
-ALLOWED_ACTIVE_RESPONSE_COMMANDS = frozenset(
-    {"firewall-drop", "host-deny", "disable-account", "restart-wazuh"}
-)
+# Allowed active-response commands = the catalog (single source of truth).
+# Each carries platform + required-target metadata used by the checks below.
+ALLOWED_ACTIVE_RESPONSE_COMMANDS = frozenset(AR_COMMANDS)
 
 
 @dataclass(frozen=True)
@@ -76,16 +82,54 @@ def validate_proposal(
             )
 
     # 3. Allowed action per class (never an invented command).
-    if action_class == "active_response":
-        if action not in ALLOWED_ACTIVE_RESPONSE_COMMANDS:
+    if action_class != "active_response":
+        return ValidationResult(ok=False, reason=f"Unknown action class {action_class!r}.")
+
+    cmd = get_ar_command(action)
+    if cmd is None:
+        return ValidationResult(
+            ok=False,
+            reason=(
+                f"Active-response command {action!r} is not in the catalog; "
+                "the model may only propose a known command "
+                f"({', '.join(sorted(AR_COMMANDS))})."
+            ),
+        )
+
+    # 4. Required target per command — the action must carry what it acts on,
+    #    well-formed (so a doomed/ambiguous dispatch never reaches approval).
+    srcip = parameters.get("srcip")
+    username = parameters.get("username")
+    if cmd.target == TARGET_SRCIP:
+        if not isinstance(srcip, str) or not srcip.strip():
             return ValidationResult(
                 ok=False,
-                reason=(
-                    f"Active-response command {action!r} is not in the allow-list; "
-                    "the model may only propose a known command."
-                ),
+                reason=f"{action!r} blocks a source IP but no 'srcip' was provided.",
             )
-    else:
-        return ValidationResult(ok=False, reason=f"Unknown action class {action_class!r}.")
+        if not is_valid_ip(srcip.strip()):
+            return ValidationResult(
+                ok=False, reason=f"'srcip' {srcip!r} is not a valid IP address."
+            )
+    elif cmd.target == TARGET_USERNAME:
+        if not isinstance(username, str) or not username.strip():
+            return ValidationResult(
+                ok=False,
+                reason=f"{action!r} disables an account but no 'username' was provided.",
+            )
+
+    # 5. Platform fit — lenient: refuse ONLY a confirmed mismatch (e.g.
+    #    firewall-drop on a Windows agent). An unknown/unresolved OS does NOT
+    #    block (the credential + human approver remain the backstops).
+    os_signals = parameters.get("agent_os")
+    os_class = classify_os(os_signals if isinstance(os_signals, str) else None)
+    if os_class is not None and os_class not in cmd.platforms:
+        return ValidationResult(
+            ok=False,
+            reason=(
+                f"{action!r} targets {'/'.join(sorted(cmd.platforms))} but agent is "
+                f"{os_class}. Use a {os_class}-compatible command "
+                f"(e.g. {'netsh' if os_class == 'windows' else 'firewall-drop'})."
+            ),
+        )
 
     return ValidationResult(ok=True)

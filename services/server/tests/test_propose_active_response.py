@@ -96,10 +96,29 @@ async def test_propose_refused_when_credential_lacks_capability(
     tool = ProposeActiveResponseTool()
     out = await tool.run(
         _exec_ctx(db, ctx, {}),  # empty policies → fail closed
-        ProposeActiveResponseInput(agent_id="001", command="firewall-drop", rationale="x"),
+        ProposeActiveResponseInput(
+            agent_id="001", command="firewall-drop", srcip="203.0.113.7", rationale="x"
+        ),
     )
     assert out.permitted is False
     assert "not authorized" in out.summary.lower() or "not authorized" in out.detail.lower()
+
+
+@pytest.mark.asyncio
+async def test_propose_rejected_when_block_command_missing_srcip(
+    db: AsyncSession, seed_organization_and_user: dict[str, Any]
+) -> None:
+    """firewall-drop with no srcip is refused by the validator BEFORE the queue
+    (it would be a no-op on the host — the AR script needs data.srcip)."""
+    ctx = _ctx(seed_organization_and_user)
+    tool = ProposeActiveResponseTool()
+    out = await tool.run(
+        _exec_ctx(db, ctx, _ALLOW),
+        ProposeActiveResponseInput(agent_id="001", command="firewall-drop", rationale="x"),
+    )
+    assert out.permitted is False
+    assert out.state == "rejected"
+    assert "srcip" in out.detail.lower()
 
 
 @pytest.mark.asyncio
@@ -112,7 +131,9 @@ async def test_propose_allowed_when_agent_in_granted_group(
     tool = ProposeActiveResponseTool()
     out = await tool.run(
         _exec_ctx(db, ctx, _ALLOW_BY_GROUP, agent_groups=["default", "acme"]),
-        ProposeActiveResponseInput(agent_id="001", command="firewall-drop", rationale="x"),
+        ProposeActiveResponseInput(
+            agent_id="001", command="firewall-drop", srcip="203.0.113.7", rationale="x"
+        ),
     )
     assert out.permitted is True
     assert out.state == "pending"
@@ -128,7 +149,9 @@ async def test_propose_refused_when_agent_not_in_granted_group(
     tool = ProposeActiveResponseTool()
     out = await tool.run(
         _exec_ctx(db, ctx, _ALLOW_BY_GROUP, agent_groups=["default", "beta"]),
-        ProposeActiveResponseInput(agent_id="001", command="firewall-drop", rationale="x"),
+        ProposeActiveResponseInput(
+            agent_id="001", command="firewall-drop", srcip="203.0.113.7", rationale="x"
+        ),
     )
     assert out.permitted is False
     assert "not authorized" in out.summary.lower() or "not authorized" in out.detail.lower()
@@ -143,12 +166,19 @@ async def test_propose_success_persists_pending_proposal(
     out = await tool.run(
         _exec_ctx(db, ctx, _ALLOW),
         ProposeActiveResponseInput(
-            agent_id="001", command="firewall-drop", rationale="brute force", alert_ids=["a1"]
+            agent_id="001",
+            command="firewall-drop",
+            srcip="203.0.113.7",
+            rationale="brute force",
+            alert_ids=["a1"],
         ),
     )
     assert out.permitted is True
     assert out.state == "pending"
     assert out.proposal_id
+    # The propose tool emits a citation so its call surfaces in the Evidence panel.
+    assert out.citation.tool == "propose_active_response"
+    assert out.citation.result_count == 1
 
     proposal = (
         await db.execute(
@@ -159,4 +189,5 @@ async def test_propose_success_persists_pending_proposal(
     ).scalar_one()
     assert proposal.state == ProposalState.pending
     assert proposal.action == "firewall-drop"
+    assert proposal.parameters.get("srcip") == "203.0.113.7"
     assert proposal.requested_by == ctx.user_id

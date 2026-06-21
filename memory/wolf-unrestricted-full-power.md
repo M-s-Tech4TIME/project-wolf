@@ -59,12 +59,17 @@ against a real per-org credential, not just a broad/admin one.** Reinforces
 **How to apply (remaining):**
 - Reshapes **Phase 6** — the hard read-only + propose-then-approve WALL is now
   capability-driven (gate/approval is a policy choice, not a built-in cap). The
-  pattern is set by slice 6-a; FOLLOW-ONS repeat it: the approval-queue GUI
-  (6-b), the other action classes (`rule_tuning`/`agent_action`/`config_change`),
-  and severity-tiered authority / four-eyes / crown-jewel (policy hooks; B1
-  default = approval-for-all). Always pre-flight the credential's effective
-  policies before offering/doing a write — via `can_on_agent` (group-aware) for
-  agent-targeted actions, never a literal `agent:id` lookup.
+  pattern is set by slice 6-a; FOLLOW-ONS repeat it. **6-b SHIPPED (2026-06-19,
+  pending operator web-test):** the approval-queue GUI — a role-gated `/actions`
+  page (analyst+ view via `canProposeActions`; responder/engineer/admin approve
+  via `canApproveActions` — UX mirror of `ROLE_CAPABILITIES`), pending detail
+  cards + Approve/Reject + verification-outcome history; SoD enforced in UI +
+  server; `list_proposals` gained `state=all` for history. REMAINING follow-ons:
+  the other action classes (`rule_tuning`/`agent_action`/`config_change`), and
+  severity-tiered authority / four-eyes / crown-jewel (policy hooks; B1 default =
+  approval-for-all). Always pre-flight the credential's effective policies before
+  offering/doing a write — via `can_on_agent` (group-aware) for agent-targeted
+  actions, never a literal `agent:id` lookup.
 - The read-only `WazuhServerApiClient` was KEPT; the write surface is the
   separate capability-checked `WazuhServerApiActionClient`. Extend writes ONLY
   by adding named, capability-checked methods there — never by widening the read

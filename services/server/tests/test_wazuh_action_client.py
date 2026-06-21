@@ -5,6 +5,7 @@ BEFORE issuing any request (fail-closed), and (2) issue exactly the whitelisted
 PUT /active-response when permitted.  Uses an httpx MockTransport — no real Wazuh.
 """
 
+import json
 import uuid
 
 import httpx
@@ -70,6 +71,7 @@ def _permitted_handler(seen: dict[str, object]) -> httpx.MockTransport:
         seen["method"] = request.method
         seen["path"] = request.url.path
         seen["agents_list"] = request.url.params.get("agents_list")
+        seen["body"] = json.loads(request.content)
         return httpx.Response(
             200, json={"data": {"affected_items": ["001"], "total_affected_items": 1}}
         )
@@ -83,9 +85,21 @@ async def test_active_response_issues_put_when_permitted_by_agent_id() -> None:
     client = _action_client(_permitted_handler(seen))
     caps = CredentialCapabilities(policies={ACTION_ACTIVE_RESPONSE: {"agent:id:*": "allow"}})
     body = await client.execute_active_response(
-        agent_id="001", command="firewall-drop", capabilities=caps, agent_groups=[]
+        agent_id="001",
+        command="firewall-drop",
+        capabilities=caps,
+        agent_groups=[],
+        srcip="203.0.113.7",
     )
-    assert seen == {"method": "PUT", "path": "/active-response", "agents_list": "001"}
+    assert seen["method"] == "PUT"
+    assert seen["path"] == "/active-response"
+    assert seen["agents_list"] == "001"
+    # The corrected 4.14.3 body: !-prefixed command, srcip in alert.data, NO custom.
+    sent = seen["body"]
+    assert isinstance(sent, dict)
+    assert sent["command"] == "!firewall-drop"
+    assert "custom" not in sent
+    assert sent["alert"] == {"data": {"srcip": "203.0.113.7"}}
     assert body["data"]["total_affected_items"] == 1
 
 

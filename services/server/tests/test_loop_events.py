@@ -199,3 +199,137 @@ async def test_tool_call_emits_tool_event_with_summary(
     assert tool_event.data["success"] is True
     assert "citation" in tool_event.data
     assert tool_event.data["citation"]["tool"] == "search_alerts"
+
+
+# ─── ADR 0026 — grounding execution modes ───────────────────────────────────
+
+
+class _JudgeStub:
+    """Minimal judge provider for the grounding validator — returns a fixed
+    JSON verdict array on every chat() call."""
+
+    def __init__(self, content: str) -> None:
+        self._content = content
+
+    def capability(self) -> CapabilityDescriptor:  # pragma: no cover — unused
+        return _descriptor()
+
+    async def chat(self, request: ChatRequest) -> ChatResponse:  # noqa: ARG002
+        return ChatResponse(
+            content=self._content,
+            tool_calls=[],
+            input_tokens=0,
+            output_tokens=0,
+            stop_reason="stop",
+            model_id="judge-stub",
+        )
+
+
+async def _run_grounded(
+    db: AsyncSession,
+    ctx: OrganizationContext,
+    *,
+    mode: str,
+) -> list[LoopEvent]:
+    """Run a tool-backed answer (so grounding has citations to verify) under
+    the given grounding mode, collecting the emitted events."""
+    from wolf_server.grounding import GroundingValidator
+    from wolf_server.tools.registry import runtime_registry
+
+    runtime_registry.register(SearchAlertsTool())
+    now = datetime.now(UTC)
+    call = ToolCall(
+        id="c-1",
+        name="search_alerts",
+        arguments={
+            "time_from": (now - timedelta(hours=1)).isoformat(),
+            "time_to": now.isoformat(),
+        },
+    )
+    provider = ScriptedProvider(
+        [_response(tool_calls=[call]), _response("Found nothing notable.")]
+    )
+    validator = GroundingValidator(_JudgeStub('[{"index": 0, "verdict": "supported"}]'))
+    events: list[LoopEvent] = []
+
+    async def collect(event: LoopEvent) -> None:
+        events.append(event)
+
+    loop = AgentLoop(provider=provider, strategy=FrontierStrategy())
+    os_client, server_api = _fake_clients()
+    await loop.run(
+        question="any alerts?",
+        ctx=ctx,
+        db=db,
+        opensearch=os_client,
+        server_api=server_api,
+        event_callback=collect,
+        grounding_validator=validator,
+        grounding_mode=mode,
+    )
+    return events
+
+
+@pytest.mark.asyncio
+async def test_blocking_mode_grounds_before_answer(
+    db: AsyncSession, organization_ctx: OrganizationContext
+) -> None:
+    """Default mode: the judge is awaited BEFORE the `answer` event, so the
+    analyst never sees an answer marked complete until it's verified."""
+    events = await _run_grounded(db, organization_ctx, mode="blocking")
+    types = [e.type for e in events]
+    assert types.count("answer") == 1
+    ai = types.index("answer")
+    # grounding ran and completed BEFORE the answer event.
+    assert types.index("grounding.started") < ai
+    assert types.index("grounding.completed") < ai
+    answer_evt = events[ai]
+    # blocking answer carries the counts inline, no pending flag, and the
+    # grounding.completed event does NOT carry annotated_content.
+    assert "grounding_pending" not in answer_evt.data
+    assert answer_evt.data["grounding_supported"] == 1
+    completed = next(e for e in events if e.type == "grounding.completed")
+    assert "annotated_content" not in completed.data
+
+
+@pytest.mark.asyncio
+async def test_deferred_mode_answers_before_grounding(
+    db: AsyncSession, organization_ctx: OrganizationContext
+) -> None:
+    """Deferred mode: the `answer` event fires immediately (raw + pending),
+    the verdicts arrive afterwards carrying the annotated content to patch."""
+    events = await _run_grounded(db, organization_ctx, mode="deferred")
+    types = [e.type for e in events]
+    assert types.count("answer") == 1
+    ai = types.index("answer")
+    # grounding starts + completes AFTER the answer event.
+    assert types.index("grounding.started") > ai
+    assert types.index("grounding.completed") > ai
+    answer_evt = events[ai]
+    assert answer_evt.data["grounding_pending"] is True
+    # the late grounding event carries the annotated content to patch the
+    # settled message + the counts.
+    completed = next(e for e in events if e.type == "grounding.completed")
+    assert "annotated_content" in completed.data
+    assert completed.data["supported"] == 1
+
+
+@pytest.mark.asyncio
+async def test_incremental_mode_emits_partial_then_completed(
+    db: AsyncSession, organization_ctx: OrganizationContext
+) -> None:
+    """Incremental mode: answer first, then ≥1 `grounding.partial` (progressive
+    chips), then a final `grounding.completed`."""
+    events = await _run_grounded(db, organization_ctx, mode="incremental")
+    types = [e.type for e in events]
+    ai = types.index("answer")
+    assert events[ai].data["grounding_pending"] is True
+    assert "grounding.partial" in types
+    assert types.index("grounding.partial") > ai
+    # partials carry the progressive annotated content.
+    partial = next(e for e in events if e.type == "grounding.partial")
+    assert "annotated_content" in partial.data
+    # ends with a completed carrying the final annotated content.
+    completed = next(e for e in events if e.type == "grounding.completed")
+    assert "annotated_content" in completed.data
+    assert types.index("grounding.completed") > types.index("grounding.partial")

@@ -15,6 +15,25 @@ import { randomId } from "@/lib/uuid";
 
 export type StreamPhase = "idle" | "running" | "done" | "error";
 
+/**
+ * ADR 0026 — a late grounding result for a SETTLED assistant message
+ * (deferred/incremental modes). The `answer` event archives the node before
+ * the judge runs; this carries the verdicts that chat-shell then patches onto
+ * the archived node (matched by `loop_id`). `ran === false` means the judge
+ * failed — clear the pending indicator, keep the raw content. For incremental
+ * mode each `grounding.partial` overwrites this with a cumulative snapshot;
+ * the final `grounding.completed` carries the complete result.
+ */
+export type GroundingPatch = {
+  loop_id: string;
+  ran: boolean;
+  content: string;
+  supported: number;
+  unsupported: number;
+  uncertain: number;
+  unverifiable: number;
+};
+
 export type StreamStatus = {
   phase: StreamPhase;
   loop_id?: string;
@@ -55,6 +74,12 @@ export type StreamState = {
    * assistant slot directly under the right user message.
    */
   parentUserNodeId: string | null;
+  /**
+   * ADR 0026 — the latest late-grounding result for this conversation's
+   * settled message, or null. chat-shell applies it to the archived node
+   * (by loop_id) then calls `clearGroundingPatch`.
+   */
+  groundingPatch: GroundingPatch | null;
 };
 
 /**
@@ -71,6 +96,7 @@ export const NEUTRAL_STREAM: StreamState = {
   currentQuestion: "",
   streamingAnswer: "",
   parentUserNodeId: null,
+  groundingPatch: null,
 };
 
 export type UseConversationStreams = {
@@ -233,6 +259,7 @@ export function useConversationStreams(): UseConversationStreams {
         currentQuestion: trimmed,
         streamingAnswer: "",
         parentUserNodeId,
+        groundingPatch: null,
       }));
 
       try {
@@ -372,12 +399,33 @@ export function useConversationStreams(): UseConversationStreams {
                 }));
                 break;
               }
+              // ADR 0026 — both events share a handler. `grounding.partial`
+              // (incremental) and `grounding.completed` in deferred/incremental
+              // carry `annotated_content` → patch the SETTLED message's chips
+              // in place. blocking's `grounding.completed` omits it (the
+              // `answer` event already holds the annotated content + counts),
+              // so it only refreshes the activity status line.
+              case "grounding.partial":
               case "grounding.completed": {
                 const sup = asNumber(event.data.supported);
                 const uncertain = asNumber(event.data.uncertain);
                 const unsup = asNumber(event.data.unsupported);
+                const unverifiable = asNumber(event.data.unverifiable);
                 const ran = Boolean(event.data.ran);
-                if (ran) {
+                const annotated = event.data.annotated_content;
+                if (typeof annotated === "string") {
+                  const patch: GroundingPatch = {
+                    loop_id: asString(event.data.loop_id),
+                    ran,
+                    content: annotated,
+                    supported: sup,
+                    unsupported: unsup,
+                    uncertain,
+                    unverifiable,
+                  };
+                  updateStream(convoId, (s) => ({ ...s, groundingPatch: patch }));
+                }
+                if (ran && event.type === "grounding.completed") {
                   updateStatus(convoId, (s) => ({
                     ...s,
                     last_event_type: event.type,
@@ -439,6 +487,10 @@ export function useConversationStreams(): UseConversationStreams {
                   grounding_unverifiable: asNullableNumber(
                     data.grounding_unverifiable,
                   ),
+                  // ADR 0026 — deferred/incremental: the answer settled before
+                  // the verdicts; render a "Verifying claims…" indicator until
+                  // the late grounding event patches in the chips.
+                  grounding_pending: Boolean(data.grounding_pending),
                 };
                 citationsRef.current[convoId] = finalCitations;
                 streamingAnswerRef.current[convoId] = "";
@@ -490,6 +542,7 @@ export function useConversationStreams(): UseConversationStreams {
             grounding_unsupported: null,
             grounding_uncertain: null,
             grounding_unverifiable: null,
+            grounding_pending: false,
           };
           streamingAnswerRef.current[convoId] = "";
           updateStream(convoId, (s) => ({
@@ -571,5 +624,12 @@ export function useConversationStreams(): UseConversationStreams {
     return ids;
   }, [streams]);
 
-  return { streams, runningIds, submit, stop, reset, clearCompletion };
+  return {
+    streams,
+    runningIds,
+    submit,
+    stop,
+    reset,
+    clearCompletion,
+  };
 }

@@ -49,7 +49,7 @@ def test_validator_accepts_resolved_low_risk_proposal() -> None:
         action_class="active_response",
         target={"agent_id": "001"},
         action="firewall-drop",
-        parameters={},
+        parameters={"srcip": "203.0.113.7"},
     )
     assert v.ok is True
 
@@ -82,7 +82,7 @@ def test_validator_rejects_invented_command() -> None:
         parameters={},
     )
     assert v.ok is False
-    assert "allow-list" in v.reason
+    assert "catalog" in v.reason
 
 
 def test_validator_rejects_unknown_action_class() -> None:
@@ -90,6 +90,82 @@ def test_validator_rejects_unknown_action_class() -> None:
         action_class="delete_universe", target={"agent_id": "1"}, action="x", parameters={}
     )
     assert v.ok is False
+
+
+def test_validator_requires_srcip_for_block_command() -> None:
+    v = validate_proposal(
+        action_class="active_response",
+        target={"agent_id": "001"},
+        action="firewall-drop",
+        parameters={},  # no srcip
+    )
+    assert v.ok is False
+    assert "srcip" in v.reason
+
+
+def test_validator_rejects_malformed_srcip() -> None:
+    v = validate_proposal(
+        action_class="active_response",
+        target={"agent_id": "001"},
+        action="firewall-drop",
+        parameters={"srcip": "not.an.ip"},
+    )
+    assert v.ok is False
+    assert "valid IP" in v.reason
+
+
+def test_validator_requires_username_for_disable_account() -> None:
+    v = validate_proposal(
+        action_class="active_response",
+        target={"agent_id": "001"},
+        action="disable-account",
+        parameters={},  # no username
+    )
+    assert v.ok is False
+    assert "username" in v.reason
+
+
+def test_validator_accepts_restart_wazuh_without_target() -> None:
+    v = validate_proposal(
+        action_class="active_response",
+        target={"agent_id": "001"},
+        action="restart-wazuh",
+        parameters={},
+    )
+    assert v.ok is True
+
+
+def test_validator_rejects_platform_mismatch() -> None:
+    # firewall-drop is Linux-only; a clearly-Windows agent must be refused.
+    v = validate_proposal(
+        action_class="active_response",
+        target={"agent_id": "003"},
+        action="firewall-drop",
+        parameters={"srcip": "203.0.113.7", "agent_os": "Microsoft Windows Server 2019"},
+    )
+    assert v.ok is False
+    assert "windows" in v.reason.lower()
+
+
+def test_validator_lenient_on_unknown_platform() -> None:
+    # An unresolved/unknown OS must NOT block (the 6-a.1 lesson: no false refusals).
+    v = validate_proposal(
+        action_class="active_response",
+        target={"agent_id": "001"},
+        action="firewall-drop",
+        parameters={"srcip": "203.0.113.7", "agent_os": "some-appliance-os"},
+    )
+    assert v.ok is True
+
+
+def test_validator_accepts_netsh_on_windows() -> None:
+    v = validate_proposal(
+        action_class="active_response",
+        target={"agent_id": "003"},
+        action="netsh",
+        parameters={"srcip": "203.0.113.7", "agent_os": "Microsoft Windows Server 2019"},
+    )
+    assert v.ok is True
 
 
 # ── Content hash ────────────────────────────────────────────────────────────

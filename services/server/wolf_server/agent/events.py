@@ -19,6 +19,9 @@ LoopEventType = Literal[
     "tool.call.started",
     "tool.call.completed",
     "grounding.started",
+    # ADR 0026 — incremental mode emits one `grounding.partial` per completed
+    # judge batch (progressive chips); every mode ends with `grounding.completed`.
+    "grounding.partial",
     "grounding.completed",
     "answer",
 ]

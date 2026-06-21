@@ -194,3 +194,29 @@ async def resolve_agent_groups(server_api: Any, agent_id: str) -> list[str]:
     if not isinstance(groups, list):
         return []
     return [str(g) for g in groups]
+
+
+async def resolve_agent_os(server_api: Any, agent_id: str) -> str | None:
+    """Resolve an agent's OS signal string (read-only) for platform-fit checks.
+
+    Returns a raw signal blob (``os.platform``/``os.uname``/``os.name`` joined)
+    that :func:`wolf_server.wazuh.active_response.classify_os` maps to an OS
+    class; ``None`` on any failure / unknown (caller must NOT hard-gate on
+    ``None`` — fail-open, the credential + approver remain the backstops)."""
+    try:
+        payload = await server_api.get(
+            "/agents", params={"agents_list": agent_id, "select": "os.platform,os.uname,os.name"}
+        )
+    except Exception:  # noqa: BLE001 — fail-open: unknown OS must not block a write
+        return None
+    if not isinstance(payload, dict):
+        return None
+    items = payload.get("data", {}).get("affected_items", [])
+    if not isinstance(items, list) or not items or not isinstance(items[0], dict):
+        return None
+    os_info = items[0].get("os", {})
+    if not isinstance(os_info, dict):
+        return None
+    parts = [os_info.get("platform"), os_info.get("uname"), os_info.get("name")]
+    blob = " ".join(str(p) for p in parts if p)
+    return blob or None

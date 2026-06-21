@@ -607,3 +607,76 @@ def test_validation_result_default_state() -> None:
     assert r.unsupported_count == 0
     assert r.uncertain_count == 0
     assert r.unverifiable_count == 0
+
+
+# ─── ADR 0026 — incremental (batched, concurrent) grounding ─────────────────
+
+
+@pytest.mark.asyncio
+async def test_validate_streaming_progressive_then_final() -> None:
+    """Incremental mode yields a cumulative snapshot per completed batch and
+    a final complete snapshot; batch-local indices map back to global slots."""
+    # batch_size=1 → one batch per claim; stub returns the local index 0.
+    provider = _StubProvider('[{"index": 0, "verdict": "supported"}]')
+    v = GroundingValidator(provider)
+    snapshots = [
+        s
+        async for s in v.validate_streaming(
+            "Agent 001 is active. Rule 5712 fired. The IP was blocked.",
+            tool_results=[{"name": "get_agent_detail", "content": {"id": "001"}}],
+            retrieved_chunks=[],
+            batch_size=1,
+        )
+    ]
+    # 3 batches → 3 progressive yields + 1 final yield.
+    assert len(snapshots) == 4
+    final = snapshots[-1]
+    assert final.ran is True
+    assert final.supported_count == 3  # all three global slots filled
+    # Cumulative counts are monotonic non-decreasing across the snapshots.
+    counts = [s.supported_count for s in snapshots]
+    assert counts == sorted(counts)
+    assert counts[-1] == 3
+
+
+@pytest.mark.asyncio
+async def test_validate_streaming_yields_nothing_when_no_evidence() -> None:
+    """No evidence (and a non-empty answer) → nothing to verify → no yields,
+    matching the single-call validate() skip."""
+    provider = _StubProvider('[{"index": 0, "verdict": "supported"}]')
+    v = GroundingValidator(provider)
+    snapshots = [
+        s
+        async for s in v.validate_streaming(
+            "Some claim with no backing evidence.",
+            tool_results=[],
+            retrieved_chunks=[],
+        )
+    ]
+    assert snapshots == []
+
+
+@pytest.mark.asyncio
+async def test_validate_streaming_failed_batch_fills_uncertain() -> None:
+    """A batch whose judge call raises must not sink the answer — its claims
+    fall back to `uncertain` (always a signal) and the final snapshot still
+    runs."""
+
+    class _BoomProvider(_StubProvider):
+        async def chat(self, request: ChatRequest) -> ChatResponse:
+            raise RuntimeError("judge down")
+
+    v = GroundingValidator(_BoomProvider())
+    snapshots = [
+        s
+        async for s in v.validate_streaming(
+            "Agent 001 is active. Rule 5712 fired.",
+            tool_results=[{"name": "get_agent_detail", "content": {"id": "001"}}],
+            retrieved_chunks=[],
+            batch_size=1,
+        )
+    ]
+    final = snapshots[-1]
+    assert final.ran is True
+    assert final.uncertain_count == 2  # both claims filled uncertain
+    assert final.supported_count == 0

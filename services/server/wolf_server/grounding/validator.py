@@ -30,8 +30,10 @@ Design notes:
     (mark inline as `[unverified]`).
 """
 
+import asyncio
 import json
 import re
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -84,6 +86,15 @@ _VERDICT_MARKER = {
 # a single tool call) plus the wrapper. qwen3:8b's default context window
 # (32K tokens) has ample headroom even with several sources at this cap.
 _EVIDENCE_PER_SOURCE_LIMIT = 5000
+
+# Claims per concurrent judge batch in incremental mode (ADR 0026). Small
+# enough that each batch's verdicts surface quickly (progressive chips);
+# large enough that a typical ≤12-claim answer is 2–3 batches, not one per
+# sentence. The evidence prefix is byte-identical across batches, so Ollama's
+# prompt-prefix KV cache makes batches 2+ cheap (only the differing claims +
+# the verdict generation are re-evaluated), keeping incremental viable even
+# when the batches serialize on a single GPU.
+_INCREMENTAL_BATCH_SIZE = 4
 
 
 @dataclass(frozen=True)
@@ -240,6 +251,68 @@ class GroundingValidator:
             )
         return "\n\n".join(sections)
 
+    def _prepare(
+        self,
+        answer: str,
+        tool_results: list[dict[str, Any]],
+        retrieved_chunks: list[dict[str, Any]],
+        tool_failures: list[dict[str, Any]] | None,
+        *,
+        loop_id: str,
+    ) -> tuple[list[str], str] | None:
+        """Shared front-half: split + cap claims and build the evidence prompt.
+
+        Returns ``(claims, evidence)`` ready for the judge, or ``None`` when
+        there is nothing to validate (empty answer or no evidence) — the
+        caller returns the un-annotated answer in that case. Used by both the
+        single-call :meth:`validate` and the batched :meth:`validate_streaming`
+        so the two paths can never diverge on what counts as "skippable."
+        """
+        claims = self.split_claims(answer)
+        if not claims:
+            logger.info("grounding_skipped", reason="empty_answer", loop_id=loop_id)
+            return None
+        if len(claims) > self._max_claims:
+            logger.info(
+                "grounding_truncated",
+                claim_count=len(claims),
+                max_claims=self._max_claims,
+                loop_id=loop_id,
+            )
+            claims = claims[: self._max_claims]
+        evidence = self.build_evidence(tool_results, retrieved_chunks, tool_failures)
+        if not evidence.strip():
+            logger.info("grounding_skipped", reason="no_evidence", loop_id=loop_id)
+            return None
+        return claims, evidence
+
+    def _assemble(
+        self, answer: str, claims: list[str], per_claim: dict[int, "ClaimVerdict"], *, ran: bool
+    ) -> ValidationResult:
+        """Build a ValidationResult from whatever verdicts exist so far.
+
+        Skips claim indices not yet judged, so it is correct both for the
+        final result (all indices present) and for a progressive snapshot
+        (only judged-so-far indices present) — `incremental` mode emits one
+        per completed batch.
+        """
+        result = ValidationResult(annotated_answer=answer, ran=ran)
+        for i in range(len(claims)):
+            verdict = per_claim.get(i)
+            if verdict is None:
+                continue
+            result.claims.append(verdict)
+            if verdict.verdict == "supported":
+                result.supported_count += 1
+            elif verdict.verdict == "unsupported":
+                result.unsupported_count += 1
+            elif verdict.verdict == "uncertain":
+                result.uncertain_count += 1
+            else:
+                result.unverifiable_count += 1
+        result.annotated_answer = self._annotate(answer, result.claims)
+        return result
+
     async def validate(
         self,
         answer: str,
@@ -250,27 +323,24 @@ class GroundingValidator:
         loop_id: str = "",
     ) -> ValidationResult:
         """Run the validator on a draft answer. Always returns a result;
-        failures degrade to `ran=False` with `annotated_answer=answer`."""
+        failures degrade to `ran=False` with `annotated_answer=answer`.
+
+        This is the single-judge-call path used by `blocking` and `deferred`
+        modes (ADR 0026) — one prompt-eval over all evidence + all claims.
+        `incremental` mode uses :meth:`validate_streaming` instead.
+        """
         result = ValidationResult(annotated_answer=answer)
 
-        claims = self.split_claims(answer)
-        if not claims:
-            logger.info("grounding_skipped", reason="empty_answer", loop_id=loop_id)
+        prepared = self._prepare(
+            answer,
+            tool_results,
+            retrieved_chunks,
+            tool_failures,
+            loop_id=loop_id,
+        )
+        if prepared is None:
             return result
-        if len(claims) > self._max_claims:
-            logger.info(
-                "grounding_truncated",
-                claim_count=len(claims),
-                max_claims=self._max_claims,
-                loop_id=loop_id,
-            )
-            claims = claims[: self._max_claims]
-
-        evidence = self.build_evidence(tool_results, retrieved_chunks, tool_failures)
-        if not evidence.strip():
-            # Nothing to verify against; skip rather than over-flag.
-            logger.info("grounding_skipped", reason="no_evidence", loop_id=loop_id)
-            return result
+        claims, evidence = prepared
 
         # Try the judge up to twice. The first call can fail (ReadTimeout
         # on a cold-loading judge model, transient Ollama errors); the
@@ -334,20 +404,7 @@ class GroundingValidator:
                     reason="judge returned no verdict for this claim",
                 )
 
-        for i in range(len(claims)):
-            verdict = per_claim[i]
-            result.claims.append(verdict)
-            if verdict.verdict == "supported":
-                result.supported_count += 1
-            elif verdict.verdict == "unsupported":
-                result.unsupported_count += 1
-            elif verdict.verdict == "uncertain":
-                result.uncertain_count += 1
-            else:
-                result.unverifiable_count += 1
-
-        result.annotated_answer = self._annotate(answer, result.claims)
-        result.ran = True
+        result = self._assemble(answer, claims, per_claim, ran=True)
         logger.info(
             "grounding_completed",
             loop_id=loop_id,
@@ -358,6 +415,106 @@ class GroundingValidator:
             unverifiable=result.unverifiable_count,
         )
         return result
+
+    async def validate_streaming(
+        self,
+        answer: str,
+        *,
+        tool_results: list[dict[str, Any]],
+        retrieved_chunks: list[dict[str, Any]],
+        tool_failures: list[dict[str, Any]] | None = None,
+        loop_id: str = "",
+        batch_size: int = _INCREMENTAL_BATCH_SIZE,
+    ) -> AsyncIterator[ValidationResult]:
+        """Incremental grounding (ADR 0026): judge claims in CONCURRENT batches
+        and yield a cumulative :class:`ValidationResult` as each batch returns.
+
+        Yields a progressive snapshot per completed batch (the frontend emits
+        a ``grounding.partial`` SSE event and pops the new chips in), then a
+        FINAL snapshot with `ran=True` and any still-missing claim filled
+        `uncertain`. If there is nothing to validate, yields nothing. If every
+        batch fails, the final snapshot still carries `ran=True` with all
+        claims `uncertain` (an honest "couldn't verify" beats a hung spinner).
+
+        Concurrency is real (`asyncio.gather`/`as_completed`); whether the
+        batches truly overlap is the GPU's call — on `OLLAMA_NUM_PARALLEL>=2`
+        they do, on a single constrained GPU they serialize behind a shared,
+        cache-warm evidence prefix and this degrades to ≈ deferred.
+        """
+        prepared = self._prepare(
+            answer,
+            tool_results,
+            retrieved_chunks,
+            tool_failures,
+            loop_id=loop_id,
+        )
+        if prepared is None:
+            return
+        claims, evidence = prepared
+
+        # Split into index-tagged batches so each task's local verdict indices
+        # map back to global claim positions.
+        batches = [
+            (offset, claims[offset : offset + batch_size])
+            for offset in range(0, len(claims), batch_size)
+        ]
+        tasks = [
+            asyncio.ensure_future(self._judge_batch(evidence, offset, subset))
+            for offset, subset in batches
+        ]
+        per_claim: dict[int, ClaimVerdict] = {}
+        try:
+            for fut in asyncio.as_completed(tasks):
+                offset, subset, raw = await fut
+                if raw is not None:
+                    self._merge_verdicts(raw, subset, per_claim, offset=offset)
+                # Progressive snapshot — only judged-so-far claims annotated.
+                yield self._assemble(answer, claims, per_claim, ran=True)
+        finally:
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+
+        # Fill any claim a batch dropped (partial JSON / failed batch) with
+        # `uncertain` — same posture as the single-call path: always a signal.
+        for i in range(len(claims)):
+            per_claim.setdefault(
+                i,
+                ClaimVerdict(
+                    claim=claims[i],
+                    verdict="uncertain",
+                    reason="judge returned no verdict for this claim",
+                ),
+            )
+        final = self._assemble(answer, claims, per_claim, ran=True)
+        logger.info(
+            "grounding_completed_incremental",
+            loop_id=loop_id,
+            claims=len(final.claims),
+            supported=final.supported_count,
+            unsupported=final.unsupported_count,
+            uncertain=final.uncertain_count,
+            unverifiable=final.unverifiable_count,
+            batches=len(batches),
+        )
+        yield final
+
+    async def _judge_batch(
+        self, evidence: str, offset: int, subset: list[str]
+    ) -> tuple[int, list[str], list[dict[str, Any]] | None]:
+        """One concurrent batch: judge `subset`, returning its offset + raw
+        verdicts (or None on failure, so the caller fills `uncertain`). Never
+        raises — a single batch failure must not sink the whole answer."""
+        try:
+            return offset, subset, await self._judge(evidence, subset)
+        except Exception as exc:
+            logger.warning(
+                "grounding_judge_batch_failed",
+                offset=offset,
+                error_type=type(exc).__name__,
+                error_msg=str(exc) or "(no message)",
+            )
+            return offset, subset, None
 
     async def _judge(self, evidence: str, claims: list[str]) -> list[dict[str, Any]]:
         numbered = "\n".join(f"{i}. {c}" for i, c in enumerate(claims))
@@ -402,6 +559,8 @@ class GroundingValidator:
         raw: list[dict[str, Any]],
         claims: list[str],
         into: dict[int, ClaimVerdict],
+        *,
+        offset: int = 0,
     ) -> None:
         """Map raw judge-response verdicts onto claim indices, additively.
 
@@ -409,17 +568,23 @@ class GroundingValidator:
         to `unverifiable`). The first valid verdict for each index wins —
         a later retry merge cannot overwrite the original judgement, only
         fill in indices the first call missed.
+
+        `claims` is the list the judge actually saw (the full list for the
+        single-call path, a batch subset for `incremental`); `offset` is that
+        list's start position in the global claim sequence so a batch's local
+        indices land in the right global slot (ADR 0026).
         """
         for v in raw:
             idx = v.get("index")
             if not isinstance(idx, int) or idx < 0 or idx >= len(claims):
                 continue
-            if idx in into:
+            global_idx = offset + idx
+            if global_idx in into:
                 continue  # don't overwrite a verdict from an earlier call
             verdict = str(v.get("verdict", "unverifiable")).lower()
             if verdict not in _VALID_VERDICTS:
                 verdict = "unverifiable"
-            into[idx] = ClaimVerdict(
+            into[global_idx] = ClaimVerdict(
                 claim=claims[idx],
                 verdict=verdict,
                 reason=str(v.get("reason", ""))[:200],

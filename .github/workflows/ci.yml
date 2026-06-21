@@ -63,6 +63,10 @@ jobs:
         # approval gateway (proposal state machine, approval, execution) is
         # the most safety-critical code in the project; wolf_server/tools
         # added so the propose tool + read tools are strict-typed too.
+        # ADR 0026: wolf_server/grounding added — the LLM-as-judge honesty
+        # validator (now with the deferred/incremental execution modes +
+        # concurrent batched judging) is first-class safety-critical code,
+        # not just transitively covered via agent/.
         run: |
           uv run mypy packages/common/wolf_common \
                        packages/secrets/wolf_secrets \
@@ -79,6 +83,7 @@ jobs:
                        services/server/wolf_server/guardrails \
                        services/server/wolf_server/agent \
                        services/server/wolf_server/gateway \
+                       services/server/wolf_server/grounding \
                        services/server/wolf_server/tools \
                        --strict
 

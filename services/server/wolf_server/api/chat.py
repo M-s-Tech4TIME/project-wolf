@@ -167,6 +167,8 @@ async def chat(
             server_api=server_api,
             knowledge_store=knowledge_store,
             grounding_validator=grounding_validator,
+            # Non-streaming POST /chat returns one payload → always blocking
+            # grounding (ADR 0026).
             cache=cache,
             retry_nudge=body.retry_nudge,
         )
@@ -211,9 +213,14 @@ async def chat_stream(
     is needed because EventSource is GET-only).  Events emitted:
       - loop.started        — once, at the top
       - step.started        — per step
+      - model.delta         — per token delta (progressive answer)
       - model.call.completed / .failed
       - tool.call.completed — per dispatched tool call
-      - answer              — once, with the same payload as ChatResponseBody
+      - answer              — once; in deferred/incremental modes it carries
+                              `grounding_pending: true` + raw content, and the
+                              verdicts arrive afterwards (ADR 0026)
+      - grounding.started / grounding.partial / grounding.completed — the
+                              grounding verdicts; `.partial` is incremental-only
     """
     logger.info(
         "chat_stream_request_received",
@@ -262,6 +269,9 @@ async def chat_stream(
                     event_callback=emit,
                     knowledge_store=knowledge_store,
                     grounding_validator=grounding_validator,
+                    # ADR 0026 — execution mode from config (Phase 6.10 will
+                    # promote it to the Superuser GUI).
+                    grounding_mode=_settings.grounding_mode_normalized,
                     cache=cache,
                     retry_nudge=body.retry_nudge,
                 )

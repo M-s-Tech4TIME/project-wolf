@@ -49,6 +49,315 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-21 — Grounding modes web-test: default → deferred; `cited` pulled; 2 UI fixes
+
+**Session type:** claude-code · **Phase:** 6 (grounding interlude) · **Branch / commit:** main (pending operator sign-off)
+
+### What we did
+Operator web-tested the ADR 0026 modes on the live cluster and flagged two UI
+issues (screenshot). Acted on all of it:
+
+- **Default `GROUNDING_MODE` → `deferred`** (`.env`). The operator preferred its
+  UX over `blocking` ("I like it even better"). Code default in `config.py` stays
+  `blocking` as the no-`.env` fallback.
+- **`incremental`** "seemed same as deferred" — confirmed expected on the single
+  6 GB GPU (judge batches serialize behind the shared evidence prefix → chips land
+  together). It's verified-wired (emits `grounding.partial` → `grounding.completed`);
+  diverges only with `OLLAMA_NUM_PARALLEL>=2`. Kept as a selectable option.
+- **`GROUNDING_EVIDENCE_SCOPE=cited` PULLED.** It produced Not-Verified almost
+  everywhere: the "dedupe to last call per tool name" heuristic dropped a *rich*
+  earlier `list_agents` result (different args, 2 hits) in favour of the *empty*
+  later one (0 hits) → the judge was starved → flagged true claims unsupported.
+  Removed the knob + `_scope_tool_results` + the `build_evidence(scope=)` arg +
+  all plumbing (config/loop/chat/tests); evidence is always `all` (proven). Safe,
+  per-claim-relevant evidence selection is deferred to the **grounding-enrichment
+  phase** (`grounding-enrichment-tools-future-phase`).
+- **UI fix #1 — streaming caret.** The "still generating" caret was a block
+  sibling after the `<Markdown>` block, so it dropped to its own line (a visible
+  1-line gap). Now rendered as an inline `::after` on the last prose block
+  (`STREAM_CARET` in `message-thread.tsx`) → it sits at the end of the current
+  streamed line.
+- **UI fix #2 — composer paste gap.** The real cause (clarified): a selection
+  copied from the rendered thread (ctrl+C over a bubble) carries trailing newlines
+  from block boundaries (sometimes several), which paste in as blank line(s) — the
+  message Copy *button* is clean. Added an `onPaste` normaliser to `chat-composer.tsx`
+  (strip trailing whitespace, collapse runs of 3+ newlines; clean pastes untouched →
+  native behaviour). Also `rows={2}`→`rows={1}` so a short value doesn't sit in a
+  2-row box with an empty second line (auto-resize grows from one row).
+
+### Gate
+ADR 0026 addendum records the web-test outcomes. ruff + mypy --strict clean;
+dashboard `tsc` + `eslint` clean; full backend suite green (cited tests removed,
+streaming/mode tests kept); NO migration; NO CI change. wolf-server restarted with
+`GROUNDING_MODE=deferred`.
+
+### Next
+Operator sign-off → commit/push (this + the grounding-modes slice + pending
+6-b…6-b.3) → **6-c** (platform-aware AR selection). Robust grounding-evidence
+tooling tracked for its dedicated phase.
+
+---
+
+## 2026-06-21 — Grounding execution modes (ADR 0026): blocking / deferred / incremental, configurable
+
+**Session type:** claude-code · **Phase:** 6 (grounding-pipeline interlude) · **Branch / commit:** main (pending operator web-test)
+
+### What we did
+After 6-b.3 (unified-8b) the operator praised the answer quality but flagged that
+the **full turn feels slower** because grounding runs *after* the token stream, and
+asked whether it can be made faster / asynchronous / simultaneous, as a switchable
+option for Phase 6.10. Built exactly that: grounding execution is now a configurable
+**mode** (env-driven now; promoted to the Phase 6.10 Superuser GUI alongside the
+same-network gate + model posture — the 3rd concrete 6.10 consumer).
+
+- **`GROUNDING_MODE`** (`config.py` + `.env`, default `blocking` → zero regression):
+  - **blocking** — judge awaited BEFORE the `answer` SSE event; the answer surfaces
+    already annotated + counted. Today's verified behavior, unchanged.
+  - **deferred** — the `answer` event fires immediately (raw content + a new
+    `grounding_pending` flag); the judge runs after; a follow-up `grounding.completed`
+    carries the annotated content + counts, which the frontend PATCHES onto the
+    already-settled message. Time-to-readable-answer drops to the token stream alone.
+  - **incremental** — claims judged in CONCURRENT batches (`validate_streaming`,
+    `asyncio.as_completed`); each batch emits a `grounding.partial` event so chips pop
+    in progressively. Real concurrency on `OLLAMA_NUM_PARALLEL>=2` / ample VRAM;
+    degrades gracefully to ~deferred on the single 6 GB GPU behind a cache-warm shared
+    evidence prefix.
+- **`GROUNDING_EVIDENCE_SCOPE`** (default `all`): `cited` feeds the judge only
+  citation-bearing tool results, deduped to the LAST call per tool name — a safe
+  prompt-eval cut (never drops a failed-tool negative-evidence signal).
+- Backend: `grounding/validator.py` (`build_evidence(scope=)` dedupe, shared
+  `_prepare`/`_assemble`, `validate_streaming` async-gen with offset-mapped batched
+  merge); `agent/loop.py` `_finalize_answer` is now mode-aware and OWNS the `answer`
+  emission; `agent/events.py` + `api/chat.py` add `grounding.partial` + settings wiring
+  (non-stream `POST /chat` always runs blocking semantics + the scope trim).
+- Frontend: `lib/types.ts` (`grounding.partial`, `grounding_pending` on node +
+  completion); `lib/branches.ts` `updateAssistantGrounding` (in-place node patch — the
+  tree forbids duplicate ids so late verdicts can't re-append); `hooks/use-conversation-streams.ts`
+  (`groundingPatch` state + partial/completed handlers + pending-on-answer);
+  `components/chat-shell.tsx` ref-guarded apply-effect (mirrors the archive effect);
+  `components/message-thread.tsx` "verifying…" pill while pending.
+
+### What we decided
+- **ADR 0026** records the design. Default stays `blocking` (no regression); the
+  operator web-tests `deferred`/`incremental`, then flips the default by decision (as
+  unified-8b became default after measurement in ADR 0024).
+- Honesty invariant preserved across all modes: no mode *drops* grounding — only *when*
+  the verdicts surface changes; the `grounding.validation.completed` audit event always
+  fires; a failed judge clears the "verifying…" pill (never a hung spinner).
+- True token-stream ⇄ judge concurrency is hardware-gated; `incremental` is built so it
+  becomes real concurrency on capable hardware with no further code change.
+
+### Gate
+- **595 backend / 0 skip** (+ validator cited-scope / streaming-progressive /
+  failed-batch + loop blocking/deferred/incremental event-ordering tests); ruff +
+  mypy --strict clean; dashboard `tsc` + `eslint` clean (set-state-in-effect solved at
+  root via a ref-guard, not a disable). NO migration. NO CI change (edits land in
+  already-strict modules; frontend rides the existing tsc+eslint+build job).
+- wolf-server restarted with the new code (default `blocking` = unchanged baseline).
+
+### Next
+Operator web-test of the modes (`GROUNDING_MODE=deferred`/`incremental` in `.env` +
+restart) → pick + flip the default → commit/push (this slice + pending 6-b…6-b.3) →
+**6-c** (platform-aware, intent-driven AR selection).
+
+---
+
+## 2026-06-19 — 6-b.3: model posture → unified-8b (configurable); propose-tool citations
+
+**Session type:** claude-code · **Phase:** 6 · **Branch / commit:** main (pending operator web-test)
+
+### What we did
+Web-test round 3 surfaced that **qwen3:4b is unreliable on the agentic propose
+flow** (grounded the right agent 003 after 6-b.2, but then called the wrong tool
+with a missing field and never reached `propose_active_response`, ending in a
+nonsense answer). Plus a missing-citation finding.
+
+- **Model posture → unified-8b (active, still configurable).** `.env`
+  `DEFAULT_MODEL_ID` flipped `qwen3:4b → qwen3:8b`; judge already 8b → **both
+  chat + judge are qwen3:8b**. Operator chose quality/reliability over speed
+  (speed is hardware-bound). The split is **not removed** — the
+  `DEFAULT_MODEL_ID`/`GROUNDING_JUDGE_MODEL_ID` knobs still select it; Phase 6.10
+  adds the GUI toggle. `num_ctx` already 8192 (aligned). Side-benefit: chat and
+  judge are the same model → **no 4b↔8b swap**. ADR 0024 addendum records the
+  revisited active default.
+- **Propose-tool citations.** `ProposeActiveResponseOutput` gained a `citation`
+  field (populated on every path via `make_citation`), so a
+  `propose_active_response` call now appears in the Evidence/Citations panel like
+  read tools (it's evidence of an action Wolf took). No frontend change — the
+  loop + UI already render any tool's citation.
+
+ruff + mypy clean; propose suite green (citation asserted); wolf-server restarted
+19:16 with unified-8b + the citation fix (verified `default_model_id=qwen3:8b`).
+No migration, no CI change.
+
+### Web-test
+Re-ask "block IP … on agent 003": qwen3:8b should complete the propose flow, the
+proposal should appear in /actions, and the call should now show a citation.
+
+---
+
+## 2026-06-19 — 6-b.2: real-agent execution confirmed; agent-grounding fix; 6-c queued
+
+**Session type:** claude-code · **Phase:** 6 · **Branch / commit:** main (pending operator web-test)
+
+### What we did
+After restarting wolf-server (the 6-b.1 fix had been on disk but the long-running
+service still held pre-fix code in memory — my miss; restart is now part of the
+web-test handoff), the operator re-tested: **Approve & execute worked and showed
+in Wazuh's active-response log** — smoke (b) effectively passed on a real agent.
+
+Two further findings, both fixed:
+- **Wrong agent + spurious RBAC denial (one root cause):** asked to act on agent
+  003, Wolf proposed on **001** → the capability check correctly refused (001 not
+  in the credential's group). Cause: (1) the agent loop's **system prompt was
+  stale** — principle #4 still said "you cannot block IPs … explain it would have
+  to be proposed", never directing the model to the `propose_active_response`
+  tool or to ground the exact agent; (2) the `agent_id` schema example was the
+  literal `'001'`, which a small chat model copies. Fixed: rewrote principle #4
+  for capability-driven propose-and-approve (use the EXACT agent from the request
+  / `list_agents`; never default or guess; pass the exact target; ask if
+  ungroundable), and neutralised the biasing examples (`agent_id`, `srcip`, and
+  the "e.g. firewall-drop" in the tool description).
+- The RBAC engine itself was correct — it was fed the wrong agent.
+
+mypy/ruff clean; propose suite green; wolf-server restarted (18:42) with the new
+prompt + schema. No migration. No CI workflow change.
+
+### Queued
+- **6-c — platform-aware, intent-driven AR selection** (operator-requested): the
+  model expresses a high-level intent (`block_ip`/`disable_user`/`restart`) +
+  agent + target; Wolf resolves the agent OS and **deterministically selects the
+  platform-correct command** (firewall-drop↔netsh, route-null↔win_route-null, …),
+  so "block IP on agent 003 (Windows)" auto-picks `netsh`. Platform *safety* (the
+  validator refusing a mismatch) already shipped in 6-b.1; 6-c adds the *smart
+  selection*. Robust path = server-side resolver (not 4 B-model prompt-guidance).
+
+---
+
+## 2026-06-19 — 6-b.1: active-response API contract fixed + command catalog (web-test feedback)
+
+**Session type:** claude-code
+**Phase:** 6 (capability-driven action execution — AR correctness/hardening)
+**Branch / commit:** main (pending operator web-test)
+
+### What we did
+Operator web-tested 6-b (checks 1–3 ✅) and surfaced two findings + a directive
+to master the Wazuh AR API.
+
+**Finding 1 — firewall-drop failed:** `Server API write returned 400 … Invalid
+field found {'custom'}`. The write client sent a body Wazuh 4.14.x rejects. Root
+cause + fix, grounded in research, not guesswork:
+- Probed the **live cluster (v4.14.3)** safely (sentinel field + nonexistent
+  agent → no execution): `PUT /active-response` accepts **only** `command`,
+  `arguments`, `alert`; **`custom`/`timeout`/`location` are rejected**. The
+  command must be **`!`-prefixed** to run now; the manager does NOT validate the
+  command name; the API returns **HTTP 200 even on failure** (`error:1` +
+  `failed_items`).
+- Read the **AR script source on GitHub across v4.14.3 + v4.14.5** (the latest
+  4.x; identical except `netsh.c`'s internal rule build). Shared helpers
+  (`active_responses.c`) give a uniform contract: srcip blockers read
+  `parameters.alert.data.srcip` (validated numeric IPv4/IPv6 by `get_ip_version`),
+  `disable-account` reads `…data.dstuser`, `restart-wazuh` neither; `add`/`delete`
+  is the timeout reversal (config-side, not per-call).
+- **New `wolf_server/wazuh/active_response.py`** — the command **catalog**
+  (platform/target/reversible), `build_ar_body` (`!`-prefix, `alert.data.*`, **no
+  `custom`**), `classify_os` + `is_valid_ip`, `interpret_ar_result` (dispatch ≠
+  host-applied — honest verification of the 200-with-failed_items shape).
+- Validator is now catalog-driven: command ∈ catalog; required target present +
+  well-formed (valid IP / non-empty user); **lenient** platform check (refuse
+  only a *confirmed* OS mismatch, never unknown OS — the 6-a.1 no-false-refusal
+  lesson). Propose tool gained structured `srcip`/`username`, resolves the agent
+  OS, freezes params into the content-hashed proposal. Write client + execution
+  `_perform`/`_verify` rewired through the catalog.
+
+**Finding 2 — UX:** an expired pending card read "Expires expired" → now shows
+"Expired" (red), derived from `timeUntil`.
+
+**Frontend:** the proposal card + approve-confirm now surface the structured
+target ("block IP …", "user …").
+
+**Reference:** `docs/reference/wazuh-active-response.md` — full source-grounded
+catalog of every default AR command, the unified input contract, correlations,
+validation, and how Wolf maps to it. ADR 0025 amended; reference memory added.
+
+### How we verified
+The corrected body, driven through the **real write client** against nonexistent
+agent 99999 (zero execution), returns **HTTP 200** ("agent does not exist") for
+firewall-drop / disable-account / restart-wazuh — the old **400 'custom'** is
+gone. **659 backend / 0 skip**; ruff + mypy --strict clean; dashboard `tsc` +
+`eslint` clean. No migration. CI audit: no workflow change (new module is in
+`wolf_server/wazuh`, already strict; new tests auto-collect; frontend rides the
+existing job; safety-check greps only `tools/`).
+
+### Web-test hand-off
+Re-test: ask Wolf to block an IP on an **acme** agent → the proposal now carries
+the IP; approving runs the corrected command. (Real `firewall-drop` on a real
+acme agent = smoke (b); use a disposable agent.)
+
+---
+
+## 2026-06-19 — 6-b: action-approval queue GUI (the browser web-test surface)
+
+**Session type:** claude-code
+**Phase:** 6 (capability-driven action execution — approval-queue GUI slice)
+**Branch / commit:** main (pending operator web-test)
+
+### What we did
+Built the human-in-the-loop surface for Phase 6: a role-gated dashboard page
+where a reviewer sees Wolf's pending action proposals and approves or rejects
+them. The backend (slice 6-a/6-a.1) already exposes
+`/api/v1/organization/action-proposals` (list/get/approve/reject,
+capability-gated); this slice is the GUI on top, plus one small backend
+affordance.
+
+- **Backend** — `list_proposals` gained `state=all` (recent proposals across
+  every lifecycle state, newest-first, capped at 200) for the activity history;
+  default stays `pending` (the actionable queue). Both forced-filtered to the
+  caller's org. +3 focused tests (default=pending / all-states / org-scoped).
+- **`lib/types.ts`** — `ActionProposal` + `ProposalState` mirroring the backend
+  `ProposalOut`.
+- **`lib/api.ts`** — `listActionProposals(state)`, `approveActionProposal(id)`,
+  `rejectActionProposal(id, reason?)`.
+- **`lib/capabilities.ts`** (new) — `canProposeActions` / `canApproveActions`,
+  a UX-only mirror of `ROLE_CAPABILITIES` (propose = analyst+; approve =
+  responder/engineer/admin; superuser excluded — org actions are org roles').
+- **`app/actions/`** — `layout.tsx` (guard: ACTION_PROPOSE roles only, else
+  bounce to /chat) + `page.tsx`: pending queue as detail cards (action, target,
+  Wolf's rationale, expected effect, grounding evidence, rollback, severity,
+  proposed-time, TTL countdown), Approve / Reject, and a recent-activity history
+  with the verification outcome. Approve is a confirm dialog that states it is a
+  real fleet change; the Approve button is disabled on a reviewer's own proposal
+  (separation of duties — also enforced server-side); analyst sees the queue
+  read-only.
+- **`chat-header.tsx`** — an "Action approvals" entry point (clipboard icon),
+  shown to analyst+.
+
+### How we self-validated
+641 backend / 0 skip (CI-parity); ruff + mypy --strict clean; dashboard `tsc`
++ `eslint` clean; wolf-server restarts clean (propose tool registered); the
+`action-proposals` route is mounted + auth-gated (401 unauth, like `/auth/me`).
+No migration. CI audit: no workflow change needed — frontend rides the existing
+"Frontend (tsc + eslint + build)" job, the backend change is in `api/` (already
+strict), the new test auto-collects, safety-check greps only `tools/`
+(untouched).
+
+### Web-test hand-off (operator checkpoint)
+Generate a proposal by asking Wolf in chat to propose `firewall-drop` on an
+**acme** agent (acme's credential is RBAC-allowed AR on `agent:group:acme`; beta
+is not, so beta will be refused at propose time — a good negative test). It
+lands in /actions as pending. **Safe to test now:** view, Reject, the
+self-approval (SoD) block, the analyst read-only view. **Note:** clicking
+"Approve & execute" on an acme proposal runs a REAL `firewall-drop` on a real
+agent — that's smoke (b), to be done deliberately on a disposable agent. For the
+pure-UI web-test, use Reject.
+
+### Follow-ons
+Live propose→approve→**execute** smoke (b) on a disposable agent per go-ahead; a
+pending-count badge / live push deferred to the notification + SSE phases
+(6.7/6.8); other action classes.
+
+---
+
 ## 2026-06-19 — 6-a.1: group-aware capability gate (live-smoke fix before 6-b)
 
 **Session type:** claude-code

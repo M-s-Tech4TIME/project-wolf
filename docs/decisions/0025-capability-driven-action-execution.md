@@ -107,6 +107,31 @@ a membership that has since changed. This keeps single-org ↔ MSSP parity: a
 broad single-org credential granted `agent:id:*` still works with no groups at
 all.
 
+### Active-response API contract corrected + command catalog (slice 6-b.1)
+
+The first web-test execution failed: `Server API write returned 400 … Invalid
+field found {'custom'}`. The write client sent a body shape Wazuh 4.14.x rejects.
+Verified empirically against the live cluster (v4.14.3) **and** the AR script
+source (v4.14.3 + v4.14.5 — identical except `netsh.c`'s internal rule build):
+
+- `PUT /active-response` accepts **only** `command`, `arguments`, `alert`.
+  `custom`, `timeout`, `location` are rejected. The command must be **`!`-prefixed**
+  to run a named command now. The target rides in the alert the script reads:
+  srcip blockers read `parameters.alert.data.srcip` (validated as numeric
+  IPv4/IPv6 by `get_ip_version`), `disable-account` reads `…data.dstuser`. The
+  per-call **timeout is not API-expressible** (config-side reversal only). The API
+  returns **HTTP 200 even on failure** (`error:1` + `failed_items`).
+- New `wolf_server/wazuh/active_response.py`: the command **catalog** (platform /
+  target / reversible per command), `build_ar_body` (the correct body — no
+  `custom`, `!`-prefix, `alert.data.*`), `classify_os` + `is_valid_ip`, and
+  `interpret_ar_result` (dispatch ≠ host-applied; honest verification).
+- The validator is now catalog-driven: command ∈ catalog; required target present
+  + well-formed (valid IP / non-empty user); **lenient** platform check (refuse
+  only a *confirmed* mismatch, never an unknown OS — the 6-a.1 no-false-refusal
+  lesson). The propose tool takes structured `srcip`/`username`, resolves the
+  agent OS, and freezes them into the content-hashed proposal.
+- Full source-grounded analysis: `docs/reference/wazuh-active-response.md`.
+
 ## Consequences
 
 - New in-process module `wolf_server/gateway/` (proposal model + state machine +

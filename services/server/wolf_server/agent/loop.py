@@ -35,7 +35,7 @@ from wolf_server.agent.events import EventCallback, LoopEvent, LoopEventType
 from wolf_server.agent.prompts import RETRY_NUDGE
 from wolf_server.agent.strategies import Strategy
 from wolf_server.audit.log import write_event_from_context
-from wolf_server.grounding import GroundingValidator
+from wolf_server.grounding import GroundingValidator, ValidationResult
 from wolf_server.guardrails.limits import DEFAULT_LIMITS, ResourceLimits
 from wolf_server.models.interface import (
     ChatStreamDelta,
@@ -141,6 +141,7 @@ class AgentLoop:
         event_callback: EventCallback | None = None,
         knowledge_store: Any | None = None,
         grounding_validator: GroundingValidator | None = None,
+        grounding_mode: str = "blocking",
         cache: Any | None = None,
         retry_nudge: bool = False,
     ) -> AgentAnswer:
@@ -312,7 +313,7 @@ class AgentLoop:
                     stop_reason="answer",
                     loop_id=loop_id,
                 )
-                answer = await self._finalize_answer(
+                return await self._finalize_answer(
                     answer,
                     validator=grounding_validator,
                     tool_results=all_tool_results,
@@ -321,9 +322,8 @@ class AgentLoop:
                     db=db,
                     ctx=ctx,
                     event_callback=event_callback,
+                    mode=grounding_mode,
                 )
-                await _emit(event_callback, "answer", answer.model_dump(mode="json"))
-                return answer
 
             tool_results: list[ToolResult] = []
             for call in response.tool_calls:
@@ -418,7 +418,7 @@ class AgentLoop:
             stop_reason="budget_exhausted",
             loop_id=loop_id,
         )
-        answer = await self._finalize_answer(
+        return await self._finalize_answer(
             answer,
             validator=grounding_validator,
             tool_results=all_tool_results,
@@ -427,9 +427,8 @@ class AgentLoop:
             db=db,
             ctx=ctx,
             event_callback=event_callback,
+            mode=grounding_mode,
         )
-        await _emit(event_callback, "answer", answer.model_dump(mode="json"))
-        return answer
 
     # ── Recovery + audit helpers ──────────────────────────────────────────
 
@@ -511,30 +510,55 @@ class AgentLoop:
         db: AsyncSession,
         ctx: OrganizationContext,
         event_callback: EventCallback | None,
+        mode: str = "blocking",
     ) -> AgentAnswer:
-        """Run the grounding validator (if configured) on the draft answer.
+        """Run the grounding validator and emit the `answer` + grounding SSE
+        events per the configured execution mode (ADR 0026).
 
-        Always returns an AgentAnswer — if the validator isn't configured,
-        is given an empty answer, or fails internally, the original answer
-        is returned unchanged. Counts are stamped onto the returned answer
-        for the chat API + audit trail.
+        Always emits exactly one `answer` event and returns an AgentAnswer
+        (annotated + counted when grounding ran; the original otherwise).
+
+          - blocking     — judge awaited, THEN the `answer` event (annotated).
+          - deferred     — `answer` event first (raw + `grounding_pending`),
+                           judge runs, then `grounding.completed` carries the
+                           annotated content + counts to patch the settled
+                           message.
+          - incremental  — like deferred, but claims are judged in concurrent
+                           batches and each batch emits a `grounding.partial`.
+
+        When the validator isn't configured / the answer is empty / there is
+        no evidence, the `answer` event goes out unchanged and the original
+        answer is returned.
         """
         tool_failures = tool_failures or []
-        if validator is None or not answer.content.strip():
-            return answer
-        if not answer.citations and not tool_failures:
-            # No successful tools/chunks AND nothing failed → nothing to
-            # verify against. Per doc 06, the validator grounds tool-/chunk-
-            # backed claims; with zero evidence the empty-citations array
-            # already conveys "no evidence." But if a tool FAILED (Slice
-            # 5.0b), we DO validate — that is exactly the case where the
-            # model tends to fabricate specifics to fill the gap.
-            return answer
+        # Streaming-only modes are meaningless without an event sink; the
+        # non-streaming POST /chat path always runs blocking semantics (it
+        # returns one payload). ADR 0026.
+        if event_callback is None:
+            mode = "blocking"
 
-        # Live activity feed (Slice 5.0c-e): announce that grounding is
-        # starting BEFORE the (potentially multi-minute) judge call so
-        # the UI can narrate "Asking the grounding judge…" instead of
-        # appearing stuck.
+        grounds = (
+            validator is not None
+            and bool(answer.content.strip())
+            # No successful tools/chunks AND nothing failed → nothing to verify
+            # against (doc 06). But a FAILED tool (Slice 5.0b) IS validated —
+            # that is exactly where the model fabricates to fill the gap.
+            and (bool(answer.citations) or bool(tool_failures))
+        )
+        if not grounds:
+            await _emit(event_callback, "answer", answer.model_dump(mode="json"))
+            return answer
+        assert validator is not None  # narrowed by `grounds`
+
+        # deferred / incremental: settle the answer in the UI immediately
+        # (raw + pending) so time-to-readable-answer is the token stream alone.
+        if mode in ("deferred", "incremental"):
+            prelim = answer.model_dump(mode="json")
+            prelim["grounding_pending"] = True
+            await _emit(event_callback, "answer", prelim)
+
+        # Live activity feed (Slice 5.0c-e): announce grounding before the
+        # (potentially multi-minute) judge call so the UI doesn't look stuck.
         await _emit(
             event_callback,
             "grounding.started",
@@ -543,13 +567,42 @@ class AgentLoop:
                 "claim_count_estimate": len(answer.content.split(".")),
             },
         )
-        validation = await validator.validate(
-            answer.content,
-            tool_results=tool_results,
-            retrieved_chunks=retrieved_chunks,
-            tool_failures=tool_failures,
-            loop_id=answer.loop_id,
-        )
+
+        validation: ValidationResult | None = None
+        if mode == "incremental":
+            # Concurrent batched judging; emit one partial per completed batch
+            # so chips pop in progressively. The last snapshot is complete.
+            async for snapshot in validator.validate_streaming(
+                answer.content,
+                tool_results=tool_results,
+                retrieved_chunks=retrieved_chunks,
+                tool_failures=tool_failures,
+                loop_id=answer.loop_id,
+            ):
+                validation = snapshot
+                await _emit(
+                    event_callback,
+                    "grounding.partial",
+                    {
+                        "loop_id": answer.loop_id,
+                        "ran": snapshot.ran,
+                        "supported": snapshot.supported_count,
+                        "unsupported": snapshot.unsupported_count,
+                        "uncertain": snapshot.uncertain_count,
+                        "unverifiable": snapshot.unverifiable_count,
+                        "annotated_content": snapshot.annotated_answer,
+                    },
+                )
+        else:  # blocking + deferred share the single-call judge path
+            validation = await validator.validate(
+                answer.content,
+                tool_results=tool_results,
+                retrieved_chunks=retrieved_chunks,
+                tool_failures=tool_failures,
+                loop_id=answer.loop_id,
+            )
+
+        ran = validation is not None and validation.ran
 
         await write_event_from_context(
             db,
@@ -557,36 +610,47 @@ class AgentLoop:
             event_type="grounding.validation.completed",
             event_data={
                 "loop_id": answer.loop_id,
-                "ran": validation.ran,
-                "supported": validation.supported_count,
-                "unsupported": validation.unsupported_count,
-                "uncertain": validation.uncertain_count,
-                "unverifiable": validation.unverifiable_count,
-                "total_claims": len(validation.claims),
-            },
-        )
-        await _emit(
-            event_callback,
-            "grounding.completed",
-            {
-                "loop_id": answer.loop_id,
-                "ran": validation.ran,
-                "supported": validation.supported_count,
-                "unsupported": validation.unsupported_count,
-                "uncertain": validation.uncertain_count,
-                "unverifiable": validation.unverifiable_count,
+                "mode": mode,
+                "ran": ran,
+                "supported": validation.supported_count if validation else 0,
+                "unsupported": validation.unsupported_count if validation else 0,
+                "uncertain": validation.uncertain_count if validation else 0,
+                "unverifiable": validation.unverifiable_count if validation else 0,
+                "total_claims": len(validation.claims) if validation else 0,
             },
         )
 
-        return answer.model_copy(
-            update={
-                "content": validation.annotated_answer,
-                "grounding_supported": validation.supported_count if validation.ran else None,
-                "grounding_unsupported": validation.unsupported_count if validation.ran else None,
-                "grounding_uncertain": validation.uncertain_count if validation.ran else None,
-                "grounding_unverifiable": validation.unverifiable_count if validation.ran else None,
-            }
+        completed: dict[str, Any] = {
+            "loop_id": answer.loop_id,
+            "ran": ran,
+            "supported": validation.supported_count if validation else 0,
+            "unsupported": validation.unsupported_count if validation else 0,
+            "uncertain": validation.uncertain_count if validation else 0,
+            "unverifiable": validation.unverifiable_count if validation else 0,
+        }
+        # In deferred/incremental the annotated content rides the final
+        # grounding event to patch the already-settled message; in blocking it
+        # rides the `answer` event emitted below.
+        if mode in ("deferred", "incremental") and validation is not None:
+            completed["annotated_content"] = validation.annotated_answer
+        await _emit(event_callback, "grounding.completed", completed)
+
+        final = (
+            answer.model_copy(
+                update={
+                    "content": validation.annotated_answer,
+                    "grounding_supported": validation.supported_count,
+                    "grounding_unsupported": validation.unsupported_count,
+                    "grounding_uncertain": validation.uncertain_count,
+                    "grounding_unverifiable": validation.unverifiable_count,
+                }
+            )
+            if ran and validation is not None
+            else answer
         )
+        if mode == "blocking":
+            await _emit(event_callback, "answer", final.model_dump(mode="json"))
+        return final
 
     async def _audit_model_success(
         self,

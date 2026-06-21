@@ -1,7 +1,14 @@
 "use client";
 
 import { SendHorizontal, Square } from "lucide-react";
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ClipboardEvent,
+  type FormEvent,
+  type KeyboardEvent,
+} from "react";
 
 import { Button } from "@/components/ui/button";
 
@@ -121,18 +128,48 @@ export function ChatComposer({ onSubmit, streaming, onStop, draft }: Props) {
     }
   }
 
+  // Text selected from the rendered thread (ctrl+C over a message bubble)
+  // carries trailing newlines from block-element boundaries — and sometimes
+  // several when the selection spans multiple blocks — which paste in as
+  // blank line(s). Normalise on paste: drop trailing whitespace and collapse
+  // any run of 3+ newlines to a single blank line. A clean paste (e.g. the
+  // message Copy button) is left untouched, so native paste + caret behaviour
+  // is preserved for the common case. (web-test 2026-06-21)
+  function handlePaste(e: ClipboardEvent<HTMLTextAreaElement>) {
+    const pasted = e.clipboardData.getData("text");
+    const cleaned = pasted.replace(/\s+$/, "").replace(/\n{3,}/g, "\n\n");
+    if (cleaned === pasted) return; // nothing to normalise → native paste
+    e.preventDefault();
+    const el = e.currentTarget;
+    const start = el.selectionStart ?? value.length;
+    const end = el.selectionEnd ?? value.length;
+    const next = (value.slice(0, start) + cleaned + value.slice(end)).slice(
+      0,
+      MAX_QUESTION_LEN,
+    );
+    const caret = Math.min(start + cleaned.length, next.length);
+    setValue(next);
+    // Restore the caret after the controlled re-render commits.
+    requestAnimationFrame(() => el.setSelectionRange(caret, caret));
+  }
+
   return (
     <form onSubmit={handleSubmit} className="mx-auto max-w-3xl">
       <div className="flex items-end gap-2 rounded-lg border border-input bg-background p-2 focus-within:ring-1 focus-within:ring-ring">
         <textarea
           ref={textareaRef}
           className="flex-1 resize-none overflow-y-auto bg-transparent px-2 py-1.5 text-sm leading-relaxed outline-none placeholder:text-muted-foreground [scrollbar-gutter:stable] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-foreground/30 hover:[&::-webkit-scrollbar-thumb]:bg-foreground/50"
-          rows={2}
+          // One row is the baseline; the auto-resize effect grows it as the
+          // user types/pastes. `rows={2}` previously forced a permanent empty
+          // second line (the auto-resize only shrinks, never below the base
+          // rows), so a single-line paste left a "1 line gap". (web-test 2026-06-21)
+          rows={1}
           maxLength={MAX_QUESTION_LEN}
           placeholder='Ask something — e.g. "why did agent web-07 trigger alert 5710 at 10:32 UTC?"'
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
           style={{ maxHeight: `${COMPOSER_MAX_HEIGHT_PX}px` }}
         />
         {streaming && onStop ? (

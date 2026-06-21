@@ -18,20 +18,42 @@ from pydantic import BaseModel, Field
 
 from wolf_server.gateway.proposals import create_proposal
 from wolf_server.gateway.validator import validate_proposal
-from wolf_server.tools.base import ProposeTool, ToolExecContext
+from wolf_server.tools.base import Citation, ProposeTool, ToolExecContext
 from wolf_server.wazuh.capabilities import (
     ACTION_ACTIVE_RESPONSE,
     fetch_credential_capabilities,
     resolve_agent_groups,
+    resolve_agent_os,
 )
 
 _ACTION_CLASS = "active_response"
 
 
 class ProposeActiveResponseInput(BaseModel):
-    agent_id: str = Field(description="Resolved Wazuh agent id (from list_agents), e.g. '001'")
+    agent_id: str = Field(
+        description=(
+            "The EXACT Wazuh agent id the user is targeting — taken from their "
+            "request or resolved via list_agents/get_agent_detail. Never default "
+            "or guess; if unknown, resolve it first."
+        )
+    )
     command: str = Field(
-        description="Active-response command id (e.g. 'firewall-drop') — never invented"
+        description=(
+            "Active-response command id — never invented. One of: firewall-drop, "
+            "host-deny, route-null (Linux block-IP); netsh, win_route-null (Windows "
+            "block-IP); disable-account (disable a user); restart-wazuh."
+        )
+    )
+    srcip: str = Field(
+        default="",
+        description=(
+            "For block-IP commands: the source IP to block, taken from the user's "
+            "request or the alert (IPv4 or IPv6). Do not fill in a placeholder."
+        ),
+    )
+    username: str = Field(
+        default="",
+        description="For disable-account: the local username to disable.",
     )
     rationale: str = Field(description="Why this action is warranted, in plain language")
     expected_effect: str = Field(
@@ -50,6 +72,10 @@ class ProposeActiveResponseOutput(BaseModel):
     proposal_id: str = Field(default="", description="The queued proposal id, when permitted")
     summary: str = Field(description="One-line summary of the outcome")
     detail: str = Field(default="", description="Reason, when not permitted")
+    # Like every tool, the propose tool emits a citation so its call shows in
+    # the Evidence panel and is grounding-traceable (the proposal IS evidence
+    # of an action Wolf took on the user's behalf).
+    citation: Citation
 
 
 class ProposeActiveResponseTool(ProposeTool):
@@ -57,8 +83,9 @@ class ProposeActiveResponseTool(ProposeTool):
 
     name: ClassVar[str] = "propose_active_response"
     description: ClassVar[str] = (
-        "Propose an active-response command (e.g. firewall-drop) on ONE resolved "
-        "agent. Does NOT execute — it queues a proposal a human must approve first."
+        "Propose an active-response command on ONE resolved agent (block an IP, "
+        "disable an account, restart an agent). Does NOT execute — it queues a "
+        "proposal a human must approve first."
     )
     InputModel: ClassVar[type[BaseModel]] = ProposeActiveResponseInput
     OutputModel: ClassVar[type[BaseModel]] = ProposeActiveResponseOutput
@@ -69,13 +96,28 @@ class ProposeActiveResponseTool(ProposeTool):
         assert isinstance(args, ProposeActiveResponseInput)  # noqa: S101 — validated by dispatcher
         ctx = exec_ctx.organization
         target = {"agent_id": args.agent_id}
+        # The call itself is the citation (sanitized args); result_count flips
+        # 1 (queued) vs 0 (refused) per outcome below.
+        query = args.model_dump(mode="json")
+
+        # Resolve the agent's live OS so the validator can check platform fit
+        # (lenient — unknown OS does not block). Structured params (srcip /
+        # username / agent_os) are frozen into the proposal (content-hashed).
+        agent_os = await resolve_agent_os(exec_ctx.server_api, args.agent_id)
+        parameters: dict[str, str] = {}
+        if args.srcip.strip():
+            parameters["srcip"] = args.srcip.strip()
+        if args.username.strip():
+            parameters["username"] = args.username.strip()
+        if agent_os:
+            parameters["agent_os"] = agent_os
 
         # 1. Structural action validator (hard gate — never reaches the queue if it fails).
         verdict = validate_proposal(
             action_class=_ACTION_CLASS,
             target=target,
             action=args.command,
-            parameters={},
+            parameters=parameters,
         )
         if not verdict.ok:
             return ProposeActiveResponseOutput(
@@ -83,6 +125,7 @@ class ProposeActiveResponseTool(ProposeTool):
                 state="rejected",
                 summary="Proposal rejected by the action validator.",
                 detail=verdict.reason,
+                citation=self.make_citation(query, result_count=0),
             )
 
         # 2. Capability pre-flight — the credential must be RBAC-allowed this action,
@@ -101,13 +144,21 @@ class ProposeActiveResponseTool(ProposeTool):
                     f"(groups: {groups}). "
                     "Wolf only offers actions the credential's Wazuh RBAC permits."
                 ),
+                citation=self.make_citation(query, result_count=0),
             )
 
         # 3. Persist the pending proposal (the queue).  db is wired by the dispatcher.
         if exec_ctx.db is None:  # pragma: no cover — always wired in the live path
             raise RuntimeError("propose_active_response requires a DB session in the exec context")
+        target_phrase = (
+            f" (block {parameters['srcip']})"
+            if "srcip" in parameters
+            else f" (disable {parameters['username']})"
+            if "username" in parameters
+            else ""
+        )
         expected = args.expected_effect or (
-            f"Run active-response '{args.command}' on agent {args.agent_id}."
+            f"Run active-response '{args.command}' on agent {args.agent_id}{target_phrase}."
         )
         proposal = await create_proposal(
             exec_ctx.db,
@@ -116,6 +167,7 @@ class ProposeActiveResponseTool(ProposeTool):
             action_class=_ACTION_CLASS,
             target=target,
             action=args.command,
+            parameters=parameters,
             rationale=args.rationale,
             expected_effect=expected,
             evidence={"alert_ids": args.alert_ids},
@@ -126,7 +178,8 @@ class ProposeActiveResponseTool(ProposeTool):
             state="pending",
             proposal_id=str(proposal.id),
             summary=(
-                f"Proposed '{args.command}' on agent {args.agent_id}; "
+                f"Proposed '{args.command}' on agent {args.agent_id}{target_phrase}; "
                 "awaiting approval before it runs."
             ),
+            citation=self.make_citation(query, result_count=1),
         )

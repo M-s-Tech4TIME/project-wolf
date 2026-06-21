@@ -17,6 +17,7 @@ import httpx
 import structlog
 from wolf_common.errors import WolfError
 
+from wolf_server.wazuh.active_response import build_ar_body
 from wolf_server.wazuh.capabilities import ACTION_ACTIVE_RESPONSE, CredentialCapabilities
 from wolf_server.wazuh.config import WazuhConnection
 
@@ -180,6 +181,8 @@ class WazuhServerApiActionClient:
         command: str,
         capabilities: CredentialCapabilities,
         agent_groups: Sequence[str],
+        srcip: str | None = None,
+        username: str | None = None,
         arguments: list[str] | None = None,
     ) -> dict[str, Any]:
         """Run an active-response command on one resolved agent.
@@ -190,6 +193,11 @@ class WazuhServerApiActionClient:
         resolved fresh by the caller) — else :class:`WazuhActionNotPermittedError`
         (fail-closed) BEFORE any request.  A per-org credential grants by group,
         so the group expansion is what makes a real per-org write reachable.
+
+        The body is built by :func:`build_ar_body` to match what Wazuh 4.x
+        accepts: ``!``-prefixed command (run it now), the target in
+        ``alert.data.srcip`` / ``alert.data.dstuser``, no ``custom``/``timeout``
+        (rejected by the API).
         """
         if not capabilities.can_on_agent(ACTION_ACTIVE_RESPONSE, agent_id, agent_groups):
             groups = ", ".join(agent_groups) or "none"
@@ -197,11 +205,7 @@ class WazuhServerApiActionClient:
                 f"Credential is not authorized for active-response on agent {agent_id} "
                 f"(groups: {groups})."
             )
-        body: dict[str, Any] = {
-            "command": command,
-            "arguments": arguments or [],
-            "custom": False,
-        }
+        body = build_ar_body(command, srcip=srcip, username=username, arguments=arguments)
         return await self._write(
             "PUT", "/active-response", params={"agents_list": agent_id}, json_body=body
         )

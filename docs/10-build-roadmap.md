@@ -287,11 +287,20 @@ hard gate); approval (separation of duties + `ACTION_APPROVE`); execution
 → verification read); org-scoped approval API. Read-only `WazuhServerApiClient`
 kept; a deliberate capability-checked write surface added alongside.
 
-**Follow-ons:** **6-b** the approval-queue GUI (the browser web-test checkpoint);
-the other action classes (`rule_tuning` / `agent_action` / `config_change`);
-severity-tiered authority / four-eyes / crown-jewel tagging (policy hooks, B1
-default = approval-for-all); auto-execution (Phase 13). The remaining original
-scope below stands as the target the follow-ons fill in.
+**Follow-ons:** **6-b** the approval-queue GUI ✅ (web-tested 2026-06-19; smoke (b)
+confirmed in Wazuh's AR log); **6-b.1** ✅ corrected the AR API contract (no
+`custom`; `!`-prefix; `alert.data.srcip`/`dstuser`; command catalog) +
+**6-b.2** ✅ fixed the stale Phase-6 system prompt + biasing schema examples
+(model now grounds the exact agent id, doesn't default to "001"); **6-c**
+(QUEUED) platform-aware, intent-driven AR selection — the model expresses a
+high-level intent (`block_ip` / `disable_user` / `restart`) + agent + target,
+and Wolf resolves the agent OS and **deterministically picks the
+platform-correct command from the catalog** (firewall-drop↔netsh, route-null↔
+win_route-null, …), so a generic "block IP on agent 003 (Windows)" auto-selects
+`netsh`; **then** the other action classes (`rule_tuning` / `agent_action` /
+`config_change`); severity-tiered authority / four-eyes / crown-jewel tagging
+(policy hooks, B1 default = approval-for-all); auto-execution (Phase 13). The
+remaining original scope below stands as the target the follow-ons fill in.
 
 The most safety-critical work in the project. Built after the
 read-side platform is solid + the deployment substrate is in
@@ -920,6 +929,17 @@ phase builds the missing substrate:
   selector). ADR 0024 measured the trade live (split is ~6 s faster/turn +
   streams chat 3.4× faster; unified is max answer-quality/idle-resilient) —
   hence a *selectable* setting, not a hard default.
+- **Third concrete consumer (ADR 0026):** a **"Grounding mode"** setting —
+  `blocking` (judge awaited before the answer) / `deferred` (answer surfaces
+  immediately, verdicts stream in asynchronously) / `incremental` (verdicts
+  judged in concurrent batches, chips pop in progressively). **Backend shipped +
+  web-tested 2026-06-21** as the env knob `GROUNDING_MODE`; the operator picked
+  **`deferred` as the live default**; 6.10 promotes the selector to the Superuser
+  GUI alongside model posture. Addresses the post-stream grounding latency flagged
+  after 6-b.3; `incremental`'s real concurrency is hardware-gated
+  (`OLLAMA_NUM_PARALLEL>=2` / ample VRAM). *(An evidence-scope `cited` sub-knob was
+  tried and **pulled** — name-keyed dedup starved the judge; safe evidence trimming
+  is deferred to the grounding-enrichment phase.)*
 - **Follow-up (MSSP-correct gate):** **per-org trusted networks** — each
   org defines its own CIDRs; verification checks the user's IP against
   *their* org's networks (not the provider's). Resolves the MSSP gap the

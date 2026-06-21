@@ -1,12 +1,21 @@
 "use client";
 
-import { Cog, Settings as SettingsIcon, ShieldCheck, Sliders, UserCircle, Users } from "lucide-react";
+import {
+  ClipboardList,
+  Cog,
+  Settings as SettingsIcon,
+  ShieldCheck,
+  Sliders,
+  UserCircle,
+  Users,
+} from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import { useAuth } from "@/components/auth-provider";
 import { OrganizationSwitcher } from "@/components/organization-switcher";
 import { Button } from "@/components/ui/button";
+import { canProposeActions } from "@/lib/capabilities";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -43,6 +52,9 @@ export function ChatHeader({
   // active org). Non-Admins just don't see the entry point.
   const { me } = useAuth();
   const isAdmin = me?.role === "admin";
+  // Action-approval queue — visible to any role that can propose/review
+  // actions (analyst+). The backend gates every call independently.
+  const showActions = canProposeActions(me?.role);
   return (
     <header className="relative flex h-14 items-center justify-between border-b border-border bg-card px-4">
       <div className="flex items-center gap-3">
@@ -62,6 +74,20 @@ export function ChatHeader({
         <HeaderTitle title={title} onRename={onRename} />
       ) : null}
       <div className="flex items-center gap-2">
+        {showActions ? (
+          <Button
+            asChild
+            variant="ghost"
+            size="sm"
+            className="h-10 w-10 rounded-full p-0"
+            aria-label="Action approvals"
+            title="Action approvals"
+          >
+            <Link href="/actions">
+              <ClipboardList className="!h-5 !w-5" />
+            </Link>
+          </Button>
+        ) : null}
         <OrganizationSwitcher />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

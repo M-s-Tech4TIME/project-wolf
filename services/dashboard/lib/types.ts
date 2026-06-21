@@ -473,6 +473,8 @@ export type LoopEventType =
   | "tool.call.started"
   | "tool.call.completed"
   | "grounding.started"
+  // ADR 0026 — incremental mode emits one `grounding.partial` per judge batch.
+  | "grounding.partial"
   | "grounding.completed"
   | "answer";
 
@@ -538,6 +540,55 @@ export type AssistantMessageNode = BaseNode & {
   grounding_unsupported: number | null;
   grounding_uncertain: number | null;
   grounding_unverifiable: number | null;
+  // ADR 0026 — deferred/incremental grounding: the answer settled before the
+  // verdicts. true while the judge is still running (counts null + a
+  // "Verifying claims…" indicator); cleared when the verdicts patch in.
+  grounding_pending?: boolean;
+};
+
+// ── Action proposals (Phase 6, ADR 0025) ──────────────────────────────────
+
+/** The proposal lifecycle (doc 04). `pending` is the only actionable state;
+ *  the rest are produced by approval/execution and shown as history. */
+export type ProposalState =
+  | "draft"
+  | "pending"
+  | "approved"
+  | "executing"
+  | "succeeded"
+  | "failed"
+  | "rejected"
+  | "expired"
+  | "rolled_back";
+
+/** One capability-driven action proposal — mirrors the backend `ProposalOut`
+ *  (services/server/wolf_server/api/action_proposals.py). Wolf proposes; a
+ *  human with ACTION_APPROVE approves; only then does the gateway execute. */
+export type ActionProposal = {
+  id: string;
+  action_class: string;
+  /** The concrete action/command (e.g. "firewall-drop"). */
+  action: string;
+  /** Resolved target, e.g. `{ agent_id: "002" }`. */
+  target: Record<string, unknown>;
+  parameters: Record<string, unknown>;
+  /** "low" | "high" today (compute_severity); kept open for future tiers. */
+  severity: string;
+  state: ProposalState;
+  rationale: string;
+  expected_effect: string;
+  /** Grounding evidence, e.g. `{ alert_ids: [...] }`. */
+  evidence: Record<string, unknown>;
+  rollback_plan: string | null;
+  requested_by: string;
+  approved_by: string | null;
+  approved_at: string | null;
+  executed_at: string | null;
+  /** Verification-read outcome (or `{ error }` on failure); null until run. */
+  result: Record<string, unknown> | null;
+  created_at: string;
+  /** TTL — a pending proposal past this is refused as stale. */
+  expires_at: string;
 };
 
 export type MessageNode = UserMessageNode | AssistantMessageNode;
@@ -586,4 +637,8 @@ export type StreamCompletion = {
   grounding_unsupported: number | null;
   grounding_uncertain: number | null;
   grounding_unverifiable: number | null;
+  // ADR 0026 — set from the `answer` event's `grounding_pending` in
+  // deferred/incremental modes; the late grounding event patches the
+  // archived node's verdicts and clears this.
+  grounding_pending?: boolean;
 };

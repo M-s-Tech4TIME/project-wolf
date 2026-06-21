@@ -1,7 +1,20 @@
 # 0024 — Model posture: keep the split (qwen3:4b chat / qwen3:8b judge) as default; make it configurable in Phase 6.10
 
 **Date:** 2026-06-18
-**Status:** accepted
+**Status:** accepted — **active posture revisited 2026-06-19 (see addendum): unified-8b is now the live default**
+
+> **Addendum (2026-06-19) — active posture flipped to unified-8b.** This ADR
+> chose the split as default on a *latency* basis. Phase 6 web-testing surfaced
+> what latency couldn't: `qwen3:4b` is **unreliable on the agentic propose flow**
+> — it called the wrong tools, dropped the `propose_active_response` call, and
+> emitted nonsense final answers. The operator's priority is **quality /
+> reliability over speed** (speed is a hardware concern), so `DEFAULT_MODEL_ID`
+> is now `qwen3:8b` (chat) with the judge already 8b → **unified-8b**. The split
+> is **not removed** — it remains selectable via the same `DEFAULT_MODEL_ID` /
+> `GROUNDING_JUDGE_MODEL_ID` env knobs (revert chat to `qwen3:4b`), and the
+> Phase 6.10 GUI toggle still lands. Bonus: unified-8b means chat and judge are
+> the same model → **no 4b↔8b swap**, so one model stays resident. `num_ctx` is
+> already 8192 (aligned). The split stays the documented speed-optimised option.
 **Decider:** human (project owner), with claude-code drafting + the live A/B measurement below
 **Related:** [ADR 0010](0010-model-probe-qwen3-8b.md) (qwen3:8b probe — no measured
 capability win over 4b), [ADR 0013](0013-grounding-judge-separate-model.md) (judge as a

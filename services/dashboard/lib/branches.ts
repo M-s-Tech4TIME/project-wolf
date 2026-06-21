@@ -339,6 +339,8 @@ export function makeAssistantNode(args: {
   grounding_unsupported: number | null;
   grounding_uncertain: number | null;
   grounding_unverifiable: number | null;
+  // ADR 0026 — true while deferred/incremental grounding is still running.
+  grounding_pending?: boolean;
 }): AssistantMessageNode {
   return {
     id: args.id,
@@ -364,5 +366,46 @@ export function makeAssistantNode(args: {
     grounding_unsupported: args.grounding_unsupported,
     grounding_uncertain: args.grounding_uncertain,
     grounding_unverifiable: args.grounding_unverifiable,
+    grounding_pending: args.grounding_pending ?? false,
   };
+}
+
+/** ADR 0026 — patch the grounding verdicts onto a SETTLED assistant node.
+ *
+ *  In deferred/incremental modes the `answer` event archives the node before
+ *  the judge has run; the late `grounding.completed` / `grounding.partial`
+ *  event then patches the verdicts in place. We CANNOT re-`appendChildOf`
+ *  (it throws on a duplicate id, by design), so this mutates the existing
+ *  node: it replaces the content with the annotated text (chips), stamps the
+ *  four counts, and clears `grounding_pending`. A no-op (same object) if the
+ *  node is missing or isn't an assistant node, so a stale patch can't crash.
+ *
+ *  `ran === false` (judge failed) keeps the raw content + null counts and just
+ *  clears the pending indicator — an honest "couldn't verify," never a hang. */
+export function updateAssistantGrounding(
+  conversation: Conversation,
+  node_id: string,
+  patch: {
+    ran: boolean;
+    content: string;
+    grounding_supported: number | null;
+    grounding_unsupported: number | null;
+    grounding_uncertain: number | null;
+    grounding_unverifiable: number | null;
+  },
+): Conversation {
+  const node = conversation.nodes[node_id];
+  if (!node || node.role !== "assistant") return conversation;
+  const updated: AssistantMessageNode = patch.ran
+    ? {
+        ...node,
+        content: patch.content,
+        grounding_supported: patch.grounding_supported,
+        grounding_unsupported: patch.grounding_unsupported,
+        grounding_uncertain: patch.grounding_uncertain,
+        grounding_unverifiable: patch.grounding_unverifiable,
+        grounding_pending: false,
+      }
+    : { ...node, grounding_pending: false };
+  return { ...conversation, nodes: { ...conversation.nodes, [node_id]: updated } };
 }
