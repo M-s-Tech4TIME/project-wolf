@@ -49,6 +49,38 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-22 — Dependency-security closeout + npm-audit CI gate
+
+**Session type:** claude-code · **Phase:** 6 (post-push security hygiene) · **Branch / commit:** main
+
+### What we did
+Closing out the Phase 6 push, the CI `dep-audit` (pip-audit) gate flagged a
+newly-disclosed Python advisory, and the operator spotted a failing Dependabot
+update job — surfacing npm vulns that pip-audit (Python-only) never sees:
+
+- **pydantic-settings 2.14.1 → 2.14.2** (`GHSA-4xgf-cpjx-pc3j`, symlink traversal
+  in `NestedSecretsSettingsSource` — not a path Wolf uses, but the gate flags the
+  installed version). Floor pinned by hand in `services/server` + `services/gateway`;
+  uv lock followed. (commit `7c124d8`)
+- **undici 8.4.1 → 8.5.0** — a DIRECT dashboard dep (used by `app/api/[...path]`
+  for the mTLS proxy fetch), 7 advisories incl. 3 high. A Dependabot security-update
+  job had errored on it; floor bumped by hand. **hono 4.12.21 → 4.12.26** — transitive
+  via `@modelcontextprotocol/sdk`, high serve-static path traversal + others — forced
+  via an `overrides` entry. `npm audit` → 0 vulnerabilities. (commit `dadf01b`)
+- **New CI gate:** the `frontend` job now runs `npm audit --audit-level=moderate`
+  after `npm ci` (before tsc/build, fails fast) — the npm counterpart to the Python
+  `dep-audit` job. Moderate+ advisories now fail the build; low-severity transitive
+  noise is allowed so an unrelated PR isn't blocked by an unfixable low finding. When
+  a real finding has no published fix, pin a floor / add an `overrides` (as done for
+  hono). Job renamed `Frontend (tsc + eslint + build + audit)`.
+
+### Gate
+All three dep commits landed green on CI; this gate change passes locally
+(`npm audit --audit-level=moderate` → 0 vulnerabilities) and will be exercised on
+the next push.
+
+---
+
 ## 2026-06-21 — Grounding modes web-test: default → deferred; `cited` pulled; 2 UI fixes
 
 **Session type:** claude-code · **Phase:** 6 (grounding interlude) · **Branch / commit:** main (pending operator sign-off)

@@ -251,7 +251,7 @@ jobs:
   # regressions that the .deb build wouldn't necessarily surface.
   # Phase 5.0c-l close-out gap caught by the 2026-06-05 CI audit.
   frontend:
-    name: Frontend (tsc + eslint + build)
+    name: Frontend (tsc + eslint + build + audit)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -269,6 +269,18 @@ jobs:
           cache-dependency-path: services/dashboard/package-lock.json
       - name: npm ci
         run: npm ci --no-audit --no-fund
+      # npm-dependency vulnerability gate — the npm counterpart to the
+      # Python `dep-audit` (pip-audit) job, which never sees npm deps. Fails
+      # the build on moderate+ advisories anywhere in the dashboard's
+      # dependency tree (the class hand-patched 2026-06-22: undici high/
+      # moderate, hono high). Low-severity transitive noise is allowed so an
+      # unrelated PR isn't blocked by an unfixable low finding. When a real
+      # finding has no published fix yet, pin a floor or add an `overrides`
+      # entry in services/dashboard/package.json (as done for hono), or raise
+      # this threshold with a tracked TODO. Runs before tsc/build so a vuln
+      # fails fast.
+      - name: npm audit (dependency vulnerabilities)
+        run: npm audit --audit-level=moderate
       - name: TypeScript type-check
         run: ./node_modules/.bin/tsc --noEmit
       - name: ESLint
