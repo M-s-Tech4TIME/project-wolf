@@ -11,7 +11,11 @@ dependencies = [
     "starlette>=1.3.1",
     "uvicorn[standard]>=0.49.0",
     "pydantic[email]>=2.13.4",
-    "pydantic-settings>=2.0",
+    # Floor bump: <2.14.2 has GHSA-4xgf-cpjx-pc3j (NestedSecretsSettingsSource
+    # follows symlinks out of secrets_dir + bypasses secrets_dir_max_size).
+    # Wolf doesn't use that source (env_file + file secrets backend), but the
+    # dep-audit CI gate flags the installed version; pin the floor by hand.
+    "pydantic-settings>=2.14.2",
     "sqlalchemy[asyncio]>=2.0.50",
     "asyncpg>=0.29",
     "alembic>=1.13",
