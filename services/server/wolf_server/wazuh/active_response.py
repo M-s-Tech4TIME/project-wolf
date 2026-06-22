@@ -45,9 +45,18 @@ TARGET_USERNAME = "username"
 TARGET_NONE = "none"
 
 # OS classes Wolf reasons about (Wazuh `os.platform`/`os.uname` are messy).
+# `bsd` covers FreeBSD/OpenBSD/NetBSD agents (incl. OPNsense/pfSense firewalls,
+# which Wazuh reports as `os.platform='bsd'`, uname `FreeBSD …`).
 OS_LINUX = "linux"
 OS_WINDOWS = "windows"
 OS_MACOS = "macos"
+OS_BSD = "bsd"
+
+# Severity tiers — the *base* impact of an action (escalated by context in
+# wolf_server.gateway.proposals.compute_severity).
+SEV_LOW = "low"
+SEV_MEDIUM = "medium"
+SEV_HIGH = "high"
 
 
 @dataclass(frozen=True)
@@ -58,40 +67,57 @@ class ARCommand:
     platforms: frozenset[str]
     target: str  # one of TARGET_*
     stateful: bool  # supports timeout add/delete (reversible)
+    severity: str  # base impact: SEV_LOW | SEV_MEDIUM | SEV_HIGH
     summary: str
 
 
-# The default Wazuh AR commands (matches this cluster's configured <command>
-# set).  Extend as the manager's command list grows; ideally reconcile against
-# the live `GET /manager/configuration?section=command` in a follow-on.
+# The default Wazuh AR commands.  Verified against this cluster's live
+# `GET /manager/configuration?section=command` (2026-06-22): the manager has
+# firewall-drop, host-deny, route-null, disable-account, restart-wazuh, netsh,
+# win_route-null AND the BSD blockers pf / ipfw / npf configured.  Severity is
+# the command's *base* impact (block = high — network enforcement with collateral
+# risk; disable a user = medium; restart = low).  Extend as the command list
+# grows; a live reconciliation against the manager config is a tracked follow-on.
 AR_COMMANDS: dict[str, ARCommand] = {
     "firewall-drop": ARCommand(
-        "firewall-drop", frozenset({OS_LINUX}), TARGET_SRCIP, True,
+        "firewall-drop", frozenset({OS_LINUX}), TARGET_SRCIP, True, SEV_HIGH,
         "Block a source IP via iptables.",
     ),
     "host-deny": ARCommand(
-        "host-deny", frozenset({OS_LINUX}), TARGET_SRCIP, True,
+        "host-deny", frozenset({OS_LINUX}), TARGET_SRCIP, True, SEV_HIGH,
         "Add a source IP to /etc/hosts.deny.",
     ),
     "route-null": ARCommand(
-        "route-null", frozenset({OS_LINUX, OS_MACOS}), TARGET_SRCIP, True,
+        "route-null", frozenset({OS_LINUX, OS_MACOS}), TARGET_SRCIP, True, SEV_HIGH,
         "Null-route a source IP.",
     ),
     "disable-account": ARCommand(
-        "disable-account", frozenset({OS_LINUX, OS_MACOS}), TARGET_USERNAME, True,
+        "disable-account", frozenset({OS_LINUX, OS_MACOS}), TARGET_USERNAME, True, SEV_MEDIUM,
         "Disable a local user account.",
     ),
     "restart-wazuh": ARCommand(
-        "restart-wazuh", frozenset({OS_LINUX, OS_WINDOWS, OS_MACOS}), TARGET_NONE, False,
-        "Restart the Wazuh agent.",
+        "restart-wazuh", frozenset({OS_LINUX, OS_WINDOWS, OS_MACOS, OS_BSD}), TARGET_NONE, False,
+        SEV_LOW, "Restart the Wazuh agent.",
     ),
     "netsh": ARCommand(
-        "netsh", frozenset({OS_WINDOWS}), TARGET_SRCIP, True,
+        "netsh", frozenset({OS_WINDOWS}), TARGET_SRCIP, True, SEV_HIGH,
         "Block a source IP via netsh (Windows).",
     ),
     "win_route-null": ARCommand(
-        "win_route-null", frozenset({OS_WINDOWS}), TARGET_SRCIP, True,
+        "win_route-null", frozenset({OS_WINDOWS}), TARGET_SRCIP, True, SEV_HIGH,
         "Null-route a source IP (Windows).",
+    ),
+    "pf": ARCommand(
+        "pf", frozenset({OS_BSD, OS_MACOS}), TARGET_SRCIP, True, SEV_HIGH,
+        "Block a source IP via the pf packet filter (BSD/macOS — incl. OPNsense/pfSense).",
+    ),
+    "ipfw": ARCommand(
+        "ipfw", frozenset({OS_BSD}), TARGET_SRCIP, True, SEV_HIGH,
+        "Block a source IP via ipfw (FreeBSD).",
+    ),
+    "npf": ARCommand(
+        "npf", frozenset({OS_BSD}), TARGET_SRCIP, True, SEV_HIGH,
+        "Block a source IP via npf (NetBSD).",
     ),
 }
 
@@ -128,6 +154,7 @@ _INTENT_COMMANDS: dict[str, str | dict[str, str]] = {
         OS_LINUX: "firewall-drop",
         OS_WINDOWS: "netsh",
         OS_MACOS: "route-null",
+        OS_BSD: "pf",  # FreeBSD/OpenBSD incl. OPNsense (pfctl); manager has pf configured
     },
     INTENT_DISABLE_USER: {
         # No default disable-account AR ships for Windows — left unmapped so
@@ -221,8 +248,13 @@ def classify_os(*signals: str | None) -> str | None:
         return None
     if "windows" in blob or "microsoft" in blob:
         return OS_WINDOWS
+    # macOS first — Darwin is BSD-derived but pf/route-null differ from FreeBSD.
     if "darwin" in blob or "macos" in blob or "mac os" in blob:
         return OS_MACOS
+    # "bsd" catches free/open/net-bsd and Wazuh's literal os.platform='bsd';
+    # opnsense/pfsense are FreeBSD-based firewall appliances.
+    if any(x in blob for x in ("bsd", "opnsense", "pfsense")):
+        return OS_BSD
     if any(
         x in blob
         for x in ("linux", "ubuntu", "centos", "debian", "red hat", "rhel",

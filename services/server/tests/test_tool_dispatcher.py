@@ -160,6 +160,10 @@ async def test_schema_invalid_input_returns_failure_and_audits(
         limits=DEFAULT_LIMITS,
     )
     assert result.success is False
+    # Guided, model-recoverable error — not a raw pydantic errors() dump.
+    assert result.error is not None
+    assert result.error.startswith("Invalid arguments for search_alerts:")
+    assert "is required" in result.error
     await db.commit()
     assert (
         await _count_events(db, "tool.call.schema_invalid", organization_ctx.organization_id) == 1

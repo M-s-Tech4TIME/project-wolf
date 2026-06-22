@@ -161,6 +161,30 @@ the platform-correct command from the catalog (`resolve_intent_command`):
 - Selecting a *method* within an intent (host-deny vs firewall-drop; null-route
   vs firewall) is a tracked follow-on, not v1.
 
+### BSD support + dynamic severity + AR-flow hardening (slice 6-c.1)
+
+Grounded in a live read of the cluster (agent `009 opnsense-firewall`
+`os.platform=bsd`; the manager has `pf`/`ipfw`/`npf` configured alongside the rest):
+
+- **BSD.** `classify_os` recognises `bsd`/`freebsd`/`openbsd`/`opnsense`/`pfsense`
+  → `OS_BSD`; `pf`/`ipfw`/`npf` added to the catalog; `block_ip` + BSD → `pf`.
+- **Dynamic severity.** `compute_severity` now reads a per-command **base impact**
+  from the catalog (block IP = High, disable user = Medium, restart = Low —
+  replacing the old static set that wrongly marked restart High and block Low) and
+  **escalates by context** (disabling a privileged account → High). The frontend
+  renders Medium distinctly (amber).
+- **Guided validation errors.** The dispatcher renders a pydantic `ValidationError`
+  as a concise, model-recoverable message instead of the raw `errors()` dump;
+  `propose_active_response.rationale` is now optional (a model omission can't
+  hard-fail the proposal — an honest placeholder is recorded).
+- **Outcome reporting.** The system prompt now requires the model to report a
+  proposal's outcome (queued → pending; rejected → state it + quote the reason),
+  fixing the silent-pivot-to-generic-answer behaviour.
+- **Method selection / OPNsense `opnsense-fw` / capability verification** →
+  deferred to ADR 0027 (6-c.2): stock `pf` *dispatched* on OPNsense but did not
+  *apply* (OPNsense manages pf via its own config), confirming dispatched ≠ host-
+  applied and that agent-side script presence — not manager config — is decisive.
+
 ## Consequences
 
 - New in-process module `wolf_server/gateway/` (proposal model + state machine +

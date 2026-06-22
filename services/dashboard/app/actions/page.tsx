@@ -86,7 +86,19 @@ function resultDetail(result: Record<string, unknown> | null): string | null {
 // ── Badges ─────────────────────────────────────────────────────────────────
 
 function severityBadge(severity: string) {
+  // Three honest tiers: critical/high = red, medium = amber, low = muted.
+  if (severity === "critical")
+    return <Badge variant="destructive">Critical severity</Badge>;
   if (severity === "high") return <Badge variant="destructive">High severity</Badge>;
+  if (severity === "medium")
+    return (
+      <Badge
+        variant="outline"
+        className="border-amber-400/50 bg-amber-400/15 text-amber-700 dark:text-amber-400"
+      >
+        Medium severity
+      </Badge>
+    );
   return <Badge variant="secondary" className="capitalize">{severity} severity</Badge>;
 }
 

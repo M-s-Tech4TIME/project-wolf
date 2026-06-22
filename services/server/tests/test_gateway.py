@@ -29,6 +29,7 @@ from wolf_server.gateway.execution import (
 from wolf_server.gateway.models import ActionProposal, ProposalState
 from wolf_server.gateway.proposals import (
     compute_content_hash,
+    compute_severity,
     create_proposal,
     is_expired,
     recompute_content_hash,
@@ -190,6 +191,31 @@ def test_content_hash_is_stable_and_substance_sensitive() -> None:
     assert compute_content_hash(**changed) != h1  # substance-sensitive
 
 
+# ── Dynamic severity (catalog base + context escalation) ─────────────────────
+
+
+def test_severity_is_catalog_driven_and_dynamic() -> None:
+    # Base impact comes from the command's catalog severity.
+    assert compute_severity("active_response", "firewall-drop", {}) == "high"  # block IP
+    assert compute_severity("active_response", "netsh", {}) == "high"  # block IP (Windows)
+    assert compute_severity("active_response", "pf", {}) == "high"  # block IP (BSD)
+    assert compute_severity("active_response", "restart-wazuh", {}) == "low"  # restart
+    assert (
+        compute_severity("active_response", "disable-account", {"username": "jdoe"}) == "medium"
+    )  # disable an ordinary user
+    # Context escalation: disabling a privileged account is high, not medium.
+    assert (
+        compute_severity("active_response", "disable-account", {"username": "root"}) == "high"
+    )
+    assert (
+        compute_severity("active_response", "disable-account", {"username": "Administrator"})
+        == "high"
+    )
+    # Unknown command / non-AR class falls back to low (never crashes).
+    assert compute_severity("active_response", "made-up", {}) == "low"
+    assert compute_severity("rule_tuning", "anything", {}) == "low"
+
+
 # ── State machine ───────────────────────────────────────────────────────────
 
 
@@ -256,7 +282,7 @@ async def _verify_fail(_p: ActionProposal, _res: dict[str, Any]) -> tuple[bool, 
 async def test_create_proposal_persists_pending_and_audits(db: AsyncSession) -> None:
     proposal = await _make_pending(db)
     assert proposal.state == ProposalState.pending
-    assert proposal.severity == "low"
+    assert proposal.severity == "high"  # firewall-drop = block IP = high (6-c.1)
     assert recompute_content_hash(proposal) == proposal.content_hash
     # An audit event was written for the creation.
     events = (

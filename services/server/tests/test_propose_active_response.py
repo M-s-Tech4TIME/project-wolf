@@ -122,6 +122,50 @@ async def test_propose_block_ip_selects_windows_command(
 
 
 @pytest.mark.asyncio
+async def test_propose_block_ip_selects_bsd_command(
+    db: AsyncSession, seed_organization_and_user: dict[str, Any]
+) -> None:
+    """6-c.1: block_ip on a FreeBSD/OPNsense agent auto-selects `pf`."""
+    ctx = _ctx(seed_organization_and_user)
+    tool = ProposeActiveResponseTool()
+    out = await tool.run(
+        _exec_ctx(db, ctx, _ALLOW, os_platform="FreeBSD 14.3-RELEASE"),
+        ProposeActiveResponseInput(
+            agent_id="001", intent="block_ip", srcip="203.0.113.7", rationale="x"
+        ),
+    )
+    assert out.permitted is True
+    proposal = (
+        await db.execute(
+            select(ActionProposal).where(ActionProposal.organization_id == ctx.organization_id)
+        )
+    ).scalar_one()
+    assert proposal.action == "pf"
+
+
+@pytest.mark.asyncio
+async def test_propose_succeeds_without_rationale_and_records_placeholder(
+    db: AsyncSession, seed_organization_and_user: dict[str, Any]
+) -> None:
+    """Bug fix: the model frequently omits the (now optional) rationale; the
+    proposal must still queue, with an honest placeholder rationale recorded."""
+    ctx = _ctx(seed_organization_and_user)
+    tool = ProposeActiveResponseTool()
+    out = await tool.run(
+        _exec_ctx(db, ctx, _ALLOW),
+        ProposeActiveResponseInput(agent_id="001", intent="block_ip", srcip="203.0.113.7"),
+    )
+    assert out.permitted is True
+    assert out.state == "pending"
+    proposal = (
+        await db.execute(
+            select(ActionProposal).where(ActionProposal.organization_id == ctx.organization_id)
+        )
+    ).scalar_one()
+    assert "no explicit rationale" in proposal.rationale.lower()
+
+
+@pytest.mark.asyncio
 async def test_propose_refused_when_os_unknown_for_block_ip(
     db: AsyncSession, seed_organization_and_user: dict[str, Any]
 ) -> None:

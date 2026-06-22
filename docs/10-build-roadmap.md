@@ -299,7 +299,17 @@ platform-correct command from the catalog** (`resolve_intent_command`:
 firewall-drop↔netsh, route-null on macOS, restart-wazuh OS-agnostic), so a
 generic "block IP on agent 003 (Windows)" auto-selects `netsh`; an unmappable
 intent (OS unknown, or `disable_user` on Windows) is refused with guidance, never
-guessed; **then** the other action classes (`rule_tuning` / `agent_action` /
+guessed; **6-c.1** ✅ (2026-06-22) added **BSD** (FreeBSD/OPNsense `os.platform=bsd`
+→ `pf`; `pf`/`ipfw`/`npf` catalogued, grounded in the live manager command set) +
+**dynamic catalog-driven severity** (block IP = High, disable user = Medium →
+High for a privileged account, restart = Low; replaced the old static+backwards
+map) + two hardening fixes: a **guided** tool input-validation error (no more raw
+pydantic dump) with `rationale` now optional, and the model now **reports a
+proposal's outcome** (queued / rejected-with-reason) instead of silently pivoting.
+**6-c.2** (ADR 0027, *proposed*) optional `method` override + manager-config
+capability verification + OS-unknown user-guided failover + OPNsense→`opnsense-fw`
+(stock `pf` dispatched but didn't apply on OPNsense's appliance firewall); **then**
+the other action classes (`rule_tuning` / `agent_action` /
 `config_change`); severity-tiered authority / four-eyes / crown-jewel tagging
 (policy hooks, B1 default = approval-for-all); auto-execution (Phase 13). The
 remaining original scope below stands as the target the follow-ons fill in.

@@ -49,6 +49,57 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-22 — 6-c.1: BSD active response + dynamic severity + AR-flow hardening
+
+**Session type:** claude-code · **Phase:** 6 (capability-driven action execution) · **Branch / commit:** main
+
+### What we did
+Web-testing 6-c on the live cluster surfaced three things; all grounded in two
+read-only cluster queries (agent OS distribution + the manager's configured
+command set) and the OPNsense Wazuh docs:
+
+- **6-c.1 — BSD support.** Agent `009 opnsense-firewall` reports `os.platform=bsd`
+  (FreeBSD 14.3), and the manager already has `pf`/`ipfw`/`npf` configured.
+  `classify_os` now recognises `bsd`/`freebsd`/`openbsd`/`opnsense`/`pfsense` →
+  `OS_BSD` (macOS still wins for Darwin); `pf`/`ipfw`/`npf` added to the catalog;
+  `block_ip` + BSD → `pf`. (`pf` is universal across BSD; `ipfw` is FreeBSD-specific
+  — both present on OPNsense.)
+- **Dynamic, catalog-driven severity.** Replaced the static (and backwards —
+  restart=High, block=Low) `_HIGH_SEVERITY_COMMANDS` set. Each command now declares
+  a **base impact** in the catalog (block IP = High, disable user = Medium, restart
+  = Low) and `compute_severity` **escalates by context** (disabling root/admin →
+  High). Frontend renders Medium distinctly (amber); `critical` tier wired.
+- **Validation-error bug fix.** A malformed tool call dumped the raw pydantic
+  `errors()` into the Evidence panel + back to the model (which couldn't recover).
+  The dispatcher now renders a **guided** message (*"Invalid arguments for X: 'Y'
+  is required…"*) for every tool, and `propose_active_response.rationale` is now
+  **optional** with an honest placeholder so a model omission can't hard-fail.
+- **Outcome-reporting bug fix.** When a proposal was refused, the model silently
+  described the agent instead of saying so. System prompt principle #4 now requires
+  it to **report the outcome** (queued → pending approval; rejected → state it +
+  quote the reason).
+
+### Notes
+- A live approve→execute of `pf` on OPNsense (009) **dispatched** (`pf - add` in
+  the Wazuh AR log) but did **not** land in OPNsense's blocklist — stock `pf`
+  manipulates `pfctl` directly while OPNsense manages pf via its own config/alias
+  system. Confirms *dispatched ≠ host-applied* and that **agent-side script
+  presence** (not manager config) is decisive. OPNsense's own `opnsense-fw` is the
+  fix → deferred to ADR 0027 (6-c.2), where stock-`pf`-no-op also gets root-caused.
+- **ADR 0027 drafted (`proposed`):** optional `method` override + manager-config
+  capability verification + OS-unknown user-guided failover + OPNsense `opnsense-fw`
+  routing. No code until the operator settles its four open questions.
+- No migration (severity is computed; intent/params in JSONB). No CI change
+  (touched packages already in the mypy strict set; the dashboard edit rides the
+  existing frontend job).
+
+### Gate
+ruff + mypy --strict clean; full backend suite green (0 skip); dashboard `tsc` +
+`eslint` clean. Web-tested live: BSD → `pf` selection ✅, guided refusal relay ✅,
+severity tiers ✅. wolf-server restarted fresh to load the batch before the test.
+
+---
+
 ## 2026-06-22 — 6-c: platform-aware, intent-driven AR selection
 
 **Session type:** claude-code · **Phase:** 6 (capability-driven action execution) · **Branch / commit:** main

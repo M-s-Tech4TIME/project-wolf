@@ -51,6 +51,29 @@ from wolf_server.wazuh.server_api import WazuhServerApiClient
 logger = structlog.get_logger(__name__)
 
 
+def _format_input_validation_error(tool_name: str, exc: ValidationError) -> str:
+    """Render a pydantic ValidationError as a concise, model-recoverable message.
+
+    The raw ``exc.errors()`` dump
+    (``[{'type':'missing','loc':('rationale',), ...}]``) leaks into the Evidence
+    panel and is hard for a mid-size model to act on.  A plain "field X is
+    required / invalid" line reads cleanly in the UI AND tells the model exactly
+    what to fix on its next call (input-validation discipline: guided,
+    field-relevant errors)."""
+    problems: list[str] = []
+    for err in exc.errors():
+        loc = ".".join(str(p) for p in err.get("loc", ())) or "(arguments)"
+        if err.get("type") == "missing":
+            problems.append(f"'{loc}' is required but was not provided")
+        else:
+            problems.append(f"'{loc}': {err.get('msg', 'invalid value')}")
+    detail = "; ".join(problems) if problems else "arguments did not match the schema"
+    return (
+        f"Invalid arguments for {tool_name}: {detail}. "
+        "Call the tool again with corrected arguments."
+    )
+
+
 class ToolDispatchResult(BaseModel):
     """What the dispatcher returns to the agent loop."""
 
@@ -121,7 +144,7 @@ async def dispatch_tool_call(
             ctx,
             call,
             "tool.call.schema_invalid",
-            f"Input validation failed: {exc.errors()}",
+            _format_input_validation_error(call.name, exc),
             start,
         )
 

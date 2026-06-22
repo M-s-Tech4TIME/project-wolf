@@ -62,7 +62,14 @@ class ProposeActiveResponseInput(BaseModel):
         default="",
         description="For intent 'disable_user': the local username to disable.",
     )
-    rationale: str = Field(description="Why this action is warranted, in plain language")
+    rationale: str = Field(
+        default="",
+        description=(
+            "Why this action is warranted, in plain language. Strongly preferred "
+            "— the human approver relies on it. If you omit it the proposal still "
+            "queues, but Wolf records that no rationale was given."
+        ),
+    )
     expected_effect: str = Field(
         default="",
         description="What the action will do, in plain language (for the approver)",
@@ -191,6 +198,13 @@ class ProposeActiveResponseTool(ProposeTool):
             f"{intent_label} on agent {args.agent_id}{target_phrase}{os_phrase} "
             f"via active-response '{command}'."
         )
+        # Rationale is optional at the schema level (the model frequently omits
+        # it, which must not hard-fail the whole proposal); record an honest
+        # placeholder so the approver knows none was given rather than seeing a
+        # fabricated one.
+        rationale = (
+            args.rationale.strip() or "Requested via chat — no explicit rationale was given."
+        )
         proposal = await create_proposal(
             exec_ctx.db,
             organization_id=ctx.organization_id,
@@ -199,7 +213,7 @@ class ProposeActiveResponseTool(ProposeTool):
             target=target,
             action=command,
             parameters=parameters,
-            rationale=args.rationale,
+            rationale=rationale,
             expected_effect=expected,
             evidence={"alert_ids": args.alert_ids},
             session_id=ctx.session_id,

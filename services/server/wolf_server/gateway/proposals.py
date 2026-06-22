@@ -16,28 +16,56 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from wolf_server.audit.log import write_event
 from wolf_server.gateway.models import ActionProposal, ProposalState
+from wolf_server.wazuh.active_response import (
+    SEV_HIGH,
+    SEV_LOW,
+    SEV_MEDIUM,
+    get_ar_command,
+)
 
 # Default proposal TTL — short, because active response is time-sensitive
 # (doc 04 §Stale proposals).  Operator-tunable via 6.10 settings later.
 DEFAULT_TTL_SECONDS = 900  # 15 minutes
 
-# Active-response commands Wolf treats as high-severity (irreversible / broad).
-# Block-an-IP style commands stay "low"; everything not listed defaults low.
-# Severity is informational in v1 (B1 = every write needs approval regardless);
-# the field exists so severity-tiered authority can switch on it later.
-_HIGH_SEVERITY_COMMANDS = frozenset({"restart-wazuh", "isolate", "host-isolation"})
+# Local accounts Wolf treats as privileged — disabling one is higher-impact than
+# disabling an ordinary user, so it escalates the base severity one tier.
+_PRIVILEGED_USERNAMES = frozenset({"root", "admin", "administrator", "sa"})
+
+
+def _is_privileged_user(username: object) -> bool:
+    if not isinstance(username, str):
+        return False
+    name = username.strip().lower()
+    return name in _PRIVILEGED_USERNAMES or name.startswith("admin")
 
 
 def compute_severity(action_class: str, action: str, parameters: dict[str, Any]) -> str:
-    """Compute the proposal's severity from its action class + command.
+    """Compute the proposal's severity DYNAMICALLY from the action + its context.
 
-    v1: active-response block-style commands are ``low``; a small set of
-    broad/irreversible commands are ``high``.  A future crown-jewel tag on the
-    target escalates one level (doc 04 axis 3) — not implemented here.
+    Two inputs combine (doc 04 §Approval authority):
+
+    1. **Base impact** — each active-response command declares its base severity
+       in the catalog (block an IP = ``high`` — network enforcement with
+       collateral risk; disable a user = ``medium``; restart the agent =
+       ``low``).  The catalog is the single source of truth, so a new command
+       sets its own severity instead of this function guessing.
+    2. **Context escalation** — a higher-risk *target* raises the base one tier:
+       disabling a privileged account (root / admin) is treated as ``high``, not
+       ``medium``.  Crown-jewel target tags and broad targets are further axes
+       (doc 04 axis 3) — the hook lives here; v1 ships the privileged-account
+       escalation.
+
+    Severity is informational in v1 (B1 = every write needs approval regardless)
+    but it drives the queue's visual priority and the future severity-tiered
+    authority, so it must be honest.
     """
-    if action_class == "active_response" and action in _HIGH_SEVERITY_COMMANDS:
-        return "high"
-    return "low"
+    if action_class != "active_response":
+        return SEV_LOW
+    cmd = get_ar_command(action)
+    base = cmd.severity if cmd is not None else SEV_LOW
+    if base == SEV_MEDIUM and _is_privileged_user(parameters.get("username")):
+        return SEV_HIGH
+    return base
 
 
 def compute_content_hash(

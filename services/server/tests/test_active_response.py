@@ -10,13 +10,18 @@ failed_items as a failure.
 
 from wolf_server.wazuh.active_response import (
     _INTENT_COMMANDS,
+    AR_COMMANDS,
     AR_INTENTS,
     INTENT_BLOCK_IP,
     INTENT_DISABLE_USER,
     INTENT_RESTART,
+    OS_BSD,
     OS_LINUX,
     OS_MACOS,
     OS_WINDOWS,
+    SEV_HIGH,
+    SEV_LOW,
+    SEV_MEDIUM,
     build_ar_body,
     classify_os,
     get_ar_command,
@@ -79,6 +84,21 @@ def test_classify_os() -> None:
     assert classify_os(None) is None
 
 
+def test_classify_os_bsd() -> None:
+    # Wazuh reports os.platform='bsd' for OPNsense/FreeBSD agents (live cluster).
+    assert classify_os("bsd") == OS_BSD
+    assert classify_os("FreeBSD 14.3-RELEASE") == OS_BSD
+    assert classify_os("OpenBSD 7.5") == OS_BSD
+    assert classify_os("OPNsense.internal") == OS_BSD
+    # macOS is BSD-derived but must classify as macOS, not bsd.
+    assert classify_os("Darwin 23.0") == OS_MACOS
+
+
+def test_every_command_declares_a_valid_severity() -> None:
+    for name, cmd in AR_COMMANDS.items():
+        assert cmd.severity in {SEV_LOW, SEV_MEDIUM, SEV_HIGH}, name
+
+
 # ── intent → platform-correct command selection (slice 6-c) ──────────────────
 
 
@@ -86,12 +106,21 @@ def test_intent_catalog_is_consistent() -> None:
     """Every command the intent table can select must exist in the catalog AND
     platform-fit the OS it is mapped under — the catalog stays the source of
     truth (a test must change if the mapping drifts)."""
+    # Every OS class any OS-specific intent can target.
+    targeted_oses = {
+        os_class
+        for entry in _INTENT_COMMANDS.values()
+        if isinstance(entry, dict)
+        for os_class in entry
+    }
     for intent, entry in _INTENT_COMMANDS.items():
         assert intent in AR_INTENTS
-        if isinstance(entry, str):  # OS-agnostic — must run on every platform
+        if isinstance(entry, str):  # OS-agnostic — must run on every targeted platform
             cmd = get_ar_command(entry)
             assert cmd is not None, f"{intent} → unknown command {entry!r}"
-            assert cmd.platforms == frozenset({OS_LINUX, OS_WINDOWS, OS_MACOS})
+            assert targeted_oses <= cmd.platforms, (
+                f"OS-agnostic {intent} → {entry!r} must run on every targeted OS"
+            )
             continue
         for os_class, command in entry.items():
             cmd = get_ar_command(command)
@@ -106,6 +135,8 @@ def test_intent_block_ip_selects_per_platform() -> None:
     assert resolve_intent_command(INTENT_BLOCK_IP, OS_LINUX).command == "firewall-drop"
     assert resolve_intent_command(INTENT_BLOCK_IP, OS_WINDOWS).command == "netsh"
     assert resolve_intent_command(INTENT_BLOCK_IP, OS_MACOS).command == "route-null"
+    # 6-c.1: a BSD agent (FreeBSD/OPNsense) blocks via pf (manager has pf configured).
+    assert resolve_intent_command(INTENT_BLOCK_IP, OS_BSD).command == "pf"
 
 
 def test_intent_block_ip_refused_when_os_unknown() -> None:
