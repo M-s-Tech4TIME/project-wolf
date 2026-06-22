@@ -49,6 +49,54 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-23 — 6-c.2a: per-BSD-OS selection + OPNsense `opnsense-fw` (real block verified)
+
+**Session type:** claude-code · **Phase:** 6 (capability-driven action execution) · **Branch / commit:** main
+
+### What we did
+First ADR-0027 implementation slice. All four ADR open questions were resolved by
+the operator (macOS→pf; OS-unknown failover open to any proposer; **manager-config
+presence check dropped**; split `OS_BSD` per-OS, version-aware). 6-c.2a ships the
+selection-correctness half:
+
+- **Per-BSD-OS split** — retired `OS_BSD` for `OS_FREEBSD` / `OS_OPENBSD` /
+  `OS_NETBSD` + `OS_OPNSENSE` (OPNsense/pfSense appliance, detected *ahead* of
+  generic FreeBSD via the `os.uname` blob). `block_ip` now selects per OS:
+  FreeBSD/OpenBSD→`pf`, NetBSD→`npf`, OPNsense→`opnsense-fw`, **macOS→`pf`** (was
+  route-null). Added `opnsense-fw` to the catalog.
+- **pf↔ipfw version gate** (`_predates_pf`) — pf only exists from FreeBSD 5.3 /
+  macOS 10.7 (web-verified); older hosts fall back to `ipfw`. Best-effort +
+  fail-safe to `pf` (modern always pf); a rare legacy path.
+- **No manager-config presence check** — confirmed Wolf never read
+  `/manager/configuration` (only a grounding comment existed); an AR is just a
+  `PUT /active-response` call. The catalog comment was rewritten to say so.
+
+### The OPNsense win (verified live)
+Blocked an IP on agent 009 (OPNsense) → Wolf proposed `opnsense-fw` → approved →
+**the IP landed in the `__wazuh_agent_drop` pf table and was blocked** (firewall
+Live View: "Wazuh agent blocklist"). The shipped `opnsense-fw` script does
+`pfctl -t __wazuh_agent_drop -T add` + `pfctl -k` (session kill) against the table
+OPNsense's built-in rule references — so it applies, where stock `pf` (different
+table, no session kill) dispatched but silently no-op'd. Resolves both ADR 0027 §4
+open items.
+
+### Known observability gap (not Wolf, not blocking)
+`opnsense-fw`'s AR run does not raise a Wazuh dashboard alert: dashboard AR alerts
+come from decoder `ar_log_json` + rule 657, which match the standardized
+`active-response/bin/<cmd>: {json}` line that stock C-based scripts write;
+`opnsense-fw` (custom Python) writes its own free-text format, so it isn't decoded.
+Fix = a custom manager decoder + rule (operator-side Wazuh tuning; fits the Phase
+6.11 Wolf-assisted-Wazuh-diagnostics idea). Enforcement is verified regardless.
+
+### Gate
+ruff + mypy --strict clean; full backend suite **610 passed / 0 skip** (per-OS
+classify, version-gate pf/ipfw, OPNsense→opnsense-fw propose, catalog consistency).
+No migration; no CI change (touched packages already strict). Web-tested live.
+wolf-server restarted fresh to load 6-c.2a. **6-c.2b** (method override +
+OS-unknown failover) is next.
+
+---
+
 ## 2026-06-22 — 6-c.1: BSD active response + dynamic severity + AR-flow hardening
 
 **Session type:** claude-code · **Phase:** 6 (capability-driven action execution) · **Branch / commit:** main

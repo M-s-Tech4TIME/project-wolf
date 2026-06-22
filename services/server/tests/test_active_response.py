@@ -15,9 +15,12 @@ from wolf_server.wazuh.active_response import (
     INTENT_BLOCK_IP,
     INTENT_DISABLE_USER,
     INTENT_RESTART,
-    OS_BSD,
+    OS_FREEBSD,
     OS_LINUX,
     OS_MACOS,
+    OS_NETBSD,
+    OS_OPENBSD,
+    OS_OPNSENSE,
     OS_WINDOWS,
     SEV_HIGH,
     SEV_LOW,
@@ -84,13 +87,18 @@ def test_classify_os() -> None:
     assert classify_os(None) is None
 
 
-def test_classify_os_bsd() -> None:
-    # Wazuh reports os.platform='bsd' for OPNsense/FreeBSD agents (live cluster).
-    assert classify_os("bsd") == OS_BSD
-    assert classify_os("FreeBSD 14.3-RELEASE") == OS_BSD
-    assert classify_os("OpenBSD 7.5") == OS_BSD
-    assert classify_os("OPNsense.internal") == OS_BSD
-    # macOS is BSD-derived but must classify as macOS, not bsd.
+def test_classify_os_bsd_per_os() -> None:
+    # 6-c.2a: each BSD is its own class (different default firewall).
+    assert classify_os("FreeBSD 14.3-RELEASE") == OS_FREEBSD
+    assert classify_os("OpenBSD 7.5") == OS_OPENBSD
+    assert classify_os("NetBSD 10.0") == OS_NETBSD
+    # OPNsense/pfSense are FreeBSD-based but detected ahead of generic FreeBSD —
+    # this is the live agent 009 signal (os.platform=bsd, uname FreeBSD…OPNsense).
+    assert classify_os("bsd FreeBSD |OPNsense.internal |14.3-RELEASE") == OS_OPNSENSE
+    assert classify_os("pfSense") == OS_OPNSENSE
+    # Bare "bsd" with no specific marker defaults to FreeBSD (pf is correct there).
+    assert classify_os("bsd") == OS_FREEBSD
+    # macOS is BSD-derived but must classify as macOS, not a BSD.
     assert classify_os("Darwin 23.0") == OS_MACOS
 
 
@@ -128,15 +136,40 @@ def test_intent_catalog_is_consistent() -> None:
             assert os_class in cmd.platforms, (
                 f"{intent}/{os_class} selects {command!r} which is not for {os_class}"
             )
+    # The pf→ipfw version-gate fallback must also platform-fit FreeBSD + macOS.
+    ipfw = get_ar_command("ipfw")
+    assert ipfw is not None
+    assert {OS_FREEBSD, OS_MACOS} <= ipfw.platforms
 
 
 def test_intent_block_ip_selects_per_platform() -> None:
-    # The headline 6-c behavior: same intent, OS picks the command.
+    # The headline behavior: same intent, OS picks the command (6-c.2a per-OS split).
     assert resolve_intent_command(INTENT_BLOCK_IP, OS_LINUX).command == "firewall-drop"
     assert resolve_intent_command(INTENT_BLOCK_IP, OS_WINDOWS).command == "netsh"
-    assert resolve_intent_command(INTENT_BLOCK_IP, OS_MACOS).command == "route-null"
-    # 6-c.1: a BSD agent (FreeBSD/OPNsense) blocks via pf (manager has pf configured).
-    assert resolve_intent_command(INTENT_BLOCK_IP, OS_BSD).command == "pf"
+    assert resolve_intent_command(INTENT_BLOCK_IP, OS_MACOS).command == "pf"  # #1: was route-null
+    assert resolve_intent_command(INTENT_BLOCK_IP, OS_FREEBSD).command == "pf"
+    assert resolve_intent_command(INTENT_BLOCK_IP, OS_OPENBSD).command == "pf"
+    assert resolve_intent_command(INTENT_BLOCK_IP, OS_NETBSD).command == "npf"
+    # OPNsense appliance → its own opnsense-fw (stock pf doesn't apply).
+    assert resolve_intent_command(INTENT_BLOCK_IP, OS_OPNSENSE).command == "opnsense-fw"
+
+
+def test_intent_block_ip_version_gate_pf_vs_ipfw() -> None:
+    # Modern → pf; pre-pf versions (FreeBSD < 5.3 / macOS < 10.7) → ipfw.
+    assert resolve_intent_command(
+        INTENT_BLOCK_IP, OS_FREEBSD, os_signal="FreeBSD 14.3-RELEASE"
+    ).command == "pf"
+    assert resolve_intent_command(
+        INTENT_BLOCK_IP, OS_FREEBSD, os_signal="FreeBSD 4.11-RELEASE"
+    ).command == "ipfw"
+    assert resolve_intent_command(
+        INTENT_BLOCK_IP, OS_MACOS, os_signal="Mac OS X 10.6.8"
+    ).command == "ipfw"
+    assert resolve_intent_command(
+        INTENT_BLOCK_IP, OS_MACOS, os_signal="macOS 14.2"
+    ).command == "pf"
+    # Unparseable / no signal → modern default (pf), never a wrong guess.
+    assert resolve_intent_command(INTENT_BLOCK_IP, OS_FREEBSD, os_signal=None).command == "pf"
 
 
 def test_intent_block_ip_refused_when_os_unknown() -> None:

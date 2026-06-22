@@ -120,7 +120,7 @@ class ProposeActiveResponseTool(ProposeTool):
         # catalog given the agent's OS, so a wrong-platform pick is impossible.
         agent_os = await resolve_agent_os(exec_ctx.server_api, args.agent_id)
         os_class = classify_os(agent_os)
-        resolution = resolve_intent_command(args.intent, os_class)
+        resolution = resolve_intent_command(args.intent, os_class, os_signal=agent_os)
         if not resolution.ok:
             return ProposeActiveResponseOutput(
                 permitted=False,

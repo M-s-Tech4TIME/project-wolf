@@ -306,10 +306,14 @@ High for a privileged account, restart = Low; replaced the old static+backwards
 map) + two hardening fixes: a **guided** tool input-validation error (no more raw
 pydantic dump) with `rationale` now optional, and the model now **reports a
 proposal's outcome** (queued / rejected-with-reason) instead of silently pivoting.
-**6-c.2** (ADR 0027, *proposed*) optional `method` override + manager-config
-capability verification + OS-unknown user-guided failover + OPNsense→`opnsense-fw`
-(stock `pf` dispatched but didn't apply on OPNsense's appliance firewall); **then**
-the other action classes (`rule_tuning` / `agent_action` /
+**6-c.2a** ✅ (ADR 0027; SHIPPED 2026-06-23) split `OS_BSD` into
+`freebsd`/`openbsd`/`netbsd` + OPNsense/pfSense appliance detection, macOS default
+→ `pf`, the pf↔ipfw version gate, and **OPNsense → `opnsense-fw`** — **verified
+live**: the IP landed in `__wazuh_agent_drop` and was blocked (the OPNsense-native
+script integrates with its firewall, where stock `pf` silently no-op'd). The
+manager-config presence check was **dropped** (a `<command>` tag proves nothing).
+**6-c.2b** (next) the optional `method` override + OS-unknown user-guided failover.
+**then** the other action classes (`rule_tuning` / `agent_action` /
 `config_change`); severity-tiered authority / four-eyes / crown-jewel tagging
 (policy hooks, B1 default = approval-for-all); auto-execution (Phase 13). The
 remaining original scope below stands as the target the follow-ons fill in.

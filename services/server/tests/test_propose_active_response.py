@@ -122,10 +122,10 @@ async def test_propose_block_ip_selects_windows_command(
 
 
 @pytest.mark.asyncio
-async def test_propose_block_ip_selects_bsd_command(
+async def test_propose_block_ip_freebsd_selects_pf(
     db: AsyncSession, seed_organization_and_user: dict[str, Any]
 ) -> None:
-    """6-c.1: block_ip on a FreeBSD/OPNsense agent auto-selects `pf`."""
+    """6-c.2a: block_ip on a (generic) FreeBSD agent auto-selects `pf`."""
     ctx = _ctx(seed_organization_and_user)
     tool = ProposeActiveResponseTool()
     out = await tool.run(
@@ -141,6 +141,29 @@ async def test_propose_block_ip_selects_bsd_command(
         )
     ).scalar_one()
     assert proposal.action == "pf"
+
+
+@pytest.mark.asyncio
+async def test_propose_block_ip_opnsense_selects_opnsense_fw(
+    db: AsyncSession, seed_organization_and_user: dict[str, Any]
+) -> None:
+    """6-c.2a: the live agent 009 signal (os.platform=bsd, uname FreeBSD…OPNsense)
+    is detected as the OPNsense appliance → opnsense-fw, NOT stock pf."""
+    ctx = _ctx(seed_organization_and_user)
+    tool = ProposeActiveResponseTool()
+    out = await tool.run(
+        _exec_ctx(db, ctx, _ALLOW, os_platform="bsd FreeBSD OPNsense.internal 14.3-RELEASE"),
+        ProposeActiveResponseInput(
+            agent_id="001", intent="block_ip", srcip="203.0.113.7", rationale="x"
+        ),
+    )
+    assert out.permitted is True
+    proposal = (
+        await db.execute(
+            select(ActionProposal).where(ActionProposal.organization_id == ctx.organization_id)
+        )
+    ).scalar_one()
+    assert proposal.action == "opnsense-fw"
 
 
 @pytest.mark.asyncio

@@ -36,6 +36,7 @@ single body builder with ``srcip`` / ``username`` covers them all.  Details:
 from __future__ import annotations
 
 import ipaddress
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -45,12 +46,16 @@ TARGET_USERNAME = "username"
 TARGET_NONE = "none"
 
 # OS classes Wolf reasons about (Wazuh `os.platform`/`os.uname` are messy).
-# `bsd` covers FreeBSD/OpenBSD/NetBSD agents (incl. OPNsense/pfSense firewalls,
-# which Wazuh reports as `os.platform='bsd'`, uname `FreeBSD …`).
+# BSD is split per-OS (6-c.2a) because each has a *different* default firewall:
+# FreeBSD/OpenBSD → pf, NetBSD → npf, and OPNsense/pfSense appliances → opnsense-fw
+# (they are FreeBSD-based but manage pf via their own config, so stock pf no-ops).
 OS_LINUX = "linux"
 OS_WINDOWS = "windows"
 OS_MACOS = "macos"
-OS_BSD = "bsd"
+OS_FREEBSD = "freebsd"
+OS_OPENBSD = "openbsd"
+OS_NETBSD = "netbsd"
+OS_OPNSENSE = "opnsense"  # OPNsense / pfSense firewall appliances (FreeBSD-based)
 
 # Severity tiers — the *base* impact of an action (escalated by context in
 # wolf_server.gateway.proposals.compute_severity).
@@ -71,13 +76,12 @@ class ARCommand:
     summary: str
 
 
-# The default Wazuh AR commands.  Verified against this cluster's live
-# `GET /manager/configuration?section=command` (2026-06-22): the manager has
-# firewall-drop, host-deny, route-null, disable-account, restart-wazuh, netsh,
-# win_route-null AND the BSD blockers pf / ipfw / npf configured.  Severity is
-# the command's *base* impact (block = high — network enforcement with collateral
-# risk; disable a user = medium; restart = low).  Extend as the command list
-# grows; a live reconciliation against the manager config is a tracked follow-on.
+# The default Wazuh AR commands. Grounded against this cluster's manager command
+# set during 6-c.1/6-c.2a design — NOT read at runtime: an active response is just
+# a `PUT /active-response` Server API call, and Wolf reports whatever the API
+# returns (no manager-config presence check — ADR 0027 §2). Severity is the
+# command's *base* impact (block = high; disable a user = medium; restart = low).
+# Each command lists the OS classes it actually runs on (6-c.2a per-BSD-OS split).
 AR_COMMANDS: dict[str, ARCommand] = {
     "firewall-drop": ARCommand(
         "firewall-drop", frozenset({OS_LINUX}), TARGET_SRCIP, True, SEV_HIGH,
@@ -96,8 +100,9 @@ AR_COMMANDS: dict[str, ARCommand] = {
         "Disable a local user account.",
     ),
     "restart-wazuh": ARCommand(
-        "restart-wazuh", frozenset({OS_LINUX, OS_WINDOWS, OS_MACOS, OS_BSD}), TARGET_NONE, False,
-        SEV_LOW, "Restart the Wazuh agent.",
+        "restart-wazuh",
+        frozenset({OS_LINUX, OS_WINDOWS, OS_MACOS, OS_FREEBSD, OS_OPENBSD, OS_NETBSD, OS_OPNSENSE}),
+        TARGET_NONE, False, SEV_LOW, "Restart the Wazuh agent.",
     ),
     "netsh": ARCommand(
         "netsh", frozenset({OS_WINDOWS}), TARGET_SRCIP, True, SEV_HIGH,
@@ -108,16 +113,20 @@ AR_COMMANDS: dict[str, ARCommand] = {
         "Null-route a source IP (Windows).",
     ),
     "pf": ARCommand(
-        "pf", frozenset({OS_BSD, OS_MACOS}), TARGET_SRCIP, True, SEV_HIGH,
-        "Block a source IP via the pf packet filter (BSD/macOS — incl. OPNsense/pfSense).",
+        "pf", frozenset({OS_FREEBSD, OS_OPENBSD, OS_MACOS}), TARGET_SRCIP, True, SEV_HIGH,
+        "Block a source IP via the pf packet filter (FreeBSD/OpenBSD/macOS ≥ 10.7).",
     ),
     "ipfw": ARCommand(
-        "ipfw", frozenset({OS_BSD}), TARGET_SRCIP, True, SEV_HIGH,
-        "Block a source IP via ipfw (FreeBSD).",
+        "ipfw", frozenset({OS_FREEBSD, OS_MACOS}), TARGET_SRCIP, True, SEV_HIGH,
+        "Block a source IP via ipfw (legacy FreeBSD < 5.3 / macOS ≤ 10.6).",
     ),
     "npf": ARCommand(
-        "npf", frozenset({OS_BSD}), TARGET_SRCIP, True, SEV_HIGH,
+        "npf", frozenset({OS_NETBSD}), TARGET_SRCIP, True, SEV_HIGH,
         "Block a source IP via npf (NetBSD).",
+    ),
+    "opnsense-fw": ARCommand(
+        "opnsense-fw", frozenset({OS_OPNSENSE}), TARGET_SRCIP, True, SEV_HIGH,
+        "Block a source IP via opnsense-fw (OPNsense/pfSense appliance firewall).",
     ),
 }
 
@@ -142,23 +151,26 @@ INTENT_RESTART = "restart"
 # Per-intent command selection.  A **string** value is OS-agnostic (the same
 # command on every platform — restart).  A **dict** value is OS-SPECIFIC: only
 # the listed OS classes are supported, and a resolved OS is REQUIRED (Wolf will
-# not guess a platform).  The chosen command is always one platform-paired
-# default per OS (firewall-drop↔netsh; route-null on macOS); selecting a
-# *method* within an intent (e.g. host-deny vs firewall-drop) is a tracked
-# follow-on, not v1.  Every command here is asserted to exist in AR_COMMANDS and
-# to platform-fit its OS by test_active_response (the catalog stays the source
-# of truth).
+# not guess a platform).  The chosen command is the platform-correct default per
+# OS; selecting a *method* within an intent (e.g. host-deny vs firewall-drop) is
+# the 6-c.2b `method` override.  block_ip on FreeBSD/macOS resolves to `pf` but
+# falls back to `ipfw` on versions predating pf (`_predates_pf`).  Every command
+# here is asserted to exist in AR_COMMANDS and to platform-fit its OS by
+# test_active_response (the catalog stays the source of truth).
 _INTENT_COMMANDS: dict[str, str | dict[str, str]] = {
     INTENT_RESTART: "restart-wazuh",  # OS-agnostic — runs on every platform
     INTENT_BLOCK_IP: {
         OS_LINUX: "firewall-drop",
         OS_WINDOWS: "netsh",
-        OS_MACOS: "route-null",
-        OS_BSD: "pf",  # FreeBSD/OpenBSD incl. OPNsense (pfctl); manager has pf configured
+        OS_MACOS: "pf",  # ≥ 10.7 (Lion); ipfw on ≤ 10.6 via the version gate
+        OS_FREEBSD: "pf",  # ≥ 5.3; ipfw on < 5.3 via the version gate
+        OS_OPENBSD: "pf",  # pf is native to OpenBSD
+        OS_NETBSD: "npf",  # NetBSD's native filter
+        OS_OPNSENSE: "opnsense-fw",  # appliance — stock pf doesn't apply (ADR 0027 §4)
     },
     INTENT_DISABLE_USER: {
-        # No default disable-account AR ships for Windows — left unmapped so
-        # disable_user on a Windows agent is refused with a clear reason.
+        # No default disable-account AR ships for Windows / BSD appliances — left
+        # unmapped so disable_user there is refused with a clear reason.
         OS_LINUX: "disable-account",
         OS_MACOS: "disable-account",
     },
@@ -184,10 +196,39 @@ class IntentResolution:
     reason: str = ""
 
 
-def resolve_intent_command(intent: str, os_class: str | None) -> IntentResolution:
+def _predates_pf(os_class: str, signal: str | None) -> bool:
+    """True only when the OS version is *confidently* older than pf's arrival
+    (FreeBSD 5.3, Nov 2004 / macOS 10.7 "Lion", 2011), so block_ip must fall back
+    to ``ipfw``.  Best-effort + fail-safe: an unparseable or modern version → False
+    (use ``pf``).  No modern agent predates 2004/2011, so this is a rare legacy
+    path — but it keeps the per-OS mapping honest (ADR 0027 §4)."""
+    if not signal:
+        return False
+    s = signal.lower()
+    if os_class == OS_FREEBSD:
+        # FreeBSD versions look like "14.3-RELEASE", "4.11-RELEASE", "5.2.1-STABLE".
+        m = re.search(r"(\d+)\.(\d+)[\d.]*-(?:release|stable|current|p\d)", s)
+        if not m:
+            return False
+        return (int(m.group(1)), int(m.group(2))) < (5, 3)
+    if os_class == OS_MACOS:
+        # Classic "10.6" / "Mac OS X 10.6.8"; Darwin 11 == macOS 10.7.
+        m = re.search(r"(?:mac ?os(?: ?x)?|macos)\D*(\d+)\.(\d+)", s)
+        if m:
+            return (int(m.group(1)), int(m.group(2))) < (10, 7)
+        d = re.search(r"darwin\D*(\d+)", s)
+        if d:
+            return int(d.group(1)) < 11
+    return False
+
+
+def resolve_intent_command(
+    intent: str, os_class: str | None, os_signal: str | None = None
+) -> IntentResolution:
     """Deterministically select the platform-correct AR command for ``intent`` on
-    an agent of the given :data:`OS_LINUX`/:data:`OS_WINDOWS`/:data:`OS_MACOS`
-    class (``os_class`` is :func:`classify_os` applied to the live OS signal).
+    an agent of the given OS class (``os_class`` is :func:`classify_os` of the live
+    OS signal; pass the raw ``os_signal`` too so the FreeBSD/macOS pf↔ipfw version
+    gate can run).
 
     - **OS-agnostic** intents (restart) resolve even when the OS is unknown.
     - **OS-specific** intents (block_ip / disable_user) REQUIRE a resolved OS: an
@@ -227,6 +268,10 @@ def resolve_intent_command(intent: str, os_class: str | None) -> IntentResolutio
                 f"active-response catalog (supported: {supported})."
             ),
         )
+    # Legacy version gate: pf only exists from FreeBSD 5.3 / macOS 10.7 — older
+    # hosts block via ipfw instead.
+    if command == "pf" and _predates_pf(os_class, os_signal):
+        command = "ipfw"
     return IntentResolution(ok=True, command=command)
 
 
@@ -248,13 +293,23 @@ def classify_os(*signals: str | None) -> str | None:
         return None
     if "windows" in blob or "microsoft" in blob:
         return OS_WINDOWS
-    # macOS first — Darwin is BSD-derived but pf/route-null differ from FreeBSD.
+    # macOS first — Darwin is BSD-derived but its default firewall differs.
     if "darwin" in blob or "macos" in blob or "mac os" in blob:
         return OS_MACOS
-    # "bsd" catches free/open/net-bsd and Wazuh's literal os.platform='bsd';
-    # opnsense/pfsense are FreeBSD-based firewall appliances.
-    if any(x in blob for x in ("bsd", "opnsense", "pfsense")):
-        return OS_BSD
+    # OPNsense/pfSense are FreeBSD-based appliances — detect BEFORE generic FreeBSD
+    # (their uname says `FreeBSD`, but their AR command is opnsense-fw, not pf).
+    if "opnsense" in blob or "pfsense" in blob:
+        return OS_OPNSENSE
+    if "freebsd" in blob:
+        return OS_FREEBSD
+    if "openbsd" in blob:
+        return OS_OPENBSD
+    if "netbsd" in blob:
+        return OS_NETBSD
+    # Bare "bsd" with no specific marker → FreeBSD (the common case; pf is correct
+    # for FreeBSD AND OpenBSD, and NetBSD always reports "netbsd").
+    if "bsd" in blob:
+        return OS_FREEBSD
     if any(
         x in blob
         for x in ("linux", "ubuntu", "centos", "debian", "red hat", "rhel",

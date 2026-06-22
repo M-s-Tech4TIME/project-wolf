@@ -141,13 +141,28 @@ appear in OPNsense's blocklist**. Findings that reshape this ADR:
   firewall's actual blocklist) is a **Phase 12 / wolf-pack** capability, not
   6-c.2. To validate the pipeline produces real effects *today*, use a Linux
   agent + `firewall-drop` (an iptables rule is observable on the host).
-- **Still open (revisit during 6-c.2 build):** confirm `opnsense-fw` is THE
-  correct command for OPNsense (vs any other case), and root-cause why stock `pf`
-  no-ops there. The operator has configured the manager for `opnsense-fw`.
+- **RESOLVED (6-c.2a web-test, 2026-06-23):** `opnsense-fw` is confirmed THE
+  correct command for OPNsense, and the stock-`pf` no-op is root-caused. The
+  shipped OPNsense script (`/var/ossec/active-response/bin/opnsense-fw`) does
+  `pfctl -t __wazuh_agent_drop -T add <srcip>` **and** `pfctl -k <srcip>` (kills
+  live sessions); OPNsense ships a built-in rule that blocks the
+  `__wazuh_agent_drop` table — so it actually applies. Stock Wazuh `pf` adds to a
+  *different* table no OPNsense rule references (and doesn't kill sessions) → it
+  dispatched + logged `pf - add` but never blocked. Verified live: the IP landed
+  in `__wazuh_agent_drop` and was blocked in the firewall log ("Wazuh agent
+  blocklist"). `opnsense-fw` reads `parameters.alert.data.srcip` — the exact body
+  `build_ar_body` produces, so add/delete both work.
+- **Known observability gap (not Wolf, not blocking):** `opnsense-fw`'s AR run
+  does NOT raise a Wazuh dashboard alert the way stock scripts do. Dashboard AR
+  alerts come from decoder `ar_log_json` + rule 657, which match the standardized
+  `active-response/bin/<cmd>: {json}` line; `opnsense-fw` writes its own free-text
+  format, so it isn't decoded. Fix = a custom manager decoder + rule (operator-side
+  Wazuh tuning; fits the Phase 6.11 Wolf-assisted-Wazuh-diagnostics idea). The
+  block itself is verified regardless.
 
-6-c.2 scope therefore gains: add `opnsense-fw` to the catalog; OPNsense detection
-→ route `block_ip` to `opnsense-fw`; keep the honest dispatch-only verification
-with a clear caveat in the approver UI + the answer.
+6-c.2a (SHIPPED 2026-06-23) delivered: the per-BSD-OS split + OPNsense detection →
+`opnsense-fw`; macOS default → `pf`; the pf↔ipfw version gate. 6-c.2b remains: the
+`method` override + OS-unknown failover.
 
 ## Contract / surface changes
 

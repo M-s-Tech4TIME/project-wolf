@@ -78,16 +78,23 @@ Target = what the command acts on. Reversible = supports `add`/`delete`
 ¹ `yara_*` is a detection/scan AR driven by `extra_args` on FIM rules, not a
 manual srcip/username enforcement action — out of scope for the propose flow.
 
-**Wolf's active catalog** (`AR_COMMANDS`) = the configured *enforcement/admin*
-commands: `firewall-drop`, `host-deny`, `route-null`, `disable-account`,
-`restart-wazuh`, `netsh`, `win_route-null`, and the BSD blockers `pf` / `ipfw` /
-`npf` (6-c.1 — verified against this cluster's live
-`GET /manager/configuration?section=command`). Wolf offers only these (a command
-the manager hasn't configured would no-op), each carrying platform + target +
-**base-severity** metadata (block = High, disable-account = Medium, restart =
-Low). Wolf offers a command only on a platform it fits (`pf` → BSD/macOS, etc.).
-Note: `pf` is the generic BSD blocker; an OPNsense appliance needs its own
-`opnsense-fw` script to actually apply the block (tracked in ADR 0027 / 6-c.2).
+**Wolf's active catalog** (`AR_COMMANDS`) = the *enforcement/admin* commands:
+`firewall-drop`, `host-deny`, `route-null`, `disable-account`, `restart-wazuh`,
+`netsh`, `win_route-null`, the BSD blockers `pf` / `ipfw` / `npf`, and the OPNsense
+appliance blocker `opnsense-fw` (6-c.2a). Each carries platform + target +
+**base-severity** metadata (block = High, disable-account = Medium, restart = Low),
+and Wolf offers a command only on a platform it fits. Per-OS `block_ip` selection
+(6-c.2a): Linux→`firewall-drop`, Windows→`netsh`, macOS→`pf`, FreeBSD/OpenBSD→`pf`
+(→`ipfw` pre-FreeBSD-5.3 / pre-macOS-10.7), NetBSD→`npf`, **OPNsense/pfSense→
+`opnsense-fw`**. There is **no** manager-config presence check — an AR is just a
+`PUT /active-response` call (ADR 0027 §2).
+
+> **OPNsense note (verified 6-c.2a):** the OPNsense-native `opnsense-fw` does
+> `pfctl -t __wazuh_agent_drop -T add` + `pfctl -k` against the table OPNsense's
+> built-in rule blocks, so the IP actually lands in the blocklist. Stock `pf`
+> uses a different (unreferenced) table → it dispatches but never applies. Its AR
+> run isn't decoded into a dashboard alert (custom format vs `ar_log_json`/rule
+> 657) — observability only; enforcement is confirmed.
 
 ## 5. How Wolf uses this (failproof path)
 
