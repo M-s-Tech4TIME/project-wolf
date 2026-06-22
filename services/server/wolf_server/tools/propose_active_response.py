@@ -19,6 +19,11 @@ from pydantic import BaseModel, Field
 from wolf_server.gateway.proposals import create_proposal
 from wolf_server.gateway.validator import validate_proposal
 from wolf_server.tools.base import Citation, ProposeTool, ToolExecContext
+from wolf_server.wazuh.active_response import (
+    INTENT_LABELS,
+    classify_os,
+    resolve_intent_command,
+)
 from wolf_server.wazuh.capabilities import (
     ACTION_ACTIVE_RESPONSE,
     fetch_credential_capabilities,
@@ -37,23 +42,25 @@ class ProposeActiveResponseInput(BaseModel):
             "or guess; if unknown, resolve it first."
         )
     )
-    command: str = Field(
+    intent: str = Field(
         description=(
-            "Active-response command id — never invented. One of: firewall-drop, "
-            "host-deny, route-null (Linux block-IP); netsh, win_route-null (Windows "
-            "block-IP); disable-account (disable a user); restart-wazuh."
+            "The high-level action to take — express the INTENT, not a specific "
+            "command. Wolf resolves the agent's OS and picks the platform-correct "
+            "active-response command itself. One of: 'block_ip' (block a source "
+            "IP), 'disable_user' (disable a local account), 'restart' (restart the "
+            "Wazuh agent). Never name a low-level command (firewall-drop, netsh, …)."
         )
     )
     srcip: str = Field(
         default="",
         description=(
-            "For block-IP commands: the source IP to block, taken from the user's "
+            "For intent 'block_ip': the source IP to block, taken from the user's "
             "request or the alert (IPv4 or IPv6). Do not fill in a placeholder."
         ),
     )
     username: str = Field(
         default="",
-        description="For disable-account: the local username to disable.",
+        description="For intent 'disable_user': the local username to disable.",
     )
     rationale: str = Field(description="Why this action is warranted, in plain language")
     expected_effect: str = Field(
@@ -100,11 +107,27 @@ class ProposeActiveResponseTool(ProposeTool):
         # 1 (queued) vs 0 (refused) per outcome below.
         query = args.model_dump(mode="json")
 
-        # Resolve the agent's live OS so the validator can check platform fit
-        # (lenient — unknown OS does not block). Structured params (srcip /
-        # username / agent_os) are frozen into the proposal (content-hashed).
+        # Resolve the agent's live OS, then DETERMINISTICALLY pick the
+        # platform-correct command for the high-level intent (slice 6-c). The
+        # model never names firewall-drop vs netsh — Wolf selects it from the
+        # catalog given the agent's OS, so a wrong-platform pick is impossible.
         agent_os = await resolve_agent_os(exec_ctx.server_api, args.agent_id)
-        parameters: dict[str, str] = {}
+        os_class = classify_os(agent_os)
+        resolution = resolve_intent_command(args.intent, os_class)
+        if not resolution.ok:
+            return ProposeActiveResponseOutput(
+                permitted=False,
+                state="rejected",
+                summary="Not proposed — could not select a command for this intent.",
+                detail=resolution.reason,
+                citation=self.make_citation(query, result_count=0),
+            )
+        command = resolution.command
+
+        # Structured params frozen into the (content-hashed) proposal: the
+        # operator's intent, the target, and the raw OS signal the validator
+        # backstop re-derives platform fit from.
+        parameters: dict[str, str] = {"intent": args.intent}
         if args.srcip.strip():
             parameters["srcip"] = args.srcip.strip()
         if args.username.strip():
@@ -112,11 +135,14 @@ class ProposeActiveResponseTool(ProposeTool):
         if agent_os:
             parameters["agent_os"] = agent_os
 
-        # 1. Structural action validator (hard gate — never reaches the queue if it fails).
+        # 1. Structural action validator (hard gate — never reaches the queue if it
+        #    fails). Wolf already picked a platform-correct command, so the
+        #    validator's platform-fit check is a defense-in-depth backstop here; it
+        #    still enforces target presence / well-formedness (e.g. a valid srcip).
         verdict = validate_proposal(
             action_class=_ACTION_CLASS,
             target=target,
-            action=args.command,
+            action=command,
             parameters=parameters,
         )
         if not verdict.ok:
@@ -157,8 +183,13 @@ class ProposeActiveResponseTool(ProposeTool):
             if "username" in parameters
             else ""
         )
+        # Surface BOTH the operator's intent and the command Wolf selected (plus
+        # the OS that drove the choice) so the approver sees exactly what runs.
+        intent_label = INTENT_LABELS.get(args.intent, args.intent)
+        os_phrase = f" on a {os_class} agent" if os_class else ""
         expected = args.expected_effect or (
-            f"Run active-response '{args.command}' on agent {args.agent_id}{target_phrase}."
+            f"{intent_label} on agent {args.agent_id}{target_phrase}{os_phrase} "
+            f"via active-response '{command}'."
         )
         proposal = await create_proposal(
             exec_ctx.db,
@@ -166,7 +197,7 @@ class ProposeActiveResponseTool(ProposeTool):
             requested_by=ctx.user_id,
             action_class=_ACTION_CLASS,
             target=target,
-            action=args.command,
+            action=command,
             parameters=parameters,
             rationale=args.rationale,
             expected_effect=expected,
@@ -178,8 +209,8 @@ class ProposeActiveResponseTool(ProposeTool):
             state="pending",
             proposal_id=str(proposal.id),
             summary=(
-                f"Proposed '{args.command}' on agent {args.agent_id}{target_phrase}; "
-                "awaiting approval before it runs."
+                f"Proposed {intent_label.lower()} on agent {args.agent_id}{target_phrase} "
+                f"via '{command}'; awaiting approval before it runs."
             ),
             citation=self.make_citation(query, result_count=1),
         )

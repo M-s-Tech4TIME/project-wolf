@@ -101,6 +101,108 @@ def get_ar_command(name: str) -> ARCommand | None:
     return AR_COMMANDS.get(name.lstrip("!"))
 
 
+# ── Intent → platform-correct command (slice 6-c) ────────────────────────────
+#
+# The model expresses a high-level INTENT (block an IP / disable a user / restart
+# the agent); Wolf — not the model — resolves the agent's OS and deterministically
+# selects the platform-correct command from the catalog.  This removes the whole
+# "model picked netsh on a Linux host" failure class (6-b.1's lenient validator
+# refusal was the *safety* net; this is the *smart selection* that makes a wrong
+# pick impossible in the first place).
+INTENT_BLOCK_IP = "block_ip"
+INTENT_DISABLE_USER = "disable_user"
+INTENT_RESTART = "restart"
+
+# Per-intent command selection.  A **string** value is OS-agnostic (the same
+# command on every platform — restart).  A **dict** value is OS-SPECIFIC: only
+# the listed OS classes are supported, and a resolved OS is REQUIRED (Wolf will
+# not guess a platform).  The chosen command is always one platform-paired
+# default per OS (firewall-drop↔netsh; route-null on macOS); selecting a
+# *method* within an intent (e.g. host-deny vs firewall-drop) is a tracked
+# follow-on, not v1.  Every command here is asserted to exist in AR_COMMANDS and
+# to platform-fit its OS by test_active_response (the catalog stays the source
+# of truth).
+_INTENT_COMMANDS: dict[str, str | dict[str, str]] = {
+    INTENT_RESTART: "restart-wazuh",  # OS-agnostic — runs on every platform
+    INTENT_BLOCK_IP: {
+        OS_LINUX: "firewall-drop",
+        OS_WINDOWS: "netsh",
+        OS_MACOS: "route-null",
+    },
+    INTENT_DISABLE_USER: {
+        # No default disable-account AR ships for Windows — left unmapped so
+        # disable_user on a Windows agent is refused with a clear reason.
+        OS_LINUX: "disable-account",
+        OS_MACOS: "disable-account",
+    },
+}
+
+# The intents the propose tool exposes to the model (source of truth = the table).
+AR_INTENTS = frozenset(_INTENT_COMMANDS)
+
+# Human-readable phrasing for the approver-facing summary / expected-effect.
+INTENT_LABELS: dict[str, str] = {
+    INTENT_BLOCK_IP: "Block source IP",
+    INTENT_DISABLE_USER: "Disable account",
+    INTENT_RESTART: "Restart the Wazuh agent",
+}
+
+
+@dataclass(frozen=True)
+class IntentResolution:
+    """Outcome of mapping a high-level intent + resolved OS → a concrete command."""
+
+    ok: bool
+    command: str = ""
+    reason: str = ""
+
+
+def resolve_intent_command(intent: str, os_class: str | None) -> IntentResolution:
+    """Deterministically select the platform-correct AR command for ``intent`` on
+    an agent of the given :data:`OS_LINUX`/:data:`OS_WINDOWS`/:data:`OS_MACOS`
+    class (``os_class`` is :func:`classify_os` applied to the live OS signal).
+
+    - **OS-agnostic** intents (restart) resolve even when the OS is unknown.
+    - **OS-specific** intents (block_ip / disable_user) REQUIRE a resolved OS: an
+      unknown OS is refused with guidance (Wolf never guesses a platform), and an
+      intent that has no command for the resolved OS (e.g. disable_user on
+      Windows) is refused with a clear, actionable reason.
+
+    A refusal here keeps a doomed/ambiguous dispatch out of the approval queue.
+    """
+    entry = _INTENT_COMMANDS.get(intent)
+    if entry is None:
+        return IntentResolution(
+            ok=False,
+            reason=(
+                f"Unknown action intent {intent!r}. Supported intents: "
+                f"{', '.join(sorted(AR_INTENTS))}."
+            ),
+        )
+    if isinstance(entry, str):  # OS-agnostic — same command on every platform
+        return IntentResolution(ok=True, command=entry)
+    if os_class is None:
+        return IntentResolution(
+            ok=False,
+            reason=(
+                f"Cannot select a platform-correct command for intent {intent!r}: "
+                "the agent's operating system could not be determined. Resolve the "
+                "agent's OS (get_agent_detail) and retry."
+            ),
+        )
+    command = entry.get(os_class)
+    if command is None:
+        supported = ", ".join(sorted(entry)) or "none"
+        return IntentResolution(
+            ok=False,
+            reason=(
+                f"Intent {intent!r} is not supported on {os_class} via the default "
+                f"active-response catalog (supported: {supported})."
+            ),
+        )
+    return IntentResolution(ok=True, command=command)
+
+
 def is_valid_ip(value: str) -> bool:
     """True for a syntactically valid IPv4/IPv6 address."""
     try:

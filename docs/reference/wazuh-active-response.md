@@ -85,13 +85,20 @@ the manager hasn't configured would no-op), each with platform + target metadata
 
 ## 5. How Wolf uses this (failproof path)
 
-1. **Propose** (`propose_active_response`): the model passes `command` +
-   `srcip`/`username`; Wolf resolves the agent's groups (capability) and OS
-   (platform fit), and freezes structured params into the content-hashed proposal.
+1. **Propose** (`propose_active_response`): the model passes a high-level
+   **intent** (`block_ip` / `disable_user` / `restart`) + `srcip`/`username` —
+   never a low-level command. Wolf resolves the agent's OS and
+   **deterministically selects the platform-correct command** from the catalog
+   (slice 6-c: `block_ip` → firewall-drop on Linux, netsh on Windows, route-null
+   on macOS), resolves the agent's groups (capability), and freezes the intent +
+   resolved command + structured params into the content-hashed proposal. An
+   intent Wolf can't map to a command (OS unknown, or unsupported on the OS — e.g.
+   `disable_user` on Windows) is refused with guidance, never executed blind.
 2. **Validate** (hard gate): command ∈ catalog; required target present and
-   well-formed (`srcip` a valid IP, `username` non-empty); **lenient platform
-   check** — refuse only a *confirmed* mismatch (e.g. firewall-drop on a Windows
-   agent), never on an unknown OS (no false refusals — the 6-a.1 lesson).
+   well-formed (`srcip` a valid IP, `username` non-empty); **platform check** —
+   now a defense-in-depth backstop (6-c already selected a platform-correct
+   command), still lenient: refuse only a *confirmed* mismatch, never on an
+   unknown OS (no false refusals — the 6-a.1 lesson).
 3. **Approve + execute**: capability re-checked (group-aware), body built by
    `build_ar_body` (`!`-prefix, `alert.data.*`, no `custom`/`timeout`), issued
    by the bounded write client.

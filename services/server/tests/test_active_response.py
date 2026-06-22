@@ -9,13 +9,20 @@ failed_items as a failure.
 """
 
 from wolf_server.wazuh.active_response import (
+    _INTENT_COMMANDS,
+    AR_INTENTS,
+    INTENT_BLOCK_IP,
+    INTENT_DISABLE_USER,
+    INTENT_RESTART,
     OS_LINUX,
+    OS_MACOS,
     OS_WINDOWS,
     build_ar_body,
     classify_os,
     get_ar_command,
     interpret_ar_result,
     is_valid_ip,
+    resolve_intent_command,
 )
 
 # ── build_ar_body ────────────────────────────────────────────────────────────
@@ -70,6 +77,60 @@ def test_classify_os() -> None:
     assert classify_os("CentOS Linux") == OS_LINUX
     assert classify_os("some-appliance") is None
     assert classify_os(None) is None
+
+
+# ── intent → platform-correct command selection (slice 6-c) ──────────────────
+
+
+def test_intent_catalog_is_consistent() -> None:
+    """Every command the intent table can select must exist in the catalog AND
+    platform-fit the OS it is mapped under — the catalog stays the source of
+    truth (a test must change if the mapping drifts)."""
+    for intent, entry in _INTENT_COMMANDS.items():
+        assert intent in AR_INTENTS
+        if isinstance(entry, str):  # OS-agnostic — must run on every platform
+            cmd = get_ar_command(entry)
+            assert cmd is not None, f"{intent} → unknown command {entry!r}"
+            assert cmd.platforms == frozenset({OS_LINUX, OS_WINDOWS, OS_MACOS})
+            continue
+        for os_class, command in entry.items():
+            cmd = get_ar_command(command)
+            assert cmd is not None, f"{intent}/{os_class} → unknown command {command!r}"
+            assert os_class in cmd.platforms, (
+                f"{intent}/{os_class} selects {command!r} which is not for {os_class}"
+            )
+
+
+def test_intent_block_ip_selects_per_platform() -> None:
+    # The headline 6-c behavior: same intent, OS picks the command.
+    assert resolve_intent_command(INTENT_BLOCK_IP, OS_LINUX).command == "firewall-drop"
+    assert resolve_intent_command(INTENT_BLOCK_IP, OS_WINDOWS).command == "netsh"
+    assert resolve_intent_command(INTENT_BLOCK_IP, OS_MACOS).command == "route-null"
+
+
+def test_intent_block_ip_refused_when_os_unknown() -> None:
+    res = resolve_intent_command(INTENT_BLOCK_IP, None)
+    assert res.ok is False
+    assert "operating system could not be determined" in res.reason
+
+
+def test_intent_disable_user_unsupported_on_windows() -> None:
+    res = resolve_intent_command(INTENT_DISABLE_USER, OS_WINDOWS)
+    assert res.ok is False
+    assert "not supported on windows" in res.reason
+    assert resolve_intent_command(INTENT_DISABLE_USER, OS_LINUX).command == "disable-account"
+
+
+def test_intent_restart_is_os_agnostic() -> None:
+    # Resolves the same command with OR without a known OS.
+    assert resolve_intent_command(INTENT_RESTART, None).command == "restart-wazuh"
+    assert resolve_intent_command(INTENT_RESTART, OS_WINDOWS).command == "restart-wazuh"
+
+
+def test_intent_unknown_is_refused() -> None:
+    res = resolve_intent_command("quarantine", OS_LINUX)
+    assert res.ok is False
+    assert "Unknown action intent" in res.reason
 
 
 # ── interpret_ar_result (HTTP 200 even on failure) ───────────────────────────

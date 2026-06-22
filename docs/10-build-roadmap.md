@@ -291,13 +291,15 @@ kept; a deliberate capability-checked write surface added alongside.
 confirmed in Wazuh's AR log); **6-b.1** ✅ corrected the AR API contract (no
 `custom`; `!`-prefix; `alert.data.srcip`/`dstuser`; command catalog) +
 **6-b.2** ✅ fixed the stale Phase-6 system prompt + biasing schema examples
-(model now grounds the exact agent id, doesn't default to "001"); **6-c**
-(QUEUED) platform-aware, intent-driven AR selection — the model expresses a
-high-level intent (`block_ip` / `disable_user` / `restart`) + agent + target,
-and Wolf resolves the agent OS and **deterministically picks the
-platform-correct command from the catalog** (firewall-drop↔netsh, route-null↔
-win_route-null, …), so a generic "block IP on agent 003 (Windows)" auto-selects
-`netsh`; **then** the other action classes (`rule_tuning` / `agent_action` /
+(model now grounds the exact agent id, doesn't default to "001"); **6-c** ✅
+(SHIPPED 2026-06-22) platform-aware, intent-driven AR selection — the model
+expresses a high-level intent (`block_ip` / `disable_user` / `restart`) + agent +
+target, and Wolf resolves the agent OS and **deterministically picks the
+platform-correct command from the catalog** (`resolve_intent_command`:
+firewall-drop↔netsh, route-null on macOS, restart-wazuh OS-agnostic), so a
+generic "block IP on agent 003 (Windows)" auto-selects `netsh`; an unmappable
+intent (OS unknown, or `disable_user` on Windows) is refused with guidance, never
+guessed; **then** the other action classes (`rule_tuning` / `agent_action` /
 `config_change`); severity-tiered authority / four-eyes / crown-jewel tagging
 (policy hooks, B1 default = approval-for-all); auto-execution (Phase 13). The
 remaining original scope below stands as the target the follow-ons fill in.

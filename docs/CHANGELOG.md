@@ -49,6 +49,53 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-22 — 6-c: platform-aware, intent-driven AR selection
+
+**Session type:** claude-code · **Phase:** 6 (capability-driven action execution) · **Branch / commit:** main
+
+### What we did
+The model used to name the active-response *command* (`firewall-drop` vs `netsh`),
+with the validator refusing a confirmed wrong-platform pick (6-b.1). 6-c moves
+command selection off the model entirely: the model expresses a high-level
+**intent** + agent + target, and Wolf deterministically picks the platform-correct
+command from the catalog.
+
+- **`wazuh/active_response.py`** — added the intent layer next to `AR_COMMANDS`:
+  `INTENT_BLOCK_IP` / `INTENT_DISABLE_USER` / `INTENT_RESTART`, the `_INTENT_COMMANDS`
+  selection table (string = OS-agnostic; dict = OS-specific), `AR_INTENTS`,
+  `INTENT_LABELS`, and `resolve_intent_command(intent, os_class) -> IntentResolution`.
+  `block_ip` → firewall-drop (Linux) / netsh (Windows) / route-null (macOS);
+  `disable_user` → disable-account (Linux/macOS); `restart` → restart-wazuh (any).
+- **`tools/propose_active_response.py`** — input field `command` → **`intent`**.
+  `run()` resolves OS (`resolve_agent_os` → `classify_os`) then
+  `resolve_intent_command`; on failure (OS unknown for an OS-specific intent, or an
+  intent unsupported on the OS — e.g. `disable_user` on Windows) it refuses with a
+  guided reason and never queues. The resolved command + the originating `intent`
+  are frozen into the content-hashed proposal; the approver-facing summary names
+  both the intent and the selected command + OS. Downstream (validator backstop,
+  persistence, execution) unchanged.
+- **`agent/prompts.py`** — propose principle #4 now tells the model to express the
+  intent, not a low-level command (Wolf picks firewall-drop vs netsh).
+- **Tests** — `test_active_response.py`: a catalog-consistency guard (every
+  selectable command exists + platform-fits its OS) + `resolve_intent_command`
+  unit cases. `test_propose_active_response.py`: rewritten to intent-driven incl.
+  the headline `block_ip` on Windows → `netsh`, OS-unknown refusal, `disable_user`
+  on Windows refusal, OS-agnostic `restart`. Stub now serves agent OS.
+
+### Notes
+No schema change (intent stored in the JSONB `parameters`) → no migration. Refusing
+an OS-specific intent on unknown OS is intentionally *stricter* than 6-b.1's
+fail-open validator: an ambiguous selection should never reach the approval queue.
+Method-within-intent selection (host-deny vs firewall-drop) is a tracked follow-on.
+
+### Gate
+ruff + mypy --strict clean on `wazuh` / `tools` / `agent`; full backend suite
+**603 passed, 0 skipped**. No CI change (touched packages already in the strict
+set; the propose-tool execute-token guard still holds). ADR 0025 amended with a
+6-c addendum; roadmap marks 6-c ✅; AR reference §5 updated.
+
+---
+
 ## 2026-06-22 — Dependency-security closeout + npm-audit CI gate
 
 **Session type:** claude-code · **Phase:** 6 (post-push security hygiene) · **Branch / commit:** main

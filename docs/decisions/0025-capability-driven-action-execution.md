@@ -132,6 +132,35 @@ source (v4.14.3 + v4.14.5 — identical except `netsh.c`'s internal rule build):
   agent OS, and freezes them into the content-hashed proposal.
 - Full source-grounded analysis: `docs/reference/wazuh-active-response.md`.
 
+### Intent-driven, platform-aware command selection (slice 6-c)
+
+6-b.1 made a wrong-platform command *safe* (the validator refuses firewall-drop
+on a Windows agent); 6-c makes a wrong pick *impossible* by moving command
+selection off the model entirely. The model now expresses a high-level **intent**
+(`block_ip` / `disable_user` / `restart`) + agent + target; Wolf resolves the
+agent's OS (`resolve_agent_os` → `classify_os`) and **deterministically** selects
+the platform-correct command from the catalog (`resolve_intent_command`):
+`block_ip` → firewall-drop (Linux) / netsh (Windows) / route-null (macOS),
+`disable_user` → disable-account (Linux/macOS), `restart` → restart-wazuh (any).
+
+- **Selection is server-side and catalog-backed.** The intent→command table
+  lives in `active_response.py` next to `AR_COMMANDS`; a test asserts every
+  selectable command exists in the catalog and platform-fits its OS, so the
+  catalog stays the single source of truth.
+- **OS-specific intents require a resolved OS.** `block_ip`/`disable_user` are
+  refused with guidance when the OS can't be determined (Wolf never guesses a
+  platform) or when the intent has no command for the OS (`disable_user` on
+  Windows — no default AR ships). `restart` is OS-agnostic and resolves without
+  one. This is *stricter* than 6-b.1's fail-open validator, on purpose: an
+  ambiguous selection should never reach the queue.
+- **Nothing downstream changes.** The proposal still stores a concrete `action`
+  (the resolved command) plus the originating `intent` in its content-hashed
+  parameters; the validator's platform check stays as a defense-in-depth
+  backstop; execution is unchanged. Model facts #1/#2 hold — execute tools stay
+  out of the schema; the model calls read + propose only.
+- Selecting a *method* within an intent (host-deny vs firewall-drop; null-route
+  vs firewall) is a tracked follow-on, not v1.
+
 ## Consequences
 
 - New in-process module `wolf_server/gateway/` (proposal model + state machine +
