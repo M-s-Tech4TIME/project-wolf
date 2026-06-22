@@ -1,7 +1,9 @@
-# 0027 — User-guided AR method selection + capability verification (slice 6-c.2)
+# 0027 — User-guided AR method selection + the verification boundary (slice 6-c.2)
 
-**Date:** 2026-06-22
-**Status:** proposed — **design for operator review; no code until approved** (per the 6-c.2 sign-off)
+**Date:** 2026-06-22 (decisions settled 2026-06-23)
+**Status:** accepted — all four open questions resolved by the operator; the
+manager-config presence check was **dropped** (see §2); real host-effect
+verification is deferred to **wolf-pack (Phase 12)**.
 
 ## Context
 
@@ -23,23 +25,24 @@ command). That left three gaps the operator wants closed:
 1. **One default per (intent, OS).** `host-deny`, `win_route-null`, `ipfw`, `npf`
    are catalogued + platform-checked but **unreachable** — there's no way to ask
    for null-route instead of firewall, or `ipfw` instead of `pf`.
-2. **No presence check.** Wolf's catalog is a hand-maintained mirror of the
-   manager's configured commands. If they diverge (a command catalogued but not
-   configured — e.g. `opnsense-fw`), Wolf would propose a command that no-ops at
-   dispatch. The operator's point: *"the proposed action will work or not is also
-   based on whether the required material/system to execute it is present."*
-3. **OS-unknown is a hard refusal.** When `classify_os` returns `None`, an
+2. **OS-unknown is a hard refusal.** When `classify_os` returns `None`, an
    OS-specific intent is refused. The operator wants a **failover**: if a human
    guides Wolf ("try `pf` on that agent"), Wolf should propose it — *safely*,
-   judging that the named mechanism actually belongs to that platform and exists.
+   subject to the approval gate (it can't *guess* on its own).
+
+(An earlier draft proposed a third gap — a manager-config "presence check". The
+operator rejected it; see §2 for why and what replaces it.)
 
 `unrestricted ≠ unsafe` (ADR 0025) still governs: more reach, every action still
 capability-bounded + human-approved + audited.
 
-## Decision (proposed)
+## Decision
 
-Three additive components on the propose path. None touches execution, the state
-machine, or the approval gate — they shape *what becomes a proposal*.
+Two additive components on the propose path (§1 `method` override, §3 OS-unknown
+failover) plus a deliberate **non-addition** (§2 — no manager-config check). None
+touches execution, the state machine, or the approval gate — they shape *what
+becomes a proposal*. Plus the per-BSD-OS selection split (resolved open
+question 4, mapping table below).
 
 ### 1. Optional `method` input (override the auto-default)
 
@@ -58,40 +61,59 @@ This unlocks the stranded commands and lets a human pick the mechanism, without
 re-opening the "model guesses a wrong-platform command" hole — the platform check
 is unconditional.
 
-### 2. Manager-config capability verification (presence at the manager)
+### 2. No manager-config presence check — fail-open + the verification boundary
 
-At propose time Wolf reads the manager's configured command set
-(`GET /manager/configuration?section=command`, the read used for grounding above)
-and **refuses a command the manager has not configured**, with a clear reason
-(*"`opnsense-fw` is not configured on this manager; configured blockers for BSD
-are: pf, ipfw, npf"*). This makes the catalog **reconciled with reality** rather
-than a static list, and directly answers "is the material to run this present?".
+An earlier draft proposed reading `GET /manager/configuration?section=command`
+to refuse commands the manager hasn't configured. **Dropped, by operator
+decision** — a `<command>` tag being present (or absent) is **not a reliable
+signal**: it can exist for any reason, with no actual OS behind it, or be a
+misconfiguration; we can't know *why* it's there, and chasing it is hassle for no
+real assurance.
 
-- **Cached** briefly (the command set changes rarely) to avoid a read per propose.
-- **Fail-open on read failure** for the *auto-selected* default (don't block a
-  normal propose if the introspection read is briefly unavailable — the catalog
-  is still a good prior); **fail-closed** for a `method` override and for the
-  OS-unknown failover (§3), where the configured-set is load-bearing for safety.
-- **Honest limit:** this verifies the command is configured *on the manager*. It
-  does **not** prove the AR *script* is present/executable on the agent host —
-  that isn't API-introspectable. The post-execution verification read already
-  records *dispatched ≠ host-applied*; the proposal/answer keeps saying so.
+So 6-c.2 keeps the existing checks only:
 
-### 3. OS-unknown failover via user guidance (trust-but-verify)
+- **Capability verification stays RBAC-level** — the 6-c.1 pre-flight (does the
+  per-org credential hold `active-response:command` on the agent's group). That's
+  *authorization*, not "will the script work".
+- **Selection is catalog-driven and fail-open** — Wolf proposes the auto-selected
+  (or `method`-overridden) command and trusts its catalog. No extra config gate.
+- **The real gates remain:** (1) human **approval** (separation of duties), and
+  (2) **reality** — the action only takes effect if the supporting mechanism
+  actually exists and works on that agent, which Wolf cannot confirm today.
+
+**The verification boundary.** Wolf can observe three things, only the first two
+of which exist today:
+
+| Signal | Means | Available now? |
+|---|---|---|
+| dispatch ack (`interpret_ar_result`) | command **sent** to the agent | ✅ (6-b.1) |
+| AR execution event (`active-responses.log` → a Wazuh alert) | script **ran** on the agent | possible, but **insufficient** |
+| firewall/host state | command **applied** | ❌ — needs **wolf-pack (Phase 12)** |
+
+The OPNsense case is exactly why even the middle signal is insufficient: the log
+showed `pf - add` (it *ran*) yet the IP was never blocked (it didn't *apply*). So
+querying the AR event would give false confidence; we do **not** add it. Honest
+"dispatched ≠ applied" stays in the result, and **true host-effect verification —
+plus direct discovery of which mechanisms actually exist on a given agent/OS — is
+a wolf-pack (Phase 12) capability**, where Wolf has an on-host vantage over the
+whole Wazuh/security-ops surface, not just the Server API.
+
+### 3. OS-unknown failover via user guidance (approval is the gate)
 
 When `classify_os` returns `None`, instead of a flat refusal Wolf may proceed on
-a **human-asserted method** — but only when safety still holds:
+a **human-asserted method** — subject to:
 
-- a `method` is supplied (Wolf still won't *guess*), AND
-- the method ∈ catalog AND is **configured on the manager** (§2, fail-closed), AND
+- a `method` is supplied (Wolf still won't *guess* on its own), AND
+- the method ∈ catalog and satisfies the intent's target shape, AND
 - the proposal is annotated *"OS auto-detection failed; proceeding on the
   requester's assertion that this agent runs <method>'s platform"* so the
   approver sees the reduced certainty.
 
-Human approval remains the gate. This is the operator's exact case: OS
-unclassified, human says "use `pf`", Wolf verifies `pf` is a real configured
-mechanism and proposes it with the caveat surfaced — rather than refusing a
-legitimate action or blindly trusting the hint.
+**Any proposer may trigger it** (operator decision) — human **approval** is the
+real gate (one person's assertion can't execute), and whether it *applies* still
+depends on the mechanism existing on that agent (per §2). This is the operator's
+exact case: OS unclassified, human says "use `pf`", Wolf proposes it with the
+caveat surfaced rather than refusing a legitimate action or blindly trusting it.
 
 ### 4. The OPNsense case + dispatched-≠-applied (live finding, 2026-06-22)
 
@@ -130,24 +152,25 @@ with a clear caveat in the approver UI + the answer.
 ## Contract / surface changes
 
 - `propose_active_response` input: `+ method: str = ""` (optional).
-- `wazuh/capabilities.py` (or `wazuh/active_response.py`): a
-  `fetch_configured_commands(server_api) -> set[str]` helper (cached) over
-  `GET /manager/configuration?section=command`, fail-handling per §2.
+- `wazuh/active_response.py`: retire `OS_BSD` for `OS_FREEBSD` / `OS_OPENBSD` /
+  `OS_NETBSD` (+ OPNsense/pfSense appliance detection); add `opnsense-fw`;
+  version-aware `block_ip` selection per the table below; macOS default → `pf`.
 - The proposal records the resolution provenance in `parameters`
   (`method_source`: `auto` | `override` | `user_asserted`) for the approver +
   audit, all content-hashed.
-- No migration. No execution/state-machine/approval change. The action validator
-  keeps its platform-fit check as the final backstop.
+- **No manager-config read** (dropped — §2). No migration. No
+  execution/state-machine/approval change. The action validator keeps its
+  platform-fit check as the final backstop.
 
 ## Consequences
 
-- The catalog stops being authoritative on its own — the **manager config**
-  becomes the runtime source of truth for "what can Wolf actually run here",
-  which is the correct dependency direction and self-heals as the manager's
-  command set changes.
-- One extra read per propose (cached) for the override/failover paths.
-- Slightly more surface for the model (`method`) — mitigated: it's optional, and
-  the platform check is unconditional so a bad `method` is refused, never run.
+- Wolf reaches more mechanisms (the stranded commands + `opnsense-fw`) and selects
+  the right one per specific BSD OS — without re-opening the wrong-platform hole
+  (the platform check is unconditional; a bad `method` is refused, never run).
+- The catalog stays the prior; the **approval gate** + **on-agent reality** are
+  the real safeguards. Wolf is honest that *dispatched ≠ applied* and that
+  confirming actual effect needs wolf-pack (Phase 12).
+- No extra propose-time reads (the manager-config check was dropped).
 
 ## Out of scope (tracked, not here)
 
@@ -156,36 +179,53 @@ with a clear caveat in the approver UI + the answer.
 - Per-method severity nuance beyond the 6-c.1 base-impact model.
 - The other action classes (`rule_tuning` / `agent_action` / `config_change`).
 
-## BSD firewall facts (grounding for §1 + the granularity question)
+## BSD firewall facts + the resolved per-OS mapping (open question 4 → RESOLVED: split)
 
-Verified against the platforms + the live cluster (manager has `pf`/`ipfw`/`npf`
-configured; agent 009 is FreeBSD/OPNsense):
+**pf introduction timeline** (web-verified, sources below) — these set the exact
+`ipfw → pf` cutoffs the operator asked for:
 
-- **`pf`** — universal: originated on OpenBSD, ported to FreeBSD/NetBSD and
-  macOS/Darwin. The right cross-BSD default; OPNsense's own firewall *is* pf.
-- **`ipfw`** — FreeBSD-specific (+ legacy macOS ≤10.9). **Not** on OpenBSD
-  (pf-only) or NetBSD (`npf`). OPNsense/pfSense are FreeBSD-based, so they have it.
-- **`npf`** — NetBSD's filter.
+- **`pf`** originated on **OpenBSD 3.0** (Dec 2001), entered **FreeBSD's base
+  system in 5.3** (Nov 2004), and came to **macOS in 10.7 "Lion"** (2011).
+- **`ipfw`** is FreeBSD's older firewall and was macOS's firewall **through
+  10.6**; Apple deprecated it in 10.7 and **removed it in 10.10 "Yosemite"** (2014).
+- **`npf`** is NetBSD's native filter (since NetBSD 6.0, 2012).
 
-6-c.1 ships a single coarse `OS_BSD` class, so `ipfw`/`npf` are tagged `{bsd}` and
-would be *offered* on any BSD (e.g. `ipfw` on an OpenBSD host, where it doesn't
-exist). For the live fleet (FreeBSD only) this is harmless, and the §2
-manager-config check + the honest "dispatched ≠ host-applied" caveat both
-mitigate. Doing it *correctly* needs FreeBSD/OpenBSD/NetBSD granularity — see
-open question 4.
+**Decision (per the operator): split `OS_BSD` into specific BSD classes and
+select per-OS, version-aware** — each BSD has a known, specified firewall, so a
+coarse class is wrong. Mapping for `block_ip`:
 
-## Open questions for the operator
+| OS class | `block_ip` command | Rule |
+|---|---|---|
+| `freebsd` | `pf` (≥ 5.3) · else `ipfw` | pf in base since 5.3; ipfw on ancient FreeBSD |
+| `openbsd` | `pf` | pf is native; ipfw never existed there |
+| `netbsd` | `npf` | NetBSD's native filter |
+| `macos` | `pf` (≥ 10.7) · else `ipfw` | pf since Lion; ipfw on ≤ 10.6 |
+| `opnsense`/`pfsense` | `opnsense-fw` | FreeBSD-based appliance; stock pf doesn't apply (§4) |
 
-1. **Default for macOS `block_ip`** — keep `route-null` (current) or switch the
-   default to `pf` now that pf is catalogued for macOS? (`method` lets either be
-   chosen regardless; this is only about the *default*.)
-2. **Who may use the OS-unknown failover** — any proposer, or gate it behind a
-   capability/role (it deliberately relaxes auto-detection)?
-3. **Fail-open vs fail-closed for the auto-default** when the manager-config read
-   is unavailable — proposed fail-open above; confirm that's acceptable.
-4. **BSD OS granularity** — split `OS_BSD` into `freebsd`/`openbsd`/`netbsd` so
-   `ipfw`/`npf` are only offered where they actually exist (per the facts above),
-   or rely on `method` + the §2 manager-config presence check to keep a wrong
-   pick out of the queue? Granularity is more correct; method+presence is less
-   code and self-reconciling. Recommendation: **method + presence check** in
-   6-c.2, defer granularity until there's a non-FreeBSD BSD agent to justify it.
+Notes for the build: `classify_os` distinguishes free/open/net-BSD from the
+`os.uname` blob (`FreeBSD`/`OpenBSD`/`NetBSD`); OPNsense/pfSense are detected
+ahead of generic FreeBSD. The version-gate (FreeBSD < 5.3 / macOS < 10.7 → `ipfw`)
+is *correct but practically rare* — no modern agent predates 2004/2011 — so it is
+a thin, well-tested rule with a clear modern default of `pf`; `ipfw` also stays
+selectable via the `method` override. `OS_BSD` is retired in favour of the
+specific classes (every OS-agnostic command, e.g. `restart-wazuh`, must list them).
+
+Sources: [FreeBSD Foundation — Introduction to PF](https://freebsdfoundation.org/resource/an-introduction-to-packet-filter-pf/);
+[Yosemite: IPFW gone, moving to PF (Apple Discussions)](https://discussions.apple.com/thread/6645172).
+
+## Operator decisions (resolved 2026-06-23) — all four
+
+1. **macOS `block_ip` default → `pf`** ✅ (switch from `route-null`).
+2. **OS-unknown failover → any proposer may trigger it** ✅. Human approval is the
+   real gate (a one-person assertion can't execute); annotate the proposal so the
+   approver sees it was a user-asserted platform.
+3. **No manager-config presence check** ✅. A `<command>` tag's presence/absence
+   is not a reliable signal (can be vestigial, OS-less, or misconfigured — we
+   can't know why), so chasing it is hassle for no real assurance. Selection is
+   **fail-open** (catalog-trust); the **approval gate** + **on-agent reality** are
+   the safeguards. Real host-effect verification — and direct discovery of which
+   mechanisms exist on an agent — is a **wolf-pack (Phase 12)** capability (§2).
+4. **BSD OS granularity → SPLIT, version-aware** ✅. Retire `OS_BSD` for
+   `freebsd`/`openbsd`/`netbsd` (+ `opnsense`/`pfsense` appliance detection) and
+   select per the table above (pf/ipfw/npf/opnsense-fw, FreeBSD < 5.3 / macOS <
+   10.7 → `ipfw`). Supersedes the earlier "defer granularity" recommendation.
