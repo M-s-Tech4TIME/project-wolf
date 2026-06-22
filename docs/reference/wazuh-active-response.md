@@ -107,6 +107,11 @@ and Wolf offers a command only on a platform it fits. Per-OS `block_ip` selectio
    resolved command + structured params into the content-hashed proposal. An
    intent Wolf can't map to a command (OS unknown, or unsupported on the OS — e.g.
    `disable_user` on Windows) is refused with guidance, never executed blind.
+   **Override (6-c.2b):** an optional `method` names a specific command instead of
+   the auto-pick (validated: in catalog + target matches the intent + platform-fits
+   when the OS is known). When the OS is *unknown*, `method` is the **user-guided
+   failover** — Wolf proceeds on the requester's asserted platform, annotated.
+   `method_source` (auto/override/user_asserted) is recorded for the approver.
 2. **Validate** (hard gate): command ∈ catalog; required target present and
    well-formed (`srcip` a valid IP, `username` non-empty); **platform check** —
    now a defense-in-depth backstop (6-c already selected a platform-correct

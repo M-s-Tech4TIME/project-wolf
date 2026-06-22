@@ -23,6 +23,7 @@ from wolf_server.wazuh.active_response import (
     INTENT_LABELS,
     classify_os,
     resolve_intent_command,
+    resolve_method_command,
 )
 from wolf_server.wazuh.capabilities import (
     ACTION_ACTIVE_RESPONSE,
@@ -61,6 +62,17 @@ class ProposeActiveResponseInput(BaseModel):
     username: str = Field(
         default="",
         description="For intent 'disable_user': the local username to disable.",
+    )
+    method: str = Field(
+        default="",
+        description=(
+            "Optional. A specific active-response command to use INSTEAD of Wolf's "
+            "automatic platform choice — e.g. 'host-deny', 'route-null', 'ipfw', "
+            "'opnsense-fw'. Leave EMPTY normally (let Wolf pick the platform-correct "
+            "command). Set it only when the user explicitly asks for a particular "
+            "mechanism, or to proceed when the agent's OS could not be auto-detected "
+            "(Wolf will use it on the platform the user asserts)."
+        ),
     )
     rationale: str = Field(
         default="",
@@ -114,13 +126,22 @@ class ProposeActiveResponseTool(ProposeTool):
         # 1 (queued) vs 0 (refused) per outcome below.
         query = args.model_dump(mode="json")
 
-        # Resolve the agent's live OS, then DETERMINISTICALLY pick the
-        # platform-correct command for the high-level intent (slice 6-c). The
-        # model never names firewall-drop vs netsh — Wolf selects it from the
-        # catalog given the agent's OS, so a wrong-platform pick is impossible.
+        # Resolve the agent's live OS, then pick the command. Normally Wolf
+        # DETERMINISTICALLY selects the platform-correct command for the intent
+        # (slice 6-c) — the model never names firewall-drop vs netsh. An optional
+        # `method` overrides that with a specific command (6-c.2b): when the OS is
+        # known it must platform-fit; when the OS is UNKNOWN, method is the
+        # user-guided failover (proceed on the requester's asserted platform,
+        # annotated — human approval stays the gate).
         agent_os = await resolve_agent_os(exec_ctx.server_api, args.agent_id)
         os_class = classify_os(agent_os)
-        resolution = resolve_intent_command(args.intent, os_class, os_signal=agent_os)
+        method = args.method.strip()
+        if method:
+            resolution = resolve_method_command(args.intent, method, os_class)
+            method_source = "override" if os_class is not None else "user_asserted"
+        else:
+            resolution = resolve_intent_command(args.intent, os_class, os_signal=agent_os)
+            method_source = "auto"
         if not resolution.ok:
             return ProposeActiveResponseOutput(
                 permitted=False,
@@ -132,9 +153,10 @@ class ProposeActiveResponseTool(ProposeTool):
         command = resolution.command
 
         # Structured params frozen into the (content-hashed) proposal: the
-        # operator's intent, the target, and the raw OS signal the validator
-        # backstop re-derives platform fit from.
-        parameters: dict[str, str] = {"intent": args.intent}
+        # operator's intent, how the command was chosen (auto / override /
+        # user_asserted — visible to the approver + audit), the target, and the
+        # raw OS signal the validator backstop re-derives platform fit from.
+        parameters: dict[str, str] = {"intent": args.intent, "method_source": method_source}
         if args.srcip.strip():
             parameters["srcip"] = args.srcip.strip()
         if args.username.strip():
@@ -190,10 +212,15 @@ class ProposeActiveResponseTool(ProposeTool):
             if "username" in parameters
             else ""
         )
-        # Surface BOTH the operator's intent and the command Wolf selected (plus
-        # the OS that drove the choice) so the approver sees exactly what runs.
+        # Surface the operator's intent, the command, and HOW it was chosen so the
+        # approver sees exactly what runs (and any reduced certainty).
         intent_label = INTENT_LABELS.get(args.intent, args.intent)
-        os_phrase = f" on a {os_class} agent" if os_class else ""
+        if method_source == "user_asserted":
+            os_phrase = " (OS not auto-detected — proceeding on the requester's asserted platform)"
+        elif method_source == "override":
+            os_phrase = f" on a {os_class} agent (operator-chosen method)"
+        else:
+            os_phrase = f" on a {os_class} agent" if os_class else ""
         expected = args.expected_effect or (
             f"{intent_label} on agent {args.agent_id}{target_phrase}{os_phrase} "
             f"via active-response '{command}'."

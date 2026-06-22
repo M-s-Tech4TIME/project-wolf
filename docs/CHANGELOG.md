@@ -49,6 +49,42 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-23 — 6-c.2b: `method` override + OS-unknown user-guided failover (closes 6-c)
+
+**Session type:** claude-code · **Phase:** 6 (capability-driven action execution) · **Branch / commit:** main
+
+### What we did
+The second ADR-0027 half — and the last 6-c slice.
+
+- **Optional `method` input** on `propose_active_response` — a specific catalog
+  command to use instead of Wolf's auto-pick (unlocks the "stranded" commands:
+  host-deny, route-null, win_route-null, ipfw, …). `resolve_method_command` guards
+  it: command ∈ catalog, **intent-target consistency** (`INTENT_TARGETS`: can't
+  `block_ip` with a username command), and **unconditional platform-fit** when the
+  OS is known (a wrong-platform `method` is refused, never run).
+- **OS-unknown user-guided failover** — when `classify_os` returns nothing, an
+  explicit `method` lets Wolf proceed on the requester's *asserted* platform
+  (platform-fit skipped), annotated for the approver. Any proposer may use it;
+  **human approval remains the gate** (operator decisions #2/#3).
+- Every proposal records **`method_source`** = `auto` | `override` |
+  `user_asserted` (content-hashed, visible to the approver); the expected-effect
+  text flags overrides and asserted-platform proposals. Prompt principle #4 tells
+  the model to use `method` only when the user explicitly names a mechanism.
+
+### Web-tested live
+host-deny override on a Linux agent → `host-deny` proposal (not firewall-drop);
+`netsh` on Linux → refused + the model reported the refusal; `pf`/`ipfw` override
+on OPNsense (009) → correctly refused (only `opnsense-fw` platform-fits there).
+
+### Gate
+ruff + mypy --strict clean; full backend **618 passed / 0 skip** (method override
+fit/target/unknown-command, OS-unknown failover, propose override + failover +
+method_source). No migration; no CI change (touched packages already strict).
+ADR 0027 fully implemented. **This closes 6-c** (intent-driven → BSD/severity/
+hardening → per-OS selection + OPNsense → method override + failover).
+
+---
+
 ## 2026-06-23 — 6-c.2a: per-BSD-OS selection + OPNsense `opnsense-fw` (real block verified)
 
 **Session type:** claude-code · **Phase:** 6 (capability-driven action execution) · **Branch / commit:** main

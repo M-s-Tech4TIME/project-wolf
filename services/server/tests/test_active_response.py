@@ -31,6 +31,7 @@ from wolf_server.wazuh.active_response import (
     interpret_ar_result,
     is_valid_ip,
     resolve_intent_command,
+    resolve_method_command,
 )
 
 # ── build_ar_body ────────────────────────────────────────────────────────────
@@ -195,6 +196,42 @@ def test_intent_unknown_is_refused() -> None:
     res = resolve_intent_command("quarantine", OS_LINUX)
     assert res.ok is False
     assert "Unknown action intent" in res.reason
+
+
+# ── method override + OS-unknown failover (slice 6-c.2b) ─────────────────────
+
+
+def test_method_override_uses_named_command_when_platform_fits() -> None:
+    # A specific stranded method (host-deny) on Linux is honored.
+    res = resolve_method_command(INTENT_BLOCK_IP, "host-deny", OS_LINUX)
+    assert res.ok is True
+    assert res.command == "host-deny"
+
+
+def test_method_override_refused_on_platform_mismatch() -> None:
+    res = resolve_method_command(INTENT_BLOCK_IP, "netsh", OS_LINUX)
+    assert res.ok is False
+    assert "runs on windows" in res.reason
+
+
+def test_method_override_refused_on_intent_target_mismatch() -> None:
+    # disable-account acts on a username — can't satisfy block_ip.
+    res = resolve_method_command(INTENT_BLOCK_IP, "disable-account", OS_LINUX)
+    assert res.ok is False
+    assert "does not match intent" in res.reason
+
+
+def test_method_override_refused_for_unknown_command() -> None:
+    res = resolve_method_command(INTENT_BLOCK_IP, "nuke", OS_LINUX)
+    assert res.ok is False
+    assert "Unknown active-response command" in res.reason
+
+
+def test_method_failover_allows_unknown_os() -> None:
+    # OS-unknown user-guided failover: the human asserts the platform via method.
+    res = resolve_method_command(INTENT_BLOCK_IP, "pf", None)
+    assert res.ok is True
+    assert res.command == "pf"
 
 
 # ── interpret_ar_result (HTTP 200 even on failure) ───────────────────────────

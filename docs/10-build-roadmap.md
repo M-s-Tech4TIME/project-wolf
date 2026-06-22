@@ -312,8 +312,11 @@ proposal's outcome** (queued / rejected-with-reason) instead of silently pivotin
 live**: the IP landed in `__wazuh_agent_drop` and was blocked (the OPNsense-native
 script integrates with its firewall, where stock `pf` silently no-op'd). The
 manager-config presence check was **dropped** (a `<command>` tag proves nothing).
-**6-c.2b** (next) the optional `method` override + OS-unknown user-guided failover.
-**then** the other action classes (`rule_tuning` / `agent_action` /
+**6-c.2b** ✅ (SHIPPED 2026-06-23) the optional `method` override (command ∈ catalog
++ intent-target consistency + unconditional platform-fit) + OS-unknown user-guided
+failover (any proposer; human approval the gate; `method_source` recorded) —
+**completes 6-c.2 and the whole 6-c line**. **then** the other action classes
+(`rule_tuning` / `agent_action` /
 `config_change`); severity-tiered authority / four-eyes / crown-jewel tagging
 (policy hooks, B1 default = approval-for-all); auto-execution (Phase 13). The
 remaining original scope below stands as the target the follow-ons fill in.

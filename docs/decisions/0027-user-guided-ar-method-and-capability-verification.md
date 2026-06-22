@@ -1,9 +1,10 @@
 # 0027 — User-guided AR method selection + the verification boundary (slice 6-c.2)
 
 **Date:** 2026-06-22 (decisions settled 2026-06-23)
-**Status:** accepted — all four open questions resolved by the operator; the
-manager-config presence check was **dropped** (see §2); real host-effect
-verification is deferred to **wolf-pack (Phase 12)**.
+**Status:** accepted — **fully implemented (6-c.2a + 6-c.2b, 2026-06-23)**. All
+four open questions resolved by the operator; the manager-config presence check
+was **dropped** (see §2); real host-effect verification is deferred to **wolf-pack
+(Phase 12)**.
 
 ## Context
 
@@ -160,9 +161,12 @@ appear in OPNsense's blocklist**. Findings that reshape this ADR:
   Wazuh tuning; fits the Phase 6.11 Wolf-assisted-Wazuh-diagnostics idea). The
   block itself is verified regardless.
 
-6-c.2a (SHIPPED 2026-06-23) delivered: the per-BSD-OS split + OPNsense detection →
-`opnsense-fw`; macOS default → `pf`; the pf↔ipfw version gate. 6-c.2b remains: the
-`method` override + OS-unknown failover.
+**Both slices SHIPPED 2026-06-23.** 6-c.2a: the per-BSD-OS split + OPNsense
+detection → `opnsense-fw`; macOS default → `pf`; the pf↔ipfw version gate.
+6-c.2b: the `method` override (`resolve_method_command` — catalog + intent-target
+consistency + unconditional platform-fit) + the OS-unknown user-guided failover
+(`method_source` = auto/override/user_asserted, approver-annotated). ADR 0027 is
+fully implemented; 6-c is complete.
 
 ## Contract / surface changes
 

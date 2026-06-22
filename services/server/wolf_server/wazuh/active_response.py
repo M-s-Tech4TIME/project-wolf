@@ -186,6 +186,14 @@ INTENT_LABELS: dict[str, str] = {
     INTENT_RESTART: "Restart the Wazuh agent",
 }
 
+# The target kind each intent acts on — used to validate a `method` override is
+# consistent with the intent (6-c.2b): you can't block_ip with a username command.
+INTENT_TARGETS: dict[str, str] = {
+    INTENT_BLOCK_IP: TARGET_SRCIP,
+    INTENT_DISABLE_USER: TARGET_USERNAME,
+    INTENT_RESTART: TARGET_NONE,
+}
+
 
 @dataclass(frozen=True)
 class IntentResolution:
@@ -273,6 +281,56 @@ def resolve_intent_command(
     if command == "pf" and _predates_pf(os_class, os_signal):
         command = "ipfw"
     return IntentResolution(ok=True, command=command)
+
+
+def resolve_method_command(
+    intent: str, method: str, os_class: str | None
+) -> IntentResolution:
+    """Resolve an explicit caller-chosen ``method`` (a specific catalog command)
+    for ``intent`` — the 6-c.2b override + OS-unknown user-guided failover.
+
+    Validates the method ∈ catalog, that its target matches the intent (you can't
+    ``block_ip`` with a username command), and — when the OS is KNOWN — that the
+    method platform-fits.  An UNKNOWN OS is allowed: this is the user-guided
+    failover, where Wolf proceeds on the requester's asserted platform and the
+    caller annotates the proposal (human approval remains the gate).
+    """
+    cmd = get_ar_command(method)
+    if cmd is None:
+        return IntentResolution(
+            ok=False,
+            reason=(
+                f"Unknown active-response command {method!r}. Choose one of "
+                f"{', '.join(sorted(AR_COMMANDS))}, or omit `method` to let Wolf "
+                "select automatically."
+            ),
+        )
+    intent_target = INTENT_TARGETS.get(intent)
+    if intent_target is None:
+        return IntentResolution(
+            ok=False,
+            reason=(
+                f"Unknown action intent {intent!r}. Supported intents: "
+                f"{', '.join(sorted(AR_INTENTS))}."
+            ),
+        )
+    if cmd.target != intent_target:
+        return IntentResolution(
+            ok=False,
+            reason=(
+                f"Method {method!r} does not match intent {intent!r}: it acts on "
+                f"{cmd.target!r}, but {intent!r} needs a {intent_target!r} command."
+            ),
+        )
+    if os_class is not None and os_class not in cmd.platforms:
+        return IntentResolution(
+            ok=False,
+            reason=(
+                f"Method {method!r} runs on {'/'.join(sorted(cmd.platforms))}, but "
+                f"the agent is {os_class}. Pick a {os_class}-compatible command."
+            ),
+        )
+    return IntentResolution(ok=True, command=cmd.name)
 
 
 def is_valid_ip(value: str) -> bool:

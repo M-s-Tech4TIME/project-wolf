@@ -167,6 +167,74 @@ async def test_propose_block_ip_opnsense_selects_opnsense_fw(
 
 
 @pytest.mark.asyncio
+async def test_propose_method_override_uses_named_command(
+    db: AsyncSession, seed_organization_and_user: dict[str, Any]
+) -> None:
+    """6-c.2b: an explicit `method` overrides the auto-default (host-deny instead
+    of firewall-drop on Linux), recorded as method_source=override."""
+    ctx = _ctx(seed_organization_and_user)
+    tool = ProposeActiveResponseTool()
+    out = await tool.run(
+        _exec_ctx(db, ctx, _ALLOW),  # default stub OS = Ubuntu (Linux)
+        ProposeActiveResponseInput(
+            agent_id="001",
+            intent="block_ip",
+            srcip="203.0.113.7",
+            method="host-deny",
+            rationale="x",
+        ),
+    )
+    assert out.permitted is True
+    proposal = (
+        await db.execute(
+            select(ActionProposal).where(ActionProposal.organization_id == ctx.organization_id)
+        )
+    ).scalar_one()
+    assert proposal.action == "host-deny"
+    assert proposal.parameters.get("method_source") == "override"
+
+
+@pytest.mark.asyncio
+async def test_propose_method_override_refused_on_platform_mismatch(
+    db: AsyncSession, seed_organization_and_user: dict[str, Any]
+) -> None:
+    ctx = _ctx(seed_organization_and_user)
+    tool = ProposeActiveResponseTool()
+    out = await tool.run(
+        _exec_ctx(db, ctx, _ALLOW),  # Linux agent
+        ProposeActiveResponseInput(
+            agent_id="001", intent="block_ip", srcip="203.0.113.7", method="netsh", rationale="x"
+        ),
+    )
+    assert out.permitted is False
+    assert "windows" in out.detail.lower()
+
+
+@pytest.mark.asyncio
+async def test_propose_os_unknown_failover_with_method(
+    db: AsyncSession, seed_organization_and_user: dict[str, Any]
+) -> None:
+    """6-c.2b failover: OS can't be determined, but the human asserts the method —
+    Wolf proposes it (method_source=user_asserted), approval still the gate."""
+    ctx = _ctx(seed_organization_and_user)
+    tool = ProposeActiveResponseTool()
+    out = await tool.run(
+        _exec_ctx(db, ctx, _ALLOW, os_platform=None),  # OS unknown
+        ProposeActiveResponseInput(
+            agent_id="001", intent="block_ip", srcip="203.0.113.7", method="pf", rationale="x"
+        ),
+    )
+    assert out.permitted is True
+    proposal = (
+        await db.execute(
+            select(ActionProposal).where(ActionProposal.organization_id == ctx.organization_id)
+        )
+    ).scalar_one()
+    assert proposal.action == "pf"
+    assert proposal.parameters.get("method_source") == "user_asserted"
+
+
+@pytest.mark.asyncio
 async def test_propose_succeeds_without_rationale_and_records_placeholder(
     db: AsyncSession, seed_organization_and_user: dict[str, Any]
 ) -> None:

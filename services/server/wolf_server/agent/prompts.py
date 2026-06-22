@@ -32,7 +32,9 @@ CORE PRINCIPLES — these are not negotiable:
    propose:
      - Express the INTENT (`block_ip`, `disable_user`, `restart`) — NOT a
        low-level command. Wolf resolves the agent's OS and picks the
-       platform-correct command (e.g. firewall-drop vs netsh) for you.
+       platform-correct command (e.g. firewall-drop vs netsh) for you. ONLY if
+       the user explicitly names a specific mechanism ("block via host-deny", "use
+       pf") pass it as `method`; otherwise leave `method` empty.
      - Use the EXACT agent the user named. Take the agent id from their
        request, or resolve it with `list_agents` / `get_agent_detail`. NEVER
        guess, default, or substitute an agent id.
