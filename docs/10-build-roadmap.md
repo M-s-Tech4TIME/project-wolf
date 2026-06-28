@@ -332,8 +332,12 @@ reversal is config-side/fixed → arbitrary-duration auto-unblock is **Wolf-owne
     provenance recall (block's reason+evidence resurfaced at unblock / re-block,
     dedup on re-block) + `list_active_blocks` read tool + wolf-pack-bound reversal
     `perform` (no fake host success) + `block_duration` parse + prompt #4.
-  - **6-d.3** ⏳ Wolf-owned timed auto-reversal scheduler (lifespan sweep, atomic
-    claim, system-initiated + pre-consented by the timed-block approval).
+  - **6-d.3** ✅ (this commit) — Wolf-owned timed auto-reversal scheduler
+    (`gateway/scheduler.py`, launched from `lifespan`): per-interval sweep claims
+    due timed blocks (`FOR UPDATE SKIP LOCKED`, idempotent) + system-initiated
+    auto-reversal, pre-consented by the timed-block approval (no 2nd human
+    approval; recalled reason + "timed block expired" context). Env knobs
+    `AUTO_REVERSAL_ENABLED` / `AUTO_REVERSAL_SWEEP_INTERVAL_SECONDS`.
   - **6-d.4** ⏳ `/actions` GUI + chat surfacing + web-test checkpoint.
 
 **then** the other action classes (`rule_tuning` / `agent_action` /

@@ -8,8 +8,8 @@ override the DATABASE_URL environment variable before importing this module,
 or use the `override_engine` context manager.
 """
 
-from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
+from collections.abc import AsyncGenerator, Iterator
+from contextlib import asynccontextmanager, contextmanager
 
 from sqlalchemy import MetaData
 from sqlalchemy.ext.asyncio import (
@@ -88,3 +88,23 @@ async def db_session() -> AsyncGenerator[AsyncSession]:
     factory = get_session_factory()
     async with factory() as session:
         yield session
+
+
+@contextmanager
+def override_engine(engine: AsyncEngine) -> Iterator[None]:
+    """Temporarily route ``get_engine`` / ``get_session_factory`` / ``db_session``
+    at ``engine`` (tests). Restores the previous engine + factory on exit.
+
+    Background tasks that open their OWN sessions via ``db_session()`` (e.g. the
+    auto-reversal scheduler) don't go through the FastAPI ``get_db`` override, so
+    tests use this to point them at the test engine.
+    """
+    global _engine, _session_factory  # noqa: PLW0603
+    prev_engine, prev_factory = _engine, _session_factory
+    _engine = engine
+    _session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    try:
+        yield
+    finally:
+        _engine = prev_engine
+        _session_factory = prev_factory

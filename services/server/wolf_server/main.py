@@ -62,9 +62,32 @@ async def lifespan(app: FastAPI) -> Any:  # noqa: ANN401
     register_all_read_tools()
     register_all_propose_tools()
 
+    # Timed auto-reversal scheduler (slice 6-d.3): the background sweep that
+    # reverses a timed block when its window expires. A cheap no-op when no timed
+    # blocks are due; disable via AUTO_REVERSAL_ENABLED=0.
+    import asyncio  # noqa: PLC0415  defer the import; only needed here at startup
+    from contextlib import suppress  # noqa: PLC0415
+
+    from wolf_server.gateway.scheduler import run_auto_reversal_scheduler  # noqa: PLC0415
+
+    scheduler_task: asyncio.Task[None] | None = None
+    scheduler_stop = asyncio.Event()
+    if _settings.auto_reversal_enabled:
+        scheduler_task = asyncio.create_task(
+            run_auto_reversal_scheduler(
+                interval_seconds=_settings.auto_reversal_sweep_interval_seconds,
+                stop_event=scheduler_stop,
+            )
+        )
+
     logger.info("wolf_server_ready")
     yield
     logger.info("wolf_server_stopping")
+    scheduler_stop.set()
+    if scheduler_task is not None:
+        scheduler_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await scheduler_task
 
 
 # Backoff schedule used by `_wait_for_database`. Sums to ~120s

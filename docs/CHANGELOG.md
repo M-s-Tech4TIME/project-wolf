@@ -49,6 +49,40 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-28 — 6-d.3: timed auto-reversal scheduler
+
+The timed-block half of 6-d (ADR 0028): "block X for 1h" now AUTOMATICALLY
+reverses when the window expires — fully contextualised in `/actions`. Wazuh's
+own `<timeout>` is config-side/fixed, so this arbitrary-duration timer is
+Wolf-owned.
+
+- `gateway/scheduler.py` — a periodic in-process sweep launched from `main.py`
+  `lifespan` (`asyncio.create_task`, cancelled cleanly on shutdown; a sweep error
+  is logged and never kills the loop). Each tick claims due timed blocks
+  (`auto_unblock_at <= now AND reversal_proposal_id IS NULL AND state=succeeded`,
+  `SELECT … FOR UPDATE SKIP LOCKED` — a no-op on SQLite, idempotent + race-safe
+  with a manual unblock) and, per block in its own transaction, creates the
+  **system-initiated** auto-reversal.
+- The auto-reversal is **pre-consented by the timed-block's approval** (the
+  approver authorised "block for 1h" → the expiry reversal is the second half of
+  that one time-boxed action): it fires without a second human approval (no SoD
+  check — `requested_by`/`approved_by` = the `WOLF_SYSTEM_ACTOR` sentinel,
+  audited `action.proposal.auto_reversal.approved`), then runs the same
+  wolf-pack-bound reversal `perform`/`verify` (lands `succeeded` =
+  authorised+recorded, `dispatched: false`; the block stays in effect until
+  wolf-pack confirms removal). It carries the recalled original reason + an
+  "automatic reversal: timed block expired @ <ts>" context for `/actions`.
+- Config (`config.py`, env-only; future Phase 6.10 consumer): `AUTO_REVERSAL_ENABLED`
+  (default on — a cheap no-op when nothing is due) + `AUTO_REVERSAL_SWEEP_INTERVAL_SECONDS`
+  (default 60). Added a documented `override_engine` test utility to `database.py`
+  so a background task's own `db_session()` can be pointed at the test engine.
+
+**Gate:** ruff + mypy --strict clean; full backend **715 passed / 0 skip** (+
+sweep auto-reverses a due block; idempotent on re-run; ignores not-due/indefinite;
+a manual unblock pre-empts the sweep — all on SQLite, CI's test DB); no migration;
+NO CI change (scheduler under already-strict `gateway`; new tests auto-collect).
+NEXT: **6-d.4** — the `/actions` GUI + chat surfacing + web-test checkpoint.
+
 ## 2026-06-28 — 6-d.2: reverse-intents + provenance recall + reversal ledger
 
 The backend of 6-d (ADR 0028): Wolf can now *propose an undo* (unblock an IP /

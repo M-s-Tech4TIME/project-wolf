@@ -175,6 +175,15 @@ class Settings(BaseSettings):
     # The startup banner prints the live state + this var name.
     same_network_gate_enabled: bool = False
 
+    # ── Timed auto-reversal scheduler (slice 6-d.3, ADR 0028) ────────────────────
+    # The in-process sweep that automatically reverses a TIMED block when its
+    # window expires (`auto_unblock_at`). Default ON — it's a cheap no-op when no
+    # timed blocks are due; timed blocks are opt-in per proposal. Disable to pause
+    # the sweep entirely. Interval is how often the sweep runs (seconds). A future
+    # Phase 6.10 settings consumer; env-only for now.
+    auto_reversal_enabled: bool = True
+    auto_reversal_sweep_interval_seconds: int = 60
+
     # ── Model defaults (per-organization overrides come in a later phase) ────────
     default_model_provider: str = "ollama"  # anthropic | openai | ollama
     # Default model: qwen3:4b (Apache 2.0).  Switched from llama3.2 on
