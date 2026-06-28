@@ -24,6 +24,11 @@ dependencies = [
     "python-jose[cryptography]>=3.5.0",
     "httpx>=0.27",
     "authlib>=1.3",
+    # Direct floor (transitive via authlib): joserfc <1.6.7 has CVE-2026-48990
+    # (RFC7797 b64=false JWS payloads bypass the JWSRegistry payload-size limit →
+    # moderate resource-exhaustion DoS). Caught by the dep-audit CI gate; pin the
+    # floor by hand (uv lock follows).
+    "joserfc>=1.6.7",
     # Session-blacklist Redis CLIENT (Phase 6.5-g). The redis SERVER is the
     # operator's own (never a .deb dependency); the in-memory backend is the
     # default and Redis activates only when REDIS_URL is set.
