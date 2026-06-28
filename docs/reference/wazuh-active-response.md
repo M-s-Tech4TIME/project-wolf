@@ -96,6 +96,52 @@ and Wolf offers a command only on a platform it fits. Per-OS `block_ip` selectio
 > run isn't decoded into a dashboard alert (custom format vs `ar_log_json`/rule
 > 657) — observability only; enforcement is confirmed.
 
+## 4b. Reversal — every command's undo, and why it's wolf-pack-bound (ADR 0028)
+
+Every *enforcement* script implements both an `add` and a `delete` in its shared
+`setup_and_check_message` dispatch — and `delete` is the **exact inverse** of
+`add`. The catalog now records this per command (`ARCommand.reversible` +
+`reverses_via`, non-empty iff reversible):
+
+| Command | DELETE (undo) does | Reversible |
+|---|---|---|
+| `firewall-drop` | `iptables -D` on INPUT/FORWARD removes the DROP rule | ✅ |
+| `host-deny` | removes the `ALL:<ip>` line from `/etc/hosts.deny` | ✅ |
+| `route-null` | `route del/delete` removes the null/blackhole route | ✅ |
+| `netsh` | `advfirewall firewall delete rule` removes the in/out block | ✅ |
+| `win_route-null` | `route DELETE <ip>` removes the null route | ✅ |
+| `disable-account` | `passwd -u` unlocks the account | ✅ |
+| `pf` | `pfctl -t wazuh_fwtable -T delete` removes the IP from the table | ✅ |
+| `ipfw` | `ipfw table delete` removes the IP from the deny table | ✅ |
+| `npf` | `npfctl` delete removes the IP from the block table | ✅ |
+| `opnsense-fw` | `pfctl -t __wazuh_agent_drop -T delete` removes the IP | ✅ |
+| `restart-wazuh` | — (one-shot; no enforcement state) | ❌ |
+
+**But the Server API cannot dispatch a `delete`.** Tracing the manager→agent
+path: `framework/wazuh/active_response.py` puts the API's `command` (e.g.
+`!firewall-drop`) into the message's top-level `command`; then the agent's execd
+(`src/os_execd/execd.c` `ExecdRun`) **unconditionally rewrites it to `"add"`**
+(`execd.c:276`) before running the script. The `"delete"` is generated **only**
+for the timeout-list entry (`execd.c:413`), fired automatically after the
+config-side `<timeout>` (which the API can't set per call — `timeout` is a
+rejected field, §1). So:
+
+- **A `PUT /active-response` always runs the script as `add`** — there is no API
+  path to undo. The real `delete` must run **on the host** → **wolf-pack
+  (Phase 12)**.
+- **Wazuh's native timed reversal is config-side and fixed per command**, not
+  per-request — so a "block for *N* minutes then auto-unblock" with an arbitrary
+  duration is **Wolf-owned scheduling** (slice 6-d.3), not delegated to Wazuh.
+
+Wolf therefore (slice 6-d) ships the full reversal *intelligence* — reverse
+intents (`unblock_ip` / `enable_user`), provenance recall (the block's reason +
+evidence resurfaced at unblock / re-block time), a timed auto-reversal scheduler,
+and the `/actions` lifecycle — while the **physical** host removal is the single
+wolf-pack-bound seam (the reversal `perform` callable). `reverses_via` records
+*what* the undo does so Wolf can explain + later drive it; Wolf never claims an
+IP is unblocked until the host change is confirmed (the §1 `dispatched ≠
+host-applied` honesty, extended to reversal).
+
 ## 5. How Wolf uses this (failproof path)
 
 1. **Propose** (`propose_active_response`): the model passes a high-level

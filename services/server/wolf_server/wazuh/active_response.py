@@ -71,9 +71,15 @@ class ARCommand:
     name: str
     platforms: frozenset[str]
     target: str  # one of TARGET_*
-    stateful: bool  # supports timeout add/delete (reversible)
+    reversible: bool  # has a delete-inverse (an undo) — see ``reverses_via``
     severity: str  # base impact: SEV_LOW | SEV_MEDIUM | SEV_HIGH
     summary: str
+    # How the undo works: the script's DELETE_COMMAND inverse (ADR 0028), grounded
+    # in the Wazuh AR source. Non-empty IFF ``reversible`` (enforced by tests).
+    # NOTE: the inverse only runs *on the host* — the Server API cannot dispatch a
+    # `delete` (execd always rewrites a fresh call to `add`), so the physical
+    # reversal is wolf-pack-bound (Phase 12); this string records *what* it does.
+    reverses_via: str = ""
 
 
 # The default Wazuh AR commands. Grounded against this cluster's manager command
@@ -86,47 +92,58 @@ AR_COMMANDS: dict[str, ARCommand] = {
     "firewall-drop": ARCommand(
         "firewall-drop", frozenset({OS_LINUX}), TARGET_SRCIP, True, SEV_HIGH,
         "Block a source IP via iptables.",
+        reverses_via="iptables -D on INPUT and FORWARD removes the DROP rule for the IP.",
     ),
     "host-deny": ARCommand(
         "host-deny", frozenset({OS_LINUX}), TARGET_SRCIP, True, SEV_HIGH,
         "Add a source IP to /etc/hosts.deny.",
+        reverses_via="Removes the 'ALL:<ip>' line from /etc/hosts.deny.",
     ),
     "route-null": ARCommand(
         "route-null", frozenset({OS_LINUX, OS_MACOS}), TARGET_SRCIP, True, SEV_HIGH,
         "Null-route a source IP.",
+        reverses_via="route del/delete <ip> removes the null/blackhole route.",
     ),
     "disable-account": ARCommand(
         "disable-account", frozenset({OS_LINUX, OS_MACOS}), TARGET_USERNAME, True, SEV_MEDIUM,
         "Disable a local user account.",
+        reverses_via="passwd -u unlocks the account (AIX: chuser account_locked=false).",
     ),
     "restart-wazuh": ARCommand(
         "restart-wazuh",
         frozenset({OS_LINUX, OS_WINDOWS, OS_MACOS, OS_FREEBSD, OS_OPENBSD, OS_NETBSD, OS_OPNSENSE}),
         TARGET_NONE, False, SEV_LOW, "Restart the Wazuh agent.",
+        # Not reversible: a one-shot restart leaves no enforcement state to undo.
     ),
     "netsh": ARCommand(
         "netsh", frozenset({OS_WINDOWS}), TARGET_SRCIP, True, SEV_HIGH,
         "Block a source IP via netsh (Windows).",
+        reverses_via="netsh advfirewall firewall delete rule removes the in/out block rule.",
     ),
     "win_route-null": ARCommand(
         "win_route-null", frozenset({OS_WINDOWS}), TARGET_SRCIP, True, SEV_HIGH,
         "Null-route a source IP (Windows).",
+        reverses_via="route DELETE <ip> removes the null route (Windows).",
     ),
     "pf": ARCommand(
         "pf", frozenset({OS_FREEBSD, OS_OPENBSD, OS_MACOS}), TARGET_SRCIP, True, SEV_HIGH,
         "Block a source IP via the pf packet filter (FreeBSD/OpenBSD/macOS ≥ 10.7).",
+        reverses_via="pfctl -t wazuh_fwtable -T delete <ip> removes the IP from the pf table.",
     ),
     "ipfw": ARCommand(
         "ipfw", frozenset({OS_FREEBSD, OS_MACOS}), TARGET_SRCIP, True, SEV_HIGH,
         "Block a source IP via ipfw (legacy FreeBSD < 5.3 / macOS ≤ 10.6).",
+        reverses_via="ipfw table delete removes the IP from the deny table.",
     ),
     "npf": ARCommand(
         "npf", frozenset({OS_NETBSD}), TARGET_SRCIP, True, SEV_HIGH,
         "Block a source IP via npf (NetBSD).",
+        reverses_via="npfctl removes the IP from the block table.",
     ),
     "opnsense-fw": ARCommand(
         "opnsense-fw", frozenset({OS_OPNSENSE}), TARGET_SRCIP, True, SEV_HIGH,
         "Block a source IP via opnsense-fw (OPNsense/pfSense appliance firewall).",
+        reverses_via="pfctl -t __wazuh_agent_drop -T delete <ip> removes the IP from the table.",
     ),
 }
 

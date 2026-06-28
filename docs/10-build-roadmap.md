@@ -315,11 +315,31 @@ manager-config presence check was **dropped** (a `<command>` tag proves nothing)
 **6-c.2b** ✅ (SHIPPED 2026-06-23) the optional `method` override (command ∈ catalog
 + intent-target consistency + unconditional platform-fit) + OS-unknown user-guided
 failover (any proposer; human approval the gate; `method_source` recorded) —
-**completes 6-c.2 and the whole 6-c line**. **then** the other action classes
-(`rule_tuning` / `agent_action` /
-`config_change`); severity-tiered authority / four-eyes / crown-jewel tagging
-(policy hooks, B1 default = approval-for-all); auto-execution (Phase 13). The
-remaining original scope below stands as the target the follow-ons fill in.
+**completes 6-c.2 and the whole 6-c line**.
+
+**6-d — AR reversal + timed auto-reversal + provenance ledger** (ADR 0028;
+**before** the other action classes, operator-prioritised 2026-06-28). Wolf can
+block but not undo; 6-d adds generic *reversal* (AR first). Studied every AR
+script (`wazuh@v4.14.5` + local `scriptreference/opnsense-fw`): every enforcement
+command has an exact delete-inverse, but the **Server API can't dispatch a
+`delete`** (execd always rewrites a fresh call to `add`; `execd.c:276`) → the
+physical undo runs on the host = **wolf-pack (Phase 12)**; Wazuh's native timed
+reversal is config-side/fixed → arbitrary-duration auto-unblock is **Wolf-owned**.
+  - **6-d.1** ✅ (this commit) — ADR 0028 + `ARCommand.reversible` /
+    `reverses_via` (the matrix) + reference §4b + catalog tests.
+  - **6-d.2** ⏳ migration 0016 (reverse linkage + `auto_unblock_at`) + reverse
+    intents (`unblock_ip` / `enable_user`) + provenance recall (block's
+    reason+evidence resurfaced at unblock / re-block) + `list_active_blocks` +
+    wolf-pack-bound reversal `perform` (no fake host success).
+  - **6-d.3** ⏳ Wolf-owned timed auto-reversal scheduler (lifespan sweep, atomic
+    claim, system-initiated + pre-consented by the timed-block approval).
+  - **6-d.4** ⏳ `/actions` GUI + chat surfacing + web-test checkpoint.
+
+**then** the other action classes (`rule_tuning` / `agent_action` /
+`config_change`, now reversal-aware via the 6-d linkage); severity-tiered
+authority / four-eyes / crown-jewel tagging (policy hooks, B1 default =
+approval-for-all); auto-execution (Phase 13). The remaining original scope below
+stands as the target the follow-ons fill in.
 
 The most safety-critical work in the project. Built after the
 read-side platform is solid + the deployment substrate is in

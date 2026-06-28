@@ -108,6 +108,28 @@ def test_every_command_declares_a_valid_severity() -> None:
         assert cmd.severity in {SEV_LOW, SEV_MEDIUM, SEV_HIGH}, name
 
 
+# ── reversal metadata (slice 6-d.1, ADR 0028) ────────────────────────────────
+
+
+def test_reverses_via_is_present_iff_reversible() -> None:
+    """``reverses_via`` (the delete-inverse description) is non-empty exactly when
+    a command is reversible — the catalog stays the single source of truth for
+    what an undo does (a test changes if the matrix drifts)."""
+    for name, cmd in AR_COMMANDS.items():
+        assert cmd.reversible == bool(cmd.reverses_via.strip()), name
+
+
+def test_enforcement_commands_are_reversible_restart_is_not() -> None:
+    # Every enforcement (block / disable) command has a host-level undo; the
+    # one-shot restart leaves no state to reverse (ADR 0028 reversal matrix).
+    assert AR_COMMANDS["restart-wazuh"].reversible is False
+    for name in (
+        "firewall-drop", "host-deny", "route-null", "disable-account", "netsh",
+        "win_route-null", "pf", "ipfw", "npf", "opnsense-fw",
+    ):
+        assert AR_COMMANDS[name].reversible is True, name
+
+
 # ── intent → platform-correct command selection (slice 6-c) ──────────────────
 
 

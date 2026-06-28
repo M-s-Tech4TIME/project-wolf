@@ -49,6 +49,62 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-28 — 6-d.1: AR reversal model — ADR 0028 + reversal catalog metadata
+
+Opened the **6-d** line (operator-prioritised this session, **before** the
+remaining action classes): give Wolf a *generic* reversal/undo capability — AR
+first — that keeps the record, reason and evidence of what was undone, plus
+timed blocks that auto-reverse on expiry. This commit is the **design gate**.
+
+**Research (studied every AR script + traced execd):** read the full Wazuh AR
+source at `wazuh@v4.14.5` (`src/active-response/` + `firewalls/`) and the local
+`scriptreference/opnsense-fw`. Every *enforcement* script implements both `add`
+and `delete` via the shared `setup_and_check_message`, and `delete` is the exact
+inverse of `add` (firewall-drop `iptables -D`; firewalld `--remove-rich-rule`;
+host-deny removes the `/etc/hosts.deny` line; route-null `route del`; netsh
+`delete rule`; win_route-null `route DELETE`; disable-account `passwd -u`; pf
+`pfctl -T delete`; ipfw `table delete`; npf delete; opnsense-fw `-T delete`).
+Only `restart-wazuh` is non-reversible (one-shot, no state).
+
+**Decisive constraint:** the **Server API cannot dispatch a `delete`**. The
+framework (`framework/wazuh/active_response.py`) puts the API `command` (e.g.
+`!firewall-drop`) into the message's top-level `command`; the agent's execd
+(`src/os_execd/execd.c` `ExecdRun`) then **unconditionally rewrites it to `add`**
+(`execd.c:276`). The `delete` is produced **only** for execd's timeout-list entry
+(`execd.c:413`), fired after the config-side `<timeout>` (a per-call `timeout` is
+a rejected API field). Therefore: (a) the **physical** unblock must run on the
+host → **wolf-pack (Phase 12)**; (b) Wazuh's native timed reversal is config-side
+& fixed per command, so arbitrary-duration auto-unblock must be **Wolf-owned**.
+
+**Operator decision (this session): Option A** — 6-d ships the reversal
+*intelligence* now (propose → approve → record → recall provenance → audit →
+GUI); the reversal `perform` does NOT touch the host (records
+`deferred_to: wolf-pack`), no fake host success; the block flips
+`succeeded → rolled_back` only when wolf-pack confirms removal. **Timed
+auto-reversal** is pre-consented by the timed-block's approval (mirrors Wazuh's
+own config-timeout auto-delete) → fires without a second approval but is fully
+recorded + shown in `/actions`.
+
+**Shipped in 6-d.1 (catalog + docs only — no schema/runtime change):**
+- `docs/decisions/0028-active-response-reversal-and-timed-auto-reversal.md` — the
+  reversal matrix, the execd constraint, the now/wolf-pack split, the
+  provenance-recall + timed-auto-reversal + B1 framing, the generic-reversal
+  stance. ADR index (`docs/decisions/README.md`) backfilled 0024–0028.
+- `wolf_server/wazuh/active_response.py` — `ARCommand` gained `reversible: bool`
+  (renamed the dead, never-read `stateful`) + `reverses_via: str` (the
+  delete-inverse description, non-empty IFF reversible); set per command from the
+  matrix; `restart-wazuh` reversible=False.
+- `docs/reference/wazuh-active-response.md` §4b — the reversal matrix + why undo
+  is wolf-pack-bound.
+- Tests: `test_active_response.py` +2 (`reverses_via` present iff reversible;
+  enforcement commands reversible, restart not) → 28 passed.
+
+**Gate:** ruff + mypy --strict clean; NO migration; NO CI change (the touched
+module is already in the strict set; new tests auto-collect). NEXT: **6-d.2** —
+migration 0016 (reverse linkage + `auto_unblock_at`), reverse intents
+(`unblock_ip` / `enable_user`), provenance recall, `list_active_blocks`, and the
+wolf-pack-bound reversal `perform`.
+
 ## 2026-06-23 — 6-c.2b: `method` override + OS-unknown user-guided failover (closes 6-c)
 
 **Session type:** claude-code · **Phase:** 6 (capability-driven action execution) · **Branch / commit:** main
