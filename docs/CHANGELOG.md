@@ -49,6 +49,34 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-28 — 6-d.4: /actions GUI for reversal + timed blocks (completes 6-d)
+
+The browser surface for 6-d (ADR 0028) — the human reviewer now sees the full
+reversal/timed-block context in `/actions`. Frontend-only; chat surfacing already
+rode 6-d.2's prompt #4.
+
+- `lib/types.ts` `ActionProposal`: added `reverses_proposal_id`,
+  `reversal_proposal_id`, `auto_unblock_at` (mirrors the 6-d.2 `ProposalOut`).
+- `app/actions/page.tsx`:
+  - A **Reversal / Auto-reversal** chip (sky) on undo proposals; an **Undoes
+    block #…** field noting the physical removal runs via wolf-pack.
+  - Timed blocks show a **Duration** field ("1h — Wolf auto-reverses on expiry");
+    an executed, still-in-effect timed block shows **· auto-reverses <when>**; a
+    block whose reversal is authorised shows **· reversal authorised**.
+  - `resultDetail` surfaces a reversal's honest outcome ("Reversal authorised +
+    recorded — physical removal pending wolf-pack").
+  - The **approve dialog is reversal-aware**: for an undo it says Wolf will
+    *authorise + record* the reversal and the host removal runs via wolf-pack (the
+    Wazuh API can't dispatch a `delete`) — NOT "a real change on your fleet", so
+    the reviewer is never misled.
+
+**Gate:** dashboard `tsc` + `eslint` clean (the dev server hot-reloads the page —
+no build/restart needed for the frontend); NO backend change; NO migration; NO CI
+change (frontend rides the existing tsc+eslint+build job). **6-d is code-complete**
+across 6-d.1→6-d.4; the per-slice **web-test checkpoint** is the remaining step
+(restart wolf-server for the new tool schema + scheduler, then exercise block →
+unblock-recall → timed-block-auto-reversal → re-block-dedup on the live cluster).
+
 ## 2026-06-28 — 6-d.3: timed auto-reversal scheduler
 
 The timed-block half of 6-d (ADR 0028): "block X for 1h" now AUTOMATICALLY

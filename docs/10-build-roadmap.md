@@ -338,7 +338,12 @@ reversal is config-side/fixed → arbitrary-duration auto-unblock is **Wolf-owne
     auto-reversal, pre-consented by the timed-block approval (no 2nd human
     approval; recalled reason + "timed block expired" context). Env knobs
     `AUTO_REVERSAL_ENABLED` / `AUTO_REVERSAL_SWEEP_INTERVAL_SECONDS`.
-  - **6-d.4** ⏳ `/actions` GUI + chat surfacing + web-test checkpoint.
+  - **6-d.4** ✅ (this commit) — `/actions` GUI surfaces the reversal linkage
+    (Reversal/Auto-reversal chip + "Undoes block #…"), timed-block "Duration" +
+    "auto-reverses <when>", "reversal authorised" on a blocked row, and an honest
+    reversal-approve dialog ("authorise + record; physical removal via wolf-pack").
+    Chat surfacing rode 6-d.2 (prompt #4). **Completes the 6-d line** (pending the
+    operator web-test).
 
 **then** the other action classes (`rule_tuning` / `agent_action` /
 `config_change`, now reversal-aware via the 6-d linkage); severity-tiered

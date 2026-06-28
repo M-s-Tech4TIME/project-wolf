@@ -73,11 +73,40 @@ function alertIdsOf(evidence: Record<string, unknown>): string[] {
   return Array.isArray(v) ? v.map(String) : [];
 }
 
+// ── Reversal helpers (slice 6-d, ADR 0028) ──────────────────────────────────
+
+/** A reversal (unblock / re-enable) undoes a prior block. */
+function isReversal(p: ActionProposal): boolean {
+  return p.reverses_proposal_id !== null;
+}
+
+/** A system-initiated automatic reversal (a timed block expired). */
+function isAutoReversal(p: ActionProposal): boolean {
+  return p.parameters["auto"] === true;
+}
+
+function shortId(id: string): string {
+  return id.slice(0, 8);
+}
+
+/** Humanize a block duration (seconds) → "30m" / "1h" / "2d". */
+function formatDuration(parameters: Record<string, unknown>): string | null {
+  const s = parameters["block_duration_seconds"];
+  if (typeof s !== "number" || s <= 0) return null;
+  if (s % 86400 === 0) return `${s / 86400}d`;
+  if (s % 3600 === 0) return `${s / 3600}h`;
+  if (s % 60 === 0) return `${s / 60}m`;
+  return `${s}s`;
+}
+
 /** One-line human summary of the verification-read result (or failure). */
 function resultDetail(result: Record<string, unknown> | null): string | null {
   if (!result) return null;
   if (typeof result["error"] === "string") return result["error"];
   if (typeof result["freshness"] === "string") return String(result["freshness"]);
+  // A reversal authorises + records the undo; the host change is wolf-pack-bound.
+  if (result["reversal_state"] === "authorized_pending_wolf_pack")
+    return "Reversal authorised + recorded — physical removal pending wolf-pack";
   const total = result["total_affected_items"];
   if (typeof total === "number") return `${total} target(s) affected`;
   return null;
@@ -118,6 +147,20 @@ function stateBadge(state: ActionProposal["state"]) {
       // draft / approved / executing / rolled_back
       return <Badge variant="outline" className="capitalize">{state.replace("_", " ")}</Badge>;
   }
+}
+
+/** A chip marking a proposal as an undo (and whether it was automatic). */
+function kindBadge(p: ActionProposal) {
+  if (!isReversal(p)) return null;
+  const label = isAutoReversal(p) ? "Auto-reversal" : "Reversal";
+  return (
+    <Badge
+      variant="outline"
+      className="border-sky-400/50 bg-sky-400/15 text-sky-700 dark:text-sky-400"
+    >
+      {label}
+    </Badge>
+  );
 }
 
 // The settled outcome of the most recent approve, shown as a banner.
@@ -261,6 +304,7 @@ export default function ActionsPage() {
                         on {targetSummary(p.target)}
                       </span>
                       <span className="ml-auto flex items-center gap-1.5">
+                        {kindBadge(p)}
                         {severityBadge(p.severity)}
                       </span>
                     </CardTitle>
@@ -268,6 +312,25 @@ export default function ActionsPage() {
                   <CardContent className="space-y-2 text-sm">
                     {paramsSummary(p.parameters) ? (
                       <Field label="Target">{paramsSummary(p.parameters)}</Field>
+                    ) : null}
+                    {isReversal(p) && p.reverses_proposal_id ? (
+                      <Field label="Undoes">
+                        block{" "}
+                        <code className="rounded bg-muted px-1 py-0.5 text-xs">
+                          #{shortId(p.reverses_proposal_id)}
+                        </code>
+                        <span className="ml-1 text-xs text-muted-foreground">
+                          — physical removal runs via wolf-pack
+                        </span>
+                      </Field>
+                    ) : null}
+                    {formatDuration(p.parameters) ? (
+                      <Field label="Duration">
+                        {formatDuration(p.parameters)}{" "}
+                        <span className="text-xs text-muted-foreground">
+                          — Wolf auto-reverses it when the window expires
+                        </span>
+                      </Field>
                     ) : null}
                     <Field label="Why">{p.rationale}</Field>
                     {p.expected_effect ? (
@@ -355,11 +418,27 @@ export default function ActionsPage() {
                   className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm ring-1 ring-foreground/10"
                 >
                   {stateBadge(p.state)}
+                  {kindBadge(p)}
                   <code className="rounded bg-muted px-1.5 py-0.5 text-xs">{p.action}</code>
                   <span className="text-muted-foreground">on {targetSummary(p.target)}</span>
                   {detail ? (
                     <span className="truncate text-xs text-muted-foreground" title={detail}>
                       — {detail}
+                    </span>
+                  ) : null}
+                  {/* A still-in-effect timed block shows when Wolf will auto-reverse it;
+                      a block whose reversal is already authorised says so. */}
+                  {!isReversal(p) && p.state === "succeeded" && p.auto_unblock_at && !p.reversal_proposal_id ? (
+                    <span
+                      className="shrink-0 text-xs text-muted-foreground"
+                      title={absoluteTimeTitle(p.auto_unblock_at)}
+                    >
+                      · auto-reverses {timeUntil(p.auto_unblock_at)}
+                    </span>
+                  ) : null}
+                  {!isReversal(p) && p.reversal_proposal_id ? (
+                    <span className="shrink-0 text-xs text-sky-700 dark:text-sky-400">
+                      · reversal authorised
                     </span>
                   ) : null}
                   <span
@@ -382,15 +461,29 @@ export default function ActionsPage() {
         variant="default"
         description={
           approving ? (
-            <>
-              Wolf will run <span className="font-medium">{approving.action}</span>
-              {paramsSummary(approving.parameters) ? (
-                <> (<span className="font-medium">{paramsSummary(approving.parameters)}</span>)</>
-              ) : null}{" "}
-              on <span className="font-medium">{targetSummary(approving.target)}</span> using this
-              organization&apos;s Wazuh credential. This is a real change on your fleet. A
-              freshness re-check runs first; if the world has moved, it won&apos;t execute.
-            </>
+            isReversal(approving) ? (
+              <>
+                Wolf will authorise and record the reversal of{" "}
+                <span className="font-medium">{approving.action}</span>
+                {paramsSummary(approving.parameters) ? (
+                  <> (<span className="font-medium">{paramsSummary(approving.parameters)}</span>)</>
+                ) : null}{" "}
+                on <span className="font-medium">{targetSummary(approving.target)}</span>. The
+                physical removal runs on the host via wolf-pack (Phase 12) — the Wazuh API
+                can&apos;t dispatch an active-response &ldquo;delete&rdquo;, so the block stays in
+                effect until then.
+              </>
+            ) : (
+              <>
+                Wolf will run <span className="font-medium">{approving.action}</span>
+                {paramsSummary(approving.parameters) ? (
+                  <> (<span className="font-medium">{paramsSummary(approving.parameters)}</span>)</>
+                ) : null}{" "}
+                on <span className="font-medium">{targetSummary(approving.target)}</span> using this
+                organization&apos;s Wazuh credential. This is a real change on your fleet. A
+                freshness re-check runs first; if the world has moved, it won&apos;t execute.
+              </>
+            )
           ) : null
         }
         confirmLabel="Approve & execute"

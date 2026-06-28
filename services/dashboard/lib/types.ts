@@ -589,6 +589,12 @@ export type ActionProposal = {
   created_at: string;
   /** TTL — a pending proposal past this is refused as stale. */
   expires_at: string;
+  /** Reversal linkage (slice 6-d, ADR 0028). On a REVERSAL row: the block it
+   *  undoes. On a BLOCK row: `reversal_proposal_id` is the reversal authorised
+   *  for it; `auto_unblock_at` is when a TIMED block auto-reverses. */
+  reverses_proposal_id: string | null;
+  reversal_proposal_id: string | null;
+  auto_unblock_at: string | null;
 };
 
 export type MessageNode = UserMessageNode | AssistantMessageNode;
