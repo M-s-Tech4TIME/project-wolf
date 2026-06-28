@@ -49,6 +49,49 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-28 — 6-d.2: reverse-intents + provenance recall + reversal ledger
+
+The backend of 6-d (ADR 0028): Wolf can now *propose an undo* (unblock an IP /
+re-enable an account), recalling WHY the original block was made, and a TIMED
+block records its auto-reversal due-time. Physical host removal stays
+wolf-pack-bound (Option A) — the reversal `perform` records the directive and
+touches no host; no fake success.
+
+- **Migration 0016** (`action_proposals`, additive/nullable): `reverses_proposal_id`
+  (a reversal → the block it undoes), `auto_unblock_at` (a timed block → when its
+  auto-reversal is due, indexed for the sweep), `reversal_proposal_id` (a block →
+  the reversal authorised for it). Up/down round-trip + `alembic check` clean.
+- **Reverse intents** (`wazuh/active_response.py`): `unblock_ip` / `enable_user`
+  resolve to the SAME platform command as their forward intent (the undo is that
+  command's delete-inverse); `REVERSE_TO_FORWARD` relates them. `parse_duration`
+  ("30m"/"1h"/"2d"/bare seconds, bounded 60s–30d) for timed blocks.
+- **Provenance recall** (`tools/propose_active_response.py`): an undo finds the
+  active block via `find_active_block`, recalls its reason + evidence + when,
+  links `reverses_proposal_id`, reverses the EXACT command the block used, and
+  refuses cleanly when no block is on record. A re-block of an already-blocked IP
+  surfaces the existing block as dedup context. `block_duration` → a timed block
+  (refused on the non-reversible restart); `create_reversal_proposal` stamps the
+  block so it can't be reversed twice.
+- **Reversal execution** (`gateway/reversal.py` + `api/action_proposals.py`):
+  an approved reversal runs the wolf-pack-bound `perform`/`verify`/`freshness` —
+  lands `succeeded` (authorised + recorded), `dispatched: false`,
+  `reversal_state: authorized_pending_wolf_pack`; the block stays `succeeded`
+  (in effect) until wolf-pack confirms removal. A succeeded TIMED forward block
+  stamps `auto_unblock_at`.
+- **`list_active_blocks`** read tool (`tools/active_blocks.py`, registered): Wolf's
+  org-scoped dispatch ledger of unreversed blocks with the reason each was made,
+  honestly labelled "not a live host check".
+- **Prompt** (`agent/prompts.py` #4): use `unblock_ip`/`enable_user` to undo
+  (present the recalled reason first), `block_duration` for timed blocks, surface
+  dedup on re-block, `list_active_blocks` to recall what's blocked.
+
+**Gate:** ruff + mypy --strict clean (gateway/tools/wazuh/api/agent); full backend
+**711 passed / 0 skip** (+ reverse-intent/recall/dedup/duration/ledger/reversal-
+execute/cross-org-isolation tests); migration 0016 up/down/check verified on
+Postgres; NO CI change (new modules under already-strict `gateway`/`tools`; the
+migration auto-runs in the alembic-check job). NEXT: **6-d.3** — the timed
+auto-reversal scheduler (the sweep that fires `auto_unblock_at`).
+
 ## 2026-06-28 — 6-d.1: AR reversal model — ADR 0028 + reversal catalog metadata
 
 Opened the **6-d** line (operator-prioritised this session, **before** the

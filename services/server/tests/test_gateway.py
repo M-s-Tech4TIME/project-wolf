@@ -31,13 +31,25 @@ from wolf_server.gateway.proposals import (
     compute_content_hash,
     compute_severity,
     create_proposal,
+    create_reversal_proposal,
+    find_active_block,
     is_expired,
+    list_active_blocks,
     recompute_content_hash,
+    stamp_auto_unblock_at,
+)
+from wolf_server.gateway.reversal import (
+    REVERSAL_STATE_PENDING,
+    is_reversal,
+    reversal_freshness,
+    reversal_perform,
+    reversal_verify,
 )
 from wolf_server.gateway.state_machine import IllegalTransitionError, assert_transition
 from wolf_server.gateway.validator import validate_proposal
 
 _ORG = uuid.UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+_ORG2 = uuid.UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
 _REQUESTER = uuid.UUID("11111111-1111-1111-1111-111111111111")
 _APPROVER = uuid.UUID("22222222-2222-2222-2222-222222222222")
 
@@ -407,3 +419,123 @@ async def test_execute_failed_when_verification_negative(db: AsyncSession) -> No
         executor_user_id=_APPROVER,
     )
     assert proposal.state == ProposalState.failed
+
+
+# ── reversal ledger + execution (slice 6-d, ADR 0028) ────────────────────────
+
+
+async def _succeeded_block(
+    db: AsyncSession,
+    *,
+    organization_id: uuid.UUID = _ORG,
+    srcip: str = "203.0.113.7",
+    command: str = "firewall-drop",
+    duration_seconds: int | None = None,
+) -> ActionProposal:
+    params: dict[str, Any] = {"intent": "block_ip", "srcip": srcip}
+    if duration_seconds is not None:
+        params["block_duration_seconds"] = duration_seconds
+    block = await _make_pending(
+        db, organization_id=organization_id, action=command, parameters=params
+    )
+    block.state = ProposalState.succeeded
+    block.executed_at = datetime.now(UTC)
+    await db.flush()
+    return block
+
+
+@pytest.mark.asyncio
+async def test_find_active_block_matches_target_and_org(db: AsyncSession) -> None:
+    block = await _succeeded_block(db, srcip="203.0.113.7")
+    found = await find_active_block(
+        db, organization_id=_ORG, action_class="active_response",
+        agent_id="001", srcip="203.0.113.7",
+    )
+    assert found is not None and found.id == block.id
+    # Different IP → no match.
+    assert await find_active_block(
+        db, organization_id=_ORG, action_class="active_response",
+        agent_id="001", srcip="8.8.8.8",
+    ) is None
+    # Another org cannot see this org's block (cross-organization isolation).
+    assert await find_active_block(
+        db, organization_id=_ORG2, action_class="active_response",
+        agent_id="001", srcip="203.0.113.7",
+    ) is None
+
+
+@pytest.mark.asyncio
+async def test_create_reversal_links_block_and_stamps_it(db: AsyncSession) -> None:
+    block = await _succeeded_block(db, srcip="203.0.113.7")
+    reversal = await create_reversal_proposal(
+        db, block, requested_by=_REQUESTER, action="firewall-drop",
+        parameters={"intent": "unblock_ip", "reversal": True, "srcip": "203.0.113.7"},
+        rationale="undo", expected_effect="unblock",
+    )
+    assert reversal.reverses_proposal_id == block.id
+    assert block.reversal_proposal_id == reversal.id
+    assert is_reversal(reversal) is True and is_reversal(block) is False
+    # A stamped block is no longer "active" for recall / the sweep.
+    assert await find_active_block(
+        db, organization_id=_ORG, action_class="active_response",
+        agent_id="001", srcip="203.0.113.7",
+    ) is None
+
+
+@pytest.mark.asyncio
+async def test_list_active_blocks_excludes_reversed(db: AsyncSession) -> None:
+    b1 = await _succeeded_block(db, srcip="203.0.113.7")
+    await _succeeded_block(db, srcip="198.51.100.9")
+    blocks = await list_active_blocks(db, organization_id=_ORG)
+    assert {b.parameters.get("srcip") for b in blocks} == {"203.0.113.7", "198.51.100.9"}
+    # Reverse one → it drops out of the ledger.
+    await create_reversal_proposal(
+        db, b1, requested_by=_REQUESTER, action="firewall-drop",
+        parameters={"intent": "unblock_ip", "reversal": True, "srcip": "203.0.113.7"},
+        rationale="undo", expected_effect="unblock",
+    )
+    blocks = await list_active_blocks(db, organization_id=_ORG)
+    assert {b.parameters.get("srcip") for b in blocks} == {"198.51.100.9"}
+
+
+@pytest.mark.asyncio
+async def test_reversal_execute_records_deferral_and_block_stays_in_effect(
+    db: AsyncSession,
+) -> None:
+    """Option A: an approved reversal lands ``succeeded`` (authorised + recorded)
+    but does NOT touch the host (dispatched False, wolf-pack-bound) and the block
+    is NOT rolled_back until wolf-pack confirms removal."""
+    block = await _succeeded_block(db, srcip="203.0.113.7")
+    reversal = await create_reversal_proposal(
+        db, block, requested_by=_REQUESTER, action="firewall-drop",
+        parameters={"intent": "unblock_ip", "reversal": True, "srcip": "203.0.113.7"},
+        rationale="undo", expected_effect="unblock",
+    )
+    await approve_proposal(db, reversal, approver_user_id=_APPROVER, approver_role="responder")
+
+    async def _rev_fresh(p: ActionProposal) -> tuple[bool, str]:
+        return await reversal_freshness(db, p)
+
+    await execute_proposal(
+        db, reversal, freshness=_rev_fresh, perform=reversal_perform, verify=reversal_verify,
+        executor_user_id=_APPROVER,
+    )
+    assert reversal.state == ProposalState.succeeded
+    assert (reversal.result or {}).get("dispatched") is False
+    assert (reversal.result or {}).get("reversal_state") == REVERSAL_STATE_PENDING
+    assert (reversal.result or {}).get("deferred_to") == "wolf-pack"
+    # The block is still in effect — physical removal is wolf-pack's job.
+    assert block.state == ProposalState.succeeded
+
+
+@pytest.mark.asyncio
+async def test_stamp_auto_unblock_at_from_duration(db: AsyncSession) -> None:
+    timed = await _succeeded_block(db, srcip="203.0.113.7", duration_seconds=3600)
+    stamp_auto_unblock_at(timed)
+    assert timed.auto_unblock_at is not None
+    delta = timed.auto_unblock_at - (timed.executed_at or datetime.now(UTC))
+    assert abs(delta - timedelta(seconds=3600)) < timedelta(seconds=2)
+    # An indefinite block (no duration) gets no auto-reversal time.
+    indefinite = await _succeeded_block(db, srcip="198.51.100.9")
+    stamp_auto_unblock_at(indefinite)
+    assert indefinite.auto_unblock_at is None

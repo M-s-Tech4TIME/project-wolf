@@ -9,6 +9,7 @@ doesn't permit the action (capability pre-flight), and on success persist a
 *pending* proposal carrying the resolved command — never execute.
 """
 
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -17,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from wolf_server.gateway.models import ActionProposal, ProposalState
 from wolf_server.guardrails.limits import DEFAULT_LIMITS
 from wolf_server.organization.context import OrganizationContext
+from wolf_server.tools.active_blocks import ListActiveBlocksInput, ListActiveBlocksTool
 from wolf_server.tools.base import ToolExecContext
 from wolf_server.tools.propose_active_response import (
     ProposeActiveResponseInput,
@@ -79,6 +81,223 @@ def _exec_ctx(
 
 _ALLOW = {ACTION_ACTIVE_RESPONSE: {"agent:id:*": "allow"}}
 _ALLOW_BY_GROUP = {ACTION_ACTIVE_RESPONSE: {"agent:group:acme": "allow"}}
+
+
+async def _seed_block(
+    db: AsyncSession,
+    ctx: OrganizationContext,
+    *,
+    srcip: str | None = None,
+    username: str | None = None,
+    command: str = "firewall-drop",
+    rationale: str = "brute-force auth (rule 5710)",
+    agent_id: str = "001",
+    alert_ids: list[str] | None = None,
+    state: ProposalState = ProposalState.succeeded,
+) -> ActionProposal:
+    """Insert a (succeeded) block proposal so the reversal path has a ledger row
+    to recall + link (ADR 0028)."""
+    now = datetime.now(UTC)
+    params: dict[str, Any] = {
+        "intent": "block_ip" if srcip else "disable_user",
+        "agent_os": "Ubuntu 22.04",
+    }
+    if srcip:
+        params["srcip"] = srcip
+    if username:
+        params["username"] = username
+    block = ActionProposal(
+        organization_id=ctx.organization_id,
+        action_class="active_response",
+        target={"agent_id": agent_id},
+        action=command,
+        parameters=params,
+        rationale=rationale,
+        evidence={"alert_ids": alert_ids or []},
+        expected_effect="block",
+        rollback_plan=None,
+        severity="high",
+        requested_by=ctx.user_id,
+        content_hash="0" * 64,
+        state=state,
+        executed_at=now,
+        created_at=now,
+        expires_at=now,
+    )
+    db.add(block)
+    await db.flush()
+    return block
+
+
+@pytest.mark.asyncio
+async def test_propose_unblock_recalls_and_links_the_block(
+    db: AsyncSession, seed_organization_and_user: dict[str, Any]
+) -> None:
+    """unblock_ip finds the active block, recalls its reason/evidence, links the
+    reversal, and stamps the block (ADR 0028 provenance recall)."""
+    ctx = _ctx(seed_organization_and_user)
+    block = await _seed_block(db, ctx, srcip="203.0.113.7", alert_ids=["a1", "a2"])
+    tool = ProposeActiveResponseTool()
+    out = await tool.run(
+        _exec_ctx(db, ctx, _ALLOW),
+        ProposeActiveResponseInput(agent_id="001", intent="unblock_ip", srcip="203.0.113.7"),
+    )
+    assert out.permitted is True
+    assert "brute-force auth" in out.summary  # recalled reason surfaced to the user
+    reversal = (
+        await db.execute(
+            select(ActionProposal).where(ActionProposal.reverses_proposal_id == block.id)
+        )
+    ).scalar_one()
+    assert reversal.action == "firewall-drop"  # the same command the block used
+    assert reversal.parameters.get("reversal") is True
+    assert reversal.evidence.get("original_rationale") == block.rationale
+    await db.refresh(block)
+    assert block.reversal_proposal_id == reversal.id  # block stamped, won't double-fire
+
+
+@pytest.mark.asyncio
+async def test_propose_unblock_reverses_the_exact_block_command(
+    db: AsyncSession, seed_organization_and_user: dict[str, Any]
+) -> None:
+    """If the block used host-deny (not the OS default), the unblock reverses
+    host-deny — the undo matches what was actually done."""
+    ctx = _ctx(seed_organization_and_user)
+    block = await _seed_block(db, ctx, srcip="198.51.100.9", command="host-deny")
+    tool = ProposeActiveResponseTool()
+    out = await tool.run(
+        _exec_ctx(db, ctx, _ALLOW),
+        ProposeActiveResponseInput(agent_id="001", intent="unblock_ip", srcip="198.51.100.9"),
+    )
+    assert out.permitted is True
+    reversal = (
+        await db.execute(
+            select(ActionProposal).where(ActionProposal.reverses_proposal_id == block.id)
+        )
+    ).scalar_one()
+    assert reversal.action == "host-deny"
+    assert reversal.parameters.get("reversal") is True
+
+
+@pytest.mark.asyncio
+async def test_propose_unblock_refused_when_no_block_on_record(
+    db: AsyncSession, seed_organization_and_user: dict[str, Any]
+) -> None:
+    ctx = _ctx(seed_organization_and_user)
+    tool = ProposeActiveResponseTool()
+    out = await tool.run(
+        _exec_ctx(db, ctx, _ALLOW),
+        ProposeActiveResponseInput(agent_id="001", intent="unblock_ip", srcip="203.0.113.7"),
+    )
+    assert out.permitted is False
+    assert out.state == "rejected"
+    assert "no record" in out.detail.lower() or "no matching" in out.summary.lower()
+
+
+@pytest.mark.asyncio
+async def test_propose_unblock_refuses_a_method(
+    db: AsyncSession, seed_organization_and_user: dict[str, Any]
+) -> None:
+    ctx = _ctx(seed_organization_and_user)
+    await _seed_block(db, ctx, srcip="203.0.113.7")
+    tool = ProposeActiveResponseTool()
+    out = await tool.run(
+        _exec_ctx(db, ctx, _ALLOW),
+        ProposeActiveResponseInput(
+            agent_id="001", intent="unblock_ip", srcip="203.0.113.7", method="host-deny"
+        ),
+    )
+    assert out.permitted is False
+    assert "method" in out.detail.lower()
+
+
+@pytest.mark.asyncio
+async def test_propose_block_surfaces_existing_block_as_dedup_context(
+    db: AsyncSession, seed_organization_and_user: dict[str, Any]
+) -> None:
+    ctx = _ctx(seed_organization_and_user)
+    await _seed_block(db, ctx, srcip="203.0.113.7", rationale="prior scan")
+    tool = ProposeActiveResponseTool()
+    out = await tool.run(
+        _exec_ctx(db, ctx, _ALLOW),
+        ProposeActiveResponseInput(
+            agent_id="001", intent="block_ip", srcip="203.0.113.7", rationale="again"
+        ),
+    )
+    assert out.permitted is True  # not silently blocked, but...
+    assert "already has an active block" in out.summary  # ...surfaced as context
+
+
+@pytest.mark.asyncio
+async def test_propose_timed_block_records_duration_seconds(
+    db: AsyncSession, seed_organization_and_user: dict[str, Any]
+) -> None:
+    ctx = _ctx(seed_organization_and_user)
+    tool = ProposeActiveResponseTool()
+    out = await tool.run(
+        _exec_ctx(db, ctx, _ALLOW),
+        ProposeActiveResponseInput(
+            agent_id="001", intent="block_ip", srcip="203.0.113.7",
+            block_duration="1h", rationale="x",
+        ),
+    )
+    assert out.permitted is True
+    proposal = (
+        await db.execute(
+            select(ActionProposal).where(ActionProposal.organization_id == ctx.organization_id)
+        )
+    ).scalar_one()
+    assert proposal.parameters.get("block_duration_seconds") == 3600
+
+
+@pytest.mark.asyncio
+async def test_propose_duration_refused_on_non_reversible_restart(
+    db: AsyncSession, seed_organization_and_user: dict[str, Any]
+) -> None:
+    ctx = _ctx(seed_organization_and_user)
+    tool = ProposeActiveResponseTool()
+    out = await tool.run(
+        _exec_ctx(db, ctx, _ALLOW),
+        ProposeActiveResponseInput(
+            agent_id="001", intent="restart", block_duration="1h", rationale="x"
+        ),
+    )
+    assert out.permitted is False
+    assert "not reversible" in out.detail.lower()
+
+
+@pytest.mark.asyncio
+async def test_propose_invalid_duration_refused(
+    db: AsyncSession, seed_organization_and_user: dict[str, Any]
+) -> None:
+    ctx = _ctx(seed_organization_and_user)
+    tool = ProposeActiveResponseTool()
+    out = await tool.run(
+        _exec_ctx(db, ctx, _ALLOW),
+        ProposeActiveResponseInput(
+            agent_id="001", intent="block_ip", srcip="203.0.113.7",
+            block_duration="soon", rationale="x",
+        ),
+    )
+    assert out.permitted is False
+    assert "duration" in out.detail.lower()
+
+
+@pytest.mark.asyncio
+async def test_list_active_blocks_tool_surfaces_ledger_with_reason(
+    db: AsyncSession, seed_organization_and_user: dict[str, Any]
+) -> None:
+    """The read tool reports Wolf's dispatch ledger (IP, agent, reason) with an
+    honest 'not a live host check' note (ADR 0028)."""
+    ctx = _ctx(seed_organization_and_user)
+    await _seed_block(db, ctx, srcip="203.0.113.7", rationale="brute-force auth")
+    out = await ListActiveBlocksTool().run(_exec_ctx(db, ctx, _ALLOW), ListActiveBlocksInput())
+    assert len(out.blocks) == 1
+    block = out.blocks[0]
+    assert block.target == "203.0.113.7"
+    assert block.target_kind == "srcip"
+    assert block.reason == "brute-force auth"
+    assert "not a live host" in out.note.lower()
 
 
 @pytest.mark.asyncio

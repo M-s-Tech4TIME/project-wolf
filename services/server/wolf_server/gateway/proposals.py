@@ -12,6 +12,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from wolf_server.audit.log import write_event
@@ -80,8 +81,13 @@ def compute_content_hash(
     rollback_plan: str | None,
     severity: str,
     requested_by: uuid.UUID,
+    reverses_proposal_id: uuid.UUID | None = None,
 ) -> str:
-    """SHA-256 over the proposal's immutable substance (canonical JSON)."""
+    """SHA-256 over the proposal's immutable substance (canonical JSON).
+
+    ``reverses_proposal_id`` is part of the substance for a reversal: the
+    approver approves *which* block is being undone (ADR 0028).
+    """
     payload = {
         "organization_id": str(organization_id),
         "action_class": action_class,
@@ -93,6 +99,7 @@ def compute_content_hash(
         "rollback_plan": rollback_plan,
         "severity": severity,
         "requested_by": str(requested_by),
+        "reverses_proposal_id": str(reverses_proposal_id) if reverses_proposal_id else None,
     }
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
@@ -111,6 +118,7 @@ def recompute_content_hash(proposal: ActionProposal) -> str:
         rollback_plan=proposal.rollback_plan,
         severity=proposal.severity,
         requested_by=proposal.requested_by,
+        reverses_proposal_id=proposal.reverses_proposal_id,
     )
 
 
@@ -136,6 +144,7 @@ async def create_proposal(
     evidence: dict[str, Any] | None = None,
     parameters: dict[str, Any] | None = None,
     rollback_plan: str | None = None,
+    reverses_proposal_id: uuid.UUID | None = None,
     ttl_seconds: int = DEFAULT_TTL_SECONDS,
     session_id: str | None = None,
 ) -> ActionProposal:
@@ -159,6 +168,7 @@ async def create_proposal(
         rollback_plan=rollback_plan,
         severity=severity,
         requested_by=requested_by,
+        reverses_proposal_id=reverses_proposal_id,
     )
     now = datetime.now(UTC)
     proposal = ActionProposal(
@@ -174,6 +184,7 @@ async def create_proposal(
         severity=severity,
         requested_by=requested_by,
         content_hash=content_hash,
+        reverses_proposal_id=reverses_proposal_id,
         state=ProposalState.pending,
         created_at=now,
         expires_at=now + timedelta(seconds=ttl_seconds),
@@ -195,6 +206,131 @@ async def create_proposal(
             "target": target,
             "content_hash": content_hash,
             "state": ProposalState.pending.value,
+            "reverses_proposal_id": (
+                str(reverses_proposal_id) if reverses_proposal_id else None
+            ),
         },
     )
     return proposal
+
+
+def stamp_auto_unblock_at(proposal: ActionProposal, *, now: datetime | None = None) -> None:
+    """For a just-succeeded TIMED block, set ``auto_unblock_at`` so the reversal
+    sweep (6-d.3) picks it up (ADR 0028).  No-op when the block carries no
+    ``block_duration_seconds`` (an indefinite block has no automatic reversal).
+    """
+    params = proposal.parameters if isinstance(proposal.parameters, dict) else {}
+    duration = params.get("block_duration_seconds")
+    if not isinstance(duration, int) or duration <= 0:
+        return
+    base = proposal.executed_at or now or datetime.now(UTC)
+    if base.tzinfo is None:
+        base = base.replace(tzinfo=UTC)
+    proposal.auto_unblock_at = base + timedelta(seconds=duration)
+
+
+async def find_active_block(
+    db: AsyncSession,
+    *,
+    organization_id: uuid.UUID,
+    action_class: str,
+    agent_id: str,
+    srcip: str | None = None,
+    username: str | None = None,
+) -> ActionProposal | None:
+    """The most-recent *succeeded, not-yet-reversed* block on this org's ledger
+    for the given agent + target (ADR 0028 provenance recall).
+
+    "Not yet reversed" = ``reversal_proposal_id IS NULL`` AND state still
+    ``succeeded`` (a ``rolled_back`` block was physically removed).  This is
+    Wolf's record of what it *dispatched*, not live host state — host truth
+    arrives with wolf-pack.
+    """
+    stmt = (
+        select(ActionProposal)
+        .where(
+            ActionProposal.organization_id == organization_id,
+            ActionProposal.action_class == action_class,
+            ActionProposal.state == ProposalState.succeeded,
+            ActionProposal.reverses_proposal_id.is_(None),  # a block, not a reversal
+            ActionProposal.reversal_proposal_id.is_(None),  # not already reversed
+        )
+        .order_by(ActionProposal.executed_at.desc(), ActionProposal.created_at.desc())
+    )
+    rows = (await db.execute(stmt)).scalars().all()
+    for row in rows:
+        params = row.parameters if isinstance(row.parameters, dict) else {}
+        if str(row.target.get("agent_id", "")) != agent_id:
+            continue
+        if srcip is not None and params.get("srcip") == srcip:
+            return row
+        if username is not None and params.get("username") == username:
+            return row
+    return None
+
+
+async def list_active_blocks(
+    db: AsyncSession,
+    *,
+    organization_id: uuid.UUID,
+    action_class: str = "active_response",
+    limit: int = 200,
+) -> list[ActionProposal]:
+    """This org's *succeeded, not-yet-reversed* blocks — Wolf's dispatch ledger
+    (ADR 0028).  Newest first.  NOT live host state (that arrives with wolf-pack)."""
+    stmt = (
+        select(ActionProposal)
+        .where(
+            ActionProposal.organization_id == organization_id,
+            ActionProposal.action_class == action_class,
+            ActionProposal.state == ProposalState.succeeded,
+            ActionProposal.reverses_proposal_id.is_(None),
+            ActionProposal.reversal_proposal_id.is_(None),
+        )
+        .order_by(ActionProposal.executed_at.desc(), ActionProposal.created_at.desc())
+        .limit(limit)
+    )
+    return list((await db.execute(stmt)).scalars().all())
+
+
+async def create_reversal_proposal(
+    db: AsyncSession,
+    block: ActionProposal,
+    *,
+    requested_by: uuid.UUID,
+    action: str,
+    parameters: dict[str, Any],
+    rationale: str,
+    expected_effect: str,
+    evidence: dict[str, Any] | None = None,
+    ttl_seconds: int = DEFAULT_TTL_SECONDS,
+    session_id: str | None = None,
+) -> ActionProposal:
+    """Create a reversal proposal linked to ``block`` and stamp the block so it
+    is not reversed twice / swept again (ADR 0028).
+
+    The reversal inherits the block's org + action_class + target; the caller
+    supplies the resolved command (same as the block's, delete-inverse) and the
+    parameters (with ``reversal=True``).
+    """
+    reversal = await create_proposal(
+        db,
+        organization_id=block.organization_id,
+        requested_by=requested_by,
+        action_class=block.action_class,
+        target=block.target,
+        action=action,
+        parameters=parameters,
+        rationale=rationale,
+        expected_effect=expected_effect,
+        evidence=evidence,
+        reverses_proposal_id=block.id,
+        ttl_seconds=ttl_seconds,
+        session_id=session_id,
+    )
+    # Stamp the block so the sweep won't re-fire and the GUI shows it as
+    # reversal-authorised. The block stays ``succeeded`` (still in effect) until
+    # wolf-pack confirms the physical removal and flips it to ``rolled_back``.
+    block.reversal_proposal_id = reversal.id
+    await db.flush()
+    return reversal

@@ -30,6 +30,13 @@ from wolf_server.database import get_db
 from wolf_server.gateway.approval import approve_proposal, reject_proposal
 from wolf_server.gateway.execution import execute_proposal
 from wolf_server.gateway.models import ActionProposal, ProposalState
+from wolf_server.gateway.proposals import stamp_auto_unblock_at
+from wolf_server.gateway.reversal import (
+    is_reversal,
+    reversal_freshness,
+    reversal_perform,
+    reversal_verify,
+)
 from wolf_server.organization.context import OrganizationContext
 from wolf_server.organization.rbac import Capability, require_capability
 from wolf_server.secrets_factory import get_secrets_backend
@@ -63,6 +70,10 @@ class ProposalOut(BaseModel):
     result: dict[str, Any] | None
     created_at: datetime
     expires_at: datetime
+    # Reversal linkage (slice 6-d, ADR 0028) — for the /actions surface.
+    reverses_proposal_id: str | None
+    reversal_proposal_id: str | None
+    auto_unblock_at: datetime | None
 
     @classmethod
     def from_row(cls, p: ActionProposal) -> "ProposalOut":
@@ -85,6 +96,13 @@ class ProposalOut(BaseModel):
             result=p.result,
             created_at=p.created_at,
             expires_at=p.expires_at,
+            reverses_proposal_id=(
+                str(p.reverses_proposal_id) if p.reverses_proposal_id else None
+            ),
+            reversal_proposal_id=(
+                str(p.reversal_proposal_id) if p.reversal_proposal_id else None
+            ),
+            auto_unblock_at=p.auto_unblock_at,
         )
 
 
@@ -188,7 +206,31 @@ async def approve(
         await db.commit()  # persist any audit / expiry the approval path recorded
         raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
 
-    # 2. Execute — freshness → bounded write → verification, via the per-org creds.
+    # 2a. Reversal proposals (unblock / re-enable) can't run through the API —
+    #     execd always dispatches `add`, never `delete` (ADR 0028). Under Option A
+    #     the reversal is authorised + recorded here; the physical host removal is
+    #     wolf-pack-bound. No Wazuh write client is opened for this path.
+    if is_reversal(proposal):
+        async def _rev_freshness(p: ActionProposal) -> tuple[bool, str]:
+            return await reversal_freshness(db, p)
+
+        try:
+            await execute_proposal(
+                db,
+                proposal,
+                freshness=_rev_freshness,
+                perform=reversal_perform,
+                verify=reversal_verify,
+                executor_user_id=ctx.user_id,
+                session_id=ctx.session_id,
+            )
+        except WolfError as exc:
+            await db.commit()
+            raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
+        await db.commit()
+        return ProposalOut.from_row(proposal)
+
+    # 2b. Forward action — freshness → bounded write → verification, per-org creds.
     secrets = get_secrets_backend(_settings)
     connection = await get_wazuh_connection(ctx, db, secrets)
     try:
@@ -246,6 +288,10 @@ async def approve(
     except WolfError as exc:
         await db.commit()  # persist the stale/mismatch audit + state change
         raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
+
+    # A succeeded TIMED block arms its automatic reversal (ADR 0028, 6-d.3 sweep).
+    if proposal.state == ProposalState.succeeded:
+        stamp_auto_unblock_at(proposal)
 
     await db.commit()
     return ProposalOut.from_row(proposal)

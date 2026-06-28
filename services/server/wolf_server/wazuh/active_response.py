@@ -165,6 +165,31 @@ INTENT_BLOCK_IP = "block_ip"
 INTENT_DISABLE_USER = "disable_user"
 INTENT_RESTART = "restart"
 
+# Reverse intents (slice 6-d, ADR 0028) — *undo* a prior enforcement action.
+# A reverse intent resolves to the SAME platform command as its forward intent
+# (the undo is that command's delete-inverse, `ARCommand.reverses_via`); the
+# proposal carries `reversal=True` so execution + the GUI know it's the inverse.
+INTENT_UNBLOCK_IP = "unblock_ip"
+INTENT_ENABLE_USER = "enable_user"
+
+# Per-OS command maps, named so the reverse intents reuse them verbatim (the undo
+# runs the same command on the same platform).
+_BLOCK_IP_COMMANDS: dict[str, str] = {
+    OS_LINUX: "firewall-drop",
+    OS_WINDOWS: "netsh",
+    OS_MACOS: "pf",  # ≥ 10.7 (Lion); ipfw on ≤ 10.6 via the version gate
+    OS_FREEBSD: "pf",  # ≥ 5.3; ipfw on < 5.3 via the version gate
+    OS_OPENBSD: "pf",  # pf is native to OpenBSD
+    OS_NETBSD: "npf",  # NetBSD's native filter
+    OS_OPNSENSE: "opnsense-fw",  # appliance — stock pf doesn't apply (ADR 0027 §4)
+}
+_DISABLE_USER_COMMANDS: dict[str, str] = {
+    # No default disable-account AR ships for Windows / BSD appliances — left
+    # unmapped so disable_user there is refused with a clear reason.
+    OS_LINUX: "disable-account",
+    OS_MACOS: "disable-account",
+}
+
 # Per-intent command selection.  A **string** value is OS-agnostic (the same
 # command on every platform — restart).  A **dict** value is OS-SPECIFIC: only
 # the listed OS classes are supported, and a resolved OS is REQUIRED (Wolf will
@@ -176,31 +201,31 @@ INTENT_RESTART = "restart"
 # test_active_response (the catalog stays the source of truth).
 _INTENT_COMMANDS: dict[str, str | dict[str, str]] = {
     INTENT_RESTART: "restart-wazuh",  # OS-agnostic — runs on every platform
-    INTENT_BLOCK_IP: {
-        OS_LINUX: "firewall-drop",
-        OS_WINDOWS: "netsh",
-        OS_MACOS: "pf",  # ≥ 10.7 (Lion); ipfw on ≤ 10.6 via the version gate
-        OS_FREEBSD: "pf",  # ≥ 5.3; ipfw on < 5.3 via the version gate
-        OS_OPENBSD: "pf",  # pf is native to OpenBSD
-        OS_NETBSD: "npf",  # NetBSD's native filter
-        OS_OPNSENSE: "opnsense-fw",  # appliance — stock pf doesn't apply (ADR 0027 §4)
-    },
-    INTENT_DISABLE_USER: {
-        # No default disable-account AR ships for Windows / BSD appliances — left
-        # unmapped so disable_user there is refused with a clear reason.
-        OS_LINUX: "disable-account",
-        OS_MACOS: "disable-account",
-    },
+    INTENT_BLOCK_IP: _BLOCK_IP_COMMANDS,
+    INTENT_DISABLE_USER: _DISABLE_USER_COMMANDS,
+    # Reverse intents — same command, delete-inverse semantics (ADR 0028).
+    INTENT_UNBLOCK_IP: _BLOCK_IP_COMMANDS,
+    INTENT_ENABLE_USER: _DISABLE_USER_COMMANDS,
 }
 
 # The intents the propose tool exposes to the model (source of truth = the table).
 AR_INTENTS = frozenset(_INTENT_COMMANDS)
+
+# A reverse intent and the forward intent it undoes (ADR 0028). Used to recall the
+# active block when an undo is requested (the block's intent is the forward one).
+REVERSE_TO_FORWARD: dict[str, str] = {
+    INTENT_UNBLOCK_IP: INTENT_BLOCK_IP,
+    INTENT_ENABLE_USER: INTENT_DISABLE_USER,
+}
+REVERSE_INTENTS = frozenset(REVERSE_TO_FORWARD)
 
 # Human-readable phrasing for the approver-facing summary / expected-effect.
 INTENT_LABELS: dict[str, str] = {
     INTENT_BLOCK_IP: "Block source IP",
     INTENT_DISABLE_USER: "Disable account",
     INTENT_RESTART: "Restart the Wazuh agent",
+    INTENT_UNBLOCK_IP: "Unblock source IP",
+    INTENT_ENABLE_USER: "Re-enable account",
 }
 
 # The target kind each intent acts on — used to validate a `method` override is
@@ -209,6 +234,8 @@ INTENT_TARGETS: dict[str, str] = {
     INTENT_BLOCK_IP: TARGET_SRCIP,
     INTENT_DISABLE_USER: TARGET_USERNAME,
     INTENT_RESTART: TARGET_NONE,
+    INTENT_UNBLOCK_IP: TARGET_SRCIP,
+    INTENT_ENABLE_USER: TARGET_USERNAME,
 }
 
 
@@ -357,6 +384,44 @@ def is_valid_ip(value: str) -> bool:
         return True
     except ValueError:
         return False
+
+
+# Bounds for a timed block's duration (slice 6-d). A block shorter than a minute
+# is pointless (the auto-reversal sweep runs ~per-minute); a block longer than a
+# month should be re-evaluated, not silently held by a timer.
+MIN_BLOCK_DURATION_SECONDS = 60
+MAX_BLOCK_DURATION_SECONDS = 30 * 24 * 60 * 60  # 30 days
+
+_DURATION_UNITS = {"s": 1, "m": 60, "h": 3600, "d": 86400}
+_DURATION_RE = re.compile(r"^\s*(\d+)\s*([smhd]?)\s*$", re.IGNORECASE)
+
+
+def parse_duration(text: str) -> int:
+    """Parse a human block duration ("30m", "1h", "2d", "45s", or bare seconds)
+    into a bounded number of seconds (slice 6-d, timed blocks).
+
+    Raises :class:`ValueError` with a guided message on an unparseable value or
+    one outside [MIN, MAX] — the propose tool surfaces it as a refusal so a bad
+    duration never reaches the queue.
+    """
+    m = _DURATION_RE.match(text or "")
+    if not m:
+        raise ValueError(
+            f"Could not parse a block duration from {text!r}. Use a number with an "
+            "optional unit: '45s', '30m', '1h', '2d' (bare numbers are seconds)."
+        )
+    value = int(m.group(1)) * _DURATION_UNITS[(m.group(2) or "s").lower()]
+    if value < MIN_BLOCK_DURATION_SECONDS:
+        raise ValueError(
+            f"Block duration {text!r} is too short — the minimum is "
+            f"{MIN_BLOCK_DURATION_SECONDS}s (1 minute)."
+        )
+    if value > MAX_BLOCK_DURATION_SECONDS:
+        raise ValueError(
+            f"Block duration {text!r} exceeds the maximum of 30 days. For a longer "
+            "block, propose an indefinite block (no duration) and reverse it later."
+        )
+    return value
 
 
 def classify_os(*signals: str | None) -> str | None:

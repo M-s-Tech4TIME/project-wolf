@@ -327,10 +327,11 @@ physical undo runs on the host = **wolf-pack (Phase 12)**; Wazuh's native timed
 reversal is config-side/fixed → arbitrary-duration auto-unblock is **Wolf-owned**.
   - **6-d.1** ✅ (this commit) — ADR 0028 + `ARCommand.reversible` /
     `reverses_via` (the matrix) + reference §4b + catalog tests.
-  - **6-d.2** ⏳ migration 0016 (reverse linkage + `auto_unblock_at`) + reverse
-    intents (`unblock_ip` / `enable_user`) + provenance recall (block's
-    reason+evidence resurfaced at unblock / re-block) + `list_active_blocks` +
-    wolf-pack-bound reversal `perform` (no fake host success).
+  - **6-d.2** ✅ (this commit) — migration 0016 (reverse linkage +
+    `auto_unblock_at`) + reverse intents (`unblock_ip` / `enable_user`) +
+    provenance recall (block's reason+evidence resurfaced at unblock / re-block,
+    dedup on re-block) + `list_active_blocks` read tool + wolf-pack-bound reversal
+    `perform` (no fake host success) + `block_duration` parse + prompt #4.
   - **6-d.3** ⏳ Wolf-owned timed auto-reversal scheduler (lifespan sweep, atomic
     claim, system-initiated + pre-consented by the timed-block approval).
   - **6-d.4** ⏳ `/actions` GUI + chat surfacing + web-test checkpoint.

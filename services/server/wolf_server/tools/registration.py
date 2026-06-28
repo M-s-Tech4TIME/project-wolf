@@ -6,6 +6,7 @@ not be called twice — the registries raise on duplicate registration.
 
 import structlog
 
+from wolf_server.tools.active_blocks import ListActiveBlocksTool
 from wolf_server.tools.agents import GetAgentDetailTool, ListAgentsTool
 from wolf_server.tools.alerts import (
     AggregateAlertsTool,
@@ -40,6 +41,7 @@ def register_all_read_tools() -> None:
         GetRuleDefinitionTool(),
         GetClusterHealthTool(),
         QueryRunbookTool(),
+        ListActiveBlocksTool(),
     ]
     for tool in tools:
         runtime_registry.register(tool)

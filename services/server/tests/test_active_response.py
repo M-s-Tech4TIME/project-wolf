@@ -8,13 +8,17 @@ command (run it now), and the result interpreter must treat HTTP-200-with-
 failed_items as a failure.
 """
 
+import pytest
 from wolf_server.wazuh.active_response import (
     _INTENT_COMMANDS,
     AR_COMMANDS,
     AR_INTENTS,
     INTENT_BLOCK_IP,
     INTENT_DISABLE_USER,
+    INTENT_ENABLE_USER,
     INTENT_RESTART,
+    INTENT_TARGETS,
+    INTENT_UNBLOCK_IP,
     OS_FREEBSD,
     OS_LINUX,
     OS_MACOS,
@@ -22,6 +26,8 @@ from wolf_server.wazuh.active_response import (
     OS_OPENBSD,
     OS_OPNSENSE,
     OS_WINDOWS,
+    REVERSE_INTENTS,
+    REVERSE_TO_FORWARD,
     SEV_HIGH,
     SEV_LOW,
     SEV_MEDIUM,
@@ -30,6 +36,7 @@ from wolf_server.wazuh.active_response import (
     get_ar_command,
     interpret_ar_result,
     is_valid_ip,
+    parse_duration,
     resolve_intent_command,
     resolve_method_command,
 )
@@ -281,3 +288,45 @@ def test_interpret_failure_surfaces_error() -> None:
     assert ok is False
     assert detail["dispatched"] is False
     assert detail["error"] == "Agent does not exist"
+
+
+# ── reverse intents + duration parsing (slice 6-d, ADR 0028) ─────────────────
+
+
+def test_reverse_intents_map_to_their_forward_intent() -> None:
+    assert {INTENT_UNBLOCK_IP, INTENT_ENABLE_USER} == REVERSE_INTENTS
+    assert REVERSE_TO_FORWARD[INTENT_UNBLOCK_IP] == INTENT_BLOCK_IP
+    assert REVERSE_TO_FORWARD[INTENT_ENABLE_USER] == INTENT_DISABLE_USER
+
+
+def test_reverse_intents_are_exposed_and_target_aligned() -> None:
+    # The undo intents are offered to the model and act on the same target kind
+    # as the forward intent they reverse (srcip / username).
+    assert {INTENT_UNBLOCK_IP, INTENT_ENABLE_USER} <= AR_INTENTS
+    for rev, fwd in REVERSE_TO_FORWARD.items():
+        assert INTENT_TARGETS[rev] == INTENT_TARGETS[fwd]
+
+
+def test_reverse_intent_resolves_same_command_as_forward() -> None:
+    # unblock_ip resolves to the SAME platform command as block_ip (its inverse).
+    fwd = resolve_intent_command(INTENT_BLOCK_IP, OS_LINUX)
+    rev = resolve_intent_command(INTENT_UNBLOCK_IP, OS_LINUX)
+    assert rev.ok and rev.command == fwd.command == "firewall-drop"
+
+
+def test_parse_duration_units_and_bare_seconds() -> None:
+    assert parse_duration("90s") == 90
+    assert parse_duration("30m") == 1800
+    assert parse_duration("1h") == 3600
+    assert parse_duration("2d") == 172800
+    assert parse_duration("3600") == 3600  # bare number = seconds
+
+
+def test_parse_duration_rejects_garbage_and_out_of_bounds() -> None:
+    for bad in ("soon", "", "1 week", "-5m"):
+        with pytest.raises(ValueError):
+            parse_duration(bad)
+    with pytest.raises(ValueError):  # below the 60s floor
+        parse_duration("30s")
+    with pytest.raises(ValueError):  # above the 30-day ceiling
+        parse_duration("60d")

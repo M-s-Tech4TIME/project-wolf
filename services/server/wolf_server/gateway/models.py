@@ -72,6 +72,8 @@ class ActionProposal(Base):
     __table_args__ = (
         Index("ix_action_proposals_org_state", "organization_id", "state"),
         Index("ix_action_proposals_org_created", "organization_id", "created_at"),
+        # The timed auto-reversal sweep claims due, not-yet-reversed blocks.
+        Index("ix_action_proposals_auto_unblock", "auto_unblock_at"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=_uuid)
@@ -98,6 +100,12 @@ class ActionProposal(Base):
     severity: Mapped[str] = mapped_column(String(20), nullable=False)
     requested_by: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    # ── Reversal linkage (slice 6-d, ADR 0028) ─────────────────────────────
+    # On a REVERSAL row: the block proposal it undoes (part of the content hash —
+    # the approver approves *which* block is being reversed).
+    reverses_proposal_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), nullable=True
+    )
 
     # ── Lifecycle bookkeeping (mutable) ─────────────────────────────────────
     state: Mapped[str] = mapped_column(String(20), nullable=False, default=ProposalState.pending)
@@ -106,6 +114,17 @@ class ActionProposal(Base):
     executed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Verification-read result / failure detail (recorded at execute time).
     result: Mapped[dict[str, object] | None] = mapped_column(_JSON_TYPE, nullable=True)
+    # On a timed BLOCK row: when its automatic reversal is due (set at
+    # execution-success = executed_at + block_duration). NULL = no auto-reversal.
+    auto_unblock_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # On a BLOCK row: the reversal proposal authorised for it (set when the
+    # reversal is created). Prevents the sweep double-firing + drives the GUI;
+    # the block flips to ``rolled_back`` only when wolf-pack confirms removal.
+    reversal_proposal_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), nullable=True
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_now
