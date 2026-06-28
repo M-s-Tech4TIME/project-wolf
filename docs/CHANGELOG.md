@@ -49,6 +49,24 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-28 — 6-d web-test follow-ups: REASON label + source-agnostic reversal note
+
+Operator web-tested 6-d (block / re-block / timed-block-for-2m all confirmed
+working). Two follow-ups from the review:
+
+- `/actions` card label **"Why" → "Reason"** (`app/actions/page.tsx`) — reads more
+  accurately on the approval card. tsc + eslint clean.
+- ADR 0028 §6 (NEW): **source-agnostic reversal**. Today an undo is ledger-scoped
+  (`find_active_block` only matches Wolf-dispatched blocks), so unblocking an IP
+  blocked *out of band* is honestly refused (no record + no host visibility
+  pre-wolf-pack). Recorded the target: **wolf-pack (Phase 12)** reads the host's
+  real enforcement state, so reversal stops depending on Wolf being the *source* —
+  the "did Wolf block this?" check collapses into a host-state query. Also tracked
+  a model note: the small chat model must reliably pick `unblock_ip` for an undo
+  (a web-test "unblock" was mis-handled as `block_ip` on the pre-restart schema;
+  the reversal machinery itself is proven by the automatic reversal of the timed
+  block) — strengthen tool/prompt guidance; deep-reasoning fine-tune is Phase 7.5.
+
 ## 2026-06-28 — 6-d.4: /actions GUI for reversal + timed blocks (completes 6-d)
 
 The browser surface for 6-d (ADR 0028) — the human reviewer now sees the full

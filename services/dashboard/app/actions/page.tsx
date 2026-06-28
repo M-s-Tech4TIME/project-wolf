@@ -332,7 +332,7 @@ export default function ActionsPage() {
                         </span>
                       </Field>
                     ) : null}
-                    <Field label="Why">{p.rationale}</Field>
+                    <Field label="Reason">{p.rationale}</Field>
                     {p.expected_effect ? (
                       <Field label="Expected effect">{p.expected_effect}</Field>
                     ) : null}

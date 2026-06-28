@@ -138,11 +138,36 @@ claim host-applied block/unblock state. True host-effect verification
 arrive with **wolf-pack (Phase 12)**, which fills the single `perform` seam left
 here.
 
-## 6. Out of scope (tracked)
+## 6. Source-agnostic reversal (out-of-band blocks) — wolf-pack
+
+Today an undo is **ledger-scoped**: `find_active_block` only matches blocks Wolf
+itself dispatched, so unblocking an IP that was blocked **out of band** (by an
+operator at the firewall, another tool, a different SOC workflow) is refused with
+guidance — Wolf has no record AND, pre-wolf-pack, no way to see the host's real
+state. This is the honest behaviour for now (never claim to undo something it
+can't see), but it is a **limitation, not the target**.
+
+**Target (wolf-pack, Phase 12):** Wolf should be able to reverse *any* active
+response on *any* script regardless of who applied it. The wolf-pack daemon on
+each host can read the actual enforcement state (the iptables/pf/netsh/hosts.deny
+entry, the account lock), so reversal stops depending on Wolf being the *source*:
+the provenance check (“did Wolf block this?”) collapses into a **host-state
+query** (“is this IP actually blocked here, and by what?”). The provenance ledger
+(reason/evidence recall) stays valuable *when Wolf does have a record*, but a
+missing record no longer blocks the reversal — Wolf reads ground truth and
+reverses it, recording an honest "block of unknown/out-of-band origin" provenance
+when there's nothing to recall. So 6-d's ledger + linkage is the right model for
+Wolf-originated actions; wolf-pack generalises it to source-agnostic reversal.
+
+## 7. Out of scope (tracked)
 
 - wolf-pack: the physical host `delete`, still-blocked verification, the
-  `succeeded → rolled_back` flip on confirmed removal.
+  `succeeded → rolled_back` flip on confirmed removal, and **source-agnostic
+  reversal** (§6 — reverse any block via host-state query, not Wolf's ledger).
 - A custom inverse-AR-command bridge (real API unblock via a deployed inverse
   script) — belongs with wolf-pack / Phase 6.11 provisioning.
 - The remaining action classes — same pattern, now reversal-aware via §3-D.
 - Scheduler interval as a Phase 6.10 settings consumer (env default for now).
+- **Model intent-selection for undo** — the small chat model must reliably map
+  "unblock X" → the `unblock_ip` intent (not fall back to `block_ip`); strengthen
+  the tool/prompt guidance, and the deep-reasoning fine-tune is Phase 7.5.
