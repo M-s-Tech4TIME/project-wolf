@@ -93,6 +93,69 @@ async def _build_provider(
             raise ModelProviderUnconfiguredError(f"Unknown model provider: {provider_name!r}")
 
 
+# Providers Wolf knows how to build (mirrors the match in _build_provider) and
+# the subset that REQUIRE an API-key reference (ollama is keyless/local).
+_KNOWN_PROVIDERS = frozenset({"anthropic", "openai", "openrouter", "ollama"})
+_KEYED_PROVIDERS = frozenset({"anthropic", "openai", "openrouter"})
+
+
+async def check_model_config(settings: Settings, secrets: SecretsBackend) -> list[str]:
+    """Validate the configured chat + grounding-judge model providers at startup.
+
+    Returns a list of human-readable problems (empty = healthy). Catches the
+    failure modes that otherwise surface only as a per-request HTTP 500 in the
+    chat path — an unknown provider name or an API-key ref that resolves to no
+    secret. The classic cause is a stray inline ``#`` comment on an env value
+    line (systemd ``EnvironmentFile`` keeps it as part of the value), so the
+    hint calls that out. Used by the startup self-check so a broken model config
+    fails LOUDLY at boot instead of silently 500-ing every chat.
+    """
+
+    async def _check(label: str, provider: str, model_id: str, key_ref: str) -> None:
+        name = (provider or "").strip().lower()
+        if name not in _KNOWN_PROVIDERS:
+            problems.append(
+                f"{label}: unknown provider {provider!r} (known: "
+                f"{', '.join(sorted(_KNOWN_PROVIDERS))}). A stray inline '#' comment on the "
+                "env value line is the usual cause (systemd keeps it in the value)."
+            )
+            return
+        if name in _KEYED_PROVIDERS:
+            if not key_ref:
+                problems.append(
+                    f"{label}: provider {name!r} (model {model_id!r}) needs an API-key ref "
+                    "but none is configured."
+                )
+                return
+            try:
+                secret = await secrets.get(key_ref)
+            except Exception as exc:  # noqa: BLE001 — report, never crash the check
+                problems.append(f"{label}: error resolving API-key ref {key_ref!r}: {exc}")
+                return
+            if secret is None:
+                problems.append(
+                    f"{label}: API-key ref {key_ref!r} did not resolve to a secret — store it "
+                    "via `python -m wolf_server.management.set_secret`, and check the env value "
+                    "has no inline '#' comment."
+                )
+
+    problems: list[str] = []
+    await _check(
+        "chat model",
+        settings.default_model_provider,
+        settings.default_model_id,
+        settings.default_model_api_key_ref,
+    )
+    if settings.grounding_judge_model_id:
+        await _check(
+            "grounding judge",
+            settings.grounding_judge_model_provider or settings.default_model_provider,
+            settings.grounding_judge_model_id,
+            settings.grounding_judge_api_key_ref or settings.default_model_api_key_ref,
+        )
+    return problems
+
+
 async def get_model_for_organization(
     _ctx: OrganizationContext,
     settings: Settings,

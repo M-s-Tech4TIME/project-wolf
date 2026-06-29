@@ -194,3 +194,94 @@ def test_openai_adapter_still_defaults_to_openai_provider() -> None:
     # too) — renaming it to "openrouter" would be inaccurate (ADR 0030).
     adapter = OpenAIAdapter(api_key="k", model_id="gpt-4o")
     assert adapter.capability().provider == "openai"
+
+
+# ── startup model-config self-check (stability hardening) ─────────────────────
+
+
+class _Settings:
+    """Minimal stand-in for the model-config fields check_model_config reads."""
+
+    def __init__(self, **kw: object) -> None:
+        self.default_model_provider = kw.get("default_model_provider", "ollama")
+        self.default_model_id = kw.get("default_model_id", "qwen3:8b")
+        self.default_model_api_key_ref = kw.get("default_model_api_key_ref", "")
+        self.grounding_judge_model_id = kw.get("grounding_judge_model_id", "")
+        self.grounding_judge_model_provider = kw.get("grounding_judge_model_provider", "")
+        self.grounding_judge_api_key_ref = kw.get("grounding_judge_api_key_ref", "")
+
+
+class _Secrets:
+    def __init__(self, present: set[str]) -> None:
+        self._present = present
+
+    async def get(self, key: str) -> str | None:
+        return "secret" if key in self._present else None
+
+
+@pytest.mark.asyncio
+async def test_config_check_passes_for_local_ollama() -> None:
+    from wolf_server.agent.model_resolver import check_model_config
+
+    problems = await check_model_config(_Settings(), _Secrets(set()))  # type: ignore[arg-type]
+    assert problems == []
+
+
+@pytest.mark.asyncio
+async def test_config_check_passes_for_openrouter_with_resolvable_key() -> None:
+    from wolf_server.agent.model_resolver import check_model_config
+
+    settings = _Settings(
+        default_model_provider="openrouter",
+        default_model_id="openrouter/owl-alpha",
+        default_model_api_key_ref="model.openrouter.api_key",
+    )
+    problems = await check_model_config(
+        settings,  # type: ignore[arg-type]
+        _Secrets({"model.openrouter.api_key"}),
+    )
+    assert problems == []
+
+
+@pytest.mark.asyncio
+async def test_config_check_flags_inline_comment_corruption() -> None:
+    # The exact bug class: a stray inline '#' comment leaks into the value, so
+    # the provider name is unknown AND the key ref doesn't resolve.
+    from wolf_server.agent.model_resolver import check_model_config
+
+    settings = _Settings(
+        default_model_provider="openrouter  # OPENROUTER TEST",
+        default_model_api_key_ref="model.openrouter.api_key  # revert: empty",
+    )
+    problems = await check_model_config(settings, _Secrets(set()))  # type: ignore[arg-type]
+    assert len(problems) == 1
+    assert "unknown provider" in problems[0]
+
+
+@pytest.mark.asyncio
+async def test_config_check_flags_unresolvable_key() -> None:
+    from wolf_server.agent.model_resolver import check_model_config
+
+    settings = _Settings(
+        default_model_provider="openrouter",
+        default_model_api_key_ref="model.openrouter.api_key",
+    )
+    problems = await check_model_config(settings, _Secrets(set()))  # type: ignore[arg-type]
+    assert len(problems) == 1
+    assert "did not resolve" in problems[0]
+
+
+@pytest.mark.asyncio
+async def test_config_check_validates_judge_independently() -> None:
+    from wolf_server.agent.model_resolver import check_model_config
+
+    settings = _Settings(
+        default_model_provider="ollama",
+        default_model_id="qwen3:8b",
+        grounding_judge_model_id="openrouter/owl-alpha",
+        grounding_judge_model_provider="openrouter",
+        grounding_judge_api_key_ref="missing.key",
+    )
+    problems = await check_model_config(settings, _Secrets(set()))  # type: ignore[arg-type]
+    assert len(problems) == 1
+    assert problems[0].startswith("grounding judge")

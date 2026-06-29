@@ -62,6 +62,31 @@ async def lifespan(app: FastAPI) -> Any:  # noqa: ANN401
     register_all_read_tools()
     register_all_propose_tools()
 
+    # Model-config self-check (stability): validate the configured chat +
+    # grounding-judge providers now so a malformed model config (unknown
+    # provider, or an API-key ref that resolves to no secret — classically a
+    # stray inline '#' comment on a systemd EnvironmentFile value line) fails
+    # LOUDLY at boot instead of silently 500-ing every chat request.
+    from wolf_server.agent.model_resolver import check_model_config  # noqa: PLC0415
+    from wolf_server.secrets_factory import get_secrets_backend  # noqa: PLC0415
+
+    _model_problems = await check_model_config(_settings, get_secrets_backend(_settings))
+    for _problem in _model_problems:
+        logger.error("model_config_invalid", problem=_problem)
+    if _model_problems:
+        logger.error(
+            "model_config_invalid_summary",
+            count=len(_model_problems),
+            hint="check DEFAULT_MODEL_* / GROUNDING_JUDGE_* env — no inline '#' comments on values",
+        )
+    else:
+        logger.info(
+            "model_config_ok",
+            chat_provider=_settings.default_model_provider,
+            chat_model=_settings.default_model_id,
+            judge_model=_settings.grounding_judge_model_id or "(chat model)",
+        )
+
     # Timed auto-reversal scheduler (slice 6-d.3): the background sweep that
     # reverses a timed block when its window expires. A cheap no-op when no timed
     # blocks are due; disable via AUTO_REVERSAL_ENABLED=0.
