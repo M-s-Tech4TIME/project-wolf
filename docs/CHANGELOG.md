@@ -87,7 +87,10 @@ Changes:
 Tests: `test_openrouter_adapter.py` (8) — stream deltas+done, fragmented tool-call
 accumulation, 429 on both chat + chat_stream, blocking tool-call parse, adapter
 base/headers/provider, factory build, OpenAI keeps its identity. ruff + mypy
---strict clean. NEXT: **OR.2** — OpenRouter embeddings + dimension migration.
+--strict clean. **OR.2 (OpenRouter embeddings) DECIDED AGAINST** (operator,
+2026-06-29): reachable (2048-dim, $0) but the shared free-tier daily cap makes a
+corpus re-embed + per-query embedding impractical — embeddings stay on local
+nomic-embed. The OpenRouter work is complete with OR.1.
 
 ---
 

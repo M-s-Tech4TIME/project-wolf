@@ -1,8 +1,11 @@
 # 0030 — OpenRouter as a selectable model provider (chat + grounding)
 
 **Date:** 2026-06-29
-**Status:** accepted — OR.1 implemented (chat + grounding); OR.2 (embeddings +
-dimension migration) tracked separately below.
+**Status:** accepted — OR.1 implemented (chat + grounding). **OR.2 (embeddings)
+DECIDED AGAINST** (2026-06-29): embeddings stay on local nomic-embed — the
+free-tier daily cap is shared across all OpenRouter calls, so a corpus re-embed +
+per-query embedding is impractical (see §Out of scope). The OpenRouter work is
+complete with OR.1.
 
 ## Context
 
@@ -54,9 +57,15 @@ the org's own OpenRouter key (Phase 6.10).
 
 ## Out of scope / tracked
 
-- **OR.2 — embeddings via OpenRouter:** a new OpenAI-compatible embeddings provider
-  + a **768→2048 pgvector migration + corpus re-embed** (configurable; default stays
-  local nomic-embed). Bigger lift; built as its own slice.
+- **OR.2 — embeddings via OpenRouter: DECIDED AGAINST (2026-06-29).** Technically
+  reachable (the 2048-dim model returns vectors at $0), but the shared free-tier
+  daily cap makes it impractical: a corpus re-embed is one call *per chunk*
+  (hundreds–thousands → blows the ~50/day cap, needs a deposit or many days), and
+  per-query embedding would compete with chat + grounding for the same cap — plus
+  it sends knowledge content off-prem to a logging model and needs a 768→2048
+  pgvector migration. Local nomic-embed (free, uncapped, fast, on-prem, already
+  correct) wins. Embeddings stay local; revisit only if a paid/uncapped embeddings
+  path is adopted.
 - **Per-org provider + key (Phase 6.10):** each org configures its own OpenRouter
   key + model via the synced Superuser/settings surface; this slice is process-wide.
 - True token-by-token streaming depends on the upstream route — some `:free`
