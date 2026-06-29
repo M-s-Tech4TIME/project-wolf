@@ -197,6 +197,17 @@ class Settings(BaseSettings):
     default_model_api_key_ref: str = ""
     ollama_base_url: str = "http://localhost:11434"
     openai_base_url: str = "https://api.openai.com/v1"
+    # OpenRouter (OpenAI-compatible hosted frontier models) — a SELECTABLE
+    # provider (ADR 0030), not the default. To use: set default_model_provider
+    # (and/or grounding_judge_model_provider) = "openrouter", default_model_id =
+    # an OpenRouter slug (e.g. "nvidia/nemotron-3-ultra-550b-a55b:free" or
+    # "openrouter/owl-alpha"), store the API key via the set_secret CLI, and
+    # point *_API_KEY_REF at it. Free models are $0 but share a free-tier DAILY
+    # REQUEST CAP; local Ollama stays the default (free, uncapped, on-prem).
+    # The adapter posts to {base}/v1/chat/completions, so base omits /v1.
+    openrouter_base_url: str = "https://openrouter.ai/api"
+    openrouter_referer: str = "https://github.com/wolf-soc/wolf"  # OpenRouter attribution
+    openrouter_title: str = "Wolf"
 
     # ── Grounding validator (Phase 3 Slice 2B follow-up) ──────────────────
     # The validator can use a model DIFFERENT from the chat model. Default

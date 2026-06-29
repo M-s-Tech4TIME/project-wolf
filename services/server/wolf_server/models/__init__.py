@@ -8,6 +8,7 @@ from wolf_server.models.interface import (
 )
 from wolf_server.models.ollama import OllamaAdapter
 from wolf_server.models.openai import OpenAIAdapter
+from wolf_server.models.openrouter import OpenRouterAdapter
 from wolf_server.models.registry import ToolRegistry, registry
 
 __all__ = [
@@ -16,6 +17,7 @@ __all__ = [
     "ModelProvider",
     "OllamaAdapter",
     "OpenAIAdapter",
+    "OpenRouterAdapter",
     "ToolRegistry",
     "default_descriptor_for",
     "registry",

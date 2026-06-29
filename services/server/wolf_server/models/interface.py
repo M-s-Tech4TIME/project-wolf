@@ -347,6 +347,44 @@ KNOWN_MODELS: dict[str, CapabilityDescriptor] = {
         recommended_strategy=AgentStrategy.frontier,
         license_class=LicenseClass.restricted,
     ),
+    # ─── OpenRouter free frontier models (operator-selected 2026-06-29) ────
+    # Reached via the dedicated `openrouter` provider (model_resolver builds an
+    # OpenAIAdapter at OPENROUTER_BASE_URL with attribution headers + real SSE
+    # streaming). Both are `:free` ($0) but share OpenRouter's free-tier DAILY
+    # REQUEST CAP — fine as a selectable option; local Ollama stays the default
+    # (free + uncapped + on-prem). Capabilities from a live OpenRouter catalog
+    # probe (2026-06-29): both advertise native `tools` + 1M-token context.
+    #
+    # NVIDIA Nemotron-3 Ultra 550B-A55B (MoE, ~55B active). NVIDIA Open Model
+    # License → `restricted` (NOT OSI-open). The :free route exposes tools +
+    # tool_choice but NOT response_format/structured_outputs, so structured
+    # output is `prompt_coaxed` (native tool-calling is what the agent loop
+    # relies on, and that is `full`).
+    "nvidia/nemotron-3-ultra-550b-a55b:free": CapabilityDescriptor(
+        model_id="nvidia/nemotron-3-ultra-550b-a55b:free",
+        provider="openrouter",
+        context_window=1_000_000,
+        native_tool_calling=NativeToolCalling.full,
+        reasoning_tier=ReasoningTier.frontier,
+        structured_output=StructuredOutput.prompt_coaxed,
+        max_safe_autonomous_steps=15,
+        recommended_strategy=AgentStrategy.frontier,
+        license_class=LicenseClass.restricted,
+    ),
+    # OpenRouter `owl-alpha` — a free stealth/preview model (provenance + terms
+    # undisclosed → `proprietary`; may be retired without notice). Advertises
+    # tools + response_format + structured_outputs, so `schema_enforced`.
+    "openrouter/owl-alpha": CapabilityDescriptor(
+        model_id="openrouter/owl-alpha",
+        provider="openrouter",
+        context_window=1_048_576,
+        native_tool_calling=NativeToolCalling.full,
+        reasoning_tier=ReasoningTier.frontier,
+        structured_output=StructuredOutput.schema_enforced,
+        max_safe_autonomous_steps=15,
+        recommended_strategy=AgentStrategy.frontier,
+        license_class=LicenseClass.proprietary,
+    ),
 }
 
 

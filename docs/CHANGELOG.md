@@ -49,6 +49,48 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-29 — OR.1: OpenRouter as a selectable model provider (chat + grounding)
+
+Operator-requested: the option to run chat + grounding on **free open frontier
+models via OpenRouter** (`nvidia/nemotron-3-ultra-550b-a55b:free` and
+`openrouter/owl-alpha`, both selectable), as a **configurable option — local
+Ollama stays the default**. ADR 0030.
+
+**Empirically verified against the live OpenRouter API (operator's key):** both
+models exist, advertise native tool-calling + ~1M ctx, are $0; blocking chat, SSE
+streaming, and **streamed tool-calling** all confirmed working end-to-end. Honest
+findings surfaced first: (1) "free **and** uncapped" doesn't exist on OpenRouter —
+all `:free` models share a daily request cap (~50/day no-deposit); only local
+Ollama is free + uncapped + on-prem (operator accepted the cap for the *option*).
+(2) Free models may log/train on prompts (data-governance tradeoff for Wazuh
+data). (3) Embeddings ARE reachable (hidden `/embeddings` route, 2048-dim, $0) but
+need a 768→2048 pgvector migration + corpus re-embed → deferred to OR.2.
+
+Changes:
+- `models/openai.py` — the shared OpenAI-protocol adapter (serves OpenAI/Azure/
+  vLLM/LocalAI/OpenRouter; **kept its name** — it's the protocol, not the vendor)
+  gained: real `chat_stream` (SSE content deltas + index-keyed tool-call argument
+  accumulation, matching the Ollama adapter), **429/transport error handling**
+  (`ModelProviderRateLimitError` → a clear "daily cap reached, switch to local
+  Ollama" message), and an `extra_headers` hook.
+- `models/openrouter.py` (NEW) — `OpenRouterAdapter`, a thin discoverable subclass
+  pinning the OpenRouter base + `HTTP-Referer`/`X-Title` headers + `provider`.
+- `models/interface.py` — both models registered in `KNOWN_MODELS`
+  (`provider="openrouter"`, 1M ctx, native tools full; nemotron `prompt_coaxed` +
+  `restricted` license, owl-alpha `schema_enforced` + `proprietary`/stealth).
+- `agent/model_resolver.py` — `openrouter` provider case (key from secrets);
+  `config.py` — `openrouter_base_url`/`referer`/`title`.
+- API key stored in the secrets backend (`model.openrouter.api_key`); the live
+  default is unchanged (Ollama). Flip via `DEFAULT_MODEL_PROVIDER=openrouter` (+
+  `GROUNDING_JUDGE_MODEL_PROVIDER`) + model id + `*_API_KEY_REF`.
+
+Tests: `test_openrouter_adapter.py` (8) — stream deltas+done, fragmented tool-call
+accumulation, 429 on both chat + chat_stream, blocking tool-call parse, adapter
+base/headers/provider, factory build, OpenAI keeps its identity. ruff + mypy
+--strict clean. NEXT: **OR.2** — OpenRouter embeddings + dimension migration.
+
+---
+
 ## 2026-06-29 — 6-e.3: rule_tuning (disable / adjust-level) + snapshot-restore reversal
 
 The third of ADR 0025's four action classes — **rule tuning**, manager-GLOBAL and

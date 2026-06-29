@@ -18,6 +18,7 @@ from wolf_server.models.anthropic import AnthropicAdapter
 from wolf_server.models.interface import ModelProvider
 from wolf_server.models.ollama import OllamaAdapter
 from wolf_server.models.openai import OpenAIAdapter
+from wolf_server.models.openrouter import OpenRouterAdapter
 from wolf_server.organization.context import OrganizationContext
 
 logger = structlog.get_logger(__name__)
@@ -63,6 +64,24 @@ async def _build_provider(
                 api_key=api_key,
                 model_id=model_id,
                 base_url=settings.openai_base_url,
+            )
+        case "openrouter":
+            # OpenRouter = OpenAI-compatible hosted models. The OpenAIAdapter
+            # carries the chat + real SSE streaming + 429 handling; here we just
+            # point it at OpenRouter's base + add attribution headers. Selectable
+            # option (ADR 0030); local Ollama stays the default. Free models are
+            # $0 but daily-capped (a 429 surfaces ModelProviderRateLimitError).
+            if not api_key:
+                raise ModelProviderUnconfiguredError(
+                    "OpenRouter provider requires an API key reference (store it via "
+                    "`python -m wolf_server.management.set_secret` and set the *_API_KEY_REF)"
+                )
+            return OpenRouterAdapter(
+                api_key=api_key,
+                model_id=model_id,
+                base_url=settings.openrouter_base_url,
+                referer=settings.openrouter_referer,
+                title=settings.openrouter_title,
             )
         case "ollama":
             return OllamaAdapter(
