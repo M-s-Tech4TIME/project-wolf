@@ -49,6 +49,32 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-29 — 6-d unblock narration fix (tool description + prompt)
+
+Re-tested manual unblock on a freshly-restarted server (current code). **The
+backend works end-to-end** — the Evidence panel showed the model called
+`intent=unblock_ip` and the DB confirmed it created a proper linked reversal
+(`de47ab95` → reverses block `b7199ec2`, stamping it). The ONLY defect: the chat
+**narration was hallucinated** — qwen3:8b ignored its own successful tool result
+and fabricated "no unblock capability… converted to block_ip," which the DB/
+Evidence flatly contradict. Likely contributor: the tool's *catalog description*
+listed only "block / disable / restart" (never undo), reinforcing the model's
+"blocking-only" prior. Targeted fix (option a):
+
+- `ProposeActiveResponseTool.description` now states `unblock_ip` / `enable_user`
+  ARE supported and that `permitted=true` means the proposal is queued — report
+  it, never call an undo unsupported.
+- `agent/prompts.py` #4: report the outcome FROM THE RESULT, relay the `summary`
+  verbatim in substance; explicitly forbid inventing an outcome that contradicts
+  the result (e.g. claiming an unblock "isn't supported" / "was converted to a
+  block" after a permitted `unblock_ip`).
+
+Honest scope: this maximises narration fidelity for the small local model but the
+root cause is model reliability — a stronger chat model (ADR 0024 posture / the
+hosted route) or the Phase 7.5 reasoning fine-tune is the durable fix (already
+tracked in ADR 0028 §7). Gate: ruff + mypy --strict clean; propose tests green;
+no migration; no CI change. Restarted wolf-server to load it.
+
 ## 2026-06-28 — 6-d web-test follow-ups: REASON label + source-agnostic reversal note
 
 Operator web-tested 6-d (block / re-block / timed-block-for-2m all confirmed

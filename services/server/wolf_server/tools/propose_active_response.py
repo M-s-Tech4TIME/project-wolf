@@ -135,9 +135,12 @@ class ProposeActiveResponseTool(ProposeTool):
 
     name: ClassVar[str] = "propose_active_response"
     description: ClassVar[str] = (
-        "Propose an active-response command on ONE resolved agent (block an IP, "
-        "disable an account, restart an agent). Does NOT execute — it queues a "
-        "proposal a human must approve first."
+        "Propose an active-response action on ONE resolved agent — block an IP, "
+        "disable an account, restart an agent, OR UNDO a prior action: 'unblock_ip' "
+        "(unblock a blocked IP) and 'enable_user' (re-enable a disabled account) "
+        "ARE supported. Does NOT execute — it queues a proposal a human approves. "
+        "When it returns permitted=true the proposal IS queued (state 'pending'); "
+        "report that — never tell the user an unblock/undo is unsupported."
     )
     InputModel: ClassVar[type[BaseModel]] = ProposeActiveResponseInput
     OutputModel: ClassVar[type[BaseModel]] = ProposeActiveResponseOutput
