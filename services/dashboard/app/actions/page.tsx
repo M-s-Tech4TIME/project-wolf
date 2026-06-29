@@ -63,6 +63,12 @@ function targetSummary(target: Record<string, unknown>): string {
  *  forward "block IP …" — so the TARGET matches what the action actually does. */
 function paramsSummary(p: ActionProposal): string | null {
   const params = p.parameters;
+  // agent_action group management — the action field (assign_group / remove_group)
+  // already encodes the direction, so this reads accurately for undos too.
+  if (p.action_class === "agent_action" && typeof params["group"] === "string") {
+    const verb = p.action === "assign_group" ? "assign to group" : "remove from group";
+    return `${verb} ${params["group"]}`;
+  }
   const intent = typeof params["intent"] === "string" ? params["intent"] : "";
   const undo = isReversal(p);
   const parts: string[] = [];

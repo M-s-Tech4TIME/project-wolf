@@ -49,6 +49,43 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-29 — 6-e.2: agent_action (group assign/remove) + API-inverse reversal
+
+The first new action class on the 6-e registry — **agent group management**,
+agent-scoped + reversible, proving the multi-class framework end-to-end.
+
+- `wazuh/agent_actions.py` (NEW): operations `assign_group` / `remove_group`
+  (each the other's exact inverse), `INVERSE_OP`, labels, `is_valid_group`.
+- `wazuh/capabilities.py`: `ACTION_MODIFY_GROUP` + `agent_action` →
+  `{agent:modify_group}` in `WOLF_ACTION_CLASS_RBAC` (Superuser-scoped — per-org
+  creds don't hold it; the capability gate enforces it).
+- `wazuh/server_api.py`: capability-checked `assign_agent_group`
+  (`PUT /agents/{id}/group/{g}`) + `remove_agent_group` (`DELETE …`) on the
+  bounded write client (the only new write paths).
+- `gateway/validator.py` + `proposals.py`: registered `_validate_agent_action`
+  (resolved agent + known op + valid group) and `_agent_action_severity` (medium).
+- `gateway/executors.py`: the agent_action executor — forward performs the op +
+  **verifies via a fresh group-membership read** (authoritative end-state);
+  reverse performs the inverse for real and tags the result
+  `REVERSAL_STATE_COMPLETED`.
+- `gateway/reversal.py` + `api/action_proposals.py`: `complete_api_reversal` —
+  an API-executable reversal that succeeded flips the **original** to
+  `rolled_back` + audits it (vs AR's wolf-pack-bound reversal, which stays
+  pending). Wired into `approve` for succeeded reversals.
+- `tools/propose_agent_action.py` (NEW, registered): proposes a group op;
+  proposing the OPPOSITE op for an active prior Wolf action is detected as an
+  **undo** (linked via `reverses_proposal_id` + recalls why), else a fresh
+  forward action. `agent/prompts.py` #4 + `app/actions/page.tsx` (group target)
+  updated.
+
+**Gate:** ruff + mypy --strict clean; dashboard tsc + eslint clean; **658
+services/server tests / 0 skip** (+ propose/capability/validator/undo-link,
+executor perform+verify, complete_api_reversal flip + wolf-pack-pending no-op,
+write-client PUT/DELETE gating, cross-org `find_active_action`); no migration; no
+CI change (new modules under already-strict `wazuh`/`tools`). NEXT: **6-e.3** —
+rule_tuning (migration 0017 snapshot-restore). **Web-test** uses the
+Superuser/admin credential (group mgmt is admin-scoped).
+
 ## 2026-06-29 — 6-e.1: framework generalization + ADR 0029 (additional action classes)
 
 Opens the **6-e** line (the remaining action classes ADR 0025 named —

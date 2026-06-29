@@ -18,7 +18,11 @@ import structlog
 from wolf_common.errors import WolfError
 
 from wolf_server.wazuh.active_response import build_ar_body
-from wolf_server.wazuh.capabilities import ACTION_ACTIVE_RESPONSE, CredentialCapabilities
+from wolf_server.wazuh.capabilities import (
+    ACTION_ACTIVE_RESPONSE,
+    ACTION_MODIFY_GROUP,
+    CredentialCapabilities,
+)
 from wolf_server.wazuh.config import WazuhConnection
 
 logger = structlog.get_logger(__name__)
@@ -209,6 +213,48 @@ class WazuhServerApiActionClient:
         return await self._write(
             "PUT", "/active-response", params={"agents_list": agent_id}, json_body=body
         )
+
+    async def assign_agent_group(
+        self,
+        *,
+        agent_id: str,
+        group: str,
+        capabilities: CredentialCapabilities,
+        agent_groups: Sequence[str],
+    ) -> dict[str, Any]:
+        """Add an agent to a group (``PUT /agents/{id}/group/{group}``) — 6-e.2.
+
+        Capability-checked exactly as Wazuh RBAC evaluates it: the credential must
+        be allowed ``agent:modify_group`` on ``agent:id:<id>`` OR on
+        ``agent:group:<g>`` for any group the agent is currently in — else
+        :class:`WazuhActionNotPermittedError` (fail-closed) BEFORE any request.
+        """
+        self._require_modify_group(agent_id, capabilities, agent_groups)
+        return await self._write("PUT", f"/agents/{agent_id}/group/{group}")
+
+    async def remove_agent_group(
+        self,
+        *,
+        agent_id: str,
+        group: str,
+        capabilities: CredentialCapabilities,
+        agent_groups: Sequence[str],
+    ) -> dict[str, Any]:
+        """Remove an agent from a group (``DELETE /agents/{id}/group/{group}``) —
+        6-e.2; the exact inverse of :meth:`assign_agent_group`.  Same
+        capability check (``agent:modify_group``)."""
+        self._require_modify_group(agent_id, capabilities, agent_groups)
+        return await self._write("DELETE", f"/agents/{agent_id}/group/{group}")
+
+    def _require_modify_group(
+        self, agent_id: str, capabilities: CredentialCapabilities, agent_groups: Sequence[str]
+    ) -> None:
+        if not capabilities.can_on_agent(ACTION_MODIFY_GROUP, agent_id, agent_groups):
+            groups = ", ".join(agent_groups) or "none"
+            raise WazuhActionNotPermittedError(
+                f"Credential is not authorized to modify groups on agent {agent_id} "
+                f"(groups: {groups})."
+            )
 
     # ── Internals ──────────────────────────────────────────────────────────
 

@@ -32,7 +32,7 @@ from wolf_server.gateway.execution import execute_proposal
 from wolf_server.gateway.executors import ExecContext, get_executor
 from wolf_server.gateway.models import ActionProposal, ProposalState
 from wolf_server.gateway.proposals import stamp_auto_unblock_at
-from wolf_server.gateway.reversal import is_reversal
+from wolf_server.gateway.reversal import complete_api_reversal, is_reversal
 from wolf_server.organization.context import OrganizationContext
 from wolf_server.organization.rbac import Capability, require_capability
 from wolf_server.secrets_factory import get_secrets_backend
@@ -236,9 +236,17 @@ async def approve(
         await db.commit()  # persist the stale/mismatch audit + state change
         raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
 
-    # A succeeded TIMED forward action arms its automatic reversal (ADR 0028 sweep).
-    if proposal.state == ProposalState.succeeded and not is_reversal(proposal):
-        stamp_auto_unblock_at(proposal)
+    if proposal.state == ProposalState.succeeded:
+        if is_reversal(proposal):
+            # An API-executable reversal (agent_action / rule / config) that
+            # really ran flips the original to rolled_back; AR's wolf-pack-bound
+            # reversal is a no-op here (the original stays in effect — ADR 0029).
+            await complete_api_reversal(
+                db, proposal, executor_user_id=ctx.user_id, session_id=ctx.session_id
+            )
+        else:
+            # A succeeded TIMED forward action arms its auto-reversal (6-d.3 sweep).
+            stamp_auto_unblock_at(proposal)
 
     await db.commit()
     return ProposalOut.from_row(proposal)

@@ -361,8 +361,17 @@ inverse op, `rule_tuning`/`config_change` via **snapshot-and-restore**.
     `execute_proposal`'s callables; AR executor registered), and the
     **capability-set** map. AR refactored onto it, **zero behaviour change**
     (existing suite green) + registry/dispatch tests.
-  - **6-e.2** ⏳ `agent_action` — group assign/remove (the reversible showcase),
-    API-inverse reversal, bounded write methods, propose tool, GUI, web-test.
+  - **6-e.2** ✅ (this commit) — `agent_action`: group assign/remove
+    (`wazuh/agent_actions.py`; `assign_agent_group`/`remove_agent_group` on the
+    bounded write client, gated by `agent:modify_group`); `propose_agent_action`
+    tool (undo = propose the opposite op → linked + recalled); per-class executor
+    performs the real op + verifies via a fresh membership read; **API-inverse
+    reversal** flips the original to `rolled_back` (`complete_api_reversal`,
+    `REVERSAL_STATE_COMPLETED`) — NOT wolf-pack-bound; `/actions` renders the group
+    target; prompt #4 extended. Tests: propose/capability/validator/undo-link,
+    executor perform+verify, complete_api_reversal (flip + wolf-pack-pending
+    no-op), cross-org. Group mgmt is Superuser-scoped (per-org creds lack
+    `modify_group`).
   - **6-e.3** ⏳ `rule_tuning` — migration 0017 snapshot-restore (local_rules.xml),
     Superuser-scoped, analysisd reload.
   - **6-e.4** ⏳ `config_change` — snapshot-restore of ossec.conf, highest blast

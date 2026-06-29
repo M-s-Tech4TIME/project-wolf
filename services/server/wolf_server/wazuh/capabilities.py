@@ -20,15 +20,16 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-# Wazuh RBAC actions Wolf maps to its own action classes (v1: active-response).
-# The Server-API action that runs an active-response command on agents.
-ACTION_ACTIVE_RESPONSE = "active-response:command"
+# Wazuh RBAC actions Wolf maps to its own action classes.
+ACTION_ACTIVE_RESPONSE = "active-response:command"  # run an AR command on agents
+ACTION_MODIFY_GROUP = "agent:modify_group"  # add/remove an agent to/from a group (6-e.2)
 
 # Map Wolf action class → the SET of Wazuh RBAC actions that gate it (ADR 0029):
 # Wolf offers the class if the credential holds ANY of them.  Extended as more
-# action classes land (agent_action, rule_tuning, config_change).
+# action classes land (rule_tuning, config_change).
 WOLF_ACTION_CLASS_RBAC: dict[str, frozenset[str]] = {
     "active_response": frozenset({ACTION_ACTIVE_RESPONSE}),
+    "agent_action": frozenset({ACTION_MODIFY_GROUP}),
 }
 
 _ALLOW = "allow"

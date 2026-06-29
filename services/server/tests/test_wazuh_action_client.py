@@ -10,7 +10,11 @@ import uuid
 
 import httpx
 import pytest
-from wolf_server.wazuh.capabilities import ACTION_ACTIVE_RESPONSE, CredentialCapabilities
+from wolf_server.wazuh.capabilities import (
+    ACTION_ACTIVE_RESPONSE,
+    ACTION_MODIFY_GROUP,
+    CredentialCapabilities,
+)
 from wolf_server.wazuh.config import WazuhConnection
 from wolf_server.wazuh.server_api import WazuhActionNotPermittedError, WazuhServerApiActionClient
 
@@ -119,3 +123,52 @@ async def test_active_response_issues_put_when_permitted_by_group() -> None:
     assert seen["method"] == "PUT"
     assert seen["agents_list"] == "002"
     assert body["data"]["total_affected_items"] == 1
+
+
+# ── agent_action group management (6-e.2) ────────────────────────────────────
+
+
+def _group_handler(seen: dict[str, object]) -> httpx.MockTransport:
+    async def _handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/security/user/authenticate":
+            return httpx.Response(200, json={"data": {"token": "jwt"}})
+        seen["method"] = request.method
+        seen["path"] = request.url.path
+        return httpx.Response(200, json={"data": {"affected_items": ["001"]}})
+
+    return httpx.MockTransport(_handler)
+
+
+@pytest.mark.asyncio
+async def test_assign_group_refused_without_modify_group() -> None:
+    """No agent:modify_group (the per-org case) → fail closed, NO request issued."""
+    client = _action_client(_never_transport())
+    caps = CredentialCapabilities(policies={ACTION_ACTIVE_RESPONSE: {"agent:id:*": "allow"}})
+    with pytest.raises(WazuhActionNotPermittedError, match="modify groups"):
+        await client.assign_agent_group(
+            agent_id="002", group="isolated", capabilities=caps, agent_groups=["acme"]
+        )
+
+
+@pytest.mark.asyncio
+async def test_assign_group_issues_put_when_permitted() -> None:
+    seen: dict[str, object] = {}
+    client = _action_client(_group_handler(seen))
+    caps = CredentialCapabilities(policies={ACTION_MODIFY_GROUP: {"agent:id:*": "allow"}})
+    await client.assign_agent_group(
+        agent_id="002", group="isolated", capabilities=caps, agent_groups=[]
+    )
+    assert seen["method"] == "PUT"
+    assert seen["path"] == "/agents/002/group/isolated"
+
+
+@pytest.mark.asyncio
+async def test_remove_group_issues_delete_when_permitted() -> None:
+    seen: dict[str, object] = {}
+    client = _action_client(_group_handler(seen))
+    caps = CredentialCapabilities(policies={ACTION_MODIFY_GROUP: {"agent:group:acme": "allow"}})
+    await client.remove_agent_group(
+        agent_id="002", group="isolated", capabilities=caps, agent_groups=["default", "acme"]
+    )
+    assert seen["method"] == "DELETE"
+    assert seen["path"] == "/agents/002/group/isolated"

@@ -20,15 +20,21 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from wolf_server.audit.log import write_event
 from wolf_server.gateway.models import ActionProposal, ProposalState
+from wolf_server.gateway.state_machine import assert_transition
 from wolf_server.wazuh.active_response import get_ar_command
 
 if TYPE_CHECKING:
+    import uuid
+
     from sqlalchemy.ext.asyncio import AsyncSession
 
-# Marker the reversal records in its result so the GUI / audit are unambiguous
-# that the *host* change has not happened yet (it is wolf-pack-bound).
+# Markers the reversal records in its result (GUI / audit) — whether the host
+# change is still pending (AR, wolf-pack-bound) or has actually completed
+# (API-executable classes: agent_action group moves, rule/config snapshot-restore).
 REVERSAL_STATE_PENDING = "authorized_pending_wolf_pack"
+REVERSAL_STATE_COMPLETED = "completed"
 
 _WOLF_PACK_NOTE = (
     "Reversal authorised and recorded. The physical removal runs on the host via "
@@ -82,3 +88,47 @@ async def reversal_freshness(
     if block.state == ProposalState.rolled_back:
         return False, "The block has already been reversed."
     return True, f"Block {block_id} still on record (state={block.state})."
+
+
+async def complete_api_reversal(
+    db: AsyncSession,
+    reversal: ActionProposal,
+    *,
+    executor_user_id: uuid.UUID,
+    session_id: str | None = None,
+) -> bool:
+    """For an **API-executable** reversal that SUCCEEDED (the undo really ran on
+    Wazuh — agent_action / rule_tuning / config_change), flip the original action
+    ``succeeded → rolled_back`` + audit it.  No-op for AR (wolf-pack-bound: its
+    result is ``REVERSAL_STATE_PENDING``, so the original stays ``succeeded``
+    until wolf-pack confirms).  Idempotent: only acts on a still-``succeeded``
+    original.  Returns whether it flipped one."""
+    result = reversal.result if isinstance(reversal.result, dict) else {}
+    if (
+        reversal.state != ProposalState.succeeded
+        or result.get("reversal_state") != REVERSAL_STATE_COMPLETED
+    ):
+        return False
+    block_id = reversal.reverses_proposal_id
+    if block_id is None:
+        return False
+    original = await db.get(ActionProposal, block_id)
+    if original is None or original.state != ProposalState.succeeded:
+        return False
+    assert_transition(ProposalState(original.state), ProposalState.rolled_back)
+    original.state = ProposalState.rolled_back
+    await write_event(
+        db,
+        event_type="action.proposal.rolled_back",
+        organization_id=original.organization_id,
+        user_id=executor_user_id,
+        session_id=session_id,
+        event_data={
+            "proposal_id": str(original.id),
+            "reversed_by": str(reversal.id),
+            "action_class": original.action_class,
+            "action": original.action,
+            "content_hash": original.content_hash,
+        },
+    )
+    return True

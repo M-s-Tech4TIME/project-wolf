@@ -88,6 +88,15 @@ def _active_response_severity(action: str, parameters: dict[str, Any]) -> str:
 register_severity("active_response", _active_response_severity)
 
 
+def _agent_action_severity(action: str, parameters: dict[str, Any]) -> str:
+    """agent_action base impact — a group move changes the agent's centralized
+    policy/config surface: medium (6-e.2)."""
+    return SEV_MEDIUM
+
+
+register_severity("agent_action", _agent_action_severity)
+
+
 def compute_content_hash(
     *,
     organization_id: uuid.UUID,

@@ -384,3 +384,37 @@ async def test_action_proposals_are_organization_scoped(db: Any) -> None:
     a_rows = (await db.execute(stmt_a)).scalars().all()
     assert len(a_rows) == 1
     assert a_rows[0].organization_id == organization_a
+
+
+@pytest.mark.asyncio
+async def test_find_active_action_does_not_cross_organizations(db: Any) -> None:
+    """Reversal recall (6-e ADR 0029) is org-scoped: a succeeded agent_action in
+    org A is NOT discoverable as an active action for org B, so a reversal can
+    never link across the organization boundary."""
+    from wolf_server.gateway.models import ProposalState
+    from wolf_server.gateway.proposals import create_proposal, find_active_action
+
+    organization_a = uuid.uuid4()
+    organization_b = uuid.uuid4()
+    p = await create_proposal(
+        db,
+        organization_id=organization_a,
+        requested_by=uuid.uuid4(),
+        action_class="agent_action",
+        target={"agent_id": "001"},
+        action="assign_group",
+        parameters={"group": "isolated"},
+        rationale="quarantine",
+        expected_effect="assign group",
+    )
+    p.state = ProposalState.succeeded
+    await db.flush()
+
+    found_a = await find_active_action(
+        db, organization_id=organization_a, action_class="agent_action", matcher=lambda _p: True
+    )
+    assert found_a is not None and found_a.id == p.id
+    found_b = await find_active_action(
+        db, organization_id=organization_b, action_class="agent_action", matcher=lambda _p: True
+    )
+    assert found_b is None  # org B cannot see org A's action

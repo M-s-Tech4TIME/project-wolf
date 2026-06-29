@@ -31,6 +31,7 @@ from wolf_server.wazuh.active_response import (
     get_ar_command,
     is_valid_ip,
 )
+from wolf_server.wazuh.agent_actions import AGENT_ACTION_OPS, is_valid_group
 
 # Wildcard / fleet-wide target tokens that must never appear in a single
 # proposal's resolved target or agents_list.
@@ -168,3 +169,33 @@ def _validate_active_response(
 
 
 register_validator("active_response", _validate_active_response)
+
+
+def _validate_agent_action(
+    *, target: dict[str, Any], action: str, parameters: dict[str, Any]
+) -> ValidationResult:
+    """Structural checks for agent_action (group management, 6-e.2)."""
+    refusal = require_resolved_agent_target(target, parameters)
+    if refusal is not None:
+        return refusal
+    if action not in AGENT_ACTION_OPS:
+        return ValidationResult(
+            ok=False,
+            reason=(
+                f"Unknown agent action {action!r}; supported: "
+                f"{', '.join(sorted(AGENT_ACTION_OPS))}."
+            ),
+        )
+    group = parameters.get("group")
+    if not isinstance(group, str) or not group.strip():
+        return ValidationResult(
+            ok=False, reason=f"{action!r} needs a target group ('group')."
+        )
+    if not is_valid_group(group.strip()):
+        return ValidationResult(
+            ok=False, reason=f"Group name {group!r} is not a valid Wazuh group name."
+        )
+    return ValidationResult(ok=True)
+
+
+register_validator("agent_action", _validate_agent_action)
