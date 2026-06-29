@@ -70,22 +70,29 @@ async def lifespan(app: FastAPI) -> Any:  # noqa: ANN401
     from wolf_server.agent.model_resolver import check_model_config  # noqa: PLC0415
     from wolf_server.secrets_factory import get_secrets_backend  # noqa: PLC0415
 
-    _model_problems = await check_model_config(_settings, get_secrets_backend(_settings))
-    for _problem in _model_problems:
-        logger.error("model_config_invalid", problem=_problem)
-    if _model_problems:
-        logger.error(
-            "model_config_invalid_summary",
-            count=len(_model_problems),
-            hint="check DEFAULT_MODEL_* / GROUNDING_JUDGE_* env — no inline '#' comments on values",
-        )
-    else:
-        logger.info(
-            "model_config_ok",
-            chat_provider=_settings.default_model_provider,
-            chat_model=_settings.default_model_id,
-            judge_model=_settings.grounding_judge_model_id or "(chat model)",
-        )
+    # Fail-SAFE: a startup diagnostic must NEVER crash the server. If even the
+    # secrets backend can't be built (e.g. an invalid Fernet key in a smoke/test
+    # env), skip the check with a warning rather than taking wolf-server down.
+    try:
+        _secrets_backend = get_secrets_backend(_settings)
+        _model_problems = await check_model_config(_settings, _secrets_backend)
+        for _problem in _model_problems:
+            logger.error("model_config_invalid", problem=_problem)
+        if _model_problems:
+            logger.error(
+                "model_config_invalid_summary",
+                count=len(_model_problems),
+                hint="check DEFAULT_MODEL_* / GROUNDING_JUDGE_* env (no inline '#' in values)",
+            )
+        else:
+            logger.info(
+                "model_config_ok",
+                chat_provider=_settings.default_model_provider,
+                chat_model=_settings.default_model_id,
+                judge_model=_settings.grounding_judge_model_id or "(chat model)",
+            )
+    except Exception as _exc:  # noqa: BLE001 — diagnostic only; never fatal at boot
+        logger.warning("model_config_check_skipped", error=str(_exc))
 
     # Timed auto-reversal scheduler (slice 6-d.3): the background sweep that
     # reverses a timed block when its window expires. A cheap no-op when no timed
