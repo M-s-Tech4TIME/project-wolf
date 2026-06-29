@@ -9,8 +9,9 @@ and execution recomputes it to detect tampering.  Severity is *computed* here
 import hashlib
 import json
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Protocol
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -40,33 +41,51 @@ def _is_privileged_user(username: object) -> bool:
     return name in _PRIVILEGED_USERNAMES or name.startswith("admin")
 
 
+class SeverityFn(Protocol):
+    """A per-class severity function (registered in :data:`_SEVERITY`)."""
+
+    def __call__(self, action: str, parameters: dict[str, Any]) -> str: ...
+
+
+_SEVERITY: dict[str, SeverityFn] = {}
+
+
+def register_severity(action_class: str, fn: SeverityFn) -> None:
+    """Register the severity function for an action class (ADR 0029)."""
+    _SEVERITY[action_class] = fn
+
+
 def compute_severity(action_class: str, action: str, parameters: dict[str, Any]) -> str:
     """Compute the proposal's severity DYNAMICALLY from the action + its context.
 
-    Two inputs combine (doc 04 §Approval authority):
-
-    1. **Base impact** — each active-response command declares its base severity
-       in the catalog (block an IP = ``high`` — network enforcement with
-       collateral risk; disable a user = ``medium``; restart the agent =
-       ``low``).  The catalog is the single source of truth, so a new command
-       sets its own severity instead of this function guessing.
-    2. **Context escalation** — a higher-risk *target* raises the base one tier:
-       disabling a privileged account (root / admin) is treated as ``high``, not
-       ``medium``.  Crown-jewel target tags and broad targets are further axes
-       (doc 04 axis 3) — the hook lives here; v1 ships the privileged-account
-       escalation.
+    Two inputs combine (doc 04 §Approval authority): each class declares a **base
+    impact** per action, and a higher-risk *target* escalates it one tier
+    (context escalation).  Per-class (ADR 0029): each action class registers its
+    own severity function; an unregistered class is ``low`` (conservative
+    default — but a registered validator is required before it reaches here).
 
     Severity is informational in v1 (B1 = every write needs approval regardless)
-    but it drives the queue's visual priority and the future severity-tiered
+    but it drives the queue's visual priority + the future severity-tiered
     authority, so it must be honest.
     """
-    if action_class != "active_response":
+    fn = _SEVERITY.get(action_class)
+    if fn is None:
         return SEV_LOW
+    return fn(action, parameters)
+
+
+def _active_response_severity(action: str, parameters: dict[str, Any]) -> str:
+    """Active-response base impact (block = high, disable = medium, restart =
+    low — from the catalog) + privileged-account escalation (disable root/admin
+    → high)."""
     cmd = get_ar_command(action)
     base = cmd.severity if cmd is not None else SEV_LOW
     if base == SEV_MEDIUM and _is_privileged_user(parameters.get("username")):
         return SEV_HIGH
     return base
+
+
+register_severity("active_response", _active_response_severity)
 
 
 def compute_content_hash(
@@ -229,6 +248,40 @@ def stamp_auto_unblock_at(proposal: ActionProposal, *, now: datetime | None = No
     proposal.auto_unblock_at = base + timedelta(seconds=duration)
 
 
+async def find_active_action(
+    db: AsyncSession,
+    *,
+    organization_id: uuid.UUID,
+    action_class: str,
+    matcher: Callable[[ActionProposal], bool],
+) -> ActionProposal | None:
+    """The most-recent *succeeded, not-yet-reversed* action of ``action_class``
+    on this org's ledger that satisfies ``matcher`` (ADR 0029 provenance recall,
+    generalized from :func:`find_active_block`).
+
+    "Not yet reversed" = a forward action (``reverses_proposal_id IS NULL``) that
+    hasn't been reversed (``reversal_proposal_id IS NULL``) and is still
+    ``succeeded`` (a ``rolled_back`` one was already undone).  This is Wolf's
+    record of what it *dispatched/applied*, not necessarily live host state.
+    """
+    stmt = (
+        select(ActionProposal)
+        .where(
+            ActionProposal.organization_id == organization_id,
+            ActionProposal.action_class == action_class,
+            ActionProposal.state == ProposalState.succeeded,
+            ActionProposal.reverses_proposal_id.is_(None),  # a forward action, not a reversal
+            ActionProposal.reversal_proposal_id.is_(None),  # not already reversed
+        )
+        .order_by(ActionProposal.executed_at.desc(), ActionProposal.created_at.desc())
+    )
+    rows = (await db.execute(stmt)).scalars().all()
+    for row in rows:
+        if matcher(row):
+            return row
+    return None
+
+
 async def find_active_block(
     db: AsyncSession,
     *,
@@ -238,35 +291,21 @@ async def find_active_block(
     srcip: str | None = None,
     username: str | None = None,
 ) -> ActionProposal | None:
-    """The most-recent *succeeded, not-yet-reversed* block on this org's ledger
-    for the given agent + target (ADR 0028 provenance recall).
+    """The most-recent *succeeded, not-yet-reversed* active-response block for the
+    given agent + target (ADR 0028) — a thin srcip/username matcher over
+    :func:`find_active_action`."""
 
-    "Not yet reversed" = ``reversal_proposal_id IS NULL`` AND state still
-    ``succeeded`` (a ``rolled_back`` block was physically removed).  This is
-    Wolf's record of what it *dispatched*, not live host state — host truth
-    arrives with wolf-pack.
-    """
-    stmt = (
-        select(ActionProposal)
-        .where(
-            ActionProposal.organization_id == organization_id,
-            ActionProposal.action_class == action_class,
-            ActionProposal.state == ProposalState.succeeded,
-            ActionProposal.reverses_proposal_id.is_(None),  # a block, not a reversal
-            ActionProposal.reversal_proposal_id.is_(None),  # not already reversed
-        )
-        .order_by(ActionProposal.executed_at.desc(), ActionProposal.created_at.desc())
-    )
-    rows = (await db.execute(stmt)).scalars().all()
-    for row in rows:
-        params = row.parameters if isinstance(row.parameters, dict) else {}
-        if str(row.target.get("agent_id", "")) != agent_id:
-            continue
+    def _matches(p: ActionProposal) -> bool:
+        params = p.parameters if isinstance(p.parameters, dict) else {}
+        if str(p.target.get("agent_id", "")) != agent_id:
+            return False
         if srcip is not None and params.get("srcip") == srcip:
-            return row
-        if username is not None and params.get("username") == username:
-            return row
-    return None
+            return True
+        return username is not None and params.get("username") == username
+
+    return await find_active_action(
+        db, organization_id=organization_id, action_class=action_class, matcher=_matches
+    )
 
 
 async def list_active_blocks(

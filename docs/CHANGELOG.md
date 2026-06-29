@@ -49,6 +49,47 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-29 — 6-e.1: framework generalization + ADR 0029 (additional action classes)
+
+Opens the **6-e** line (the remaining action classes ADR 0025 named —
+`agent_action` → `rule_tuning` → `config_change`, reversal-aware). This slice
+de-hardcodes the gateway from active-response-only into a **per-class registry**,
+with active-response refactored onto it at **zero behaviour change** (the shape is
+validated by agent_action landing next in 6-e.2, so it's not speculative).
+
+- **ADR 0029** (`docs/decisions/0029-additional-action-classes.md`): the per-class
+  **scoping model** (live RBAC probe — `agent_action` is agent-scoped; `rule_tuning`
+  / `config_change` are manager-GLOBAL → Superuser-scoped, and the capability gate
+  enforces it) and the **two reversal models** (AR wolf-pack-bound vs the new
+  classes' API-inverse / snapshot-restore — both API-executable now).
+- `gateway/validator.py`: `validate_proposal` dispatches by `action_class` to a
+  registered structural validator (AR's logic → `_validate_active_response`);
+  extracted `require_resolved_agent_target` (shared agent-scoped pre-check) +
+  `register_validator`. Unregistered class → refused.
+- `gateway/proposals.py`: `compute_severity` per-class (`register_severity`;
+  AR's catalog+privileged-escalation → `_active_response_severity`).
+  `find_active_block` → generalized `find_active_action(db, org, class, matcher)`
+  (find_active_block now a thin srcip/username matcher over it).
+- `gateway/executors.py` (NEW): per-class **executor** (`build_forward` /
+  `build_reverse` → the `(freshness, perform, verify)` callables `execute_proposal`
+  consumes) + `ExecContext` + registry (`register_executor` / `get_executor`,
+  `UnknownActionClassError`). The AR executor holds the forward (dispatch via the
+  bounded write client) + wolf-pack-bound reverse.
+- `api/action_proposals.py` `approve`: replaced the AR-specific forward/reverse
+  blocks with a **single dispatch** — open the per-org clients uniformly, build
+  `ExecContext`, pick `build_reverse`/`build_forward` by `is_reversal`, run
+  `execute_proposal` (engine untouched). `stamp_auto_unblock_at` now guarded to
+  forward actions.
+- `wazuh/capabilities.py`: `WOLF_ACTION_CLASS_RBAC` maps a class → a **set** of
+  RBAC actions (offer if the credential holds any); `available_action_classes`
+  uses set-intersection.
+
+**Gate:** ruff + mypy --strict clean; **648 services/server tests / 0 skip** (643
+baseline + 5 new: executor registry dispatch, unknown-class refusal, unregistered-
+class severity, generalized `find_active_action`); AR suite unchanged = proven zero
+regression; no migration; no CI change (touched modules already strict). NEXT:
+**6-e.2** — agent_action (group assign/remove) + API-inverse reversal.
+
 ## 2026-06-29 — 6-d /actions: reversal-aware TARGET label
 
 Web-test feedback: on a reversal card the **TARGET** still read "block IP …"

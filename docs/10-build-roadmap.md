@@ -345,11 +345,32 @@ reversal is config-side/fixed → arbitrary-duration auto-unblock is **Wolf-owne
     Chat surfacing rode 6-d.2 (prompt #4). **Completes the 6-d line** (pending the
     operator web-test).
 
-**then** the other action classes (`rule_tuning` / `agent_action` /
-`config_change`, now reversal-aware via the 6-d linkage); severity-tiered
-authority / four-eyes / crown-jewel tagging (policy hooks, B1 default =
-approval-for-all); auto-execution (Phase 13). The remaining original scope below
-stands as the target the follow-ons fill in.
+**6-e — the remaining action classes** (ADR 0029; agent_action → rule_tuning →
+config_change, reversal-aware). Live RBAC probe (2026-06-29) fixed the scoping:
+`agent_action` is **agent-scoped** (reuses AR's `can_on_agent`); `rule_tuning` /
+`config_change` are **manager-GLOBAL → Superuser-scoped** (per-org creds don't
+hold `rules:update` / `manager:update_config`; the capability gate enforces it).
+**Two reversal models:** AR is wolf-pack-bound (API can't `delete`); the new
+classes are API-executable both ways — `agent_action` group move reverses via the
+inverse op, `rule_tuning`/`config_change` via **snapshot-and-restore**.
+  - **6-e.1** ✅ (this commit) — ADR 0029 + framework generalization: per-class
+    registry for the **validator** (`validate_proposal` dispatch + shared
+    `require_resolved_agent_target`), **severity** (`register_severity`),
+    **`find_active_action`** (matcher-based, `find_active_block` delegates),
+    **executor** (`gateway/executors.py` — `build_forward`/`build_reverse` →
+    `execute_proposal`'s callables; AR executor registered), and the
+    **capability-set** map. AR refactored onto it, **zero behaviour change**
+    (existing suite green) + registry/dispatch tests.
+  - **6-e.2** ⏳ `agent_action` — group assign/remove (the reversible showcase),
+    API-inverse reversal, bounded write methods, propose tool, GUI, web-test.
+  - **6-e.3** ⏳ `rule_tuning` — migration 0017 snapshot-restore (local_rules.xml),
+    Superuser-scoped, analysisd reload.
+  - **6-e.4** ⏳ `config_change` — snapshot-restore of ossec.conf, highest blast
+    radius, manager restart + strong validation.
+
+**then** severity-tiered authority / four-eyes / crown-jewel tagging (policy
+hooks, B1 default = approval-for-all); auto-execution (Phase 13). The remaining
+original scope below stands as the target the follow-ons fill in.
 
 The most safety-critical work in the project. Built after the
 read-side platform is solid + the deployment substrate is in

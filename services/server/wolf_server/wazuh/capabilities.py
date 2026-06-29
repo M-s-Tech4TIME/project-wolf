@@ -24,10 +24,11 @@ if TYPE_CHECKING:
 # The Server-API action that runs an active-response command on agents.
 ACTION_ACTIVE_RESPONSE = "active-response:command"
 
-# Map Wolf action class → the Wazuh RBAC action that gates it.  Extended as
-# more action classes land (rule_tuning, agent_action, config_change).
-WOLF_ACTION_CLASS_RBAC: dict[str, str] = {
-    "active_response": ACTION_ACTIVE_RESPONSE,
+# Map Wolf action class → the SET of Wazuh RBAC actions that gate it (ADR 0029):
+# Wolf offers the class if the credential holds ANY of them.  Extended as more
+# action classes land (agent_action, rule_tuning, config_change).
+WOLF_ACTION_CLASS_RBAC: dict[str, frozenset[str]] = {
+    "active_response": frozenset({ACTION_ACTIVE_RESPONSE}),
 }
 
 _ALLOW = "allow"
@@ -124,8 +125,8 @@ class CredentialCapabilities:
         actions = self.available_actions()
         return {
             wolf_class
-            for wolf_class, rbac_action in WOLF_ACTION_CLASS_RBAC.items()
-            if rbac_action in actions
+            for wolf_class, rbac_actions in WOLF_ACTION_CLASS_RBAC.items()
+            if actions & rbac_actions
         }
 
 

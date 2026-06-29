@@ -29,19 +29,14 @@ from wolf_server.config import get_settings
 from wolf_server.database import get_db
 from wolf_server.gateway.approval import approve_proposal, reject_proposal
 from wolf_server.gateway.execution import execute_proposal
+from wolf_server.gateway.executors import ExecContext, get_executor
 from wolf_server.gateway.models import ActionProposal, ProposalState
 from wolf_server.gateway.proposals import stamp_auto_unblock_at
-from wolf_server.gateway.reversal import (
-    is_reversal,
-    reversal_freshness,
-    reversal_perform,
-    reversal_verify,
-)
+from wolf_server.gateway.reversal import is_reversal
 from wolf_server.organization.context import OrganizationContext
 from wolf_server.organization.rbac import Capability, require_capability
 from wolf_server.secrets_factory import get_secrets_backend
-from wolf_server.wazuh.active_response import interpret_ar_result
-from wolf_server.wazuh.capabilities import fetch_credential_capabilities, resolve_agent_groups
+from wolf_server.wazuh.capabilities import fetch_credential_capabilities
 from wolf_server.wazuh.resolver import get_wazuh_connection
 from wolf_server.wazuh.server_api import WazuhServerApiActionClient, WazuhServerApiClient
 
@@ -206,31 +201,11 @@ async def approve(
         await db.commit()  # persist any audit / expiry the approval path recorded
         raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
 
-    # 2a. Reversal proposals (unblock / re-enable) can't run through the API —
-    #     execd always dispatches `add`, never `delete` (ADR 0028). Under Option A
-    #     the reversal is authorised + recorded here; the physical host removal is
-    #     wolf-pack-bound. No Wazuh write client is opened for this path.
-    if is_reversal(proposal):
-        async def _rev_freshness(p: ActionProposal) -> tuple[bool, str]:
-            return await reversal_freshness(db, p)
-
-        try:
-            await execute_proposal(
-                db,
-                proposal,
-                freshness=_rev_freshness,
-                perform=reversal_perform,
-                verify=reversal_verify,
-                executor_user_id=ctx.user_id,
-                session_id=ctx.session_id,
-            )
-        except WolfError as exc:
-            await db.commit()
-            raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
-        await db.commit()
-        return ProposalOut.from_row(proposal)
-
-    # 2b. Forward action — freshness → bounded write → verification, per-org creds.
+    # 2. Execute via the per-class executor (ADR 0029). The per-org Wazuh clients
+    #    are opened uniformly — lazy auth means an executor that doesn't call them
+    #    costs nothing (e.g. AR's wolf-pack-bound reversal). The executor supplies
+    #    the forward vs reverse (freshness, perform, verify); execute_proposal (the
+    #    engine) is class-agnostic.
     secrets = get_secrets_backend(_settings)
     connection = await get_wazuh_connection(ctx, db, secrets)
     try:
@@ -239,49 +214,21 @@ async def approve(
             WazuhServerApiActionClient(connection) as action_api,
         ):
             capabilities = await fetch_credential_capabilities(read_api)
-
-            async def _freshness(p: ActionProposal) -> tuple[bool, str]:
-                agent_id = str(p.target.get("agent_id", ""))
-                body = await read_api.get("/agents", params={"agents_list": agent_id})
-                total = body.get("data", {}).get("total_affected_items", 0)
-                if total and total >= 1:
-                    return True, f"Agent {agent_id} still present."
-                return False, f"Agent {agent_id} is no longer visible to the credential."
-
-            async def _perform(p: ActionProposal) -> dict[str, Any]:
-                agent_id = str(p.target.get("agent_id", ""))
-                params = p.parameters if isinstance(p.parameters, dict) else {}
-                raw_args = params.get("arguments", [])
-                arguments = [str(a) for a in raw_args] if isinstance(raw_args, list) else []
-                srcip = params.get("srcip")
-                username = params.get("username")
-                # Resolve the agent's groups fresh — the capability check expands
-                # the grant over current group membership (Wazuh RBAC semantics).
-                agent_groups = await resolve_agent_groups(read_api, agent_id)
-                return await action_api.execute_active_response(
-                    agent_id=agent_id,
-                    command=p.action,
-                    capabilities=capabilities,
-                    agent_groups=agent_groups,
-                    srcip=srcip if isinstance(srcip, str) else None,
-                    username=username if isinstance(username, str) else None,
-                    arguments=arguments,
-                )
-
-            async def _verify(
-                p: ActionProposal, res: dict[str, Any]
-            ) -> tuple[bool, dict[str, Any]]:
-                # Wazuh returns HTTP 200 even on failure — interpret_ar_result
-                # reads dispatch from the body (affected vs failed_items) and is
-                # honest that "dispatched" != "applied on the host".
-                return interpret_ar_result(res)
-
+            exec_ctx = ExecContext(
+                read_api=read_api, action_api=action_api, capabilities=capabilities, db=db
+            )
+            executor = get_executor(proposal.action_class)
+            freshness, perform, verify = (
+                executor.build_reverse(proposal, exec_ctx)
+                if is_reversal(proposal)
+                else executor.build_forward(proposal, exec_ctx)
+            )
             await execute_proposal(
                 db,
                 proposal,
-                freshness=_freshness,
-                perform=_perform,
-                verify=_verify,
+                freshness=freshness,
+                perform=perform,
+                verify=verify,
                 executor_user_id=ctx.user_id,
                 session_id=ctx.session_id,
             )
@@ -289,8 +236,8 @@ async def approve(
         await db.commit()  # persist the stale/mismatch audit + state change
         raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
 
-    # A succeeded TIMED block arms its automatic reversal (ADR 0028, 6-d.3 sweep).
-    if proposal.state == ProposalState.succeeded:
+    # A succeeded TIMED forward action arms its automatic reversal (ADR 0028 sweep).
+    if proposal.state == ProposalState.succeeded and not is_reversal(proposal):
         stamp_auto_unblock_at(proposal)
 
     await db.commit()

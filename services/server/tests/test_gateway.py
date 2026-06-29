@@ -32,6 +32,7 @@ from wolf_server.gateway.proposals import (
     compute_severity,
     create_proposal,
     create_reversal_proposal,
+    find_active_action,
     find_active_block,
     is_expired,
     list_active_blocks,
@@ -539,3 +540,53 @@ async def test_stamp_auto_unblock_at_from_duration(db: AsyncSession) -> None:
     indefinite = await _succeeded_block(db, srcip="198.51.100.9")
     stamp_auto_unblock_at(indefinite)
     assert indefinite.auto_unblock_at is None
+
+
+# ── per-class registry / executor dispatch (slice 6-e.1, ADR 0029) ───────────
+
+
+def test_get_executor_returns_active_response_executor() -> None:
+    from wolf_server.gateway.executors import get_executor
+
+    ex = get_executor("active_response")
+    assert hasattr(ex, "build_forward") and hasattr(ex, "build_reverse")
+
+
+def test_get_executor_unknown_class_raises() -> None:
+    from wolf_server.gateway.executors import UnknownActionClassError, get_executor
+
+    with pytest.raises(UnknownActionClassError):
+        get_executor("no_such_class")
+
+
+def test_validate_proposal_rejects_unregistered_class() -> None:
+    # The dispatch refuses any class without a registered validator (no invented
+    # action classes reach the queue).
+    v = validate_proposal(
+        action_class="totally_made_up", target={"agent_id": "001"}, action="x", parameters={}
+    )
+    assert v.ok is False
+    assert "unknown action class" in v.reason.lower()
+
+
+def test_compute_severity_unregistered_class_is_low() -> None:
+    assert compute_severity("totally_made_up", "x", {}) == "low"
+
+
+@pytest.mark.asyncio
+async def test_find_active_action_matches_with_custom_matcher(db: AsyncSession) -> None:
+    # The generalized finder returns the most-recent succeeded, unreversed action
+    # of the class that satisfies an arbitrary matcher (agent_action/rule_tuning
+    # use their own matchers; this proves the generalization).
+    block = await _succeeded_block(db, srcip="203.0.113.7")
+    hit = await find_active_action(
+        db,
+        organization_id=_ORG,
+        action_class="active_response",
+        matcher=lambda p: str(p.target.get("agent_id", "")) == "001",
+    )
+    assert hit is not None and hit.id == block.id
+    miss = await find_active_action(
+        db, organization_id=_ORG, action_class="active_response", matcher=lambda p: False
+    )
+    assert miss is None
