@@ -12,7 +12,9 @@ import httpx
 import pytest
 from wolf_server.wazuh.capabilities import (
     ACTION_ACTIVE_RESPONSE,
+    ACTION_CLUSTER_RESTART,
     ACTION_MODIFY_GROUP,
+    ACTION_UPDATE_RULES,
     CredentialCapabilities,
 )
 from wolf_server.wazuh.config import WazuhConnection
@@ -172,3 +174,69 @@ async def test_remove_group_issues_delete_when_permitted() -> None:
     )
     assert seen["method"] == "DELETE"
     assert seen["path"] == "/agents/002/group/isolated"
+
+
+# ── rule_tuning: rule-file write + cluster restart (6-e.3) ────────────────────
+
+
+def _rules_handler(seen: dict[str, object]) -> httpx.MockTransport:
+    async def _handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/security/user/authenticate":
+            return httpx.Response(200, json={"data": {"token": "jwt"}})
+        seen["method"] = request.method
+        seen["path"] = request.url.path
+        seen["overwrite"] = request.url.params.get("overwrite")
+        seen["relative_dirname"] = request.url.params.get("relative_dirname")
+        seen["content_type"] = request.headers.get("Content-Type")
+        seen["body"] = request.content.decode("utf-8")
+        return httpx.Response(200, json={"data": {"affected_items": ["local_rules.xml"]}})
+
+    return httpx.MockTransport(_handler)
+
+
+@pytest.mark.asyncio
+async def test_update_rules_file_refused_without_rules_update() -> None:
+    """No rules:update (the per-org case) → fail closed, NO request issued."""
+    client = _action_client(_never_transport())
+    caps = CredentialCapabilities(policies={ACTION_ACTIVE_RESPONSE: {"agent:id:*": "allow"}})
+    with pytest.raises(WazuhActionNotPermittedError, match="rules:update"):
+        await client.update_rules_file(
+            filename="local_rules.xml", content="<group></group>", capabilities=caps
+        )
+
+
+@pytest.mark.asyncio
+async def test_update_rules_file_issues_raw_put_when_permitted() -> None:
+    seen: dict[str, object] = {}
+    client = _action_client(_rules_handler(seen))
+    caps = CredentialCapabilities(policies={ACTION_UPDATE_RULES: {"*:*:*": "allow"}})
+    await client.update_rules_file(
+        filename="local_rules.xml",
+        content='<group name="wolf_tuning,"></group>',
+        capabilities=caps,
+    )
+    assert seen["method"] == "PUT"
+    assert seen["path"] == "/rules/files/local_rules.xml"
+    assert seen["overwrite"] == "true"
+    assert seen["relative_dirname"] == "etc/rules"
+    # Raw body upload (NOT JSON) — the file content goes verbatim.
+    assert seen["content_type"] == "application/octet-stream"
+    assert seen["body"] == '<group name="wolf_tuning,"></group>'
+
+
+@pytest.mark.asyncio
+async def test_restart_cluster_refused_without_cluster_restart() -> None:
+    client = _action_client(_never_transport())
+    caps = CredentialCapabilities(policies={ACTION_UPDATE_RULES: {"*:*:*": "allow"}})
+    with pytest.raises(WazuhActionNotPermittedError, match="cluster:restart"):
+        await client.restart_cluster(capabilities=caps)
+
+
+@pytest.mark.asyncio
+async def test_restart_cluster_issues_put_when_permitted() -> None:
+    seen: dict[str, object] = {}
+    client = _action_client(_group_handler(seen))
+    caps = CredentialCapabilities(policies={ACTION_CLUSTER_RESTART: {"*:*:*": "allow"}})
+    await client.restart_cluster(capabilities=caps)
+    assert seen["method"] == "PUT"
+    assert seen["path"] == "/cluster/restart"

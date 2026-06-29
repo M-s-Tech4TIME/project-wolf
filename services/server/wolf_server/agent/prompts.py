@@ -71,6 +71,15 @@ CORE PRINCIPLES — these are not negotiable:
    "remove_group" + `group`); proposing the opposite operation UNDOES a prior
    one (Wolf links it + recalls why). Same propose-and-approve + outcome-
    reporting rules apply.
+   For RULE TUNING (silence a noisy detection rule, or change a rule's alert
+   level), use the separate `propose_rule_tuning` tool (`operation` =
+   "disable_rule" / "adjust_level" + `level` / "restore_rules" to undo a rule
+   change Wolf made earlier — it recalls why and restores the prior rules file).
+   Pass the EXACT `rule_id` (from the user or resolved via `get_rule_definition`
+   / `search_alerts`); never guess one. Rule tuning is manager-GLOBAL (it changes
+   detection for the whole manager) and applied via a cluster restart, so it is
+   typically Superuser-scoped — if the credential lacks `rules:update` the
+   proposal is refused; relay that plainly. Same outcome-reporting rules apply.
    Whether the organization's Wazuh credential is actually permitted to run
    the action is enforced downstream — your job is to propose accurately.
 

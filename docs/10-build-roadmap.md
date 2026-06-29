@@ -372,8 +372,21 @@ inverse op, `rule_tuning`/`config_change` via **snapshot-and-restore**.
     executor perform+verify, complete_api_reversal (flip + wolf-pack-pending
     no-op), cross-org. Group mgmt is Superuser-scoped (per-org creds lack
     `modify_group`).
-  - **6-e.3** ⏳ `rule_tuning` — migration 0017 snapshot-restore (local_rules.xml),
-    Superuser-scoped, analysisd reload.
+  - **6-e.3** ✅ (this commit, unit-tested; live web-test pending) — `rule_tuning`:
+    fine-tune EXISTING rules only (`disable_rule` → level 0 / `adjust_level`) via an
+    `overwrite="yes"` override in **`local_rules.xml`** only (`wazuh/rule_tuning.py` —
+    string-based, preserves the rule's matching conditions; idempotent re-tune).
+    Bounded writes `update_rules_file` (raw PUT, `rules:update`) + `restart_cluster`
+    (`cluster:restart`) + read `get_raw`; **auto-apply** executor: snapshot → PUT →
+    `GET /manager/configuration/validation` (auto-rollback if invalid) → cluster
+    restart → verify. **Snapshot-restore reversal**: `prior_state` column (migration
+    0017) captured pre-write; `restore_rules` PUTs it back + flips the original to
+    `rolled_back` (`complete_api_reversal`). `propose_rule_tuning` tool (undo =
+    `restore_rules` → linked + recalled); prompt #4 + `/actions` rendering. Tests:
+    helpers/validator/severity, propose/capability/undo, executor forward+rollback+
+    reverse, cross-org. **Superuser-scoped** (per-org creds lack `rules:update`).
+  - **6-e.4** ⏳ `config_change` — snapshot-restore of ossec.conf, highest blast
+    radius, manager restart + strong validation.
   - **6-e.4** ⏳ `config_change` — snapshot-restore of ossec.conf, highest blast
     radius, manager restart + strong validation.
 

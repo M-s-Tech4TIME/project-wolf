@@ -32,6 +32,12 @@ from wolf_server.wazuh.active_response import (
     is_valid_ip,
 )
 from wolf_server.wazuh.agent_actions import AGENT_ACTION_OPS, is_valid_group
+from wolf_server.wazuh.rule_tuning import (
+    OP_ADJUST_LEVEL,
+    RULE_TUNING_FORWARD_OPS,
+    is_valid_level,
+    is_valid_rule_id,
+)
 
 # Wildcard / fleet-wide target tokens that must never appear in a single
 # proposal's resolved target or agents_list.
@@ -199,3 +205,47 @@ def _validate_agent_action(
 
 
 register_validator("agent_action", _validate_agent_action)
+
+
+def _validate_rule_tuning(
+    *, target: dict[str, Any], action: str, parameters: dict[str, Any]
+) -> ValidationResult:
+    """Structural checks for rule_tuning (6-e.3).
+
+    The target is a single resolved RULE id (manager-global, not agent-scoped),
+    the action a known forward op, and ``adjust_level`` needs a valid 0..16 level.
+    ``restore_rules`` is reversal-only (created via ``create_reversal_proposal``,
+    which bypasses this validator), so a *forward* restore is refused here."""
+    rule_id = target.get("rule_id")
+    if not isinstance(rule_id, str) or not rule_id.strip():
+        return ValidationResult(
+            ok=False,
+            reason="Target is not resolved to a specific rule id — refusing to propose.",
+        )
+    if _is_blast(rule_id):
+        return ValidationResult(
+            ok=False, reason="Target rule id is a wildcard — blast radius is unbounded."
+        )
+    if not is_valid_rule_id(rule_id):
+        return ValidationResult(
+            ok=False, reason=f"Rule id {rule_id!r} is not a valid Wazuh rule id (1..999999)."
+        )
+    if action not in RULE_TUNING_FORWARD_OPS:
+        return ValidationResult(
+            ok=False,
+            reason=(
+                f"Unknown rule_tuning operation {action!r}; supported: "
+                f"{', '.join(sorted(RULE_TUNING_FORWARD_OPS))}."
+            ),
+        )
+    if action == OP_ADJUST_LEVEL:
+        level = parameters.get("level")
+        if not is_valid_level(level):
+            return ValidationResult(
+                ok=False,
+                reason=f"{action!r} needs a 'level' integer between 0 and 16 (got {level!r}).",
+            )
+    return ValidationResult(ok=True)
+
+
+register_validator("rule_tuning", _validate_rule_tuning)

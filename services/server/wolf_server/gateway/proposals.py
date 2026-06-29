@@ -97,6 +97,18 @@ def _agent_action_severity(action: str, parameters: dict[str, Any]) -> str:
 register_severity("agent_action", _agent_action_severity)
 
 
+def _rule_tuning_severity(action: str, parameters: dict[str, Any]) -> str:
+    """rule_tuning base impact — high (6-e.3).
+
+    A rule change is manager-GLOBAL (it affects detection for every org on the
+    shared manager) and silencing/lowering a rule reduces visibility into real
+    threats — so it is treated as high-impact regardless of the specific level."""
+    return SEV_HIGH
+
+
+register_severity("rule_tuning", _rule_tuning_severity)
+
+
 def compute_content_hash(
     *,
     organization_id: uuid.UUID,

@@ -3,8 +3,8 @@
 **Date:** 2026-06-29
 **Status:** accepted — implementing across **6-e.1 → 6-e.4**. 6-e.1 generalizes the
 gateway to be **per-class** (active-response refactored onto the registry, zero
-behaviour change); 6-e.2 adds `agent_action`, then `rule_tuning` (6-e.3),
-`config_change` (6-e.4).
+behaviour change); 6-e.2 adds `agent_action`; **6-e.3 adds `rule_tuning`** (built,
+unit-tested — §6 below); `config_change` (6-e.4) is next.
 
 ## Context
 
@@ -97,3 +97,39 @@ agent_action landing immediately after, so it is not speculative):
 - agent `reconnect`/`upgrade`/`uninstall`/`delete`; decoders + CDB-lists tuning
   (same shape as rule_tuning); section-level config diffing UI; auto-execution
   (Phase 13); the LLM-as-judge intent-alignment validator (ADR 0017 / Phase 7.5).
+
+## 6. rule_tuning v1 — as built (6-e.3)
+
+**Operator-scoped decisions (2026-06-29):**
+- **Fine-tune EXISTING rules only** — `disable_rule` (set level 0) + `adjust_level`
+  (set an explicit 0..16 level). Authoring net-new detection rules from scratch is
+  a deliberate follow-on (it needs the deep-think / stronger-model validator —
+  ADR 0017 / Phase 7.5), not v1.
+- **`local_rules.xml` only** — Wolf writes the single canonical custom file via an
+  `overwrite="yes"` override; it never touches the stock `ruleset/rules/` (Wazuh
+  overwrites those on upgrade). Tuning a *stock* rule is also an override here
+  (Wazuh's recommended pattern). Arbitrary `etc/rules/*.xml` is a follow-on.
+- **Auto-apply** — rules don't hot-reload, so the action genuinely applies the
+  change: snapshot → PUT → validate → (auto-rollback if invalid) → **cluster
+  restart** → verify. The approver consents to the restart (a brief, manager-global
+  alert-processing gap) by approving the action ("what you see is true").
+
+**Override construction (string-based — `local_rules.xml` is a multi-root
+fragment, not a single-root XML doc):** the override copies the rule's exact inner
+body from its source file (`GET /rules/files/{file}?raw=true`) and changes only
+`level` + adds `overwrite="yes"`, so matching conditions are preserved. Each
+override lives in a marked `wolf_tuning` group; a re-tune of the same id replaces
+it (idempotent, never a duplicate sid).
+
+**Reversibility (snapshot-restore):** `build_forward` captures `local_rules.xml`
+into the **`prior_state`** column (migration 0017) at execute time, before the
+write; `restore_rules` reverses by PUTting that snapshot back (validate → restart)
+and tags the result completed, so `complete_api_reversal` flips the original to
+`rolled_back` (a real undo, API-executable — not wolf-pack-bound).
+
+**Safety:** `GET /manager/configuration/validation` is the correctness gate — a
+non-compiling edit is auto-rolled-back (prior file restored) and never applied, so
+a bad rule can't break the manager. Capability-gated on `rules:update` +
+`cluster:restart` (admin-only — empirically: `wolf-acme` holds neither, the admin
+`wazuh-wui` holds both on `*:*:*`). The live web-test (a real manager-global write)
+requires explicit operator go-ahead.

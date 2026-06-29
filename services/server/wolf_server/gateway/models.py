@@ -125,6 +125,12 @@ class ActionProposal(Base):
     reversal_proposal_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), nullable=True
     )
+    # On a snapshot-restore forward action (rule_tuning / config_change, 6-e.3+):
+    # the captured prior artifact (e.g. {"filename","relative_dirname","content",
+    # "sha256"} for local_rules.xml) taken at execute time, BEFORE the write. The
+    # reversal reads it from the original to PUT it back (a real undo). Mutable
+    # bookkeeping like ``result`` — NOT part of content_hash.
+    prior_state: Mapped[dict[str, object] | None] = mapped_column(_JSON_TYPE, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_now

@@ -418,3 +418,37 @@ async def test_find_active_action_does_not_cross_organizations(db: Any) -> None:
         db, organization_id=organization_b, action_class="agent_action", matcher=lambda _p: True
     )
     assert found_b is None  # org B cannot see org A's action
+
+
+@pytest.mark.asyncio
+async def test_find_active_rule_tuning_does_not_cross_organizations(db: Any) -> None:
+    """The same org boundary holds for rule_tuning recall (6-e.3): a succeeded
+    rule change in org A is invisible to org B, so a restore can never reverse
+    another organization's rule change."""
+    from wolf_server.gateway.models import ProposalState
+    from wolf_server.gateway.proposals import create_proposal, find_active_action
+
+    organization_a = uuid.uuid4()
+    organization_b = uuid.uuid4()
+    p = await create_proposal(
+        db,
+        organization_id=organization_a,
+        requested_by=uuid.uuid4(),
+        action_class="rule_tuning",
+        target={"rule_id": "100001"},
+        action="disable_rule",
+        parameters={"level": 0},
+        rationale="noisy rule",
+        expected_effect="silence rule",
+    )
+    p.state = ProposalState.succeeded
+    await db.flush()
+
+    found_a = await find_active_action(
+        db, organization_id=organization_a, action_class="rule_tuning", matcher=lambda _p: True
+    )
+    assert found_a is not None and found_a.id == p.id
+    found_b = await find_active_action(
+        db, organization_id=organization_b, action_class="rule_tuning", matcher=lambda _p: True
+    )
+    assert found_b is None  # org B cannot see org A's rule change

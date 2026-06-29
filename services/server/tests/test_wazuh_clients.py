@@ -285,3 +285,23 @@ async def test_server_api_rejects_non_get(connection: WazuhConnection) -> None:
     with pytest.raises(WazuhServerApiError, match="read-only"):
         # Reach into _request to simulate an internal misuse.
         await client._request("POST", "/agents/restart")
+
+
+@pytest.mark.asyncio
+async def test_server_api_get_raw_returns_text_body(connection: WazuhConnection) -> None:
+    """get_raw returns the response body verbatim (XML), not a JSON envelope —
+    the rule_tuning snapshot needs the exact file bytes (6-e.3)."""
+    raw_xml = '<group name="sshd,">\n  <rule id="100001" level="5"></rule>\n</group>'
+
+    async def _handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/security/user/authenticate":
+            return httpx.Response(200, json={"data": {"token": "jwt"}}, request=request)
+        assert request.method == "GET"
+        assert request.url.path == "/rules/files/local_rules.xml"
+        return httpx.Response(200, text=raw_xml, request=request)
+
+    client = _make_api_client(connection, httpx.MockTransport(_handler))
+    body = await client.get_raw(
+        "/rules/files/local_rules.xml", params={"raw": "true", "relative_dirname": "etc/rules"}
+    )
+    assert body == raw_xml  # exact bytes, not parsed

@@ -14,13 +14,14 @@ executors define ``build_reverse`` accordingly.
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
 
 from wolf_common.errors import WolfError
 
-from wolf_server.gateway.models import ActionProposal
+from wolf_server.gateway.models import ActionProposal, ProposalState
 from wolf_server.gateway.reversal import (
     REVERSAL_STATE_COMPLETED,
     reversal_freshness,
@@ -29,7 +30,48 @@ from wolf_server.gateway.reversal import (
 )
 from wolf_server.wazuh.active_response import interpret_ar_result
 from wolf_server.wazuh.agent_actions import OP_ASSIGN_GROUP
-from wolf_server.wazuh.capabilities import resolve_agent_groups
+from wolf_server.wazuh.capabilities import (
+    ACTION_UPDATE_RULES,
+    RESOURCE_LOCAL_RULES,
+    resolve_agent_groups,
+)
+from wolf_server.wazuh.rule_tuning import (
+    DISABLE_LEVEL,
+    LOCAL_RULES_DIRNAME,
+    LOCAL_RULES_FILENAME,
+    OP_DISABLE_RULE,
+    apply_override,
+    build_override_block,
+    extract_rule_block,
+    minimal_override_block,
+)
+
+
+class RulesetValidationError(WolfError):
+    """The edited ruleset failed ``GET /manager/configuration/validation`` — the
+    write was auto-rolled-back (the prior file restored) and never applied."""
+
+    http_status = 422
+    error_code = "ruleset_validation_failed"
+
+
+def _sha256(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _validation_ok(body: dict[str, Any]) -> tuple[bool, str]:
+    """Parse ``GET /manager/configuration/validation`` — ok iff no failed items
+    and every node reports ``status: OK``."""
+    data = body.get("data", {}) if isinstance(body, dict) else {}
+    if data.get("total_failed_items"):
+        failed = data.get("failed_items", [])
+        return False, f"validation failed: {str(failed)[:300]}"
+    items = data.get("affected_items", [])
+    if isinstance(items, list):
+        bad = [it for it in items if isinstance(it, dict) and it.get("status") != "OK"]
+        if bad:
+            return False, f"node validation not OK: {str(bad)[:300]}"
+    return True, "ruleset valid on all nodes"
 
 # The callable shapes execute_proposal consumes (mirrors gateway/execution.py).
 Freshness = Callable[[ActionProposal], Awaitable[tuple[bool, str]]]
@@ -212,3 +254,205 @@ class _AgentActionExecutor:
 
 
 register_executor("agent_action", _AgentActionExecutor())
+
+
+class _RuleTuningExecutor:
+    """rule_tuning (6-e.3): forward writes an ``overwrite="yes"`` override into
+    ``local_rules.xml`` and APPLIES it (validate → cluster restart, with an
+    auto-rollback if the edited ruleset does not compile); reverse performs a
+    **real undo** by PUTting the captured ``prior_state`` snapshot back. Both
+    directions run through the Server API (snapshot-restore, not wolf-pack-bound —
+    ADR 0029 §2), so a succeeded reverse flips the original to ``rolled_back``."""
+
+    @staticmethod
+    async def _resolve_rule(read_api: Any, rule_id: str) -> dict[str, Any] | None:
+        """The rule's current definition (level + which file it lives in), or None."""
+        body = await read_api.get("/rules", params={"rule_ids": rule_id})
+        items = body.get("data", {}).get("affected_items", []) if isinstance(body, dict) else []
+        if not isinstance(items, list) or not items or not isinstance(items[0], dict):
+            return None
+        first: dict[str, Any] = items[0]
+        return first
+
+    @staticmethod
+    async def _apply_and_restart(
+        ctx: ExecContext, *, new_content: str, rollback_to: str | None
+    ) -> str:
+        """PUT ``new_content`` → validate → (restore ``rollback_to`` + raise on
+        invalid) → cluster restart.  Returns the validation detail.  ``rollback_to``
+        is the snapshot to auto-restore if validation fails (None on a reverse —
+        the restored file was valid when captured, so a failure is surfaced raw)."""
+        await ctx.action_api.update_rules_file(
+            filename=LOCAL_RULES_FILENAME,
+            content=new_content,
+            capabilities=ctx.capabilities,
+            relative_dirname=LOCAL_RULES_DIRNAME,
+        )
+        valid, detail = _validation_ok(await ctx.read_api.get("/manager/configuration/validation"))
+        if not valid:
+            if rollback_to is not None:
+                await ctx.action_api.update_rules_file(
+                    filename=LOCAL_RULES_FILENAME,
+                    content=rollback_to,
+                    capabilities=ctx.capabilities,
+                    relative_dirname=LOCAL_RULES_DIRNAME,
+                )
+                raise RulesetValidationError(
+                    f"Edited ruleset rejected ({detail}); restored the prior "
+                    "local_rules.xml. No change applied."
+                )
+            raise RulesetValidationError(f"Ruleset rejected ({detail}).")
+        await ctx.action_api.restart_cluster(capabilities=ctx.capabilities)
+        return detail
+
+    def build_forward(self, proposal: ActionProposal, ctx: ExecContext) -> Callables:
+        read_api = ctx.read_api
+
+        async def _freshness(p: ActionProposal) -> tuple[bool, str]:
+            if not ctx.capabilities.can(ACTION_UPDATE_RULES, RESOURCE_LOCAL_RULES):
+                return False, "Credential no longer holds rules:update (Superuser-scoped)."
+            rule_id = str(p.target.get("rule_id", ""))
+            rule = await self._resolve_rule(read_api, rule_id)
+            if rule is None:
+                return False, f"Rule {rule_id} is no longer present."
+            return True, f"Rule {rule_id} present (level {rule.get('level')})."
+
+        async def _perform(p: ActionProposal) -> dict[str, Any]:
+            rule_id = str(p.target.get("rule_id", ""))
+            params = p.parameters if isinstance(p.parameters, dict) else {}
+            level_param = params.get("level")
+            level = (
+                DISABLE_LEVEL
+                if p.action == OP_DISABLE_RULE or not isinstance(level_param, int)
+                else level_param
+            )
+            rule = await self._resolve_rule(read_api, rule_id)
+            if rule is None:
+                raise RulesetValidationError(f"Rule {rule_id} not found; cannot tune.")
+            src_file = str(rule.get("filename") or LOCAL_RULES_FILENAME)
+            src_dir = str(rule.get("relative_dirname") or LOCAL_RULES_DIRNAME)
+
+            # Snapshot local_rules.xml (the file we edit) — the undo restore point.
+            snapshot = await read_api.get_raw(
+                f"/rules/files/{LOCAL_RULES_FILENAME}",
+                params={"raw": "true", "relative_dirname": LOCAL_RULES_DIRNAME},
+            )
+            snap_hash = _sha256(snapshot)
+            p.prior_state = {
+                "filename": LOCAL_RULES_FILENAME,
+                "relative_dirname": LOCAL_RULES_DIRNAME,
+                "content": snapshot,
+                "sha256": snap_hash,
+            }
+
+            # The rule's source body — preserve its matching conditions in the override.
+            source_raw = (
+                snapshot
+                if src_file == LOCAL_RULES_FILENAME
+                else await read_api.get_raw(
+                    f"/rules/files/{src_file}",
+                    params={"raw": "true", "relative_dirname": src_dir},
+                )
+            )
+            block = extract_rule_block(source_raw, rule_id)
+            override = (
+                build_override_block(block, level=level)
+                if block is not None
+                else minimal_override_block(
+                    rule_id, level=level, description=f"Tuned by Wolf (level {level})"
+                )
+            )
+            new_content = apply_override(snapshot, rule_id, override)
+            detail = await self._apply_and_restart(
+                ctx, new_content=new_content, rollback_to=snapshot
+            )
+            return {
+                "rule_id": rule_id,
+                "target_level": level,
+                "source_filename": src_file,
+                "validation": detail,
+                "restart_issued": True,
+                "prior_sha256": snap_hash,
+            }
+
+        async def _verify(p: ActionProposal, res: dict[str, Any]) -> tuple[bool, dict[str, Any]]:
+            rule_id = str(res.get("rule_id", p.target.get("rule_id", "")))
+            target_level = res.get("target_level")
+            rule = await self._resolve_rule(read_api, rule_id)
+            if rule is None:
+                return False, {"ok": False, "note": f"Rule {rule_id} not resolvable after change."}
+            effective = rule.get("level")
+            detail: dict[str, Any] = {
+                "ok": True,
+                "rule_id": rule_id,
+                "target_level": target_level,
+                "effective_level": effective,
+                "matches": effective == target_level,
+                "filename": LOCAL_RULES_FILENAME,
+                "validation": res.get("validation"),
+                "restart_issued": res.get("restart_issued", True),
+                "note": (
+                    "Rule change written to local_rules.xml, ruleset validated, and a cluster "
+                    "restart issued to apply it. The new ruleset is in effect once the restart "
+                    "completes."
+                ),
+            }
+            return True, detail
+
+        return _freshness, _perform, _verify
+
+    def build_reverse(self, proposal: ActionProposal, ctx: ExecContext) -> Callables:
+        db = ctx.db
+
+        async def _freshness(p: ActionProposal) -> tuple[bool, str]:
+            original = (
+                await db.get(ActionProposal, p.reverses_proposal_id)
+                if p.reverses_proposal_id is not None
+                else None
+            )
+            if original is None:
+                return False, "The original rule_tuning proposal is no longer present."
+            if original.state == ProposalState.rolled_back:
+                return False, "The rule change has already been reversed."
+            prior = original.prior_state if isinstance(original.prior_state, dict) else None
+            if not prior or not prior.get("content"):
+                return False, "No captured prior_state snapshot to restore."
+            return True, f"Prior local_rules.xml snapshot present (original {original.id})."
+
+        async def _perform(p: ActionProposal) -> dict[str, Any]:
+            original = await db.get(ActionProposal, p.reverses_proposal_id)
+            prior = (
+                original.prior_state
+                if original is not None and isinstance(original.prior_state, dict)
+                else {}
+            )
+            content = str(prior.get("content", ""))
+            detail = await self._apply_and_restart(ctx, new_content=content, rollback_to=None)
+            return {
+                "restored_from": str(original.id) if original is not None else "",
+                "rule_id": str(original.target.get("rule_id", "")) if original is not None else "",
+                "validation": detail,
+                "restart_issued": True,
+            }
+
+        async def _verify(p: ActionProposal, res: dict[str, Any]) -> tuple[bool, dict[str, Any]]:
+            # Snapshot-restore is an API-executable undo — tag it completed so the
+            # API flips the original to rolled_back (reversal.complete_api_reversal).
+            detail: dict[str, Any] = {
+                "ok": True,
+                "restored_from": res.get("restored_from"),
+                "rule_id": res.get("rule_id"),
+                "validation": res.get("validation"),
+                "restart_issued": res.get("restart_issued", True),
+                "reversal_state": REVERSAL_STATE_COMPLETED,
+                "note": (
+                    "Restored local_rules.xml to its pre-tuning snapshot, validated, and issued a "
+                    "cluster restart. The rule reverts once the restart completes."
+                ),
+            }
+            return True, detail
+
+        return _freshness, _perform, _verify
+
+
+register_executor("rule_tuning", _RuleTuningExecutor())

@@ -224,9 +224,9 @@ def test_severity_is_catalog_driven_and_dynamic() -> None:
         compute_severity("active_response", "disable-account", {"username": "Administrator"})
         == "high"
     )
-    # Unknown command / non-AR class falls back to low (never crashes).
+    # Unknown command / unregistered class falls back to low (never crashes).
     assert compute_severity("active_response", "made-up", {}) == "low"
-    assert compute_severity("rule_tuning", "anything", {}) == "low"
+    assert compute_severity("not_a_registered_class", "anything", {}) == "low"
 
 
 # ── State machine ───────────────────────────────────────────────────────────

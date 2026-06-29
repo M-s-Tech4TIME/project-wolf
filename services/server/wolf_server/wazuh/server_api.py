@@ -20,7 +20,11 @@ from wolf_common.errors import WolfError
 from wolf_server.wazuh.active_response import build_ar_body
 from wolf_server.wazuh.capabilities import (
     ACTION_ACTIVE_RESPONSE,
+    ACTION_CLUSTER_RESTART,
     ACTION_MODIFY_GROUP,
+    ACTION_UPDATE_RULES,
+    RESOURCE_LOCAL_RULES,
+    RESOURCE_NODE_ANY,
     CredentialCapabilities,
 )
 from wolf_server.wazuh.config import WazuhConnection
@@ -75,6 +79,34 @@ class WazuhServerApiClient:
         Approval Gateway (doc 03 §The execute boundary).
         """
         return await self._request("GET", path, params=params)
+
+    async def get_raw(self, path: str, *, params: dict[str, Any] | None = None) -> str:
+        """Issue a read-only GET that returns the RAW response body as text.
+
+        Some endpoints (``GET /rules/files/{name}?raw=true``) return the file's
+        exact bytes (XML), not a JSON envelope — the rule_tuning snapshot needs
+        them verbatim to restore later.  Still GET-only (the read-side contract
+        is preserved); only the decoding differs from :meth:`get`.
+        """
+        if self._token is None:
+            await self._authenticate()
+        headers = {"Authorization": f"Bearer {self._token}"}
+        response = await self._client.request("GET", path, params=params, headers=headers)
+        if response.status_code == 401:
+            await self._authenticate()
+            headers = {"Authorization": f"Bearer {self._token}"}
+            response = await self._client.request("GET", path, params=params, headers=headers)
+        if response.status_code >= 400:
+            logger.warning(
+                "wazuh_server_api_http_error",
+                status_code=response.status_code,
+                path=path,
+                organization_id=str(self._connection.organization_id),
+            )
+            raise WazuhServerApiError(
+                f"Server API returned {response.status_code}: {response.text[:200]}"
+            )
+        return response.text
 
     # ── Internals ─────────────────────────────────────────────────────────
 
@@ -256,6 +288,56 @@ class WazuhServerApiActionClient:
                 f"(groups: {groups})."
             )
 
+    async def update_rules_file(
+        self,
+        *,
+        filename: str,
+        content: str,
+        capabilities: CredentialCapabilities,
+        relative_dirname: str = "etc/rules",
+    ) -> dict[str, Any]:
+        """Overwrite a custom rule file (``PUT /rules/files/{filename}``) — 6-e.3.
+
+        Manager-GLOBAL: capability-checked against ``rules:update`` on
+        ``rule:file:<filename>`` (the admin grants it on ``*:*:*``; a per-org
+        credential holds it on nothing → :class:`WazuhActionNotPermittedError`,
+        fail-closed, BEFORE any request).  The body is the RAW file content
+        (``application/octet-stream``), not JSON; ``overwrite=true`` replaces the
+        existing file.  Wazuh validates the XML syntax on upload and rejects a
+        malformed file with a 4xx (surfaced as :class:`WazuhServerApiError`)."""
+        if not capabilities.can(ACTION_UPDATE_RULES, f"rule:file:{filename}"):
+            raise WazuhActionNotPermittedError(
+                f"Credential is not authorized to update rule file {filename!r} "
+                "(rules:update). Rule tuning is manager-global / Superuser-scoped."
+            )
+        return await self._write_raw(
+            "PUT",
+            f"/rules/files/{filename}",
+            params={"overwrite": "true", "relative_dirname": relative_dirname},
+            body=content.encode("utf-8"),
+        )
+
+    async def restart_cluster(self, *, capabilities: CredentialCapabilities) -> dict[str, Any]:
+        """Restart the manager cluster (``PUT /cluster/restart``) to load a changed
+        ruleset — 6-e.3.  Capability-checked against ``cluster:restart`` (admin
+        grants it on ``*:*:*``).  Returns once the restart is *issued* (Wazuh
+        schedules it across nodes); it does not block until the cluster is back."""
+        if not capabilities.can(ACTION_CLUSTER_RESTART, RESOURCE_NODE_ANY):
+            raise WazuhActionNotPermittedError(
+                "Credential is not authorized to restart the cluster (cluster:restart)."
+            )
+        return await self._write("PUT", "/cluster/restart")
+
+    def require_update_rules(self, capabilities: CredentialCapabilities) -> None:
+        """Pre-flight the rule_tuning write surface (``rules:update`` on
+        local_rules.xml) — raises :class:`WazuhActionNotPermittedError` if the
+        credential lacks it.  Used by the executor's freshness gate."""
+        if not capabilities.can(ACTION_UPDATE_RULES, RESOURCE_LOCAL_RULES):
+            raise WazuhActionNotPermittedError(
+                "Credential is not authorized to update rules (rules:update). "
+                "Rule tuning is manager-global / Superuser-scoped."
+            )
+
     # ── Internals ──────────────────────────────────────────────────────────
 
     async def _write(
@@ -290,6 +372,39 @@ class WazuhServerApiActionClient:
             )
         body: dict[str, Any] = response.json()
         return body
+
+    async def _write_raw(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        body: bytes,
+    ) -> dict[str, Any]:
+        """Like :meth:`_write` but sends a RAW body (file upload), not JSON."""
+        headers = {"Content-Type": "application/octet-stream"}
+        if self._token is None:
+            await self._authenticate()
+        auth_headers = {**headers, "Authorization": f"Bearer {self._token}"}
+        response = await self._client.request(method, path, params=params, content=body,
+                                              headers=auth_headers)
+        if response.status_code == 401:
+            await self._authenticate()
+            auth_headers = {**headers, "Authorization": f"Bearer {self._token}"}
+            response = await self._client.request(method, path, params=params, content=body,
+                                                  headers=auth_headers)
+        if response.status_code >= 400:
+            logger.warning(
+                "wazuh_action_http_error",
+                status_code=response.status_code,
+                path=path,
+                organization_id=str(self._connection.organization_id),
+            )
+            raise WazuhServerApiError(
+                f"Server API write returned {response.status_code}: {response.text[:200]}"
+            )
+        result: dict[str, Any] = response.json()
+        return result
 
     async def _authenticate(self) -> None:
         response = await self._client.post(

@@ -23,13 +23,22 @@ if TYPE_CHECKING:
 # Wazuh RBAC actions Wolf maps to its own action classes.
 ACTION_ACTIVE_RESPONSE = "active-response:command"  # run an AR command on agents
 ACTION_MODIFY_GROUP = "agent:modify_group"  # add/remove an agent to/from a group (6-e.2)
+ACTION_UPDATE_RULES = "rules:update"  # write a rule file — manager-global (6-e.3)
+ACTION_CLUSTER_RESTART = "cluster:restart"  # restart the cluster to apply a ruleset (6-e.3)
+
+# Resource a rule-file write / restart is checked against (manager-global, not
+# agent-scoped). The admin credential grants these on ``*:*:*`` (matches both);
+# a per-org credential holds neither, so rule_tuning is Superuser-scoped.
+RESOURCE_LOCAL_RULES = "rule:file:local_rules.xml"
+RESOURCE_NODE_ANY = "node:id:*"
 
 # Map Wolf action class → the SET of Wazuh RBAC actions that gate it (ADR 0029):
 # Wolf offers the class if the credential holds ANY of them.  Extended as more
-# action classes land (rule_tuning, config_change).
+# action classes land (config_change next).
 WOLF_ACTION_CLASS_RBAC: dict[str, frozenset[str]] = {
     "active_response": frozenset({ACTION_ACTIVE_RESPONSE}),
     "agent_action": frozenset({ACTION_MODIFY_GROUP}),
+    "rule_tuning": frozenset({ACTION_UPDATE_RULES}),
 }
 
 _ALLOW = "allow"

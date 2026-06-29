@@ -69,6 +69,15 @@ function paramsSummary(p: ActionProposal): string | null {
     const verb = p.action === "assign_group" ? "assign to group" : "remove from group";
     return `${verb} ${params["group"]}`;
   }
+  // rule_tuning — the rule id is the target; the action encodes the operation
+  // (disable_rule / adjust_level / restore_rules), so undos read accurately too.
+  if (p.action_class === "rule_tuning") {
+    const ruleId = typeof p.target["rule_id"] === "string" ? p.target["rule_id"] : "?";
+    if (p.action === "restore_rules") return `restore rule ${ruleId}`;
+    if (p.action === "disable_rule") return `disable rule ${ruleId}`;
+    const lvl = typeof params["level"] === "number" ? params["level"] : "?";
+    return `set rule ${ruleId} to level ${lvl}`;
+  }
   const intent = typeof params["intent"] === "string" ? params["intent"] : "";
   const undo = isReversal(p);
   const parts: string[] = [];

@@ -49,6 +49,59 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-29 — 6-e.3: rule_tuning (disable / adjust-level) + snapshot-restore reversal
+
+The third of ADR 0025's four action classes — **rule tuning**, manager-GLOBAL and
+Superuser-scoped, reversible by snapshot-restore. Built + unit-tested; the live
+manager-global web-test is operator-cleared but pending (run with the Superuser
+credential, watched).
+
+**Operator-scoped (2026-06-29):** fine-tune EXISTING rules only — `disable_rule`
+(set level 0) and `adjust_level` — via an `overwrite="yes"` override in
+**`local_rules.xml`** only (Wolf never touches stock `ruleset/rules/`). Authoring
+net-new detection rules + arbitrary `etc/rules/*.xml` are tracked follow-ons.
+**Auto-apply** chosen (rules don't hot-reload): the action genuinely applies the
+change via a cluster restart and verifies it.
+
+**Grounding (live RBAC probe):** `wazuh-wui` (admin) holds `rules:update` +
+`cluster:restart` on `*:*:*`; `wolf-acme` (per-org) holds neither → rule_tuning is
+correctly Superuser-scoped, enforced by the capability gate.
+
+Changes:
+- `wazuh/rule_tuning.py` (NEW) — op catalog + **string-based** `local_rules.xml`
+  override construction (the file is a multi-root fragment, so regex not
+  ElementTree). The override copies the rule's exact inner body from its source
+  file and changes only `level` + adds `overwrite="yes"` → matching conditions
+  preserved. Marked `wolf_tuning` group + idempotent re-tune (no duplicate sid).
+- `wazuh/server_api.py` — read `get_raw` (raw XML, GET-only contract preserved) +
+  bounded `update_rules_file` (raw PUT, `rules:update`) + `restart_cluster`
+  (`cluster:restart`); a `_write_raw` helper for file-upload bodies.
+- `wazuh/capabilities.py` — `ACTION_UPDATE_RULES`/`ACTION_CLUSTER_RESTART` +
+  `rule_tuning`→`{rules:update}` in `WOLF_ACTION_CLASS_RBAC`.
+- `gateway/executors.py` `_RuleTuningExecutor` — **build_forward**: snapshot
+  `local_rules.xml` (→ `prior_state`) → PUT override → `GET
+  /manager/configuration/validation` (**auto-rollback** the prior file if the
+  edit doesn't compile — a broken ruleset is never applied) → cluster restart →
+  verify the rule's level. **build_reverse**: restore the captured snapshot →
+  validate → restart → tag `REVERSAL_STATE_COMPLETED` so `complete_api_reversal`
+  flips the original to `rolled_back` (a real undo, API-executable).
+- **Migration 0017** — `prior_state` JSONB on `action_proposals` (execute-time
+  bookkeeping, NOT in `content_hash`; reused by config_change). Model column added.
+- `gateway/validator.py`/`proposals.py` — `_validate_rule_tuning` (rule-id target,
+  op, 0..16 level) + `_rule_tuning_severity` (HIGH — manager-global, reduces
+  visibility).
+- `tools/propose_rule_tuning.py` (NEW, registered) — proposes a tune;
+  `restore_rules` undoes an active prior Wolf rule change (linked + recalls why).
+  `agent/prompts.py` #4 + `/actions` rule-target rendering updated.
+
+ADR 0029 §6 records the rule_tuning v1 decisions. GATE: ruff + mypy --strict clean;
+dashboard tsc + eslint clean; **695 services/server tests / 0 skip**; alembic head
+`0017` (single head); NO CI change (new modules under already-strict
+`wazuh`/`tools`/`gateway`; the write-boundary grep + alembic-check pass). NEXT:
+**6-e.4** — config_change (snapshot-restore of ossec.conf, highest blast radius).
+
+---
+
 ## 2026-06-29 — 6-e.2: agent_action (group assign/remove) + API-inverse reversal
 
 The first new action class on the 6-e registry — **agent group management**,
