@@ -58,12 +58,21 @@ function targetSummary(target: Record<string, unknown>): string {
   return agent ? `agent ${agent}` : JSON.stringify(target);
 }
 
-/** Human one-liner for the action's structured parameters (what it acts on). */
-function paramsSummary(parameters: Record<string, unknown>): string | null {
+/** Human one-liner for the action's structured parameters (what it acts on).
+ *  Reversal-aware: an undo reads "unblock IP …" / "re-enable user …", not the
+ *  forward "block IP …" — so the TARGET matches what the action actually does. */
+function paramsSummary(p: ActionProposal): string | null {
+  const params = p.parameters;
+  const intent = typeof params["intent"] === "string" ? params["intent"] : "";
+  const undo = isReversal(p);
   const parts: string[] = [];
-  if (typeof parameters["srcip"] === "string") parts.push(`block IP ${parameters["srcip"]}`);
-  if (typeof parameters["username"] === "string") {
-    parts.push(`user ${parameters["username"]}`);
+  if (typeof params["srcip"] === "string") {
+    const verb = intent === "unblock_ip" || undo ? "unblock IP" : "block IP";
+    parts.push(`${verb} ${params["srcip"]}`);
+  }
+  if (typeof params["username"] === "string") {
+    const verb = intent === "enable_user" || undo ? "re-enable user" : "disable user";
+    parts.push(`${verb} ${params["username"]}`);
   }
   return parts.length ? parts.join(", ") : null;
 }
@@ -310,8 +319,8 @@ export default function ActionsPage() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-2 text-sm">
-                    {paramsSummary(p.parameters) ? (
-                      <Field label="Target">{paramsSummary(p.parameters)}</Field>
+                    {paramsSummary(p) ? (
+                      <Field label="Target">{paramsSummary(p)}</Field>
                     ) : null}
                     {isReversal(p) && p.reverses_proposal_id ? (
                       <Field label="Undoes">
@@ -465,8 +474,8 @@ export default function ActionsPage() {
               <>
                 Wolf will authorise and record the reversal of{" "}
                 <span className="font-medium">{approving.action}</span>
-                {paramsSummary(approving.parameters) ? (
-                  <> (<span className="font-medium">{paramsSummary(approving.parameters)}</span>)</>
+                {paramsSummary(approving) ? (
+                  <> (<span className="font-medium">{paramsSummary(approving)}</span>)</>
                 ) : null}{" "}
                 on <span className="font-medium">{targetSummary(approving.target)}</span>. The
                 physical removal runs on the host via wolf-pack (Phase 12) — the Wazuh API
@@ -476,8 +485,8 @@ export default function ActionsPage() {
             ) : (
               <>
                 Wolf will run <span className="font-medium">{approving.action}</span>
-                {paramsSummary(approving.parameters) ? (
-                  <> (<span className="font-medium">{paramsSummary(approving.parameters)}</span>)</>
+                {paramsSummary(approving) ? (
+                  <> (<span className="font-medium">{paramsSummary(approving)}</span>)</>
                 ) : null}{" "}
                 on <span className="font-medium">{targetSummary(approving.target)}</span> using this
                 organization&apos;s Wazuh credential. This is a real change on your fleet. A

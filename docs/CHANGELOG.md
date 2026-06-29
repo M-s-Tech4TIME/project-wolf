@@ -49,6 +49,18 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-29 — 6-d /actions: reversal-aware TARGET label
+
+Web-test feedback: on a reversal card the **TARGET** still read "block IP …"
+(it's an unblock), because `paramsSummary()` hard-coded the forward verb — the
+UNDOES / EXPECTED EFFECT lines were right, only TARGET was ambiguous. Made
+`paramsSummary` **intent-aware** (`app/actions/page.tsx`): it now reads the
+proposal's `intent` (+ the reversal flag) and renders **"unblock IP …"** /
+**"re-enable user …"** for undos and **"block IP …"** / **"disable user …"** for
+forward actions — so the TARGET matches what the action actually does, on the
+card and in the approve dialog. Frontend-only (dev hot-reloads); tsc + eslint
+clean; no backend / migration / CI change.
+
 ## 2026-06-29 — 6-d unblock narration fix (tool description + prompt)
 
 Re-tested manual unblock on a freshly-restarted server (current code). **The
