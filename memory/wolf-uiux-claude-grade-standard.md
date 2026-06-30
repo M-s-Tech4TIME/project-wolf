@@ -44,8 +44,13 @@ undermines trust in Wolf's answers.
     built ONCE in `agent/loop.py` (`strategy.system_prompt()`) and passed to
     whichever adapter, so ONE edit covers Ollama AND OpenRouter (and any
     provider). NEVER add per-provider prompts. NB: `SYSTEM_PROMPT` is a non-raw
-    Python `"""` string — shell `\` line-continuations get eaten; write each
-    command on its own full line.
+    Python `"""` string — a lone shell `\`+newline is EATEN by Python; use `\\`
+    (escaped → one literal backslash + real newline) for shell continuations in
+    the worked example, and keep every physical source line ≤100 chars or
+    repo-root ruff **E501** fails CI. CRITICAL: run the pre-push lint as
+    `uv run ruff check .` from the REPO ROOT (the CI command) — a per-file
+    `ruff check <file>` from `services/server` resolves a different config and
+    MISSED the E501 that failed CI run #234.
   - *Layer 2 (rendering):* `components/markdown.tsx` is **react-markdown v10**
     (no `inline` prop — the doc's `inline`-prop sample is for ≤v8; do NOT use
     it). It distinguishes fenced (className `language-` / strip `pre`) → code box

@@ -100,6 +100,17 @@ model (local Ollama Qwen3 or OpenRouter).
   (promote) + a 69-char no-space path (stays inline).
 - Dashboard tsc + eslint clean; full backend suite green; wolf-server restarted.
 
+**Follow-up (lint fix).** First push (`15c602a`) failed CI's `Lint (ruff)`:
+the two example bash commands exceeded ruff E501 (109/149 > 100). The local
+pre-push check ran `ruff check <file>` from `services/server` (different config)
+instead of `uv run ruff check .` from the repo root (the CI command), and the
+"green" run watched was the dynamic *Push on main* workflow, not the CI
+workflow — both gaps now recorded in the CI-audit memory. Root fix (no noqa /
+ignore): wrapped the long commands with shell `\` line-continuations, written
+as `\\` in the non-raw Python `"""` string so Python keeps a literal backslash
++ newline. Each source line now ≤82 chars; repo-root ruff clean; Ollama
+re-acceptance still PASS (3 fenced blocks, 0 run-ons).
+
 ---
 
 ## 2026-06-30 — UI/UX polish: panel scrolling, wide-content containment, markdown discipline

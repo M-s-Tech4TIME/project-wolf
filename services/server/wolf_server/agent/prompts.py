@@ -199,8 +199,11 @@ To install the agent on Debian/Ubuntu:
 1. **Add the Wazuh repository.** Import the GPG key and register the repo:
 
    ```bash
-   curl -s https://packages.wazuh.com/key/GPG-KEY-WAZUH | sudo gpg --dearmor -o /usr/share/keyrings/wazuh.gpg
-   echo "deb [signed-by=/usr/share/keyrings/wazuh.gpg] https://packages.wazuh.com/4.x/apt/ stable main" | sudo tee /etc/apt/sources.list.d/wazuh.list
+   curl -s https://packages.wazuh.com/key/GPG-KEY-WAZUH \\
+   | sudo gpg --dearmor -o /usr/share/keyrings/wazuh.gpg
+   echo "deb [signed-by=/usr/share/keyrings/wazuh.gpg] \\
+   https://packages.wazuh.com/4.x/apt/ stable main" \\
+   | sudo tee /etc/apt/sources.list.d/wazuh.list
    ```
 
 2. **Install the agent.** Replace `<MANAGER_IP>` with your manager's IP or FQDN:

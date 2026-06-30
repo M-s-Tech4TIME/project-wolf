@@ -43,7 +43,15 @@ red run.
    `.tuples().all()` so both pass.
 7. After push: watch the run (`gh run watch <id> --exit-status`, and read
    `$?` directly — piping to `tail` masks the exit code) until fully green.
-   The slice is not closed until CI is.
+   The slice is not closed until CI is. CAUTION: a push to `main` triggers
+   TWO workflows — the real **CI** workflow (event=push: Lint/Type-check/
+   Test/Frontend/…) AND a dynamic "Push on main" run. `gh run list --branch
+   main --limit 1` can return the dynamic one, which goes green independently;
+   watching it gives a FALSE green (this exact mistake let an E501 lint
+   failure through on CI run #234, 2026-06-30 — `ruff check <file>` from
+   `services/server` had also masked it; point 6's `ruff check .` from REPO
+   ROOT is the catch). Always select the CI workflow run by its name (filter
+   the run whose jobs include "Lint (ruff)"), not just the latest run id.
 
 Related: [[integrity-across-the-stack]], [[no-unaddressed-errors]],
 [[periodic-plan-sync]].
