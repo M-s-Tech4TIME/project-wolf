@@ -31,7 +31,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import type { Conversation } from "@/lib/types";
 
@@ -250,7 +249,12 @@ export function ChatSidebar({
               ) : null}
             </div>
           </div>
-          <ScrollArea className="flex-1">
+          {/* Native scroll container (not Radix ScrollArea): its nested
+              viewport didn't constrain inside the flex chain, so a long
+              conversation list overflowed past the profile footer instead
+              of scrolling. `min-h-0 flex-1 overflow-y-auto` is the same
+              rock-solid pattern MessageThread uses. */}
+          <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-foreground/30 hover:[&::-webkit-scrollbar-thumb]:bg-foreground/50">
             <div className="space-y-3 px-2 pb-3">
               {conversations.length === 0 ? (
                 <div className="px-3 py-8 text-center text-xs text-muted-foreground">
@@ -307,7 +311,7 @@ export function ChatSidebar({
                 </>
               )}
             </div>
-          </ScrollArea>
+          </div>
         </>
       )}
 

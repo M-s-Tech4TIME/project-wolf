@@ -3,7 +3,6 @@
 import { FileSearch, FileText } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import type { Citation, ToolEvent } from "@/lib/types";
 
@@ -25,7 +24,12 @@ export function CitationsPanel({ citations, toolEvents }: Props) {
           Tool calls and citations behind the answer.
         </p>
       </div>
-      <ScrollArea className="flex-1">
+      {/* Native scroll container. Radix's ScrollArea introduces a nested
+          viewport that doesn't reliably constrain inside our flex chain
+          (same issue MessageThread hit — see its note), so a long evidence
+          list overflowed past the viewport instead of scrolling. A native
+          `min-h-0 flex-1 overflow-y-auto` is rock-solid. */}
+      <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-foreground/30 hover:[&::-webkit-scrollbar-thumb]:bg-foreground/50">
         <div className="space-y-4 p-4">
           {empty ? (
             <p className="text-xs text-muted-foreground">
@@ -101,7 +105,7 @@ export function CitationsPanel({ citations, toolEvents }: Props) {
             </>
           ) : null}
         </div>
-      </ScrollArea>
+      </div>
     </div>
   );
 }

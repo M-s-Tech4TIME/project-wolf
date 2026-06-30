@@ -663,7 +663,9 @@ function StreamingView({ stream }: { stream: StreamState }) {
           <Bot className="h-4 w-4 text-primary" />
         )}
       </div>
-      <div className="flex-1 space-y-3">
+      {/* min-w-0 lets the answer's table/code-block scroll containers
+          engage instead of this flex item growing past the column. */}
+      <div className="min-w-0 flex-1 space-y-3">
         <div className="text-sm text-muted-foreground">
           {stream.status.message ?? "Working…"}
         </div>
@@ -922,7 +924,12 @@ function AssistantBubble({
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
           <Bot className="h-4 w-4 text-primary" />
         </div>
-        <div className="flex-1 rounded-lg border border-border bg-card px-4 py-3">
+        {/* min-w-0: without it this flex item won't shrink below its
+            content's min-content width, so a wide table/code block would
+            push the whole bubble past the conversation column (then get
+            clipped by the thread's overflow-x-hidden). With min-w-0 the
+            bubble stays put and the inner scroll containers take over. */}
+        <div className="min-w-0 flex-1 rounded-lg border border-border bg-card px-4 py-3">
           {hasAnswer ? (
             <Markdown>{answer}</Markdown>
           ) : interrupted ? (

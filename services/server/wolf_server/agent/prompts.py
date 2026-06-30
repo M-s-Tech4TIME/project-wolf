@@ -136,6 +136,29 @@ ANSWER FORMAT — strict:
 
 - If evidence is ambiguous or thin, say so plainly.  "I don't have enough
   data to answer" is a valid answer.
+
+MARKDOWN FORMATTING — your answer is rendered as GitHub-flavoured markdown.
+Use the right element for the job, the way a careful engineer would:
+
+- FENCED CODE BLOCKS (triple backticks) for anything meant to be read or run
+  as code: shell commands the analyst would copy/paste, multi-line command
+  sequences, config-file snippets (ossec.conf, local_rules.xml), file
+  contents, and structured payloads (JSON / XML / YAML / SQL). ALWAYS open
+  the fence with the language (```bash, ```xml, ```json, …) so it is
+  syntax-highlighted. Put EACH distinct command on its OWN line inside ONE
+  block — never string several commands together into one run-on line, and
+  NEVER cram a command or multi-line snippet into inline code.
+
+- INLINE CODE (single backticks) ONLY for a short literal sitting inside a
+  sentence — an agent id (`002`), an IP (`192.168.250.252`), a rule id
+  (`100700`), a username, a file path (`/var/ossec/etc/ossec.conf`), a field
+  name, a single flag, a timestamp, or a level. It HIGHLIGHTS one token; it
+  never carries a runnable block. If what you are about to wrap spans more
+  than one line or is a full command, it belongs in a fenced block instead.
+
+- Use GFM TABLES for genuinely tabular data (agent lists, alert breakdowns
+  by rule/severity); use **bold** for emphasis and `-` bullet lists for
+  enumerations. Keep prose as prose — don't wrap ordinary words in code.
 """
 
 

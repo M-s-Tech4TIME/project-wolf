@@ -49,6 +49,48 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-30 — UI/UX polish: panel scrolling, wide-content containment, markdown discipline
+
+**Session type:** claude-code
+**Phase:** 6-e (between 6-e.3 and 6-e.4) — operator-reported UI/UX issues found while web-testing rule_tuning
+**Branch / commit:** main
+
+### What we did
+A batch of chat / actions UI fixes driven by operator screenshots; the goal
+("dynamic, responsive, attractive" — Claude-grade conversation UX) is recorded
+as a standing feedback memory.
+
+- **Evidence + Conversations panels now scroll.** Both used Radix `ScrollArea`,
+  whose nested viewport never reliably constrained inside our flex chain (the
+  exact problem MessageThread had already documented + worked around). Replaced
+  both with the native `min-h-0 flex-1 overflow-y-auto` pattern + styled
+  scrollbars. (`citations-panel.tsx`, `chat-sidebar.tsx`)
+- **Wide tables / code blocks no longer break the conversation alignment.** The
+  assistant bubble's content `flex-1` lacked `min-w-0`, so a wide table forced
+  the flex item past the column (then got clipped by the thread's
+  `overflow-x-hidden`). Added `min-w-0` to the archived + streaming bubbles and
+  wrapped markdown tables in an `overflow-x-auto` scroll container. Wide content
+  now scrolls *inside* the message, Claude-style. (`message-thread.tsx`,
+  `markdown.tsx`)
+- **Actions "Recent activity" rows wrap fully.** Were single-line
+  `flex items-center` with a `truncate`d detail ("…") that overflowed the box.
+  Restructured into a wrapping header row (badges/action/target/time) + a full,
+  wrapped detail line — the whole content stays inside the box, no truncation.
+  Also render rule_tuning targets as `rule 100700` instead of raw
+  `{"rule_id":"100700"}`. (`app/actions/page.tsx`)
+- **System prompt: markdown formatting discipline.** Added a `MARKDOWN
+  FORMATTING` section to the agent `SYSTEM_PROMPT` — fenced code blocks (with a
+  language) for commands / multi-line code / config / structured payloads, one
+  command per line; inline code ONLY for short literals in prose (ids, IPs, rule
+  ids, paths, timestamps); GFM tables for tabular data. Stops Wolf cramming
+  multi-step commands into inline code. (`agent/prompts.py`)
+
+### What we decided
+- Keep OpenRouter (nemotron chat + owl-alpha grounding) active per operator.
+- 6-e.4 (config_change) stays deferred until this UI/UX pass is web-tested.
+
+---
+
 ## 2026-06-30 — 6-e.3 fix: authoritative rule_tuning verify (no phantom "succeeded")
 
 First live web-test of rule_tuning surfaced a real bug: disabling a rule reported

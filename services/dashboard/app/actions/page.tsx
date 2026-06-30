@@ -55,7 +55,11 @@ function agentIdOf(target: Record<string, unknown>): string | null {
 
 function targetSummary(target: Record<string, unknown>): string {
   const agent = agentIdOf(target);
-  return agent ? `agent ${agent}` : JSON.stringify(target);
+  if (agent) return `agent ${agent}`;
+  // rule_tuning targets a rule id — read it cleanly ("rule 100700") rather
+  // than dumping the raw JSON ({"rule_id":"100700"}).
+  if (typeof target["rule_id"] === "string") return `rule ${target["rule_id"]}`;
+  return JSON.stringify(target);
 }
 
 /** Human one-liner for the action's structured parameters (what it acts on).
@@ -455,38 +459,48 @@ export default function ActionsPage() {
               return (
                 <li
                   key={p.id}
-                  className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm ring-1 ring-foreground/10"
+                  className="rounded-xl px-3 py-2 text-sm ring-1 ring-foreground/10"
                 >
-                  {stateBadge(p.state)}
-                  {kindBadge(p)}
-                  <code className="rounded bg-muted px-1.5 py-0.5 text-xs">{p.action}</code>
-                  <span className="text-muted-foreground">on {targetSummary(p.target)}</span>
-                  {detail ? (
-                    <span className="truncate text-xs text-muted-foreground" title={detail}>
-                      — {detail}
+                  {/* Header row: badges + action + target, with the
+                      relative time pinned right. flex-wrap so a long target
+                      drops to the next line instead of pushing past the box. */}
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    {stateBadge(p.state)}
+                    {kindBadge(p)}
+                    <code className="rounded bg-muted px-1.5 py-0.5 text-xs">{p.action}</code>
+                    <span className="min-w-0 break-words text-muted-foreground">
+                      on {targetSummary(p.target)}
                     </span>
-                  ) : null}
-                  {/* A still-in-effect timed block shows when Wolf will auto-reverse it;
-                      a block whose reversal is already authorised says so. */}
-                  {!isReversal(p) && p.state === "succeeded" && p.auto_unblock_at && !p.reversal_proposal_id ? (
+                    {/* A still-in-effect timed block shows when Wolf will auto-reverse it;
+                        a block whose reversal is already authorised says so. */}
+                    {!isReversal(p) && p.state === "succeeded" && p.auto_unblock_at && !p.reversal_proposal_id ? (
+                      <span
+                        className="text-xs text-muted-foreground"
+                        title={absoluteTimeTitle(p.auto_unblock_at)}
+                      >
+                        · auto-reverses {timeUntil(p.auto_unblock_at)}
+                      </span>
+                    ) : null}
+                    {!isReversal(p) && p.reversal_proposal_id ? (
+                      <span className="text-xs text-sky-700 dark:text-sky-400">
+                        · reversal authorised
+                      </span>
+                    ) : null}
                     <span
-                      className="shrink-0 text-xs text-muted-foreground"
-                      title={absoluteTimeTitle(p.auto_unblock_at)}
+                      className="ml-auto shrink-0 text-xs text-muted-foreground"
+                      title={absoluteTimeTitle(when)}
                     >
-                      · auto-reverses {timeUntil(p.auto_unblock_at)}
+                      {relativeTime(when)}
                     </span>
+                  </div>
+                  {/* Detail (e.g. the rule_tuning evidence line) wraps fully
+                      on its own line — no truncation, the whole content stays
+                      visible inside the box. */}
+                  {detail ? (
+                    <p className="mt-1 break-words text-xs text-muted-foreground">
+                      — {detail}
+                    </p>
                   ) : null}
-                  {!isReversal(p) && p.reversal_proposal_id ? (
-                    <span className="shrink-0 text-xs text-sky-700 dark:text-sky-400">
-                      · reversal authorised
-                    </span>
-                  ) : null}
-                  <span
-                    className="ml-auto shrink-0 text-xs text-muted-foreground"
-                    title={absoluteTimeTitle(when)}
-                  >
-                    {relativeTime(when)}
-                  </span>
                 </li>
               );
             })}

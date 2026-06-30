@@ -136,9 +136,12 @@ export function Markdown({
         "[&_h2]:mb-2 [&_h2]:mt-3 [&_h2]:text-sm [&_h2]:font-semibold",
         "[&_h3]:mb-1 [&_h3]:mt-2 [&_h3]:text-sm [&_h3]:font-semibold",
         "[&_blockquote]:my-2 [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground",
-        "[&_table]:my-2 [&_table]:w-full [&_table]:border-collapse",
-        "[&_th]:border [&_th]:border-border [&_th]:bg-muted/40 [&_th]:px-2 [&_th]:py-1 [&_th]:text-left",
-        "[&_td]:border [&_td]:border-border [&_td]:px-2 [&_td]:py-1",
+        // Table itself fills the width; the horizontal-scroll wrapper is
+        // applied by the `table` component override below so a wide table
+        // scrolls inside the message instead of overflowing the bubble.
+        "[&_table]:w-full [&_table]:border-collapse",
+        "[&_th]:border [&_th]:border-border [&_th]:bg-muted/40 [&_th]:px-2 [&_th]:py-1 [&_th]:text-left [&_th]:align-top",
+        "[&_td]:border [&_td]:border-border [&_td]:px-2 [&_td]:py-1 [&_td]:align-top",
         "[&_a]:text-primary [&_a]:underline [&_a]:underline-offset-2",
         "[&_hr]:my-3 [&_hr]:border-border",
         className,
@@ -160,6 +163,16 @@ export function Markdown({
         components={{
           code: CodeBlock,
           pre: ({ children }) => <>{children}</>,
+          // Wide tables (many columns / long cells) get a horizontal-scroll
+          // wrapper so they stay inside the message bubble instead of
+          // pushing past it and breaking the conversation's alignment.
+          // The parent bubble carries `min-w-0` so this scroll engages
+          // rather than the flex item growing.
+          table: ({ children }) => (
+            <div className="my-2 max-w-full overflow-x-auto [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-foreground/30 hover:[&::-webkit-scrollbar-thumb]:bg-foreground/50">
+              <table>{children}</table>
+            </div>
+          ),
           // Highlight grounding markers in flowing prose (paragraphs,
           // list items, table cells, blockquotes). Code blocks pass
           // through unchanged because the walker doesn't recurse
