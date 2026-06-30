@@ -110,9 +110,25 @@ agent_action landing immediately after, so it is not speculative):
   overwrites those on upgrade). Tuning a *stock* rule is also an override here
   (Wazuh's recommended pattern). Arbitrary `etc/rules/*.xml` is a follow-on.
 - **Auto-apply** — rules don't hot-reload, so the action genuinely applies the
-  change: snapshot → PUT → validate → (auto-rollback if invalid) → **cluster
-  restart** → verify. The approver consents to the restart (a brief, manager-global
-  alert-processing gap) by approving the action ("what you see is true").
+  change: snapshot → PUT → validate → (auto-rollback if invalid) → **authoritative
+  confirm** → **cluster restart**. The approver consents to the restart (a brief,
+  manager-global alert-processing gap) by approving the action ("what you see is true").
+
+**Authoritative verify (corrected 2026-06-30 after the first live web-test).** The
+first cut verified by reading the rule's level via `GET /rules` and taking
+`items[0]` — but a live probe revealed two facts: (1) `GET /rules` reflects the
+**on-disk** file *immediately* (no restart needed to see it); (2) for an
+`overwrite="yes"` rule it returns the **original AND the override as separate
+entries**, so `items[0]` was the *original* (old level) → the action reported a
+phantom "succeeded, matches:False" while the override had in fact been written. The
+fix: after PUT+validate, the executor **re-reads `local_rules.xml` and confirms our
+marked override block actually persisted** (`has_override`) BEFORE issuing the
+restart — if it didn't persist, restore + fail honestly. Verify no longer re-reads
+after the restart (that races the brief restart-induced API outage); it surfaces
+the pre-restart evidence (`override_written`, the rule's parsed `levels`,
+`target_level_in_ruleset`). A rule id defined in **multiple files** resolves to the
+`local_rules.xml` entry for the override source. Live-measured ruleset reload after
+the cluster restart: **~18s**.
 
 **Override construction (string-based — `local_rules.xml` is a multi-root
 fragment, not a single-root XML doc):** the override copies the rule's exact inner

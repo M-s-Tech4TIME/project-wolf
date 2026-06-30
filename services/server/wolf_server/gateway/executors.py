@@ -43,6 +43,7 @@ from wolf_server.wazuh.rule_tuning import (
     apply_override,
     build_override_block,
     extract_rule_block,
+    has_override,
     minimal_override_block,
 )
 
@@ -265,45 +266,68 @@ class _RuleTuningExecutor:
     ADR 0029 §2), so a succeeded reverse flips the original to ``rolled_back``."""
 
     @staticmethod
-    async def _resolve_rule(read_api: Any, rule_id: str) -> dict[str, Any] | None:
-        """The rule's current definition (level + which file it lives in), or None."""
+    async def _rule_entries(read_api: Any, rule_id: str) -> list[dict[str, Any]]:
+        """All parsed definitions of ``rule_id`` (each: level + filename).
+
+        ``GET /rules`` reflects the ON-DISK ruleset *immediately* (verified live)
+        and returns the original AND an ``overwrite="yes"`` entry as SEPARATE
+        items — so callers must look across all of them, never ``items[0]``."""
         body = await read_api.get("/rules", params={"rule_ids": rule_id})
         items = body.get("data", {}).get("affected_items", []) if isinstance(body, dict) else []
-        if not isinstance(items, list) or not items or not isinstance(items[0], dict):
+        return [i for i in items if isinstance(i, dict)] if isinstance(items, list) else []
+
+    @classmethod
+    async def _resolve_rule(cls, read_api: Any, rule_id: str) -> dict[str, Any] | None:
+        """The best single definition to use as the override SOURCE: prefer the
+        ``local_rules.xml`` entry (where our override lives + the right body for a
+        re-tune); else the first definition (e.g. a stock rule). ``None`` if the
+        rule is unknown."""
+        items = await cls._rule_entries(read_api, rule_id)
+        if not items:
             return None
-        first: dict[str, Any] = items[0]
-        return first
+        for item in items:
+            if item.get("filename") == LOCAL_RULES_FILENAME:
+                return item
+        return items[0]
 
     @staticmethod
-    async def _apply_and_restart(
-        ctx: ExecContext, *, new_content: str, rollback_to: str | None
-    ) -> str:
-        """PUT ``new_content`` → validate → (restore ``rollback_to`` + raise on
-        invalid) → cluster restart.  Returns the validation detail.  ``rollback_to``
-        is the snapshot to auto-restore if validation fails (None on a reverse —
-        the restored file was valid when captured, so a failure is surfaced raw)."""
+    async def _put_local_rules(ctx: ExecContext, content: str) -> None:
         await ctx.action_api.update_rules_file(
             filename=LOCAL_RULES_FILENAME,
-            content=new_content,
+            content=content,
             capabilities=ctx.capabilities,
             relative_dirname=LOCAL_RULES_DIRNAME,
         )
+
+    @classmethod
+    async def _write_and_validate(
+        cls, ctx: ExecContext, *, new_content: str, rollback_to: str | None
+    ) -> str:
+        """PUT ``new_content`` → validate → (restore ``rollback_to`` + raise on
+        invalid).  Returns the validation detail.  Does NOT restart — the caller
+        confirms the write persisted, THEN restarts (so the authoritative check
+        runs before the cluster restart briefly takes the API down).  ``rollback_to``
+        is the snapshot to auto-restore on a validation failure (None on a reverse —
+        the restored file was valid when captured, so a failure is surfaced raw)."""
+        await cls._put_local_rules(ctx, new_content)
         valid, detail = _validation_ok(await ctx.read_api.get("/manager/configuration/validation"))
         if not valid:
             if rollback_to is not None:
-                await ctx.action_api.update_rules_file(
-                    filename=LOCAL_RULES_FILENAME,
-                    content=rollback_to,
-                    capabilities=ctx.capabilities,
-                    relative_dirname=LOCAL_RULES_DIRNAME,
-                )
+                await cls._put_local_rules(ctx, rollback_to)
                 raise RulesetValidationError(
                     f"Edited ruleset rejected ({detail}); restored the prior "
                     "local_rules.xml. No change applied."
                 )
             raise RulesetValidationError(f"Ruleset rejected ({detail}).")
-        await ctx.action_api.restart_cluster(capabilities=ctx.capabilities)
         return detail
+
+    @staticmethod
+    async def _read_local_rules(ctx: ExecContext) -> str:
+        raw: str = await ctx.read_api.get_raw(
+            f"/rules/files/{LOCAL_RULES_FILENAME}",
+            params={"raw": "true", "relative_dirname": LOCAL_RULES_DIRNAME},
+        )
+        return raw
 
     def build_forward(self, proposal: ActionProposal, ctx: ExecContext) -> Callables:
         read_api = ctx.read_api
@@ -363,41 +387,68 @@ class _RuleTuningExecutor:
                 )
             )
             new_content = apply_override(snapshot, rule_id, override)
-            detail = await self._apply_and_restart(
+            validation = await self._write_and_validate(
                 ctx, new_content=new_content, rollback_to=snapshot
             )
+
+            # AUTHORITATIVE confirm — re-read local_rules.xml and prove OUR override
+            # actually persisted (GET reflects the on-disk file immediately). If it
+            # didn't, restore + fail honestly rather than report a phantom success.
+            if not has_override(await self._read_local_rules(ctx), rule_id):
+                await self._put_local_rules(ctx, snapshot)
+                raise RulesetValidationError(
+                    f"Override for rule {rule_id} did not persist to local_rules.xml; "
+                    "restored the prior file. No change applied."
+                )
+
+            # Evidence (on-disk, pre-restart): GET /rules returns the original AND the
+            # overwrite entry as separate items — collect all so verify checks the
+            # target level across them, not items[0] (the phantom-no-op bug).
+            entries = await self._rule_entries(read_api, rule_id)
+            levels = [{"level": e.get("level"), "filename": e.get("filename")} for e in entries]
+            local_levels = [
+                e.get("level") for e in entries if e.get("filename") == LOCAL_RULES_FILENAME
+            ]
+
+            # Apply: reload the ruleset cluster-wide (analysisd loads it on restart —
+            # ~18s in the live probe). The write is already committed + confirmed.
+            await ctx.action_api.restart_cluster(capabilities=ctx.capabilities)
             return {
                 "rule_id": rule_id,
                 "target_level": level,
                 "source_filename": src_file,
-                "validation": detail,
+                "validation": validation,
                 "restart_issued": True,
                 "prior_sha256": snap_hash,
+                "override_written": True,
+                "levels": levels,
+                "target_level_in_ruleset": level in local_levels,
             }
 
         async def _verify(p: ActionProposal, res: dict[str, Any]) -> tuple[bool, dict[str, Any]]:
-            rule_id = str(res.get("rule_id", p.target.get("rule_id", "")))
-            target_level = res.get("target_level")
-            rule = await self._resolve_rule(read_api, rule_id)
-            if rule is None:
-                return False, {"ok": False, "note": f"Rule {rule_id} not resolvable after change."}
-            effective = rule.get("level")
+            # Already authoritative: _perform confirmed the override PERSISTED on disk
+            # AND the ruleset VALIDATES (it raises + auto-restores otherwise). So reaching
+            # here means the change is committed. We do NOT re-read here — that would race
+            # the cluster restart _perform just issued (the API is briefly down). Surface
+            # the evidence collected pre-restart.
+            ok = bool(res.get("override_written"))
             detail: dict[str, Any] = {
-                "ok": True,
-                "rule_id": rule_id,
-                "target_level": target_level,
-                "effective_level": effective,
-                "matches": effective == target_level,
+                "ok": ok,
+                "rule_id": res.get("rule_id"),
+                "target_level": res.get("target_level"),
+                "override_written": res.get("override_written"),
+                "target_level_in_ruleset": res.get("target_level_in_ruleset"),
+                "levels": res.get("levels"),
                 "filename": LOCAL_RULES_FILENAME,
                 "validation": res.get("validation"),
                 "restart_issued": res.get("restart_issued", True),
                 "note": (
-                    "Rule change written to local_rules.xml, ruleset validated, and a cluster "
-                    "restart issued to apply it. The new ruleset is in effect once the restart "
-                    "completes."
+                    "Override written to local_rules.xml + ruleset validated + cluster restart "
+                    "issued. The change becomes active ~15-30s after the restart completes "
+                    "(live reload measured ~18s)."
                 ),
             }
-            return True, detail
+            return ok, detail
 
         return _freshness, _perform, _verify
 
@@ -427,30 +478,41 @@ class _RuleTuningExecutor:
                 else {}
             )
             content = str(prior.get("content", ""))
-            detail = await self._apply_and_restart(ctx, new_content=content, rollback_to=None)
+            rule_id = str(original.target.get("rule_id", "")) if original is not None else ""
+            validation = await self._write_and_validate(ctx, new_content=content, rollback_to=None)
+            # Authoritative: confirm the override is GONE (file restored to pre-tuning).
+            override_removed = (
+                not has_override(await self._read_local_rules(ctx), rule_id) if rule_id else True
+            )
+            await ctx.action_api.restart_cluster(capabilities=ctx.capabilities)
             return {
                 "restored_from": str(original.id) if original is not None else "",
-                "rule_id": str(original.target.get("rule_id", "")) if original is not None else "",
-                "validation": detail,
+                "rule_id": rule_id,
+                "validation": validation,
                 "restart_issued": True,
+                "override_removed": override_removed,
             }
 
         async def _verify(p: ActionProposal, res: dict[str, Any]) -> tuple[bool, dict[str, Any]]:
-            # Snapshot-restore is an API-executable undo — tag it completed so the
-            # API flips the original to rolled_back (reversal.complete_api_reversal).
+            # Snapshot-restore is an API-executable undo — tag it completed (only when
+            # the override is confirmed gone) so the API flips the original to
+            # rolled_back (reversal.complete_api_reversal).
+            ok = bool(res.get("override_removed", True))
             detail: dict[str, Any] = {
-                "ok": True,
+                "ok": ok,
                 "restored_from": res.get("restored_from"),
                 "rule_id": res.get("rule_id"),
+                "override_removed": res.get("override_removed", True),
                 "validation": res.get("validation"),
                 "restart_issued": res.get("restart_issued", True),
-                "reversal_state": REVERSAL_STATE_COMPLETED,
+                "reversal_state": REVERSAL_STATE_COMPLETED if ok else "failed",
                 "note": (
-                    "Restored local_rules.xml to its pre-tuning snapshot, validated, and issued a "
-                    "cluster restart. The rule reverts once the restart completes."
+                    "Restored local_rules.xml to its pre-tuning snapshot (override removed) + "
+                    "validated + cluster restart issued. The rule reverts ~15-30s after the "
+                    "restart completes."
                 ),
             }
-            return True, detail
+            return ok, detail
 
         return _freshness, _perform, _verify
 

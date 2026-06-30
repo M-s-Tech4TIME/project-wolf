@@ -142,6 +142,15 @@ def _tuning_block_re(rule_id: str) -> re.Pattern[str]:
     )
 
 
+def has_override(local_rules_xml: str, rule_id: str) -> bool:
+    """True iff a Wolf tuning override block for ``rule_id`` is present.
+
+    The authoritative *"our write actually persisted"* check: the executor
+    re-reads ``local_rules.xml`` after the PUT and confirms this marker is there
+    before declaring success (``GET`` reflects the on-disk file immediately)."""
+    return _marker(rule_id) in (local_rules_xml or "")
+
+
 def strip_tuning_block(local_rules_xml: str, rule_id: str) -> str:
     """Remove any prior Wolf-managed override block for ``rule_id`` (idempotent
     re-tuning — a second tune of the same rule replaces the first, never stacks a

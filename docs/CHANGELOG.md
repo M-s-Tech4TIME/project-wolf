@@ -49,6 +49,41 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-30 — 6-e.3 fix: authoritative rule_tuning verify (no phantom "succeeded")
+
+First live web-test of rule_tuning surfaced a real bug: disabling a rule reported
+**"succeeded"** but the rule was **not** actually disabled (`effective_level:5`,
+`matches:False`). A controlled live probe (adjust a clean rule 100700 5→7→restore)
+established the ground truth:
+- The write mechanism **works**: `PUT` persists the override, validation passes, the
+  cluster restart reloads the ruleset in **~18s**, restore works.
+- `GET /rules` reflects the **on-disk** file *immediately* (no restart needed to see
+  it), and for an `overwrite="yes"` rule it returns the **original AND the override
+  as separate entries**. The old verify took `items[0]` (the original) → saw the old
+  level → `matches:False`, yet still returned `ok:True` → a **phantom success**.
+
+Fix (`gateway/executors.py`):
+- **Authoritative confirm**: after PUT+validate, re-read `local_rules.xml` and confirm
+  our marked override block actually persisted (`rule_tuning.has_override`, new) BEFORE
+  the restart; if it didn't, restore + raise (honest failure, never a phantom success).
+- Verify no longer re-reads after the restart (that races the brief restart API
+  outage); it surfaces the pre-restart evidence: `override_written`, parsed `levels`,
+  `target_level_in_ruleset`. The reverse confirms the override was **removed**.
+- `_resolve_rule` now prefers the `local_rules.xml` definition (handles a rule id
+  defined in multiple files — e.g. 100001 existed in modesecurity_rules.xml *and*
+  local_rules.xml, which made it a poor first test target).
+- **GUI** (`/actions` `resultDetail`): renders the rule_tuning result (the override
+  evidence was silently unrendered before — `resultDetail` only handled AR fields).
+
+Tests: shared-`_Disk` stubs so the read-back reflects writes; new
+`test_forward_fails_honestly_if_override_does_not_persist` (the exact bug class) +
+`has_override` unit test. ruff + mypy --strict clean; dashboard tsc + eslint clean.
+ADR 0029 §6 updated with the corrected verify + the GET-reflects-on-disk finding.
+The underlying write+restart mechanism was sound — the defect was verification +
+evidence, now authoritative.
+
+---
+
 ## 2026-06-29 — OR.1: OpenRouter as a selectable model provider (chat + grounding)
 
 Operator-requested: the option to run chat + grounding on **free open frontier

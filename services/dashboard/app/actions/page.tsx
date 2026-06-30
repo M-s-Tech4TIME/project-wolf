@@ -131,6 +131,22 @@ function resultDetail(result: Record<string, unknown> | null): string | null {
   // A reversal authorises + records the undo; the host change is wolf-pack-bound.
   if (result["reversal_state"] === "authorized_pending_wolf_pack")
     return "Reversal authorised + recorded — physical removal pending wolf-pack";
+  // rule_tuning (6-e.3): forward result carries override_written; the snapshot-
+  // restore reverse carries override_removed. Surface the real apply evidence so
+  // the approver can see the override landed (it was silently unrendered before).
+  if (typeof result["override_written"] === "boolean") {
+    const rid = result["rule_id"];
+    const lvl = result["target_level"];
+    return result["override_written"]
+      ? `rule ${rid} → level ${lvl}: override written to local_rules.xml + ruleset validated + cluster restart issued (active ~15–30s after restart)`
+      : `rule ${rid}: override did NOT persist — change not applied`;
+  }
+  if (typeof result["override_removed"] === "boolean") {
+    const rid = result["rule_id"];
+    return result["override_removed"]
+      ? `rule ${rid} restored: override removed from local_rules.xml + validated + cluster restart issued`
+      : `rule ${rid}: restore did NOT remove the override`;
+  }
   const total = result["total_affected_items"];
   if (typeof total === "number") return `${total} target(s) affected`;
   return null;

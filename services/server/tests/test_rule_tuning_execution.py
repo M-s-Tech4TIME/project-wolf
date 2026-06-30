@@ -2,9 +2,11 @@
 
 The rule_tuning executor writes an overwrite override into local_rules.xml and
 APPLIES it (validate → cluster restart) with an auto-rollback if the edited
-ruleset does not compile; the reversal restores the captured ``prior_state``
-snapshot for real and tags the result completed so the original flips to
-``rolled_back``.  Uses in-memory stubs for the Wazuh clients — no live manager.
+ruleset does not compile.  It then AUTHORITATIVELY confirms the override actually
+persisted on disk (``GET`` reflects the on-disk file immediately) before declaring
+success — a phantom no-op fails honestly.  The reversal restores the captured
+``prior_state`` snapshot and confirms the override is gone.  In-memory stubs share
+a ``_Disk`` so a read-back reflects what was written — no live manager.
 """
 
 import uuid
@@ -46,11 +48,19 @@ _LOCAL_RULES = """<!-- Local rules -->
 """
 
 
+class _Disk:
+    """Shared on-disk state: get_raw reflects whatever update_rules_file last wrote
+    (mirrors Wazuh — GET /rules/files reads the on-disk file immediately)."""
+
+    def __init__(self, content: str) -> None:
+        self.content = content
+
+
 class _StubReadApi:
-    def __init__(self, *, level: int, validation_ok: bool = True) -> None:
+    def __init__(self, disk: _Disk, *, level: int, validation_ok: bool = True) -> None:
+        self.disk = disk
         self.level = level
         self.validation_ok = validation_ok
-        self.raw_reads: list[str] = []
 
     async def get(self, path: str, *, params: Any = None) -> dict[str, Any]:
         if path == "/rules":
@@ -77,12 +87,13 @@ class _StubReadApi:
         return {"data": {}}
 
     async def get_raw(self, path: str, *, params: Any = None) -> str:
-        self.raw_reads.append(path)
-        return _LOCAL_RULES
+        return self.disk.content
 
 
 class _StubActionApi:
-    def __init__(self) -> None:
+    def __init__(self, disk: _Disk, *, persist: bool = True) -> None:
+        self.disk = disk
+        self.persist = persist  # False simulates a write that silently doesn't stick
         self.writes: list[str] = []
         self.restarts = 0
 
@@ -90,6 +101,8 @@ class _StubActionApi:
         self, *, filename: str, content: str, capabilities: Any, relative_dirname: str = "etc/rules"
     ) -> dict[str, Any]:
         self.writes.append(content)
+        if self.persist:
+            self.disk.content = content
         return {"data": {"affected_items": [filename]}}
 
     async def restart_cluster(self, *, capabilities: Any) -> dict[str, Any]:
@@ -119,15 +132,15 @@ async def _rule_proposal(
 
 
 @pytest.mark.asyncio
-async def test_forward_writes_override_validates_and_restarts(db: AsyncSession) -> None:
+async def test_forward_writes_override_validates_confirms_and_restarts(db: AsyncSession) -> None:
     proposal = await _rule_proposal(db, action="disable_rule", level=0)
-    read_api = _StubReadApi(level=0)  # post-change effective level
-    action_api = _StubActionApi()
+    disk = _Disk(_LOCAL_RULES)
+    read_api = _StubReadApi(disk, level=0)  # post-override the local entry reads level 0
+    action_api = _StubActionApi(disk)
     ctx = ExecContext(read_api=read_api, action_api=action_api, capabilities=_CAPS, db=db)
 
     freshness, perform, verify = get_executor("rule_tuning").build_forward(proposal, ctx)
-    fresh, _ = await freshness(proposal)
-    assert fresh is True
+    assert (await freshness(proposal))[0] is True
 
     res = await perform(proposal)
     # Exactly one write (no rollback), one restart issued.
@@ -137,35 +150,58 @@ async def test_forward_writes_override_validates_and_restarts(db: AsyncSession) 
     assert 'overwrite="yes"' in written
     assert 'level="0"' in written
     assert "<if_sid>5716</if_sid>" in written  # original matching preserved
+    assert "wolf-tuning:rule=100001" in written  # our marked override block
     # prior_state captured for the undo.
     assert proposal.prior_state is not None
     assert proposal.prior_state["content"] == _LOCAL_RULES
-    assert "sha256" in proposal.prior_state
+    # Authoritative confirmation surfaced in the result.
+    assert res["override_written"] is True
+    assert res["target_level_in_ruleset"] is True
 
     ok, detail = await verify(proposal, res)
     assert ok is True
-    assert detail["matches"] is True
+    assert detail["override_written"] is True
+    assert detail["target_level_in_ruleset"] is True
     assert detail["restart_issued"] is True
 
 
 @pytest.mark.asyncio
 async def test_forward_auto_rolls_back_on_validation_failure(db: AsyncSession) -> None:
     proposal = await _rule_proposal(db, action="adjust_level", level=2)
-    read_api = _StubReadApi(level=2, validation_ok=False)
-    action_api = _StubActionApi()
+    disk = _Disk(_LOCAL_RULES)
+    read_api = _StubReadApi(disk, level=2, validation_ok=False)
+    action_api = _StubActionApi(disk)
     ctx = ExecContext(read_api=read_api, action_api=action_api, capabilities=_CAPS, db=db)
 
     _freshness, perform, _verify = get_executor("rule_tuning").build_forward(proposal, ctx)
     with pytest.raises(RulesetValidationError):
         await perform(proposal)
-    # The bad edit was written, then the prior file was restored — two writes, NO restart.
+    # The bad edit was written, then the prior file restored — two writes, NO restart.
     assert len(action_api.writes) == 2
-    assert action_api.writes[1] == _LOCAL_RULES  # restored snapshot
+    assert action_api.writes[1] == _LOCAL_RULES
     assert action_api.restarts == 0
 
 
 @pytest.mark.asyncio
-async def test_reverse_restores_snapshot_and_marks_completed(db: AsyncSession) -> None:
+async def test_forward_fails_honestly_if_override_does_not_persist(db: AsyncSession) -> None:
+    # The exact bug: if the write doesn't actually land (override absent on re-read),
+    # the action must FAIL + restore — never report a phantom success.
+    proposal = await _rule_proposal(db, action="disable_rule", level=0)
+    disk = _Disk(_LOCAL_RULES)
+    read_api = _StubReadApi(disk, level=5)
+    action_api = _StubActionApi(disk, persist=False)  # writes "succeed" but don't stick
+    ctx = ExecContext(read_api=read_api, action_api=action_api, capabilities=_CAPS, db=db)
+
+    _freshness, perform, _verify = get_executor("rule_tuning").build_forward(proposal, ctx)
+    with pytest.raises(RulesetValidationError, match="did not persist"):
+        await perform(proposal)
+    assert action_api.restarts == 0  # never applied a phantom change
+
+
+@pytest.mark.asyncio
+async def test_reverse_restores_snapshot_confirms_removed_and_marks_completed(
+    db: AsyncSession,
+) -> None:
     original = await _rule_proposal(db, action="disable_rule", level=0)
     original.prior_state = {
         "filename": "local_rules.xml",
@@ -176,17 +212,19 @@ async def test_reverse_restores_snapshot_and_marks_completed(db: AsyncSession) -
     await db.flush()
     reversal = await _rule_proposal(db, action="restore_rules", level=0, reverses=original.id)
 
-    read_api = _StubReadApi(level=5)  # back to the original level
-    action_api = _StubActionApi()
+    # Disk currently holds a tuned file (override present); restore should remove it.
+    disk = _Disk(_LOCAL_RULES + '\n<!-- wolf-tuning:rule=100001 -->\n<group></group>\n')
+    read_api = _StubReadApi(disk, level=5)
+    action_api = _StubActionApi(disk)
     ctx = ExecContext(read_api=read_api, action_api=action_api, capabilities=_CAPS, db=db)
 
     freshness, perform, verify = get_executor("rule_tuning").build_reverse(reversal, ctx)
-    fresh, _ = await freshness(reversal)
-    assert fresh is True
+    assert (await freshness(reversal))[0] is True
 
     res = await perform(reversal)
     assert action_api.writes == [_LOCAL_RULES]  # the captured snapshot, restored
     assert action_api.restarts == 1
+    assert res["override_removed"] is True
 
     ok, detail = await verify(reversal, res)
     assert ok is True
@@ -197,8 +235,10 @@ async def test_reverse_restores_snapshot_and_marks_completed(db: AsyncSession) -
 async def test_reverse_freshness_fails_without_prior_state(db: AsyncSession) -> None:
     original = await _rule_proposal(db, action="disable_rule", level=0)  # no prior_state set
     reversal = await _rule_proposal(db, action="restore_rules", level=0, reverses=original.id)
+    disk = _Disk(_LOCAL_RULES)
     ctx = ExecContext(
-        read_api=_StubReadApi(level=5), action_api=_StubActionApi(), capabilities=_CAPS, db=db
+        read_api=_StubReadApi(disk, level=5), action_api=_StubActionApi(disk),
+        capabilities=_CAPS, db=db,
     )
     freshness, _perform, _verify = get_executor("rule_tuning").build_reverse(reversal, ctx)
     fresh, detail = await freshness(reversal)

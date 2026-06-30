@@ -18,6 +18,7 @@ from wolf_server.wazuh.rule_tuning import (
     apply_override,
     build_override_block,
     extract_rule_block,
+    has_override,
     is_valid_level,
     is_valid_rule_id,
     strip_tuning_block,
@@ -110,6 +111,17 @@ def test_apply_override_appends_then_idempotently_replaces() -> None:
     assert 'level="2"' in second
     # The untouched base content survives.
     assert '<group name="x,">' in second
+
+
+def test_has_override_detects_marked_block() -> None:
+    # The authoritative "our write persisted" check used by the executor.
+    base = '<group name="x,">\n</group>\n'
+    block = extract_rule_block(_SAMPLE, "100001")
+    assert block is not None
+    applied = apply_override(base, "100001", build_override_block(block, level=0))
+    assert has_override(applied, "100001") is True
+    assert has_override(applied, "999999") is False
+    assert has_override(base, "100001") is False
 
 
 def test_strip_tuning_block_removes_only_wolf_block() -> None:
