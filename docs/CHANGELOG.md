@@ -49,6 +49,59 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-06-30 — Claude-style response formatting (Layer 1 generation + Layer 2 renderer, model-agnostic)
+
+**Session type:** claude-code
+**Phase:** 6-e (UI/UX, follow-up to the panel/markdown polish below)
+**Branch / commit:** main
+
+### Context
+The first markdown pass (entry below) added abstract formatting bullets to the
+prompt, but Wolf still wrapped whole multi-line command sequences in SINGLE
+backticks — rendering as one long run-on pill (operator screenshots). Driven by
+two operator-provided reference specs (`reference/HOW_CLAUDE_ORGANIZES_RESPONSES.md`,
+`reference/WOLF_MARKDOWN_MECHANISM.md`). Requirement: behave identically for ANY
+model (local Ollama Qwen3 or OpenRouter).
+
+### Diagnosis
+- **One shared, model-agnostic system prompt.** Built once in
+  `agent/loop.py` (`Message(system, strategy.system_prompt())` →
+  `prompts.SYSTEM_PROMPT`), passed via `ChatRequest` to whichever adapter
+  (Ollama / OpenRouter / OpenAI / Anthropic). Adapters only translate messages;
+  none injects its own prompt. So one prompt edit covers every model.
+- **Renderer already on react-markdown v10** (`components/markdown.tsx`),
+  already distinguishing fenced vs inline (className `language-` + `pre`→fragment)
+  with language label + copy + `overflow-x-auto`. The reference doc's `inline`-prop
+  sample is for react-markdown ≤v8 — NOT followed (would regress v10).
+- **Root cause = Layer 1 (generation):** the model mis-emitted inline run-ons;
+  the renderer faithfully rendered them. The missing lever was the **worked
+  example** (the refs are emphatic it's "not optional").
+
+### What we did
+- **Layer 1 (`agent/prompts.py`):** replaced the thin bullets with the full
+  `RESPONSE ORGANIZATION` block (org §6.1: direct-answer-first, procedure
+  decomposition, proportionality) + `MARKDOWN FORMATTING` rules (mech §3:
+  classify→fence vs inline, one command per line) + a **worked install example**
+  (prose + inline `<MANAGER_IP>` + fenced `bash` blocks coexisting). Adapted the
+  example to avoid shell `\` line-continuations (a non-raw Python `"""` string
+  would eat them) — each command on its own full line instead.
+- **Layer 2 (`components/markdown.tsx`):** defensive safety-net —
+  `looksLikeMisemittedBlock()` promotes an inline `<code>` that has a newline or
+  is long+whitespace (>72 chars) to a fenced block, so even a weak model that
+  still mis-emits renders a scrollable code box, not a layout-breaking pill.
+  Genuine short refs (ids/IPs/paths/ports/statuses) stay inline pills.
+
+### Verification
+- Acceptance test (mech §6) run directly against BOTH providers with the real
+  prompt: **OpenRouter (nemotron) PASS** (11 fenced blocks, 0 inline run-ons),
+  **Ollama (qwen3:8b) PASS** (7 fenced blocks, 0 run-ons). Coexistence + one
+  command per line confirmed on both.
+- Renderer heuristic validated on 10 inline refs (stay inline) + 3 run-ons
+  (promote) + a 69-char no-space path (stays inline).
+- Dashboard tsc + eslint clean; full backend suite green; wolf-server restarted.
+
+---
+
 ## 2026-06-30 — UI/UX polish: panel scrolling, wide-content containment, markdown discipline
 
 **Session type:** claude-code

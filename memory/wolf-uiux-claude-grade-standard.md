@@ -33,12 +33,27 @@ undermines trust in Wolf's answers.
 - **No `truncate`/"…" where the user wants the whole thing.** Wrap full content
   within the box (e.g. Actions "Recent activity" detail line: `break-words` on
   its own line, no clamp).
-- **Code-block vs inline-code discipline lives in the agent `SYSTEM_PROMPT`**
-  (`agent/prompts.py` → `MARKDOWN FORMATTING`): fenced blocks (with a language,
-  one command per line) for commands / multi-line code / config / structured
-  payloads; inline code ONLY for short literals in prose (ids, IPs, rule ids,
-  paths, timestamps); GFM tables for tabular data. Wolf must pick correctly,
-  like Claude does.
+- **Code-block vs inline-code discipline = two layers, both required (specs:
+  `reference/HOW_CLAUDE_ORGANIZES_RESPONSES.md` + `reference/WOLF_MARKDOWN_MECHANISM.md`).**
+  - *Layer 1 (generation):* `agent/prompts.py` → `SYSTEM_PROMPT` carries a
+    `RESPONSE ORGANIZATION` block + `MARKDOWN FORMATTING` rules **plus a WORKED
+    EXAMPLE** (a real install procedure: prose + inline `<MANAGER_IP>` + fenced
+    `bash` blocks). The worked example is the strongest lever — abstract rules
+    ALONE did not stop the model wrapping multi-line commands in single
+    backticks; the example fixed it. **The prompt is model-agnostic:** it is
+    built ONCE in `agent/loop.py` (`strategy.system_prompt()`) and passed to
+    whichever adapter, so ONE edit covers Ollama AND OpenRouter (and any
+    provider). NEVER add per-provider prompts. NB: `SYSTEM_PROMPT` is a non-raw
+    Python `"""` string — shell `\` line-continuations get eaten; write each
+    command on its own full line.
+  - *Layer 2 (rendering):* `components/markdown.tsx` is **react-markdown v10**
+    (no `inline` prop — the doc's `inline`-prop sample is for ≤v8; do NOT use
+    it). It distinguishes fenced (className `language-` / strip `pre`) → code box
+    with language label + copy + `overflow-x-auto`, vs inline → pill. Safety-net:
+    `looksLikeMisemittedBlock()` promotes a long(>72)+whitespace or multiline
+    inline span to a fenced block so a weak model still renders cleanly.
+  - Verified PASS on BOTH nemotron (OpenRouter) and qwen3:8b (Ollama) via a
+    direct-adapter acceptance test (mech doc §6).
 
 Source of truth for the shipped fixes: `services/dashboard/components/`
 (`citations-panel.tsx`, `chat-sidebar.tsx`, `message-thread.tsx`, `markdown.tsx`),

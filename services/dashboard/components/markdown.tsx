@@ -192,6 +192,26 @@ export function Markdown({
   );
 }
 
+// A short in-sentence reference (id, IP, path, port, status, flag) is inline
+// code. Anything longer than this, with whitespace, is almost certainly a
+// command or sentence the model mis-wrapped in single backticks — promote it
+// to a fenced block so it renders as a scrollable code box, not a run-on pill.
+const INLINE_MAX_LEN = 72;
+
+/**
+ * Model-agnostic guard: react-markdown only marks a fence (```lang) as a block;
+ * a single-backtick span is always "inline". But weaker models sometimes wrap a
+ * whole multi-line command sequence in single backticks (Wolf's exact reported
+ * bug), which would render as one long wrapping pill that breaks the layout.
+ * Detect that shape — a newline, or long content containing whitespace — and
+ * treat it as a block. A genuine short reference is left as an inline pill.
+ * The primary fix is the system prompt; this is the safety net that keeps the
+ * UI correct regardless of which model produced the text.
+ */
+function looksLikeMisemittedBlock(text: string): boolean {
+  return text.includes("\n") || (text.length > INLINE_MAX_LEN && /\s/.test(text));
+}
+
 function CodeBlock(props: ComponentProps<"code">) {
   const { className, children, ...rest } = props;
   // react-markdown gives fenced blocks a className="language-xxx" and
@@ -199,6 +219,16 @@ function CodeBlock(props: ComponentProps<"code">) {
   const isBlock = typeof className === "string" && className.startsWith("language-");
 
   if (!isBlock) {
+    // Defensive promotion (see looksLikeMisemittedBlock): a run-on or
+    // multi-line command wrongly wrapped in single backticks renders as a
+    // proper code box instead of a layout-breaking pill.
+    if (looksLikeMisemittedBlock(nodeToString(children))) {
+      return (
+        <FencedCodeBlock language="" codeProps={rest}>
+          {children}
+        </FencedCodeBlock>
+      );
+    }
     return (
       <code
         // Slice 5.0c-i.4: inline code text colour uses the Wolf palette's
