@@ -49,6 +49,36 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-07-01 — Code-block header now shows the real language (was a generic "CODE")
+
+**Session type:** claude-code
+**Phase:** post-6-e.3 web-test — UI/UX
+**Branch / commit:** main
+
+**Symptom (operator web-test, screenshot 1):** every fenced code block's header
+read a generic "CODE" instead of the language (BASH / INI / XML …), even though
+the tokens were already syntax-coloured.
+
+**Root cause (frontend parse bug):** `rehype-highlight` rewrites a fenced
+block's className to a space-joined set that always carries the language token —
+`"hljs language-bash"` (explicit ```lang OR auto-detected). `CodeBlock` tested
+`className.startsWith("language-")`, which is false because the string starts
+with `"hljs "`. So every block was mis-detected (fell through to the
+misemitted-block fallback) and rendered with `language=""` → the header showed
+`"code"` (CSS-uppercased to "CODE"). The language was present all along; we
+parsed it wrong.
+
+**Fix (`components/markdown.tsx`, model-agnostic):** split the className into
+tokens; a block is anything tagged `hljs` or `language-*`; the label is the
+`language-*` token with its prefix stripped. Honours an explicit fence language
+and highlight.js's `detect: true` alike, so the header is dynamic
+(BASH / INI / XML / JSON …) for every model. Bare `hljs` (detector found
+nothing) degrades gracefully to "code". Token colouring is unchanged (it comes
+from child `.hljs-*` spans, not the container class). Verified against real
+rehype-highlight output; tsc + eslint clean.
+
+---
+
 ## 2026-07-01 — Ollama context window fix: tool catalog was being truncated (0-tool-call regression)
 
 **Session type:** claude-code

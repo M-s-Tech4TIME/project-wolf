@@ -214,9 +214,23 @@ function looksLikeMisemittedBlock(text: string): boolean {
 
 function CodeBlock(props: ComponentProps<"code">) {
   const { className, children, ...rest } = props;
-  // react-markdown gives fenced blocks a className="language-xxx" and
-  // inline code no className.  Use that to distinguish.
-  const isBlock = typeof className === "string" && className.startsWith("language-");
+  // Distinguish a fenced block from inline code, and recover its language.
+  //
+  // rehype-highlight rewrites a fenced block's className to a SPACE-JOINED set
+  // that always carries the (explicit OR auto-detected) language, e.g.
+  // "hljs language-bash" / "hljs language-ini" / "hljs language-xml". The old
+  // check `className.startsWith("language-")` failed because the string starts
+  // with "hljs " — so every block fell through to language="" and the header
+  // read a generic "CODE" even though the language was right there. Parse the
+  // tokens instead: a block is anything tagged `hljs` or `language-*`, and the
+  // label is the `language-*` token stripped of its prefix. Inline code has no
+  // className at all. This makes the header dynamic (BASH / INI / XML / JSON …)
+  // for every model, honouring an explicit ```lang fence and highlight.js's
+  // detection alike.
+  const classTokens = typeof className === "string" ? className.split(/\s+/) : [];
+  const languageToken = classTokens.find((t) => t.startsWith("language-"));
+  const language = languageToken ? languageToken.slice("language-".length) : "";
+  const isBlock = languageToken !== undefined || classTokens.includes("hljs");
 
   if (!isBlock) {
     // Defensive promotion (see looksLikeMisemittedBlock): a run-on or
@@ -244,7 +258,6 @@ function CodeBlock(props: ComponentProps<"code">) {
     );
   }
 
-  const language = className?.replace("language-", "") || "";
   return (
     <FencedCodeBlock language={language} codeProps={rest}>
       {children}
