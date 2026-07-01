@@ -161,3 +161,55 @@ as unified-8b became default after measurement).
   restart.
 - **Revisit trigger:** a GPU with ≥10 GB usable VRAM (or `OLLAMA_NUM_PARALLEL ≥ 2`) makes
   `incremental` a strict win — re-measure and consider it (or `deferred`) as the shipped default.
+
+## Addendum (2026-07-01) — Concurrency model: per-request parallel grounding, never a queue (MSSP)
+
+**Principle (the "serve everyone like Claude" bar).** Millions of people use Claude
+simultaneously and each gets a dedicated experience — no user waits on another user's
+message to finish. Wolf holds itself to the same bar: **every response Wolf gives is
+grounded independently, concurrently, and in parallel** — across every organisation,
+every user, every chat thread, and every message. No analyst's verdict chips ever wait
+behind another analyst's (or their own earlier message's) grounding. This is
+foundational to the project's MSSP goal, where many users across many organisations
+interact with Wolf at once.
+
+**This is already the architecture — verified in the live code (2026-07-01), not
+aspirational.** Each chat message is an independent `POST /api/v1/chat/stream` request
+that runs in its **own** `asyncio` task, with its **own** grounding judge provider, its
+**own** `GroundingValidator`, and its **own** DB session (`api/chat.py`). Grounding runs
+inside that per-request task. There is **no process-wide (or per-org / per-user /
+per-conversation) lock, semaphore, or queue anywhere on the grounding path** — grep-verified.
+So two responses' grounding passes (and a third user's, in another org) are already fully
+independent async work: none blocks another. The application layer imposes **no
+concurrency ceiling and never queues grounding**.
+
+**Decision: keep it that way — explicitly no grounding queue.** A short-lived proposal on
+2026-07-01 to *serialise* grounding into a FIFO queue (global, then per-conversation) was
+**considered and rejected before any code was written.** Serialising grounding — making
+one analyst wait for another's (or their previous message's) verdicts — is antithetical to
+MSSP: it turns a shared judge into a single-lane bottleneck. Wolf will **not** add such a
+queue. Every response grounds on its own, immediately, in parallel.
+
+**The app layer is unbounded; the *only* governor of simultaneous execution is
+infrastructure.** How many grounding passes physically run at the same instant is set by
+the model server, not by Wolf:
+
+- **Ollama** serialises calls to a model unless `OLLAMA_NUM_PARALLEL > 1` (continuous
+  batching). It is **unset** on the dev host (single small GPU) by choice — raising it
+  there would thrash VRAM (`qwen3:8b` already spills to CPU). That dev limit is a
+  *hardware* constraint, **not** a Wolf design constraint.
+- Wolf is built for **enterprise/on-prem deployment on the operator's own, more capable
+  hardware.** There, the deployer unlocks true simultaneous grounding purely by
+  provisioning capacity — **no Wolf code change**:
+  - set `OLLAMA_NUM_PARALLEL` high (e.g. 4–8+) so the judge model serves many concurrent
+    passes via continuous batching;
+  - provision GPU VRAM to match (each concurrent request adds a KV-cache);
+  - optionally scale the model server horizontally (multiple Ollama replicas / a hosted
+    OpenAI-compatible endpoint behind `OPENAI_BASE_URL`/OpenRouter) — the per-request judge
+    provider already fans out cleanly.
+
+**Net:** the concurrency Wolf's users experience scales directly with the hardware they
+give it. The application already supports unbounded parallel grounding; the enterprise
+operator dials up `OLLAMA_NUM_PARALLEL` + VRAM (or replicas) to realise it. This keeps
+single-org ↔ MSSP parity: the same code that serves one analyst serves thousands in
+parallel, limited only by the iron.

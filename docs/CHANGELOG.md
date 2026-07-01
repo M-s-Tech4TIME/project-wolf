@@ -49,6 +49,36 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-07-01 — Doc: grounding concurrency model — per-request parallel, never a queue (MSSP)
+
+**Session type:** claude-code
+**Phase:** design principle (extends ADR 0026)
+**Branch / commit:** main
+
+**Context:** the operator asked whether Wolf could *serialise* grounding into a
+FIFO queue (so a new message's grounding waits for the previous one's), then —
+on reflection about the MSSP goal — **reversed it entirely**: grounding must run
+fully parallel/concurrent for every org, user, thread, and message, the way
+Claude serves millions of users simultaneously with no one waiting on anyone.
+
+**Finding (verified in code, no change needed):** Wolf **already** grounds this
+way. Each chat message is an independent `POST /chat/stream` request in its own
+`asyncio` task with its own judge provider + validator + DB session; there is
+**no lock/semaphore/queue anywhere on the grounding path** (grep-verified). The
+app layer imposes no concurrency ceiling. The proposed queue was **rejected
+before any code was written** — serialising grounding is antithetical to MSSP.
+
+**Documented (docs-only, no code):** ADR 0026 addendum "Concurrency model —
+per-request parallel grounding, never a queue (MSSP)" — states the
+serve-everyone-in-parallel principle, records that it's the current verified
+architecture, records the rejected queue, and gives the enterprise deployment
+guidance: the *only* governor of simultaneous grounding is infrastructure
+(`OLLAMA_NUM_PARALLEL` + VRAM, or model-server replicas), which the on-prem
+operator dials up on capable hardware with **no Wolf code change**. Wolf's dev
+GPU limit is a hardware constraint, not a design one.
+
+---
+
 ## 2026-07-01 — OpenRouter quota visibility (reactive): read the live state, don't hardcode the cap
 
 **Session type:** claude-code
