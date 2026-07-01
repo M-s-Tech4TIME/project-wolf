@@ -43,7 +43,10 @@ from wolf_server.models.interface import (
     ChatStreamDone,
     ModelProvider,
 )
-from wolf_server.models.openai import ModelProviderRateLimitError
+from wolf_server.models.openai import (
+    ModelProviderPaymentRequiredError,
+    ModelProviderRateLimitError,
+)
 from wolf_server.models.registry import registry as schema_registry
 from wolf_server.organization.context import OrganizationContext
 from wolf_server.tools.base import Citation
@@ -121,11 +124,24 @@ def _model_failure_message(exc: Exception) -> str:
     signal (rate-limit vs other provider error) without dumping raw provider
     JSON or a traceback into the conversation.
     """
+    # Quota/credit exhaustion (429/402) carries a normalized ProviderQuota with
+    # the LIVE remaining count + reset time — surface that actionable detail
+    # (add credits / wait Nh / use a local model) instead of a hardcoded cap.
+    if isinstance(exc, ModelProviderRateLimitError | ModelProviderPaymentRequiredError):
+        quota = getattr(exc, "quota", None)
+        if quota is not None:
+            return f"Wolf couldn't complete this request — {quota.user_message()}"
     if isinstance(exc, ModelProviderRateLimitError):
         return (
             "Wolf couldn't complete this request — the model provider is "
             "rate-limited right now (HTTP 429). This is common on free-tier "
             "models; please try again in a moment, or switch to a local model."
+        )
+    if isinstance(exc, ModelProviderPaymentRequiredError):
+        return (
+            "Wolf couldn't complete this request — the model provider requires "
+            "payment (HTTP 402), usually a depleted credit balance. Add credits "
+            "or switch this organization back to a local model."
         )
     if isinstance(exc, WolfError):
         msg = (str(exc) or "").strip()

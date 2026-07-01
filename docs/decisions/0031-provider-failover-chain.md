@@ -78,3 +78,33 @@ on local Ollama."
   serving model per call is in the audit trail** (`model.call.success`
   `ChatResponse.model_id`). Surfacing the actually-served model in the UI is a
   follow-on.
+
+## Addendum (2026-07-01) — reactive quota visibility
+
+Failover is the *resilience* half (a capped hosted model continues on local
+Ollama). The *visibility* half — telling the org *why* and *what to do* — is
+added reactively, without hardcoding any cap number.
+
+**Principle: hardcode the contract, not the numbers.** OpenRouter's free cap is
+account-state-dependent (50/day under $10 credits → 1000/day at ≥$10; the
+numbers are placeholders in their own docs). So Wolf reads the state LIVE from
+the provider's own signals and only hardcodes *how to interpret* them.
+
+- **`models/quota.py`** — a normalized `ProviderQuota` (kind ∈ {`free_daily_cap`,
+  `rate_limited`, `credits_exhausted`} + live `limit`/`remaining`/`reset_at`),
+  parsed from the `X-RateLimit-{Limit,Remaining,Reset}` headers (Reset =
+  epoch **ms**) and the 429/402 body (`free-models-per-day`). `user_message()`
+  emits the actionable line (remaining + humanized reset + remedy).
+- **`models/openai.py`** — `_provider_error` reads the headers and splits **402**
+  (`ModelProviderPaymentRequiredError`) from **429**; both carry `.quota`.
+- **`agent/loop.py`** — `_model_failure_message` is quota-aware (sole-provider
+  exhaustion → actionable analyst message today).
+- **`models/failover.py`** — `model_failover_link_failed` records the quota
+  kind/remaining/limit (auditable degradation).
+
+**Deferred to the per-org OpenRouter phase:** the *proactive* `GET /api/v1/key`
++ `/credits` dashboard indicator, and the *successful-failover* in-chat chip
+("OpenRouter daily cap reached — answered on local Ollama, resets in Nh"). Both
+need an active per-org OpenRouter primary to be exercised/web-tested; they reuse
+the `ProviderQuota` contract + the failover log signal built here rather than
+shipping dormant, untested UI now.

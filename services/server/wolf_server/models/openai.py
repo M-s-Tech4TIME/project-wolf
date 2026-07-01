@@ -12,7 +12,7 @@ provider gets the same token-by-token UX + grounding modes as local Ollama.
 
 import json
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from typing import Any
 
 import httpx
@@ -33,6 +33,7 @@ from wolf_server.models.interface import (
     ChatStreamEvent,
     default_descriptor_for,
 )
+from wolf_server.models.quota import ProviderQuota, quota_from_response
 
 _API_BASE = "https://api.openai.com"
 
@@ -42,10 +43,32 @@ class ModelProviderRateLimitError(WolfError):
 
     For OpenRouter free-tier models this is the daily request cap; the message
     points the operator at the local Ollama fallback so a capped key degrades
-    to a clear, actionable error rather than an opaque 500."""
+    to a clear, actionable error rather than an opaque 500. When the provider
+    exposes quota signals (``X-RateLimit-*`` headers / a ``free-models-per-day``
+    body), ``quota`` carries the normalized state so the agent loop can surface
+    an actionable, reset-aware message instead of a generic 429."""
 
     http_status = 429
     error_code = "model_provider_rate_limited"
+
+    def __init__(self, message: str, *, quota: ProviderQuota | None = None) -> None:
+        super().__init__(message)
+        self.quota = quota
+
+
+class ModelProviderPaymentRequiredError(WolfError):
+    """The model provider refused the call for billing reasons (HTTP 402).
+
+    On OpenRouter this is a negative credit balance. Like the 429, it carries
+    the normalized ``quota`` so the loop can prompt the analyst to add credits
+    or fall back to a local model."""
+
+    http_status = 402
+    error_code = "model_provider_payment_required"
+
+    def __init__(self, message: str, *, quota: ProviderQuota | None = None) -> None:
+        super().__init__(message)
+        self.quota = quota
 
 
 class ModelProviderRequestError(WolfError):
@@ -55,13 +78,41 @@ class ModelProviderRequestError(WolfError):
     error_code = "model_provider_error"
 
 
-def _provider_error(status_code: int, text: str) -> WolfError:
-    """Map an upstream HTTP error to a clear Wolf error."""
+_PROVIDER_DISPLAY = {"openrouter": "OpenRouter", "openai": "OpenAI"}
+
+
+def _provider_display(name: str) -> str:
+    """A human-readable provider name for user-facing quota messages."""
+    return _PROVIDER_DISPLAY.get(name.lower(), name or "the model provider")
+
+
+def _provider_error(
+    status_code: int,
+    text: str,
+    *,
+    provider: str = "the model provider",
+    headers: Mapping[str, str] | None = None,
+) -> WolfError:
+    """Map an upstream HTTP error to a clear Wolf error.
+
+    For quota/credit statuses (429/402) the response headers + body are parsed
+    into a :class:`ProviderQuota` and attached to the error, so the agent loop
+    can prompt the analyst with the live remaining count + reset time rather
+    than a hardcoded cap.
+    """
+    quota = quota_from_response(
+        provider=provider, status_code=status_code, headers=headers, body_text=text
+    )
+    if status_code == 402:
+        return ModelProviderPaymentRequiredError(
+            f"Model provider payment required (HTTP 402): {text[:160]}", quota=quota
+        )
     if status_code == 429:
         return ModelProviderRateLimitError(
             "Model provider rate limit reached (HTTP 429). For OpenRouter free-tier "
             "models this is the daily request cap — wait for the reset or switch the "
-            f"provider back to local Ollama. Upstream: {text[:160]}"
+            f"provider back to local Ollama. Upstream: {text[:160]}",
+            quota=quota,
         )
     return ModelProviderRequestError(f"Model provider returned {status_code}: {text[:200]}")
 
@@ -231,7 +282,12 @@ class OpenAIAdapter:
             "/v1/chat/completions", json=self._build_payload(request, stream=False)
         )
         if response.status_code >= 400:
-            raise _provider_error(response.status_code, response.text)
+            raise _provider_error(
+                response.status_code,
+                response.text,
+                provider=_provider_display(self._descriptor.provider),
+                headers=response.headers,
+            )
         return _parse_openai_response(response.json(), self._model_id)
 
     async def chat(self, request: ChatRequest) -> ChatResponse:
@@ -278,7 +334,12 @@ class OpenAIAdapter:
         ) as response:
             if response.status_code >= 400:
                 body = (await response.aread()).decode("utf-8", "replace")
-                raise _provider_error(response.status_code, body)
+                raise _provider_error(
+                    response.status_code,
+                    body,
+                    provider=_provider_display(self._descriptor.provider),
+                    headers=response.headers,
+                )
             async for raw_line in response.aiter_lines():
                 line = raw_line.strip()
                 if not line or not line.startswith("data:"):

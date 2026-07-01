@@ -212,13 +212,23 @@ class FailoverProvider:
     def _trip(self, link: _Link, exc: Exception) -> None:
         link.tripped_until = self._clock() + self.cooloff_seconds
         cap = link.provider.capability()
-        logger.warning(
-            "model_failover_link_failed",
-            failed_provider=cap.provider,
-            failed_model=cap.model_id,
-            error_type=type(exc).__name__,
-            error=str(exc)[:200],
-        )
+        # Surface the normalized quota state (429/402 → free_daily_cap /
+        # credits_exhausted / rate_limited + live remaining/reset) when the
+        # error carries one, so a degraded-to-fallback query is auditable and
+        # the per-org phase's "answered on local Ollama, resets in Nh" chip has
+        # a ready signal. getattr keeps this quota-type-agnostic.
+        quota = getattr(exc, "quota", None)
+        log_fields: dict[str, object] = {
+            "failed_provider": cap.provider,
+            "failed_model": cap.model_id,
+            "error_type": type(exc).__name__,
+            "error": str(exc)[:200],
+        }
+        if quota is not None:
+            log_fields["quota_kind"] = getattr(getattr(quota, "kind", None), "value", None)
+            log_fields["quota_remaining"] = quota.remaining
+            log_fields["quota_limit"] = quota.limit
+        logger.warning("model_failover_link_failed", **log_fields)
 
     def _all_failed(self, errors: list[Exception]) -> Exception:
         logger.error("model_failover_exhausted", error_count=len(errors))

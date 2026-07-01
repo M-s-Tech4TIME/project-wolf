@@ -49,6 +49,61 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-07-01 — OpenRouter quota visibility (reactive): read the live state, don't hardcode the cap
+
+**Session type:** claude-code
+**Phase:** post-6-e.3 web-test — reliability (extends ADR 0031)
+**Branch / commit:** main
+
+**Operator question:** should Wolf hardcode OpenRouter's limits so it can warn
+when requests/credits run out? **Answer: hardcode the *contract*, never the
+*numbers*.** The free cap is account-state-dependent (50/day under $10 credits,
+1000/day at ≥$10 — it flips on balance) and OpenRouter changes the numbers over
+time. So Wolf reads the state LIVE and only hardcodes how to interpret it — the
+same stable-contract posture we keep for the Wazuh active-response API.
+
+**Scope (operator choice: "reactive now, proactive later"):** build the
+reactive half now; the proactive `/key`+`/credits` dashboard indicator rides the
+future per-org OpenRouter phase (an org must supply its own key first, and today
+the default is local Ollama with no OpenRouter in use).
+
+**Shipped:**
+- `models/quota.py` — a normalized `ProviderQuota{provider, kind, limit,
+  remaining, reset_at, is_free_tier, detail}` + `QuotaKind`
+  (free_daily_cap / rate_limited / credits_exhausted). Parses the live signals
+  a hosted provider stamps on a 429/402: the `X-RateLimit-{Limit,Remaining,
+  Reset}` headers (`Reset` is a Unix epoch in **milliseconds** — disambiguated
+  from seconds by magnitude) and the error body (`free-models-per-day` marker).
+  `user_message()` renders an actionable line with the LIVE remaining count +
+  a humanized reset ("resets in 3h 20m") + the remedy (add credits / wait /
+  use local Ollama). Never raises — it runs on the error path.
+- `models/openai.py` — `_provider_error` now reads the response headers +
+  distinguishes **402** (new `ModelProviderPaymentRequiredError`) from **429**;
+  both carry the parsed `.quota`. Applies to OpenRouter (it inherits this
+  adapter) and any OpenAI-compatible host.
+- `agent/loop.py` — `_model_failure_message` is quota-aware: when the failing
+  error carries a `ProviderQuota`, the analyst sees the actionable message
+  instead of a generic "rate-limited (429)". Exercisable today when OpenRouter
+  is a sole provider hitting its cap.
+- `models/failover.py` — the `model_failover_link_failed` log now records
+  `quota_kind`/`quota_remaining`/`quota_limit`, so a degraded-to-Ollama query
+  is auditable and the per-org "answered on local Ollama, resets in Nh" chip
+  has a ready signal.
+
+**Deferred (documented, not dropped):** the successful-failover in-chat chip
+(new SSE event + frontend rendering). The failover path is dormant under the
+Ollama default, so shipping that UI now would be unexercised/un-web-testable; it
+lands with the per-org OpenRouter config phase, reusing the `ProviderQuota` +
+the failover log signal built here. See ADR 0031 (addendum).
+
+**Verified:** `test_provider_quota.py` (13) — classification, ms/s reset
+parsing, past-reset omission, `_provider_error` 429/402 attachment, adapter
+integration (MockTransport replaying the real 429 headers+body observed
+2026-07-01), and the quota-aware loop message. Full backend suite green; ruff +
+mypy --strict clean.
+
+---
+
 ## 2026-07-01 — Code-block header now shows the real language (was a generic "CODE")
 
 **Session type:** claude-code
