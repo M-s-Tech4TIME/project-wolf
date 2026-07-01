@@ -548,6 +548,11 @@ export type AssistantMessageNode = BaseNode & {
   // verdicts. true while the judge is still running (counts null + a
   // "Verifying claims…" indicator); cleared when the verdicts patch in.
   grounding_pending?: boolean;
+  // Set true when grounding was ATTEMPTED but the judge failed (ran=false) —
+  // e.g. every judge provider in the chain was rate-limited. Distinguishes an
+  // honest "couldn't verify" from "nothing to verify" (both leave counts null),
+  // so the UI can say so instead of silently showing no chip (2026-07-01).
+  grounding_unavailable?: boolean;
 };
 
 // ── Action proposals (Phase 6, ADR 0025) ──────────────────────────────────

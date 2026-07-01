@@ -405,7 +405,11 @@ export function updateAssistantGrounding(
         grounding_uncertain: patch.grounding_uncertain,
         grounding_unverifiable: patch.grounding_unverifiable,
         grounding_pending: false,
+        grounding_unavailable: false,
       }
-    : { ...node, grounding_pending: false };
+    : // Judge failed: keep raw content + null counts, clear the pending
+      // spinner, and mark grounding unavailable so the UI is honest about
+      // it (rather than silently showing no chip).
+      { ...node, grounding_pending: false, grounding_unavailable: true };
   return { ...conversation, nodes: { ...conversation.nodes, [node_id]: updated } };
 }

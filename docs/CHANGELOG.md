@@ -49,6 +49,65 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-07-01 — Provider failover chain (OpenRouter → local Ollama) + 3 reliability fixes
+
+**Session type:** claude-code
+**Phase:** 6-e (model reliability, mid-UI/UX)
+**Branch / commit:** main
+
+### The report
+Operator web-test surfaced four symptoms (screenshots): (1) `429 rate-limited`,
+(2) `budget_exhausted` — `query_runbook` called 15× / 220 K tokens with no answer,
+(3) a step-0 `400 "invalid message"`, (4) grounding chips missing. Asked to
+diagnose **our code first, then externals**, and if external, find a reliable
+OpenRouter model.
+
+### What we found (diagnosis)
+- **The decisive external fact:** OpenRouter `/key` = `is_free_tier: true`, hard cap
+  **50 free-model requests/DAY** shared across EVERY `:free` model
+  (`X-RateLimit-Limit: 50`). The cap is per-ACCOUNT, not per-model — **no free
+  model is "no cap / no rate-limit."** All three free models 429 live. → #1 and #4
+  (judge 429) are external.
+- **#3 is our bug:** `historyUpTo` replays an interrupted turn's empty content;
+  `_message_to_openai` emitted `{"role":"assistant","content":""}` → Cohere via
+  OpenRouter rejects the whole request 400 "invalid message" at step 0.
+- **#2 is model quality + a loop-guard gap:** a weak model loops on the same tool
+  call; the loop had no repeat detection.
+
+### What we did
+- **`FailoverProvider`** (`models/failover.py`, ADR 0031): ordered chain
+  `[primary → fallback]`, transparent failover on ANY non-cancellation error,
+  clean pre-stream streaming failover, per-instance circuit-breaker, conservative
+  capability floor. `CancelledError` propagates (Stop button safe). Wired via
+  `FALLBACK_MODEL_*` for BOTH chat + judge; startup `check_model_config` validates.
+- **Default → local Ollama** `qwen3:8b` for chat AND judge (uncapped, private,
+  reasoning). OpenRouter stays a selectable primary; org-configured OpenRouter →
+  Ollama failover is the intended posture (per-org wiring = later phase).
+- **#3 fix (model-agnostic):** skip empty/whitespace history turns in the loop;
+  coerce `None→""` + drop empty non-tool messages in the OpenAI/Ollama serializers.
+- **#2 fix:** repeated-tool-call guard in `agent/loop.py` — nudge on a redundant
+  step, force final synthesis after 2 consecutive redundant steps.
+- **#4 fix:** `grounding_unavailable` flag → honest "grounding unavailable" chip
+  when every judge provider fails (vs. silently showing nothing).
+
+### What we decided
+- Local Ollama is the reliable default; OpenRouter is best-effort with an automatic
+  Ollama safety net (ADR 0031). No free OpenRouter model can meet "no cap" — the
+  reliable OpenRouter path is paid credits; the private+uncapped path is local.
+
+### Verification
+- mypy --strict (CI set, 102 files) + `ruff check .` clean; frontend tsc + eslint
+  clean; full backend suite green (+ new `test_failover.py`, loop-guard,
+  empty-message, fallback-config tests). **Live probe:** OpenRouter 429 → failed
+  over to Ollama `qwen3:8b` with a correct `list_agents` tool call (chat + stream);
+  default Ollama tool-calling confirmed.
+
+### What's next
+- Operator web-test on the live Ollama-primary stack; then per-org OpenRouter model
+  config phase (reuses `FailoverProvider`), then 6-e.4 config_change.
+
+---
+
 ## 2026-07-01 — Streaming resilience (no more hang on model failure) + free-model stack refresh
 
 **Session type:** claude-code

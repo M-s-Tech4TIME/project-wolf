@@ -209,6 +209,25 @@ class Settings(BaseSettings):
     openrouter_referer: str = "https://github.com/wolf-soc/wolf"  # OpenRouter attribution
     openrouter_title: str = "Wolf"
 
+    # ── Provider failover chain (2026-07-01) ──────────────────────────────
+    # When FALLBACK_MODEL_ID is set, Wolf wraps the chat AND grounding-judge
+    # provider in a FailoverProvider: the configured primary is tried first,
+    # and on ANY failure (rate-limit / quota, timeout, 5xx, malformed request,
+    # provider outage) the request transparently continues on this fallback —
+    # the analyst never sees a broken stream. Intended posture: an org
+    # configures a hosted primary (e.g. OpenRouter) and names local Ollama
+    # here as the safety net, so a capped/erroring cloud model never leaves
+    # the analyst without an answer.
+    #
+    # Leave FALLBACK_MODEL_ID empty (the default) for NO chain — Wolf's default
+    # primary is already local Ollama, so there is nothing to fail over to.
+    # Per-organization model configuration is a later phase; this global seam
+    # is the single-org path and keeps single-org ↔ MSSP parity. Provider
+    # defaults to "ollama" when a fallback id is set without a provider.
+    fallback_model_provider: str = ""  # anthropic | openai | openrouter | ollama
+    fallback_model_id: str = ""
+    fallback_model_api_key_ref: str = ""
+
     # ── Grounding validator (Phase 3 Slice 2B follow-up) ──────────────────
     # The validator can use a model DIFFERENT from the chat model. Default
     # is `default_model_id` so the validator runs the same model as chat,

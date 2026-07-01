@@ -61,7 +61,11 @@ def _message_to_ollama(msg: Message) -> dict[str, Any]:
             out["content"] = msg.content
         return out
 
-    return {"role": msg.role.value, "content": msg.content}
+    # Coerce None → "" so an empty/interrupted turn never serializes to a
+    # null-content message (harmless on Ollama, but keeps the wire shape valid
+    # and consistent with the OpenAI adapter). Empty history turns are already
+    # skipped upstream in the agent loop.
+    return {"role": msg.role.value, "content": msg.content or ""}
 
 
 def _parse_ollama_response(body: dict[str, Any], model_id: str) -> ChatResponse:

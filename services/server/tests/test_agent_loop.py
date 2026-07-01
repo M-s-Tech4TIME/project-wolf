@@ -320,17 +320,26 @@ async def test_loop_returns_budget_exhausted_when_model_keeps_calling_tools(
 ) -> None:
     _register_search_alerts()
     now = datetime.now(UTC)
-    call = ToolCall(
-        id="c-loop",
-        name="search_alerts",
-        arguments={
-            "time_from": (now - timedelta(hours=1)).isoformat(),
-            "time_to": now.isoformat(),
-        },
-    )
-    # Strategy budget = 5 steps; model loops a tool call forever.
+    # DISTINCT calls each step (varying time_from) so the repeated-tool-call
+    # guard does NOT trip — this test exercises genuine budget exhaustion, a
+    # model that keeps doing *new* work until the step budget runs out.
     provider = MockProvider(
-        [_response(tool_calls=[call], stop_reason="tool_use") for _ in range(10)]
+        [
+            _response(
+                tool_calls=[
+                    ToolCall(
+                        id=f"c-loop-{i}",
+                        name="search_alerts",
+                        arguments={
+                            "time_from": (now - timedelta(hours=i + 1)).isoformat(),
+                            "time_to": now.isoformat(),
+                        },
+                    )
+                ],
+                stop_reason="tool_use",
+            )
+            for i in range(10)
+        ]
     )
     loop = AgentLoop(provider=provider, strategy=FrontierStrategy())
     os_client, server_api = _fake_clients()
@@ -345,6 +354,53 @@ async def test_loop_returns_budget_exhausted_when_model_keeps_calling_tools(
     assert answer.stop_reason == "budget_exhausted"
     assert answer.step_count == 5  # capability.max_safe_autonomous_steps
     assert answer.tool_call_count == 5
+
+
+# ─── Test: repeated-tool-call guard ──────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_loop_guard_forces_synthesis_on_repeated_identical_tool_calls(
+    db: AsyncSession, organization_ctx: OrganizationContext
+) -> None:
+    """A model that repeats the SAME tool call (same name + args) is stopped by
+    the repeated-tool-call guard: it's nudged, and after two consecutive
+    redundant steps a final answer is synthesized from what it already has —
+    instead of looping to budget_exhausted (the 2026-07-01 runaway)."""
+    _register_search_alerts()
+    now = datetime.now(UTC)
+    identical = ToolCall(
+        id="c-dup",
+        name="search_alerts",
+        arguments={
+            "time_from": (now - timedelta(hours=1)).isoformat(),
+            "time_to": now.isoformat(),
+        },
+    )
+    provider = MockProvider(
+        [
+            _response(tool_calls=[identical], stop_reason="tool_use"),  # step 0: new
+            _response(tool_calls=[identical], stop_reason="tool_use"),  # step 1: repeat → nudge
+            _response(tool_calls=[identical], stop_reason="tool_use"),  # step 2: repeat → trip
+            _response("Based on the alerts I already retrieved, here is the summary."),
+        ]
+    )
+    loop = AgentLoop(provider=provider, strategy=FrontierStrategy())
+    os_client, server_api = _fake_clients()
+
+    answer = await loop.run(
+        question="keep searching the same thing",
+        ctx=organization_ctx,
+        db=db,
+        opensearch=os_client,
+        server_api=server_api,
+    )
+    # Forced synthesis returns a real answer well before the 5-step budget.
+    assert answer.stop_reason == "answer"
+    assert answer.step_count == 3
+    assert "summary" in answer.content.lower()
+    # The guard stopped the loop early — far fewer than budget_exhausted's 5.
+    assert answer.tool_call_count == 3
 
 
 # ─── Test: provider raises mid-loop ──────────────────────────────────────────
@@ -476,3 +532,39 @@ async def test_retry_nudge_default_false_leaves_user_message_unchanged(
     last_user = next(m for m in reversed(provider.last_request.messages) if m.role == "user")
     assert last_user.content == "any failed logins?"
     assert RETRY_NUDGE.strip() not in last_user.content
+
+
+# ─── Test: empty/interrupted history turns are not replayed ─────────────────
+
+
+@pytest.mark.asyncio
+async def test_loop_skips_empty_history_turns(
+    db: AsyncSession, organization_ctx: OrganizationContext
+) -> None:
+    """An interrupted prior turn ("no response generated before stop") is stored
+    with empty content; replaying it as an empty-content message makes strict
+    providers reject the whole request with 400 "invalid message". The loop must
+    drop empty/whitespace history turns (a step-0 hard fail otherwise)."""
+    provider = MockProvider([_response("ok")])
+    loop = AgentLoop(provider=provider, strategy=FrontierStrategy())
+    os_client, server_api = _fake_clients()
+
+    await loop.run(
+        question="follow-up question",
+        ctx=organization_ctx,
+        db=db,
+        opensearch=os_client,
+        server_api=server_api,
+        history=[
+            ("assistant", "   "),  # whitespace-only (interrupted) → dropped
+            ("user", "earlier question"),  # real turn → kept
+            ("assistant", ""),  # empty (interrupted) → dropped
+        ],
+    )
+
+    assert provider.last_request is not None
+    contents = [m.content for m in provider.last_request.messages]
+    # The real prior turn survived; no empty/whitespace turn was replayed.
+    assert "earlier question" in contents
+    assert "" not in contents
+    assert "   " not in contents

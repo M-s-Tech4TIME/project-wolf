@@ -105,7 +105,20 @@ def _message_to_openai(msg: Message) -> dict[str, Any]:
             out["content"] = msg.content
         return out
 
-    return {"role": msg.role.value, "content": msg.content}
+    return {"role": msg.role.value, "content": msg.content or ""}
+
+
+def _sendable(serialized: dict[str, Any]) -> bool:
+    """Drop a message that carries no content, no tool_calls, and is not a tool
+    result. Such an "empty turn" (e.g. an interrupted prior answer replayed from
+    history) has no meaning to the model and makes strict OpenAI-compatible
+    providers reject the whole request with 400 "invalid message". Messages with
+    tool_calls or role="tool" are always kept (dropping them would break the
+    tool_call↔tool_result pairing)."""
+    if serialized.get("tool_calls") or serialized.get("role") == "tool":
+        return True
+    content = serialized.get("content")
+    return bool(content and str(content).strip())
 
 
 def _parse_openai_response(body: dict[str, Any], model_id: str) -> ChatResponse:
@@ -197,7 +210,9 @@ class OpenAIAdapter:
     def _build_payload(self, request: ChatRequest, *, stream: bool) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "model": self._model_id,
-            "messages": [_message_to_openai(m) for m in request.messages],
+            "messages": [
+                m for m in (_message_to_openai(m) for m in request.messages) if _sendable(m)
+            ],
             "max_tokens": request.max_tokens,
             "temperature": request.temperature,
         }

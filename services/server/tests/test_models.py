@@ -372,6 +372,45 @@ async def test_openai_adapter_tool_call() -> None:
     assert response.tool_calls[0].arguments == {"status": "active"}
 
 
+@pytest.mark.asyncio
+async def test_openai_adapter_drops_empty_messages() -> None:
+    """An interrupted/empty turn replayed from history serializes to a message
+    with empty content; strict providers (Cohere via OpenRouter) reject the
+    whole request with 400 "invalid message". The adapter must drop empty
+    non-tool messages (and never send null content) so the request stays valid
+    regardless of the model."""
+    from wolf_server.models.openai import OpenAIAdapter
+
+    body = {
+        "choices": [{"message": {"role": "assistant", "content": "ok"}, "finish_reason": "stop"}],
+        "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+    }
+    mock_client = AsyncMock(spec=httpx.AsyncClient)
+    mock_client.post = AsyncMock(return_value=_mock_response(body))
+    adapter = OpenAIAdapter(api_key="test-key", model_id="gpt-4o", client=mock_client)
+
+    request = ChatRequest(
+        messages=[
+            Message(role=MessageRole.system, content="system prompt"),
+            Message(role=MessageRole.user, content="earlier question"),
+            Message(role=MessageRole.assistant, content=""),  # interrupted → dropped
+            Message(role=MessageRole.assistant, content="   "),  # whitespace → dropped
+            Message(role=MessageRole.user, content="follow-up"),
+        ]
+    )
+    await adapter.chat(request)
+
+    sent = mock_client.post.call_args.kwargs["json"]["messages"]
+    pairs = [(m["role"], m.get("content")) for m in sent]
+    assert ("system", "system prompt") in pairs
+    assert ("user", "earlier question") in pairs
+    assert ("user", "follow-up") in pairs
+    assert len(sent) == 3  # the two empty assistant turns were dropped
+    # No message carries null or blank content.
+    for message in sent:
+        assert message.get("tool_calls") or (message.get("content") or "").strip()
+
+
 # ── Ollama adapter ────────────────────────────────────────────────────────────
 
 

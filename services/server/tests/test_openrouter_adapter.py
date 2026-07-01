@@ -209,6 +209,9 @@ class _Settings:
         self.grounding_judge_model_id = kw.get("grounding_judge_model_id", "")
         self.grounding_judge_model_provider = kw.get("grounding_judge_model_provider", "")
         self.grounding_judge_api_key_ref = kw.get("grounding_judge_api_key_ref", "")
+        self.fallback_model_provider = kw.get("fallback_model_provider", "")
+        self.fallback_model_id = kw.get("fallback_model_id", "")
+        self.fallback_model_api_key_ref = kw.get("fallback_model_api_key_ref", "")
 
 
 class _Secrets:
@@ -285,3 +288,44 @@ async def test_config_check_validates_judge_independently() -> None:
     problems = await check_model_config(settings, _Secrets(set()))  # type: ignore[arg-type]
     assert len(problems) == 1
     assert problems[0].startswith("grounding judge")
+
+
+@pytest.mark.asyncio
+async def test_config_check_validates_fallback_independently() -> None:
+    """A configured failover fallback with an unresolvable key must fail LOUDLY
+    at startup, just like the chat + judge models (2026-07-01)."""
+    from wolf_server.agent.model_resolver import check_model_config
+
+    settings = _Settings(
+        default_model_provider="openrouter",
+        default_model_id="cohere/north-mini-code:free",
+        default_model_api_key_ref="model.openrouter.api_key",
+        fallback_model_provider="openrouter",
+        fallback_model_id="qwen/qwen3-next-80b-a3b-instruct:free",
+        fallback_model_api_key_ref="missing.fallback.key",
+    )
+    problems = await check_model_config(
+        settings, _Secrets({"model.openrouter.api_key"})
+    )  # type: ignore[arg-type]
+    assert len(problems) == 1
+    assert problems[0].startswith("fallback model")
+
+
+@pytest.mark.asyncio
+async def test_config_check_passes_for_ollama_fallback_without_key() -> None:
+    """The intended posture — a hosted primary with a keyless local Ollama
+    fallback — validates cleanly (Ollama needs no API key)."""
+    from wolf_server.agent.model_resolver import check_model_config
+
+    settings = _Settings(
+        default_model_provider="openrouter",
+        default_model_id="cohere/north-mini-code:free",
+        default_model_api_key_ref="model.openrouter.api_key",
+        fallback_model_provider="ollama",
+        fallback_model_id="qwen3:8b",
+        fallback_model_api_key_ref="",
+    )
+    problems = await check_model_config(
+        settings, _Secrets({"model.openrouter.api_key"})
+    )  # type: ignore[arg-type]
+    assert problems == []

@@ -19,6 +19,7 @@ and the final answer.  Non-streaming callers omit the callback and see only
 the AgentAnswer return value.
 """
 
+import json
 import traceback
 import uuid
 from dataclasses import dataclass, field
@@ -67,6 +68,22 @@ _EMPTY_ANSWER_FALLBACK = (
     "I gathered the data but wasn't able to compose a summary on this attempt. "
     "Please ask again or rephrase your question."
 )
+
+# Repeated-tool-call guard (2026-07-01). Weaker models sometimes loop on the
+# same tool call — e.g. calling query_runbook with the same args over and over —
+# never synthesizing, until the step budget is exhausted (a bad, expensive UX:
+# 15 steps / 200 K+ tokens for no answer). When a whole step's tool calls are
+# all EXACT repeats of earlier calls, we nudge the model to answer from what it
+# has; after two consecutive redundant steps we force a final synthesis. This
+# is model-agnostic — a strong model never trips it; a looping one is stopped.
+_REDUNDANT_TOOL_NUDGE = (
+    "You have already run these exact queries and their results are in the "
+    "transcript above — running them again returns the same data. Stop searching "
+    "and answer the user's question now using the information you already have. "
+    "If a specific detail is genuinely missing, say what it is instead of "
+    "repeating a search."
+)
+_MAX_REDUNDANT_STREAK = 2
 
 
 class AgentAnswer(BaseModel):
@@ -185,7 +202,16 @@ class AgentLoop:
         # Replay prior user/assistant turns so follow-up questions have
         # context.  Only role+content is replayed; we do not re-execute
         # past tool calls because their results may be stale.
+        #
+        # Skip empty/whitespace turns: an INTERRUPTED prior turn ("no response
+        # generated before stop") is stored with empty content, and replaying
+        # it as {"role":"assistant","content":""} makes strict providers (e.g.
+        # Cohere via OpenRouter) reject the whole request with 400 "invalid
+        # message" — a step-0 hard fail. An empty turn carries no context
+        # anyway, so dropping it is both a bug fix and semantically correct.
         for role_str, content in history or []:
+            if not content or not content.strip():
+                continue
             role = MessageRole.user if role_str == "user" else MessageRole.assistant
             messages.append(Message(role=role, content=content))
         # Slice 5.0c-g: the analyst-side Retry chip on a Wolf response
@@ -208,6 +234,11 @@ class AgentLoop:
         total_input_tokens = 0
         total_output_tokens = 0
         tool_call_count = 0
+        # Repeated-tool-call guard: signature = name + sorted args. Counts how
+        # often each exact call has been made so a step that only repeats prior
+        # calls can be detected and stopped (see _REDUNDANT_TOOL_NUDGE).
+        tool_signatures: dict[str, int] = {}
+        redundant_streak = 0
 
         logger.info(
             "agent_loop_started",
@@ -345,8 +376,15 @@ class AgentLoop:
                 )
 
             tool_results: list[ToolResult] = []
+            step_had_new_call = False
             for call in response.tool_calls:
                 tool_call_count += 1
+                # Repeated-tool-call guard: a step is "redundant" only if EVERY
+                # call in it exactly repeats an earlier call (same name + args).
+                signature = f"{call.name}:{json.dumps(call.arguments, sort_keys=True, default=str)}"
+                if tool_signatures.get(signature, 0) == 0:
+                    step_had_new_call = True
+                tool_signatures[signature] = tool_signatures.get(signature, 0) + 1
                 # Live activity feed (Slice 5.0c-e): announce the tool
                 # BEFORE dispatch so the UI can narrate "Searching Wazuh
                 # for …" instead of staying on the previous status line
@@ -413,6 +451,70 @@ class AgentLoop:
                     )
 
             messages.append(Message(role=MessageRole.tool, tool_results=tool_results))
+
+            # Repeated-tool-call guard (2026-07-01): if this whole step only
+            # repeated earlier calls, the model is looping. Nudge it to answer;
+            # after _MAX_REDUNDANT_STREAK consecutive redundant steps, force a
+            # final synthesis (no tools) so a looping model can't burn the whole
+            # budget for no answer.
+            if step_had_new_call:
+                redundant_streak = 0
+            else:
+                redundant_streak += 1
+                logger.info(
+                    "agent_loop_redundant_tool_step",
+                    loop_id=loop_id,
+                    step=step,
+                    redundant_streak=redundant_streak,
+                )
+                if redundant_streak >= _MAX_REDUNDANT_STREAK:
+                    forced = await self._synthesize_final(messages, loop_id=loop_id)
+                    if forced is not None:
+                        total_input_tokens += forced.input_tokens
+                        total_output_tokens += forced.output_tokens
+                    forced_content = (forced.content if forced else "") or ""
+                    if not forced_content.strip():
+                        forced_content = (
+                            next(
+                                (
+                                    m.content
+                                    for m in reversed(messages)
+                                    if m.role == MessageRole.assistant and m.content
+                                ),
+                                "",
+                            )
+                            or _EMPTY_ANSWER_FALLBACK
+                        )
+                    logger.info(
+                        "agent_loop_completed",
+                        loop_id=loop_id,
+                        stop_reason="answer",
+                        steps=step + 1,
+                        tool_calls=tool_call_count,
+                        redundant_guard_tripped=True,
+                    )
+                    answer = AgentAnswer(
+                        content=forced_content,
+                        citations=citations,
+                        step_count=step + 1,
+                        tool_call_count=tool_call_count,
+                        input_tokens=total_input_tokens,
+                        output_tokens=total_output_tokens,
+                        stop_reason="answer",
+                        loop_id=loop_id,
+                    )
+                    return await self._finalize_answer(
+                        answer,
+                        validator=grounding_validator,
+                        tool_results=all_tool_results,
+                        retrieved_chunks=all_retrieved_chunks,
+                        tool_failures=all_tool_failures,
+                        db=db,
+                        ctx=ctx,
+                        event_callback=event_callback,
+                        mode=grounding_mode,
+                    )
+                messages.append(Message(role=MessageRole.user, content=_REDUNDANT_TOOL_NUDGE))
 
         # Budget exhausted without final answer.
         logger.warning(

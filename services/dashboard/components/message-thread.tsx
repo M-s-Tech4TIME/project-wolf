@@ -587,6 +587,24 @@ function GroundingBadge({ node }: { node: AssistantMessageNode }) {
     grounding_uncertain === null &&
     grounding_unverifiable === null
   ) {
+    // Grounding was attempted but every judge provider failed (e.g. all
+    // rate-limited). Be honest about it rather than silently showing nothing;
+    // the answer itself is unaffected (2026-07-01).
+    if (node.grounding_unavailable) {
+      return (
+        <>
+          <span>·</span>
+          <Badge
+            variant="outline"
+            className="gap-1 text-muted-foreground"
+            title="Wolf couldn't verify this answer's claims — the grounding judge model was unavailable (e.g. rate-limited). The answer is unaffected; verification just didn't run. It works again once a judge model is reachable."
+          >
+            <ShieldAlert className="h-3 w-3" />
+            grounding unavailable
+          </Badge>
+        </>
+      );
+    }
     return null;
   }
   const supported = grounding_supported ?? 0;
