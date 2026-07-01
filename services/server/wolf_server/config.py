@@ -196,6 +196,24 @@ class Settings(BaseSettings):
     # needed for anthropic/openai).  Leave empty for ollama.
     default_model_api_key_ref: str = ""
     ollama_base_url: str = "http://localhost:11434"
+    # Ollama context window (num_ctx) for the chat AND grounding-judge models.
+    # CRITICAL: Ollama's built-in default is only 4096 tokens. Wolf's system
+    # prompt + full read/propose tool catalog (14 tools with JSON schemas) is
+    # ~7.2K tokens BEFORE any conversation history or tool results — so the 4096
+    # default silently TRUNCATES the prompt, dropping the earlier tool
+    # definitions. The model then literally cannot see tools like `list_agents`
+    # / `search_alerts` / `count_alerts_by_severity` and answers "no such tool"
+    # in prose with zero tool calls (the 2026-07-01 regression). 16384 fits the
+    # tool prompt with comfortable headroom for an 8-step guided loop's
+    # accumulated tool results; still far under qwen3's 128K capability. Raise
+    # it for very large environments (bigger tool results) or lower it on
+    # VRAM-constrained hardware — larger num_ctx = larger KV-cache VRAM. Applied
+    # to Ollama only (hosted providers carry their own large contexts and error
+    # loudly rather than truncate); a future consumer of the Phase 6.10 model
+    # posture GUI. One value for chat + judge so a same-tag deployment (the
+    # default unified qwen3:8b) keeps ONE loaded context and never reloads
+    # between a chat call and its grounding pass.
+    ollama_num_ctx: int = 16384
     openai_base_url: str = "https://api.openai.com/v1"
     # OpenRouter (OpenAI-compatible hosted frontier models) — a SELECTABLE
     # provider (ADR 0030), not the default. To use: set default_model_provider

@@ -329,3 +329,41 @@ async def test_config_check_passes_for_ollama_fallback_without_key() -> None:
         settings, _Secrets({"model.openrouter.api_key"})
     )  # type: ignore[arg-type]
     assert problems == []
+
+
+# ── chat Ollama context window (2026-07-01 tool-truncation regression) ────────
+
+
+class _ChatSettings:
+    """Minimal stand-in for the fields the chat/judge resolver reads for an
+    Ollama build. Mirrors the real Settings defaults that matter here."""
+
+    def __init__(self, **kw: object) -> None:
+        self.default_model_provider = kw.get("default_model_provider", "ollama")
+        self.default_model_id = kw.get("default_model_id", "qwen3:8b")
+        self.default_model_api_key_ref = kw.get("default_model_api_key_ref", "")
+        self.ollama_base_url = kw.get("ollama_base_url", "http://localhost:11434")
+        self.ollama_num_ctx = kw.get("ollama_num_ctx", 16384)
+        self.fallback_model_provider = kw.get("fallback_model_provider", "")
+        self.fallback_model_id = kw.get("fallback_model_id", "")
+        self.fallback_model_api_key_ref = kw.get("fallback_model_api_key_ref", "")
+
+
+@pytest.mark.asyncio
+async def test_chat_ollama_build_applies_num_ctx() -> None:
+    """The chat model build MUST push settings.ollama_num_ctx into the Ollama
+    adapter. Regression guard: when this was unset the adapter used Ollama's
+    4096 default, which truncated Wolf's ~7.2K-token tool prompt off the head so
+    the model couldn't see tools like list_agents (2026-07-01). A test must
+    change when the thing it tests changes — so it pins the exact value."""
+    from wolf_server.agent.model_resolver import get_model_for_organization
+    from wolf_server.models.ollama import OllamaAdapter
+
+    settings = _ChatSettings(ollama_num_ctx=20000)
+    provider = await get_model_for_organization(
+        None,  # type: ignore[arg-type]  # _ctx is reserved + unused here
+        settings,  # type: ignore[arg-type]
+        _Secrets(set()),  # type: ignore[arg-type]
+    )
+    assert isinstance(provider, OllamaAdapter)
+    assert provider._num_ctx == 20000

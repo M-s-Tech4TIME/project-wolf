@@ -225,6 +225,13 @@ async def get_model_for_organization(
         api_key_ref=settings.default_model_api_key_ref,
         settings=settings,
         secrets=secrets,
+        # Size the Ollama context to hold Wolf's system prompt + full tool
+        # catalog (~7.2K tokens) plus multi-step headroom. Without this the
+        # adapter falls back to Ollama's 4096 default, which TRUNCATES the tool
+        # definitions off the head of the prompt — the model then can't see
+        # tools like list_agents and answers "no such tool" (2026-07-01
+        # regression). Ignored by non-Ollama providers.
+        ollama_num_ctx=settings.ollama_num_ctx,
     )
 
 
@@ -255,11 +262,12 @@ async def get_grounding_judge_model(
         api_key_ref=judge_api_key_ref,
         settings=settings,
         secrets=secrets,
-        # The judge's prompt + 5 KB evidence + claims can exceed qwen3:8b's
-        # default 4 K context on Ollama, which manifests as empty model
-        # output and a "JSONDecodeError on empty string" downstream. 8 K
-        # comfortably fits typical grounding inputs without exceeding
-        # qwen3:8b's actual 32 K capability. Ignored for non-Ollama
-        # providers. Slice 5.0b.4.
-        ollama_num_ctx=8192,
+        # The judge's prompt + 5 KB evidence + claims can exceed Ollama's 4 K
+        # default context, which manifests as empty model output and a
+        # "JSONDecodeError on empty string" downstream (Slice 5.0b.4). Share the
+        # single ollama_num_ctx knob with the chat model: when chat and judge
+        # are the SAME Ollama tag (the default unified qwen3:8b) one loaded
+        # context serves both, so Ollama never reloads the model between a chat
+        # call and its grounding pass. Ignored for non-Ollama providers.
+        ollama_num_ctx=settings.ollama_num_ctx,
     )

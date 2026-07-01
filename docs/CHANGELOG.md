@@ -49,6 +49,46 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-07-01 — Ollama context window fix: tool catalog was being truncated (0-tool-call regression)
+
+**Session type:** claude-code
+**Phase:** post-6-e.3 web-test — reliability
+**Branch / commit:** main
+
+**Symptom (operator web-test, 3 screenshots):** Wolf suddenly answered
+"the available tools do not include a way to list agents / count alerts /
+find disconnected agents" — **0 tool calls** — for questions it has tools for
+(`list_agents`, `count_alerts_by_severity`, `search_alerts`, …). Prose, no
+action, ~5K-token responses.
+
+**Root cause (ours, not the model):** the chat Ollama adapter was built with no
+`num_ctx`, so it used Ollama's built-in **4096** default. Wolf's system prompt +
+14-tool catalog (JSON schemas) is **~7.2K tokens** — Ollama silently TRUNCATED
+the prompt, dropping the tool definitions off the *head*. The model literally
+could not see the earlier tools (it only ever mentioned the tail: cluster
+health, active-response, knowledge). Confirmed live: same model + same catalog,
+`num_ctx=4096` → `tool_calls=[]`; `num_ctx=8192/16384` → `list_agents` /
+`count_alerts_by_severity` emitted correctly. Only the grounding **judge** had
+been given `num_ctx=8192`; the chat path was missed.
+
+**Fix (model-agnostic):**
+- New `Settings.ollama_num_ctx` (default **16384**) — fits the tool prompt plus
+  an 8-step guided loop's accumulated tool results, far under qwen3's 128K.
+- `get_model_for_organization` (chat) now passes it; the judge shares the same
+  knob (one loaded context for a same-tag unified deployment → no reload between
+  chat and its grounding pass).
+- `.env`: `OLLAMA_NUM_CTX=16384`, documented (raise for big environments, lower
+  if VRAM-tight). Ignored by hosted providers (they carry large contexts and
+  error loudly rather than truncate).
+- Regression test `test_chat_ollama_build_applies_num_ctx` pins the value onto
+  the built adapter so an unset chat context can never silently return.
+
+**Verified:** all 3 failing questions now emit the correct tool call through the
+real resolver+settings path; full backend suite **727 passed**; ruff + mypy
+--strict clean.
+
+---
+
 ## 2026-07-01 — Provider failover chain (OpenRouter → local Ollama) + 3 reliability fixes
 
 **Session type:** claude-code
