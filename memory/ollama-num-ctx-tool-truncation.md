@@ -40,5 +40,19 @@ adds schema tokens) or a new local model becomes default, re-check that
 `ollama_num_ctx` still comfortably exceeds the bare tool-prompt token count —
 raise it for very large environments (bigger tool results), lower only if
 VRAM-constrained (larger num_ctx = larger KV-cache VRAM). A future Phase 6.10
-model-posture GUI knob. See [[model-failure-resilience-and-openrouter-free-reality]]
-+ [[grounding-execution-modes]].
+model-posture GUI knob.
+
+**Trade-off + the full tuning surface (2026-07-01):** on a VRAM-tight GPU the
+16384 default enlarges the KV-cache and spills the model to CPU → slower
+generation (MEASURED, 6 GB RTX 4050: `num_ctx` 16384 = 14.4 tok/s / 55% GPU vs
+4096 = 19.3 / 74% — a ~25% cost). Can't revert to 4096 (re-breaks tools). The
+clean recovery WITHOUT losing tool correctness is **KV-cache quantization**
+(`OLLAMA_FLASH_ATTENTION=1` + `OLLAMA_KV_CACHE_TYPE=q8_0` on the Ollama SERVICE —
+near-lossless, ~half the KV-cache VRAM; `q4_0` = quarter but real accuracy cost,
+avoid for tool-calling/judge). Every lever (num_ctx · KV-cache quant · model
+posture unified-vs-split · `OLLAMA_NUM_PARALLEL` · grounding mode), its
+trade-offs, per-scenario recipes (constrained-dev / mid / enterprise), and
+apply/revert commands are documented in **`docs/reference/model-performance-tuning.md`**
+(mirrored into `.env` + `.env.example` comments). See ADR 0024 (posture), ADR
+0026 (modes + concurrency), [[model-failure-resilience-and-openrouter-free-reality]],
+[[grounding-execution-modes]], [[grounding-concurrency-model]].

@@ -213,6 +213,9 @@ class Settings(BaseSettings):
     # posture GUI. One value for chat + judge so a same-tag deployment (the
     # default unified qwen3:8b) keeps ONE loaded context and never reloads
     # between a chat call and its grounding pass.
+    # Full performance/hardware tuning guide (this + KV-cache quantization +
+    # model posture + OLLAMA_NUM_PARALLEL, with scenario recipes + benchmarks):
+    # docs/reference/model-performance-tuning.md
     ollama_num_ctx: int = 16384
     openai_base_url: str = "https://api.openai.com/v1"
     # OpenRouter (OpenAI-compatible hosted frontier models) — a SELECTABLE

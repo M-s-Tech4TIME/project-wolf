@@ -49,6 +49,44 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-07-01 — Doc: model performance & hardware tuning guide (speed ↔ quality ↔ context, all reversible)
+
+**Session type:** claude-code
+**Phase:** reference / operability
+**Branch / commit:** main
+
+**Context:** after the `num_ctx=16384` fix, the operator noticed slower streaming
+on the 6 GB dev GPU. Diagnosed + benchmarked (twice, reproducible): the larger
+context enlarges qwen3:8b's KV-cache to 7.8 GB → ~45% spills to CPU → ~25% slower
+generation (16384 = 14.4 tok/s / 55% GPU vs 4096 = 19.3 / 74%). Can't revert to
+4096 (re-breaks tool-calling — needs ~7.2K ctx). The operator asked for **all**
+tuning levers to be first-class: configurable, reversible, and documented with
+scenario-based "when to use what."
+
+**Shipped (docs-only, no code):**
+- **`docs/reference/model-performance-tuning.md`** — the authoritative guide:
+  every lever (which surface it lives on — Wolf `.env` vs Ollama service), the
+  speed↔quality↔context trade-off, the measured benchmark table, and
+  **scenario recipes** (constrained dev ≤8 GB / mid-range 10–16 GB / enterprise
+  24 GB+ MSSP / CPU-only) with apply + **revert** commands for each. Levers
+  covered: `OLLAMA_NUM_CTX`, KV-cache quantization
+  (`OLLAMA_FLASH_ATTENTION` + `OLLAMA_KV_CACHE_TYPE` f16/q8_0/q4_0), model posture
+  (unified vs split), `OLLAMA_NUM_PARALLEL`, `GROUNDING_MODE`.
+- **`.env` + `.env.example`** — a documented "Performance & hardware tuning"
+  block: expanded `OLLAMA_NUM_CTX` guidance (floor 8192 / safe 12288 / generous
+  16384 + the benchmark numbers) and a discoverable reference to the Ollama-service
+  knobs (they're global to the Ollama host, not this file) pointing at the guide.
+- **`config.py`** — the `ollama_num_ctx` field comment now points to the guide.
+
+**Key guidance recorded:** KV-cache `q8_0` is the recommended VRAM-tight fix
+(keeps full 16K context + tool correctness, near-lossless, ~half the KV-cache);
+`q4_0` trades real accuracy (avoid for the tool-calling/judge workload); on
+enterprise hardware run `f16` + scale `OLLAMA_NUM_PARALLEL` — no quality
+trade-off. KV-cache/parallel are Ollama **service** settings (need sudo), applied
+via a reversible systemd drop-in.
+
+---
+
 ## 2026-07-01 — Doc: grounding concurrency model — per-request parallel, never a queue (MSSP)
 
 **Session type:** claude-code
