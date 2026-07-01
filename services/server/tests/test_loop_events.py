@@ -201,6 +201,116 @@ async def test_tool_call_emits_tool_event_with_summary(
     assert tool_event.data["citation"]["tool"] == "search_alerts"
 
 
+# ─── Graceful model-call failure (the "hang on thinking…" bug fix) ──────────
+
+
+class RaisingProvider:
+    """A provider whose chat() always raises — models a provider outage
+    (429 rate-limit / 400 degraded / 404 / timeout) mid-run."""
+
+    def __init__(self, exc: Exception) -> None:
+        self._exc = exc
+        self._descriptor = _descriptor()
+
+    def capability(self) -> CapabilityDescriptor:
+        return self._descriptor
+
+    async def chat(self, request: ChatRequest) -> ChatResponse:  # noqa: ARG002
+        raise self._exc
+
+    def stream(self, request: ChatRequest) -> Any:  # noqa: ARG002
+        raise NotImplementedError
+
+
+@pytest.mark.asyncio
+async def test_streaming_model_failure_degrades_gracefully(
+    db: AsyncSession, organization_ctx: OrganizationContext
+) -> None:
+    """Streaming path (event_callback set): a provider WolfError raised mid-run
+    must NOT propagate. Propagating would break the SSE stream AFTER the
+    response started ("response already started") and hang the browser on
+    "thinking…" forever with Stop dead. Instead it emits `model.call.failed`
+    then a settled `answer` so the UI shows a clean error."""
+    from wolf_server.models.openai import ModelProviderRequestError
+
+    events: list[LoopEvent] = []
+
+    async def collect(event: LoopEvent) -> None:
+        events.append(event)
+
+    provider = RaisingProvider(
+        ModelProviderRequestError("Model provider returned 400: boom")
+    )
+    loop = AgentLoop(provider=provider, strategy=FrontierStrategy())
+    os_client, server_api = _fake_clients()
+
+    answer = await loop.run(
+        question="hi",
+        ctx=organization_ctx,
+        db=db,
+        opensearch=os_client,
+        server_api=server_api,
+        event_callback=collect,
+    )
+
+    types = [e.type for e in events]
+    assert "model.call.failed" in types
+    assert types[-1] == "answer"  # terminal settle event — UI leaves "thinking…"
+    assert answer.stop_reason == "loop_error"
+    # readable, non-leaky message (no raw provider JSON / traceback in the chat)
+    assert "couldn't complete" in answer.content.lower()
+
+
+@pytest.mark.asyncio
+async def test_blocking_model_failure_reraises_wolferror(
+    db: AsyncSession, organization_ctx: OrganizationContext
+) -> None:
+    """Blocking path (no event_callback = POST /chat): a WolfError must still
+    propagate so the API layer maps it to a clean HTTP error. Unchanged."""
+    from wolf_common.errors import WolfError
+    from wolf_server.models.openai import ModelProviderRequestError
+
+    provider = RaisingProvider(ModelProviderRequestError("boom"))
+    loop = AgentLoop(provider=provider, strategy=FrontierStrategy())
+    os_client, server_api = _fake_clients()
+
+    with pytest.raises(WolfError):
+        await loop.run(
+            question="hi",
+            ctx=organization_ctx,
+            db=db,
+            opensearch=os_client,
+            server_api=server_api,
+            # no event_callback → blocking semantics
+        )
+
+
+@pytest.mark.asyncio
+async def test_streaming_generic_exception_degrades_gracefully(
+    db: AsyncSession, organization_ctx: OrganizationContext
+) -> None:
+    """A non-WolfError (e.g. a raw network error) settles cleanly too."""
+    events: list[LoopEvent] = []
+
+    async def collect(event: LoopEvent) -> None:
+        events.append(event)
+
+    provider = RaisingProvider(RuntimeError("connection reset"))
+    loop = AgentLoop(provider=provider, strategy=FrontierStrategy())
+    os_client, server_api = _fake_clients()
+
+    answer = await loop.run(
+        question="hi",
+        ctx=organization_ctx,
+        db=db,
+        opensearch=os_client,
+        server_api=server_api,
+        event_callback=collect,
+    )
+    assert answer.stop_reason == "loop_error"
+    assert [e.type for e in events][-1] == "answer"
+
+
 # ─── ADR 0026 — grounding execution modes ───────────────────────────────────
 
 

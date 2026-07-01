@@ -476,7 +476,11 @@ export type LoopEventType =
   // ADR 0026 — incremental mode emits one `grounding.partial` per judge batch.
   | "grounding.partial"
   | "grounding.completed"
-  | "answer";
+  | "answer"
+  // Terminal error the SSE endpoint emits when the run fails after the
+  // response already started (so no HTTP error can be returned). The client
+  // settles into an error state instead of hanging on "thinking…".
+  | "error";
 
 export type LoopEvent = {
   type: LoopEventType;

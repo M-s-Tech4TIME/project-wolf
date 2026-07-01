@@ -276,6 +276,25 @@ async def chat_stream(
                     retry_nudge=body.retry_nudge,
                 )
             await db.commit()
+        except Exception as exc:
+            # The loop already surfaces model-call failures as
+            # model.call.failed + a settled answer. This is the belt-and-braces
+            # for anything else raised AFTER the SSE response started (setup,
+            # grounding, db) — a bare raise here is swallowed by Starlette as
+            # "response already started" and the browser hangs on "thinking…".
+            # Emit a terminal `error` event so the client always settles.
+            logger.error(
+                "chat_stream_failed",
+                organization_id=str(ctx.organization_id),
+                detail=f"{type(exc).__name__}: {exc}",
+                exc_info=True,
+            )
+            await queue.put(
+                LoopEvent(
+                    type="error",
+                    data={"detail": f"{type(exc).__name__}: {exc}"[:300]},
+                )
+            )
         finally:
             await queue.put(None)  # sentinel
 

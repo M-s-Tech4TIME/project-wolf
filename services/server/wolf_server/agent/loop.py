@@ -42,6 +42,7 @@ from wolf_server.models.interface import (
     ChatStreamDone,
     ModelProvider,
 )
+from wolf_server.models.openai import ModelProviderRateLimitError
 from wolf_server.models.registry import registry as schema_registry
 from wolf_server.organization.context import OrganizationContext
 from wolf_server.tools.base import Citation
@@ -94,6 +95,34 @@ async def _emit(
 ) -> None:
     if callback is not None:
         await callback(LoopEvent(type=event_type, data=data))
+
+
+def _model_failure_message(exc: Exception) -> str:
+    """A readable, non-leaky answer body for a failed model call.
+
+    Shown to the analyst in the chat when the model provider errors. Keeps the
+    signal (rate-limit vs other provider error) without dumping raw provider
+    JSON or a traceback into the conversation.
+    """
+    if isinstance(exc, ModelProviderRateLimitError):
+        return (
+            "Wolf couldn't complete this request — the model provider is "
+            "rate-limited right now (HTTP 429). This is common on free-tier "
+            "models; please try again in a moment, or switch to a local model."
+        )
+    if isinstance(exc, WolfError):
+        msg = (str(exc) or "").strip()
+        short = f"{msg[:200]}…" if len(msg) > 200 else msg
+        tail = f" ({short})" if short else ""
+        return (
+            "Wolf couldn't complete this request — the model provider returned "
+            f"an error{tail}. Please try again; if it persists, check the model "
+            "configuration."
+        )
+    return (
+        f"Wolf couldn't complete this request — the model call failed "
+        f"({type(exc).__name__}). Please try again."
+    )
 
 
 def _summarize_dispatch_result(result: ToolDispatchResult) -> dict[str, Any]:
@@ -211,53 +240,43 @@ class AgentLoop:
                     step=step,
                     event_callback=event_callback,
                 )
-            except WolfError:
-                raise
-            except Exception as exc:
-                # Capture both the type and message — many httpx exceptions
-                # have an empty str() and were silently logging as just
-                # "Model call failed:" with no detail.  Persist the
-                # traceback into the audit record so the next occurrence
-                # is forensically recoverable.
-                exc_type = type(exc).__name__
-                exc_msg = str(exc) or "(no message)"
-                detail = f"{exc_type}: {exc_msg}"
-                tb = "".join(traceback.format_exception(exc))
-                logger.error(
-                    "agent_loop_model_call_failed",
+            except WolfError as exc:
+                # Blocking POST /chat (no event_callback): re-raise so the API
+                # layer maps the WolfError to a clean HTTP error response.
+                # Streaming POST /chat/stream: the SSE response has ALREADY
+                # started, so a raise here would break the stream ("response
+                # already started") and leave the browser hanging on
+                # "thinking…" forever (with Stop dead). Instead, emit a clean
+                # terminal failure + answer so the UI settles into an honest
+                # error. This is provider-agnostic — a 429/400/404/timeout from
+                # ANY model degrades gracefully.
+                if event_callback is None:
+                    raise
+                return await self._fail_gracefully(
+                    exc,
+                    db=db,
+                    ctx=ctx,
                     loop_id=loop_id,
-                    exc_type=exc_type,
-                    detail=detail,
-                    traceback=tb,
-                )
-                await self._audit_model_failure(
-                    db,
-                    ctx,
-                    loop_id,
-                    step,
-                    detail,
-                    traceback=tb,
-                )
-                await _emit(
-                    event_callback,
-                    "model.call.failed",
-                    {
-                        "step": step,
-                        "detail": detail,
-                    },
-                )
-                answer = AgentAnswer(
-                    content=f"Model call failed ({exc_type}): {exc_msg}",
+                    step=step,
                     citations=citations,
-                    step_count=step,
                     tool_call_count=tool_call_count,
-                    input_tokens=total_input_tokens,
-                    output_tokens=total_output_tokens,
-                    stop_reason="loop_error",
-                    loop_id=loop_id,
+                    total_input_tokens=total_input_tokens,
+                    total_output_tokens=total_output_tokens,
+                    event_callback=event_callback,
                 )
-                await _emit(event_callback, "answer", answer.model_dump(mode="json"))
-                return answer
+            except Exception as exc:
+                return await self._fail_gracefully(
+                    exc,
+                    db=db,
+                    ctx=ctx,
+                    loop_id=loop_id,
+                    step=step,
+                    citations=citations,
+                    tool_call_count=tool_call_count,
+                    total_input_tokens=total_input_tokens,
+                    total_output_tokens=total_output_tokens,
+                    event_callback=event_callback,
+                )
 
             total_input_tokens += response.input_tokens
             total_output_tokens += response.output_tokens
@@ -676,6 +695,58 @@ class AgentLoop:
                 "strategy": self.strategy.name,
             },
         )
+
+    async def _fail_gracefully(
+        self,
+        exc: Exception,
+        *,
+        db: AsyncSession,
+        ctx: OrganizationContext,
+        loop_id: str,
+        step: int,
+        citations: list[Citation],
+        tool_call_count: int,
+        total_input_tokens: int,
+        total_output_tokens: int,
+        event_callback: EventCallback | None,
+    ) -> "AgentAnswer":
+        """Turn a model-call failure into a clean terminal answer + events.
+
+        Logs + audits the failure with a traceback, emits `model.call.failed`
+        then a settled `answer` event (so streaming clients leave the running
+        state instead of hanging), and returns an AgentAnswer carrying a
+        readable, non-leaky message. Shared by the WolfError (streaming) and
+        the generic-exception paths so both degrade identically.
+        """
+        exc_type = type(exc).__name__
+        exc_msg = str(exc) or "(no message)"
+        detail = f"{exc_type}: {exc_msg}"
+        tb = "".join(traceback.format_exception(exc))
+        logger.error(
+            "agent_loop_model_call_failed",
+            loop_id=loop_id,
+            exc_type=exc_type,
+            detail=detail,
+            traceback=tb,
+        )
+        await self._audit_model_failure(db, ctx, loop_id, step, detail, traceback=tb)
+        await _emit(
+            event_callback,
+            "model.call.failed",
+            {"step": step, "detail": detail},
+        )
+        answer = AgentAnswer(
+            content=_model_failure_message(exc),
+            citations=citations,
+            step_count=step,
+            tool_call_count=tool_call_count,
+            input_tokens=total_input_tokens,
+            output_tokens=total_output_tokens,
+            stop_reason="loop_error",
+            loop_id=loop_id,
+        )
+        await _emit(event_callback, "answer", answer.model_dump(mode="json"))
+        return answer
 
     async def _audit_model_failure(
         self,

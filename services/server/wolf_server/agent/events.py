@@ -24,6 +24,10 @@ LoopEventType = Literal[
     "grounding.partial",
     "grounding.completed",
     "answer",
+    # Terminal failure the SSE endpoint emits when the run raises AFTER the
+    # response has already started (so an HTTP error can't be returned). The
+    # client settles into an error state instead of hanging on "thinking…".
+    "error",
 ]
 
 

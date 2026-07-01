@@ -385,6 +385,58 @@ KNOWN_MODELS: dict[str, CapabilityDescriptor] = {
         recommended_strategy=AgentStrategy.frontier,
         license_class=LicenseClass.proprietary,
     ),
+    # ── 2026-07-01: free Qwen3 + Cohere models added as selectable options ──
+    # after nemotron's tool-calling degraded (400) and owl-alpha was retired
+    # (404). All advertise native `tools` (live catalog probe 2026-07-01);
+    # qwen3-next additionally advertises response_format + structured_outputs.
+    # Free routes share OpenRouter's daily/upstream rate cap → 429 under agent
+    # load; the agent loop now degrades a 429/400 gracefully (a clean terminal
+    # answer, never a hang). Empirical tool-calling probe (2026-07-01):
+    # north-mini-code emitted a correct tool call (200); both Qwen free routes
+    # were 429 at that moment (transient). Best-fit when un-throttled:
+    # CHAT = qwen3-coder (480B agentic coder); GROUNDING = qwen3-next
+    # (schema-enforced JSON). north-mini-code is the working CHAT default now.
+    #
+    # Qwen3 Coder 480B-A35B (Apache-2.0) — heavy agentic/tool-calling coder,
+    # 1M ctx. tools only (no response_format) → prompt_coaxed.
+    "qwen/qwen3-coder:free": CapabilityDescriptor(
+        model_id="qwen/qwen3-coder:free",
+        provider="openrouter",
+        context_window=1_048_576,
+        native_tool_calling=NativeToolCalling.full,
+        reasoning_tier=ReasoningTier.frontier,
+        structured_output=StructuredOutput.prompt_coaxed,
+        max_safe_autonomous_steps=15,
+        recommended_strategy=AgentStrategy.frontier,
+        license_class=LicenseClass.apache_2_0,
+    ),
+    # Qwen3 Next 80B-A3B Instruct (Apache-2.0) — fast (3B active) instruct with
+    # native structured_outputs → the natural GROUNDING JUDGE (JSON verdicts).
+    "qwen/qwen3-next-80b-a3b-instruct:free": CapabilityDescriptor(
+        model_id="qwen/qwen3-next-80b-a3b-instruct:free",
+        provider="openrouter",
+        context_window=262_144,
+        native_tool_calling=NativeToolCalling.full,
+        reasoning_tier=ReasoningTier.strong,
+        structured_output=StructuredOutput.schema_enforced,
+        max_safe_autonomous_steps=15,
+        recommended_strategy=AgentStrategy.frontier,
+        license_class=LicenseClass.apache_2_0,
+    ),
+    # Cohere North Mini Code (proprietary preview) — coding model with working
+    # native tool-calling (verified 2026-07-01); the active CHAT default while
+    # the Qwen free routes are rate-limited. tools only → prompt_coaxed.
+    "cohere/north-mini-code:free": CapabilityDescriptor(
+        model_id="cohere/north-mini-code:free",
+        provider="openrouter",
+        context_window=256_000,
+        native_tool_calling=NativeToolCalling.full,
+        reasoning_tier=ReasoningTier.strong,
+        structured_output=StructuredOutput.prompt_coaxed,
+        max_safe_autonomous_steps=15,
+        recommended_strategy=AgentStrategy.frontier,
+        license_class=LicenseClass.proprietary,
+    ),
 }
 
 

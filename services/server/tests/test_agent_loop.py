@@ -366,7 +366,11 @@ async def test_loop_returns_loop_error_when_provider_raises(
         server_api=server_api,
     )
     assert answer.stop_reason == "loop_error"
-    assert "synthetic" in answer.content
+    # The user-facing content is clean and non-leaky — no raw provider/
+    # exception text in the chat. The raw detail is preserved in the audit
+    # record instead (asserted below).
+    assert "couldn't complete" in answer.content.lower()
+    assert "synthetic" not in answer.content
 
     await db.commit()
     rows = (
@@ -381,6 +385,8 @@ async def test_loop_returns_loop_error_when_provider_raises(
         .all()
     )
     assert len(rows) == 1
+    # The raw failure detail lives in the audit record (forensics), not the chat.
+    assert "synthetic" in (rows[0].event_data or {})["detail"]
 
 
 # ─── Test: pipeline strategy makes exactly one call with no tools ────────────

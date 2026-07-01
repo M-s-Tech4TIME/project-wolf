@@ -508,6 +508,29 @@ export function useConversationStreams(): UseConversationStreams {
                 }));
                 break;
               }
+              case "error": {
+                // Terminal error emitted by the SSE endpoint when the run
+                // failed AFTER the response started (belt-and-braces for the
+                // hang bug). Settle into an error state so the UI stops
+                // "thinking…" instead of loading forever.
+                const detail = asString(
+                  event.data.detail,
+                  "The request failed.",
+                );
+                streamingAnswerRef.current[convoId] = "";
+                updateStream(convoId, (s) => ({
+                  ...s,
+                  streamingAnswer: "",
+                  error: detail,
+                  status: {
+                    ...s.status,
+                    phase: "error",
+                    last_event_type: event.type,
+                    message: detail,
+                  },
+                }));
+                break;
+              }
             }
           },
           controller.signal,

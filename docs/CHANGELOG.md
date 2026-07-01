@@ -49,6 +49,66 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-07-01 — Streaming resilience (no more hang on model failure) + free-model stack refresh
+
+**Session type:** claude-code
+**Phase:** 6-e (model reliability incident, mid-UI/UX)
+**Branch / commit:** main
+
+### The incident
+A chat query hung forever on "Step 1/15: thinking…" with the Stop button dead.
+Root cause = three things:
+1. **App bug (the hang):** `agent/loop.py` did `except WolfError: raise` — re-raising
+   a model-provider error mid-stream. Correct for the blocking `POST /chat` (maps to
+   an HTTP error), but on the SSE `POST /chat/stream` the response has ALREADY started,
+   so the raise surfaced as Starlette's `RuntimeError: response already started`, the
+   stream broke with NO terminal event, and the browser hung (Stop couldn't recover a
+   dead stream). The generic-exception branch already handled this gracefully; WolfError
+   skipped it.
+2. **`openrouter/owl-alpha` (grounding judge) → 404** — retired from OpenRouter.
+3. **`nvidia/nemotron-…:free` (chat) → 400 on tool calls** — its tool-calling endpoint
+   is degraded (plain chat 200, with-tools 400), so tool-using queries failed.
+
+### What we did
+- **Robustness fix (model-agnostic).** `_fail_gracefully()` in `agent/loop.py`: a model
+  failure now emits `model.call.failed` + a settled `answer` (readable, non-leaky message
+  via `_model_failure_message`; raw detail goes to logs+audit). WolfError re-raises ONLY
+  in blocking mode (`event_callback is None`). `api/chat.py` `runner()` gained a
+  belt-and-braces `except` that emits a new terminal `error` LoopEvent for anything
+  raised after the response started (setup/grounding/db). Frontend: new `error` event
+  type + `case "error"` settles the stream into an error state (no hang). Regression
+  tests: streaming failure degrades gracefully, blocking still re-raises, generic
+  exceptions handled.
+- **Free-model stack refresh.** Live-probed OpenRouter free models: only
+  `cohere/north-mini-code:free` was serving (returned a correct `list_agents` tool call);
+  `qwen/qwen3-coder:free` + `qwen/qwen3-next-80b-a3b-instruct:free` were 429. Added all
+  three to `KNOWN_MODELS` (tools=full, frontier) as selectable options. Active:
+  chat=`cohere/north-mini-code:free` (works now), judge=`qwen/qwen3-next-80b-a3b-instruct:free`
+  (the only free candidate with native structured_outputs → best-fit JSON judge; a
+  DIFFERENT model from chat so the two spread the free-tier rate cap). Best-fit when
+  un-throttled: chat=qwen3-coder (480B agentic coder) + judge=qwen3-next.
+
+### The standing reality (recorded)
+OpenRouter's FREE tier is not dependable for an agentic workload: every free model tested
+this week failed at some point (owl-alpha 404, nemotron tool-calling 400, both Qwen 429).
+Wolf makes many calls per query, so free daily/upstream caps bite fast. The resilience fix
+means these now show a clean error instead of hanging; local Ollama (qwen3:8b, uncapped,
+working tool-calling) remains the reliable fallback (one env flip).
+
+### Configurability note
+Models are configurable **via the registry + config today** (`KNOWN_MODELS` + the
+`DEFAULT_MODEL_*` / `GROUNDING_JUDGE_*` env, ADR 0030). A fully **dynamic runtime GUI**
+selector (Superuser Settings, DB source-of-truth synced env⇄CLI⇄GUI, no restart) is the
+planned **Phase 6.10** ("Model posture" consumer) — not this change.
+
+### Verification
+mypy-strict (models/agent/api) clean; ruff `check .` (repo root) clean; full backend suite
+green; startup model-config self-check `model_config_ok`; north-mini-code end-to-end
+formatting acceptance PASS (7 fenced blocks incl. powershell, 0 inline run-ons) + verified
+tool-calling.
+
+---
+
 ## 2026-06-30 — Claude-style response formatting (Layer 1 generation + Layer 2 renderer, model-agnostic)
 
 **Session type:** claude-code
