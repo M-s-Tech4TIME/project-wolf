@@ -117,12 +117,21 @@ answer first, which makes a constrained GPU *feel* far faster.
 `qwen3:8b`, single **6 GB RTX 4050 Laptop GPU**, `KV_CACHE_TYPE=f16`, two runs
 (reproducible ±0.2 tok/s). This is *the* data behind the guidance above:
 
-| `num_ctx` | Generation | GPU share (CPU/GPU) | Fits tool catalog? |
-|-----------|-----------|---------------------|--------------------|
-| 4096 | 19.3 tok/s | 26% / 74% | ❌ truncates tools |
-| 8192 | 17.2 tok/s | 32% / 68% | ✅ tight headroom |
-| 12288 | 15.6 tok/s | 38% / 62% | ✅ safe |
-| 16384 | 14.4 tok/s | 45% / 55% | ✅ generous |
+| `num_ctx` | f16 (default) | **q8_0 KV-cache** | Fits tool catalog? |
+|-----------|---------------|-------------------|--------------------|
+| 4096 | 19.3 tok/s (26%/74% CPU/GPU) | 20.2 tok/s (25%/75%) | ❌ truncates tools |
+| 8192 | 17.2 tok/s (32%/68%) | 18.8 tok/s (28%/72%) | ✅ tight headroom |
+| 12288 | 15.6 tok/s (38%/62%) | 17.4 tok/s (32%/68%) | ✅ safe |
+| 16384 | 14.4 tok/s (45%/55%) | **16.4 tok/s (36%/64%)** | ✅ generous |
+
+The q8_0 column (measured 2026-07-02, same host, `OLLAMA_FLASH_ATTENTION=1` +
+`OLLAMA_KV_CACHE_TYPE=q8_0`) shows the recovery in practice: at the full 16K
+context the model shrinks 7.8 → 6.7 GB and generation improves **+14%** — and
+every context size gets faster (flash attention helps across the board). The
+residual CPU offload at 16K is the model *weights* themselves (an 8B model
+doesn't fully fit in 6 GB even at 4096 — note the 25% floor), so on this card
+q8_0 + 16384 is the practical optimum without trading accuracy (`q4_0`) or
+model size (split posture).
 
 Reproduce it yourself:
 

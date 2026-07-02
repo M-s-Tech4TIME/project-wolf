@@ -49,6 +49,37 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-07-02 — Phase 6.10 scope expansion (config planes + config-reaches-stack) + q8_0 KV-cache verified live
+
+**Session type:** claude-code / mixed (operator applied the sudo drop-in)
+**Phase:** planning (6.10 scope) + perf verification
+**Branch / commit:** main
+
+**Operator mandate (recorded in roadmap + memory):** prompted by the KV-cache
+sudo ritual, Phase 6.10 expands beyond wolf-server's own knobs:
+1. **Per-component config planes** — wolf-server / wolf-dashboard /
+   wolf-database each get their own central config file managing their
+   respective tech stack.
+2. **Wolf config reaches the tech stack** — users never hand-run sudo rituals;
+   per-request settings (e.g. `OLLAMA_NUM_CTX`) already flow from Wolf's config,
+   and service-level settings (`OLLAMA_KV_CACHE_TYPE` / `OLLAMA_FLASH_ATTENTION`
+   / `OLLAMA_NUM_PARALLEL`) will be applied by a privileged `wolf-tune`-style
+   helper (shell-wrapper pattern, narrow sudoers) invoked by Wolf's config
+   layer. Ollama first; the principle covers every future stack component.
+3. **Full three-way sync per plane** — file edit ⇄ CLI ⇄ Web GUI identical
+   (ADR 0019 contract extended to all components + stacks).
+Updated: `docs/10-build-roadmap.md` §6.10, `memory/config-settings-system-phase`.
+
+**q8_0 KV-cache verified (operator applied the drop-in today):** re-ran the
+identical benchmark — at `num_ctx=16384` generation improved 14.4 → **16.4
+tok/s (+14%)**, model 7.8 → 6.7 GB, GPU share 55% → 64%; every context size
+faster. Residual CPU offload is the 8B *weights* not fitting 6 GB (25% floor
+even at 4096) → q8_0 + 16384 is this card's practical optimum. Benchmark table
+in `docs/reference/model-performance-tuning.md` now carries both f16 + q8_0
+columns. Interim relief until 6.10's config-driven version.
+
+---
+
 ## 2026-07-01 — Doc: model performance & hardware tuning guide (speed ↔ quality ↔ context, all reversible)
 
 **Session type:** claude-code

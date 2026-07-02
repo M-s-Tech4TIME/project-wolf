@@ -1,6 +1,6 @@
 ---
 name: config-settings-system-phase
-description: "Phase 6.10 (planned, operator-prompted 2026-06-16): the Superuser config-settings SYSTEM that implements ADR 0019 — DB-source-of-truth runtime config synced across OS terminal/env ⇄ Wolf CLI ⇄ Web Settings GUI, Superuser-only, audited. Today config is env-only (no settings table / API / config CLI / Settings page). First consumer: the same-network gate toggle."
+description: "Phase 6.10 (planned 2026-06-16; scope EXPANDED 2026-07-02): the Superuser config-settings SYSTEM implementing ADR 0019 — DB-source-of-truth runtime config synced file ⇄ CLI ⇄ Web GUI, Superuser-only, audited. EXPANDED: per-component config planes (server/database/dashboard, each its own central file) + Wolf config REACHES its tech stack (service-level Ollama knobs via a privileged wolf-tune helper — no manual sudo rituals). Consumers: same-network gate, model posture, grounding mode."
 metadata:
   node_type: memory
   type: project
@@ -45,6 +45,33 @@ judge-output length / evidence window / keep-warm. Unified-8b stays valid
 default. Keep BOTH embedders (`nomic-embed-text` + `nomic-embed-text-v2-moe`,
 ADR 0014 — neither self-sufficient). Revisit the default if a ≥10 GB GPU lets
 4b+8b stay co-resident (then split has zero swap, strictly best).
+
+**SCOPE EXPANSION (operator mandate, 2026-07-02)** — prompted by the KV-cache
+sudo ritual (the q8_0 drop-in the operator had to apply by hand for the
+[[ollama-num-ctx-tool-truncation]] speed recovery). Three additional requirements:
+
+1. **Per-component config planes.** EVERY Wolf component gets its own central
+   config file managing its respective tech stack: **wolf-server** (has `.env`),
+   **wolf-dashboard** (has a thin `services/dashboard/.env.example` → becomes a
+   first-class plane), **wolf-database** (today only indirect via wolf-server's
+   `DATABASE_URL` + Postgres's own files → gets its own plane).
+2. **Wolf config REACHES the tech stack it runs on** — "the config file must be
+   directly connected to each component and technical stack." Two mechanism
+   classes: (a) **per-request settings** (e.g. `OLLAMA_NUM_CTX`) — already work
+   from Wolf's config, the model to generalize; (b) **service-level settings**
+   (`OLLAMA_KV_CACHE_TYPE`, `OLLAMA_FLASH_ATTENTION`, `OLLAMA_NUM_PARALLEL` —
+   root-owned systemd env, read at Ollama startup) — need a **privileged helper**
+   (`wolf-tune`-style, the [[shell-wrapper-required-pattern]] like `wolf-cert`,
+   narrowly-scoped sudoers entry) that Wolf's config layer invokes to write the
+   systemd drop-in + restart the service. Users NEVER run sudo rituals by hand;
+   they set a value in Wolf's config (file, CLI, or GUI) and Wolf applies it.
+   GUI surfaces the honest caveat: service-level applies need an Ollama restart
+   (~seconds of model reload). Ollama is the FIRST target; the principle covers
+   every future stack component.
+3. **Full three-way sync for EVERY plane** — direct file edit ⇄ supporting CLI
+   ⇄ Web GUI must fully sync, mirror, and remain identical (the ADR 0019
+   contract, extended from wolf-server's own knobs to all three components and
+   their stacks).
 
 **Adjacent follow-up:** **per-org trusted networks** (each org's own CIDRs) —
 the MSSP-correct form of the same-network gate; open question whether

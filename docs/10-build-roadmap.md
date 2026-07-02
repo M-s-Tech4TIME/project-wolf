@@ -1037,10 +1037,36 @@ phase builds the missing substrate:
   *their* org's networks (not the provider's). Resolves the MSSP gap the
   global gate can't (open question: Superuser-set vs org-admin-set).
 
+**Scope expansion (operator mandate, 2026-07-02)** — prompted by the KV-cache
+quantization requiring a hand-run sudo ritual (the `q8_0` systemd drop-in from
+`docs/reference/model-performance-tuning.md`). Three added requirements:
+
+- **Per-component config planes.** Every Wolf component gets its own central
+  config file managing its respective tech stack: **wolf-server** (has `.env`),
+  **wolf-dashboard** (thin `.env.example` today → first-class plane),
+  **wolf-database** (indirect today via `DATABASE_URL` + Postgres's own files →
+  its own plane).
+- **Wolf config reaches the tech stack it runs on.** Users never run sudo
+  rituals by hand; they set a value in Wolf's config (file, CLI, or GUI) and
+  Wolf applies it to the underlying component. Two mechanism classes:
+  *per-request* settings (e.g. `OLLAMA_NUM_CTX` — already flows from Wolf's
+  config on every call; the model to generalize) and *service-level* settings
+  (`OLLAMA_KV_CACHE_TYPE` / `OLLAMA_FLASH_ATTENTION` / `OLLAMA_NUM_PARALLEL` —
+  root-owned systemd env read at Ollama startup) which need a **privileged
+  helper** (`wolf-tune`-style, shell-wrapper pattern like `wolf-cert`, with a
+  narrowly-scoped sudoers entry) that writes the drop-in + restarts the
+  service. The GUI surfaces the honest caveat that service-level applies
+  restart Ollama (~seconds). Ollama is the first target; the principle covers
+  every future stack component.
+- **Full three-way sync for every plane.** Direct file edit ⇄ supporting CLI ⇄
+  Web GUI fully sync, mirror, and remain identical (the ADR 0019 contract,
+  extended from wolf-server's own knobs to all three components + their stacks).
+
 Ordering: foundational enabler; slots when the configurable-surface
 count justifies it (the gate toggle is reason enough to start). ADR
 0019 already governs the design; a focused implementation ADR can follow
-at phase-open if the data model warrants.
+at phase-open if the data model warrants — the 2026-07-02 expansion
+(config planes + privileged stack-reach) likely warrants one.
 
 ## Phase 6.11 — Wolf-assisted Wazuh RBAC provisioning & diagnostics (Superuser-only)
 
