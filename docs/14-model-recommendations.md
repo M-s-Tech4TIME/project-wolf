@@ -152,6 +152,12 @@ The principle: **never assume; always probe.** When hardware changes, run
 the capability probe against candidate models on the new hardware before
 changing any defaults.
 
+> This playbook covers the **model choice**. The companion **settings** side —
+> how `OLLAMA_NUM_CTX` / KV-cache quantization / `OLLAMA_NUM_PARALLEL` / posture
+> translate across hardware tiers (the VRAM arithmetic, the 256K-context reality
+> check, and the upgrade-day checklist) — lives in
+> `docs/reference/model-performance-tuning.md` §Scaling up.
+
 ### Trigger events that require re-evaluating the model choice
 
 Any one of these means it's time to re-run the probe and reconsider the

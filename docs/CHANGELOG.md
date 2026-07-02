@@ -49,6 +49,28 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-07-02 — Doc: "Scaling up" — how the tuning settings translate to bigger hardware/models
+
+**Session type:** claude-code
+**Phase:** reference / operability
+**Branch / commit:** main
+
+Operator asked what happens to the tuning settings on ≥12 GB VRAM running a
+32B-class / 256K-context model. Documented as a suggestion in
+`docs/reference/model-performance-tuning.md` §Scaling up: the knobs stay the
+same, only values change and their *direction reverses* (squeeze → spend);
+the governing VRAM arithmetic (weights: 8B≈5.2 / 14B≈9 / 32B≈20 GB → 12 GB is
+**14B-class**, 32B wants 24 GB; KV-cache/token: ~144 KB (8B) vs ~256 KB (32B)
+→ 256K context ≈ **64 GB KV alone** on 32B — set `NUM_CTX` to workload need
+(16–32K), not model max); a per-tier settings translation table; the
+**KNOWN_MODELS gotcha** (unknown id → conservative descriptor: tool-calling
+none / 3 steps / pipeline — probe + register on upgrade day, ADR
+0002/0009/0010/0011 pattern); and a 6-step upgrade-day checklist.
+Cross-linked from doc 14's Environment-change playbook (model choice there,
+settings here). Docs-only.
+
+---
+
 ## 2026-07-02 — Phase 6.10 scope expansion (config planes + config-reaches-stack) + q8_0 KV-cache verified live
 
 **Session type:** claude-code / mixed (operator applied the sudo drop-in)
