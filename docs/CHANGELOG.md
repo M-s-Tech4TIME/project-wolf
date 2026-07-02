@@ -49,6 +49,45 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-07-02 — Hardening: SECRET_KEY boot guard (Gap 1) + secrets threat-model refresh
+
+**Session type:** claude-code
+**Phase:** security hardening (out-of-band, driven by an operator secrets-storage review)
+**Branch / commit:** main
+
+### What we did
+- Audited the whole credential path in response to an operator question ("are we
+  storing secrets securely, with salt / strong encryption?"). Findings: user
+  passwords → **bcrypt** (per-password salt, cost 12, one-way); Wazuh creds + model
+  API keys → **never in the DB**, only a *key-name* reference, secret itself
+  Fernet-encrypted (AES-128-CBC + HMAC-SHA256, random IV) in `packages/secrets`;
+  JWTs → HS256 with `SECRET_KEY`; `.env` is `0600`.
+- **Landed the SECRET_KEY boot guard (Gap 1):** `Settings._validate_secret_key`
+  (`config.py`, `model_validator(mode="after")` so it fires on the *default* too, which
+  `field_validator` would skip) **fails closed** on the public placeholder or any
+  <32-char key, in every environment. Constants `DEFAULT_SECRET_KEY` /
+  `MIN_SECRET_KEY_LENGTH` exported for the test.
+- Tests: `tests/test_config_secret_key_guard.py` (6) — default/short/empty rejected
+  with the *guided* message; 32-char boundary + strong key accepted; a pin that the
+  placeholder is caught by the explicit branch (it's 40 chars, so length alone misses
+  it). Full backend suite **777 passed** (771 + 6), 0 skip; ruff + mypy --strict clean.
+- Documented both in `docs/07-security-and-threat-model.md` → **Secrets management**
+  rewritten to match the real implementation + a new **Secrets hardening backlog**.
+
+### What we decided
+- **Gap 2 (off-disk root of trust) — TRACKED, not built.** `SECRET_KEY` and the
+  `SECRETS_FILE_KEY` master key are plaintext in `.env` (0600); at-rest protection is
+  filesystem perms. Encrypting the master key with another on-disk key is theatre
+  (chicken-and-egg). Real fix = OpenBao/Vault auto-unseal, systemd
+  `LoadCredentialEncrypted=` (TPM), or KMS/HSM envelope encryption + rotation. Belongs
+  with MSSP production hardening + the Phase 6.10 config-plane.
+
+### What's next
+- OpenRouter web-test enablement (hosted qwen for chat + judge, Ollama fallback) so the
+  6-e.4 live web-test runs fast on the constrained dev GPU.
+
+---
+
 ## 2026-07-02 — Phase 6-e.4: config_change action class (edit ossec.conf, snapshot-restore) — closes Phase 6-e
 
 **Session type:** claude-code

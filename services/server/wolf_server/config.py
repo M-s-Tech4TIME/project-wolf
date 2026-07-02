@@ -7,7 +7,17 @@ must override SECRET_KEY and DATABASE_URL at minimum.
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# The built-in SECRET_KEY placeholder. It is public in the source tree, so any
+# deployment that fails to override it would let anyone forge JWTs (including
+# Superuser tokens). `Settings._validate_secret_key` rejects it — and any key
+# shorter than MIN_SECRET_KEY_LENGTH — at construction time, in every
+# environment. See docs/07-security-and-threat-model.md (hardening backlog) for
+# the plan to move the key material off-disk into a TPM/KMS root of trust (Gap 2).
+DEFAULT_SECRET_KEY = "change-me-this-must-be-at-least-32-chars"  # noqa: S105
+MIN_SECRET_KEY_LENGTH = 32
 
 # Anchor for path-shaped defaults that need to be CWD-independent.
 # `wolf_server/config.py` lives at
@@ -35,7 +45,12 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://wolf:wolf_dev_password@localhost:5432/wolf"
 
     # ── Auth / session ─────────────────────────────────────────────────────
-    secret_key: str = "change-me-this-must-be-at-least-32-chars"  # noqa: S105
+    # JWT signing key. Defaults to the public placeholder so a fresh checkout
+    # imports, but `_validate_secret_key` fails closed unless it is overridden
+    # with a unique, >=32-char value (the placeholder is public → forgeable
+    # JWTs). Stored plaintext in .env (0600); a TPM/KMS root of trust is the
+    # tracked Gap-2 hardening item.
+    secret_key: str = DEFAULT_SECRET_KEY
     # JWT algorithm and token lifetime
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
@@ -329,6 +344,31 @@ class Settings(BaseSettings):
     @property
     def is_test(self) -> bool:
         return self.environment == "test"
+
+    @model_validator(mode="after")
+    def _validate_secret_key(self) -> "Settings":
+        """Fail closed on an insecure JWT signing key.
+
+        Runs on every construction (including when the default is used, which
+        `field_validator` would skip) and in every environment: the placeholder
+        is public in the source tree, so there is no environment where signing
+        JWTs with it is acceptable.
+        """
+        hint = 'generate one with: python -c "import secrets; print(secrets.token_urlsafe(48))"'
+        if self.secret_key == DEFAULT_SECRET_KEY:
+            msg = (
+                "SECRET_KEY is still the built-in default placeholder, which is public "
+                "in the source tree — anyone could forge JWTs, including Superuser "
+                f"tokens. Set SECRET_KEY to a unique, random value ({hint})."
+            )
+            raise ValueError(msg)
+        if len(self.secret_key) < MIN_SECRET_KEY_LENGTH:
+            msg = (
+                f"SECRET_KEY must be at least {MIN_SECRET_KEY_LENGTH} characters for a "
+                f"secure JWT signing key (got {len(self.secret_key)}); {hint}."
+            )
+            raise ValueError(msg)
+        return self
 
 
 @lru_cache

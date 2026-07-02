@@ -151,10 +151,40 @@ forgotten asset tag.
 
 ### Secrets management
 
-- Per-organization Wazuh credentials in a secrets manager (Vault, OpenBao, AWS Secrets
-  Manager, or filesystem-backed encrypted store for very simple deployments).
-- Model API keys also in the secrets manager.
+- **User passwords** are hashed with **bcrypt** (per-password random salt, cost 12) —
+  one-way, never decryptable (`auth/local.py`).
+- **Credentials that must stay usable** (per-organization Wazuh indexer/manager
+  passwords, model API keys) live in a secrets manager, **never in the database** — the
+  DB row stores only the *key name* the secret is filed under (`wazuh/models.py`,
+  `*_credential_key`; model keys via `*_MODEL_API_KEY_REF`).
+- The secrets manager is pluggable (Vault, OpenBao, AWS Secrets Manager, or a
+  filesystem-backed encrypted store for simple deployments). The shipped backend today
+  is the **Fernet-encrypted file** backend (`packages/secrets`): AES-128-CBC +
+  HMAC-SHA256 (authenticated encryption, random IV per value), keyed by
+  `SECRETS_FILE_KEY`. Suitable for single-host dev; **not multi-process safe**.
+- **JWT signing key** (`SECRET_KEY`, HS256). A boot guard (`config.py`
+  `_validate_secret_key`) **fails closed** if it is still the public placeholder or
+  shorter than 32 chars — in every environment. This closes the "shipped-with-the-default-
+  key → forgeable Superuser JWTs" gap, since the default is public in the source tree.
 - Never logged. Never in audit records. Redacted from any error surfaced to a user.
+
+#### Secrets hardening backlog
+
+- **Gap 1 — default `SECRET_KEY` boot guard — DONE** (fails closed on the public
+  placeholder / <32-char key, all environments).
+- **Gap 2 — off-disk root of trust — TRACKED.** Both `SECRET_KEY` and the
+  `SECRETS_FILE_KEY` master key sit **plaintext in `.env`** (mode `0600`), so at-rest
+  protection currently reduces to filesystem permissions. Encrypting the master key with
+  another on-disk key is security theatre (the chicken-and-egg: the outermost key must be
+  readable by the auto-starting process). The real fix moves the outermost key **off
+  disk** into a hardware/managed root of trust — one of:
+  - **OpenBao / HashiCorp Vault** with auto-unseal (unseal key held by a cloud KMS/TPM) —
+    the intended production backend for MSSP; the `SecretsBackend` protocol already exists,
+    only `EncryptedFileBackend` is implemented so far.
+  - **systemd `LoadCredentialEncrypted=`** (TPM-sealed credentials) for on-prem single-host.
+  - **KMS/HSM envelope encryption** + periodic secret rotation.
+  This belongs with the MSSP production-hardening work and the Phase 6.10 config-plane
+  (key management is a config surface).
 
 ### Transport security
 
