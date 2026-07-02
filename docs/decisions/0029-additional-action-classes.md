@@ -1,10 +1,10 @@
 # 0029 — Additional action classes (agent_action / rule_tuning / config_change) (Phase 6-e)
 
 **Date:** 2026-06-29
-**Status:** accepted — implementing across **6-e.1 → 6-e.4**. 6-e.1 generalizes the
-gateway to be **per-class** (active-response refactored onto the registry, zero
-behaviour change); 6-e.2 adds `agent_action`; **6-e.3 adds `rule_tuning`** (built,
-unit-tested — §6 below); `config_change` (6-e.4) is next.
+**Status:** accepted — **all four slices built + unit-tested**. 6-e.1 generalizes
+the gateway to be **per-class** (active-response refactored onto the registry, zero
+behaviour change); 6-e.2 adds `agent_action`; **6-e.3 adds `rule_tuning`** (§6);
+**6-e.4 adds `config_change`** (§7) — the last class, highest blast radius.
 
 ## Context
 
@@ -95,8 +95,15 @@ agent_action landing immediately after, so it is not speculative):
 
 ## 5. Out of scope (tracked)
 - agent `reconnect`/`upgrade`/`uninstall`/`delete`; decoders + CDB-lists tuning
-  (same shape as rule_tuning); section-level config diffing UI; auto-execution
-  (Phase 13); the LLM-as-judge intent-alignment validator (ADR 0017 / Phase 7.5).
+  (same shape as rule_tuning); auto-execution (Phase 13); the LLM-as-judge
+  intent-alignment validator (ADR 0017 / Phase 7.5).
+- **config_change follow-ons (beyond 6-e.4 v1):** editing *repeated* sections
+  (merge-aware, e.g. a specific `<localfile>`/`<integration>`), *adding* new
+  sections, the *break-the-manager* sections behind an extra confirmation
+  (`cluster`/`auth`/`indexer`/`ruleset`), and pushing config to **worker** nodes
+  (`PUT /manager/configuration` only writes the master; the cluster doesn't sync
+  ossec.conf). The exact current→proposed section diff IS shown in the queue as of
+  6-e.4 (no longer out of scope).
 
 ## 6. rule_tuning v1 — as built (6-e.3)
 
@@ -149,3 +156,50 @@ a bad rule can't break the manager. Capability-gated on `rules:update` +
 `cluster:restart` (admin-only — empirically: `wolf-acme` holds neither, the admin
 `wazuh-wui` holds both on `*:*:*`). The live web-test (a real manager-global write)
 requires explicit operator go-ahead.
+
+## 7. config_change v1 — as built (6-e.4)
+
+The last and highest-blast-radius class: it edits the manager's `ossec.conf`, so
+a malformed configuration can take the manager down for **every org** on the
+shared cluster. v1 is deliberately the tightest gate of any class.
+
+**Operator-scoped decisions (2026-07-02), grounded in a live read-only probe:**
+- **Section-scoped, allowlisted edits only** (`update_section`): the model
+  proposes a full replacement `<section>…</section>` for ONE known section. The
+  v1 allowlist is the single-instance, realistic-tuning sections `alerts`,
+  `logging`, `remote`, `rootcheck`, `sca`, `syscheck`, `vulnerability-detection`.
+- **Excluded from v1:** the *break-the-manager* sections (`cluster`, `auth`,
+  `indexer`, `ruleset`, `rule_test`) stay hand-edited; and the *repeated-in-stock*
+  sections (`global` ×2, `wodle`, `command` ×13, `active-response` ×9,
+  `localfile` ×8, `integration` ×5 — counted live) are refused because "the" block
+  is ambiguous under Wazuh's merge-on-repeat semantics. The executor + propose tool
+  both enforce **exactly one live occurrence**.
+- **Diff-at-propose:** the section's CURRENT content is captured into the proposal
+  (`parameters.current_content`) so the approver reviews an exact old → new diff in
+  the queue, and the executor's **freshness refuses a stale proposal** (the live
+  section changed after it was queued → re-propose).
+- **Scoping (probed live 2026-07-02):** a per-org credential (`wolf-beta`) holds
+  `manager:read` but **NOT** `manager:update_config` → `config_change` is
+  **Superuser-scoped**; the admin grants `manager:update_config` on `*:*:*`
+  (resourceless action). The write is `PUT /manager/configuration` (raw body),
+  which replaces the **master node's** `ossec.conf` (the cluster does not sync it
+  to workers).
+
+**Reversibility (snapshot-restore, reuses the migration-0017 `prior_state`
+column):** `build_forward` captures the WHOLE `ossec.conf` before the write;
+`build_reverse` PUTs it back and **hash-verifies** the restored file equals the
+snapshot (stronger than a substring check — restore is whole-file), tagging the
+result completed so `complete_api_reversal` flips the original to `rolled_back`.
+
+**Apply + authoritative confirm (the 6-e.3 lesson carried forward):** snapshot →
+replace the one section → PUT → `GET /manager/configuration/validation` →
+(auto-rollback + raise if invalid) → **re-read `ossec.conf` and confirm the new
+block actually persisted** (else restore + fail honestly) → **cluster restart**
+(the manager only loads `ossec.conf` on restart; ~18s live). Verify surfaces the
+pre-restart evidence (`section_updated`, hashes) and does NOT re-read after the
+restart (that races the brief restart API outage). The live web-test (a real
+manager-global config write) requires explicit operator go-ahead.
+
+This closes Phase 6-e — all four ADR-0025 action classes now ship on the shared
+per-class registry (validator / severity / executor / reversal), capability-gated
+and reversal-aware.

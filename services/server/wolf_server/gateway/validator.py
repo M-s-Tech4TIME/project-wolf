@@ -32,6 +32,11 @@ from wolf_server.wazuh.active_response import (
     is_valid_ip,
 )
 from wolf_server.wazuh.agent_actions import AGENT_ACTION_OPS, is_valid_group
+from wolf_server.wazuh.config_change import (
+    CONFIG_CHANGE_FORWARD_OPS,
+    EDITABLE_SECTIONS,
+    is_valid_section_block,
+)
 from wolf_server.wazuh.rule_tuning import (
     OP_ADJUST_LEVEL,
     RULE_TUNING_FORWARD_OPS,
@@ -249,3 +254,58 @@ def _validate_rule_tuning(
 
 
 register_validator("rule_tuning", _validate_rule_tuning)
+
+
+def _validate_config_change(
+    *, target: dict[str, Any], action: str, parameters: dict[str, Any]
+) -> ValidationResult:
+    """Structural checks for config_change (6-e.4) — the tightest gate of any class.
+
+    The target is ONE allowlisted, single-instance ossec.conf section
+    (manager-global; the break-the-manager sections are not in the allowlist),
+    the action a known forward op, and the replacement content must be exactly
+    one well-formed ``<section>`` block within the review-size cap.
+    ``restore_config`` is reversal-only (created via ``create_reversal_proposal``,
+    which bypasses this validator), so a *forward* restore is refused here."""
+    section = target.get("section")
+    if not isinstance(section, str) or not section.strip():
+        return ValidationResult(
+            ok=False,
+            reason="Target is not resolved to a specific configuration section.",
+        )
+    section = section.strip()
+    if _is_blast(section):
+        return ValidationResult(
+            ok=False, reason="Target section is a wildcard — blast radius is unbounded."
+        )
+    if section not in EDITABLE_SECTIONS:
+        return ValidationResult(
+            ok=False,
+            reason=(
+                f"Section {section!r} is not editable in v1; editable sections: "
+                f"{', '.join(sorted(EDITABLE_SECTIONS))}. Cluster/auth/indexer/"
+                "ruleset and repeated sections (global, localfile, …) stay "
+                "hand-edited."
+            ),
+        )
+    if action not in CONFIG_CHANGE_FORWARD_OPS:
+        return ValidationResult(
+            ok=False,
+            reason=(
+                f"Unknown config_change operation {action!r}; supported: "
+                f"{', '.join(sorted(CONFIG_CHANGE_FORWARD_OPS))}."
+            ),
+        )
+    content = parameters.get("section_content")
+    if not isinstance(content, str):
+        return ValidationResult(
+            ok=False,
+            reason=f"{action!r} needs 'section_content' — the full replacement block.",
+        )
+    ok, reason = is_valid_section_block(section, content)
+    if not ok:
+        return ValidationResult(ok=False, reason=reason)
+    return ValidationResult(ok=True)
+
+
+register_validator("config_change", _validate_config_change)

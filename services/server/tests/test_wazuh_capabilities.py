@@ -61,6 +61,18 @@ def test_available_actions_and_action_classes() -> None:
     assert caps.available_action_classes() == {"active_response"}
 
 
+def test_available_action_classes_includes_config_change_for_admin() -> None:
+    # An admin credential holding manager:update_config (on *:*:*) can perform
+    # the config_change class (Superuser-scoped, manager-global) — 6-e.4.
+    from wolf_server.wazuh.capabilities import ACTION_UPDATE_MANAGER_CONFIG
+
+    caps = _caps({ACTION_UPDATE_MANAGER_CONFIG: {"*:*:*": "allow"}})
+    assert "config_change" in caps.available_action_classes()
+    # A per-org credential without it (only manager:read) may NOT — fail-closed.
+    per_org = _caps({"manager:read": {"*:*:*": "allow"}})
+    assert "config_change" not in per_org.available_action_classes()
+
+
 # ── can_on_agent: Wazuh RBAC agent resource expansion (id OR group) ──────────
 
 

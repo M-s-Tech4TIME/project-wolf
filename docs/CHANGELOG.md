@@ -49,6 +49,57 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-07-02 — Phase 6-e.4: config_change action class (edit ossec.conf, snapshot-restore) — closes Phase 6-e
+
+**Session type:** claude-code
+**Phase:** 6-e.4 (ADR 0029, final action class)
+**Branch / commit:** main
+
+The last and highest-blast-radius ADR-0025 action class: Wolf can now propose
+editing the manager's `ossec.conf`, on the same per-class registry as the other
+three (validator / severity / executor / reversal), capability-gated + reversal-
+aware. A bad config can take the manager down for every org on the shared
+cluster, so v1 is the tightest gate of any class.
+
+**Design (grounded in a live read-only probe 2026-07-02):**
+- **Section-scoped, allowlisted, single-instance edits only** (`update_section`):
+  the model supplies the full replacement `<section>` for ONE of
+  `alerts / logging / remote / rootcheck / sca / syscheck /
+  vulnerability-detection`. Break-the-manager sections (cluster/auth/indexer/
+  ruleset) and repeated-in-stock sections (global ×2, localfile ×8, …) are
+  refused with guided messages (both the propose tool and the executor freshness
+  enforce exactly one live occurrence).
+- **Diff-at-propose + staleness:** the current section content is captured into
+  the proposal so the approver reviews the exact old → new diff; the executor
+  refuses a stale proposal if the live section changed after queueing.
+- **Superuser-scoped:** gated on `manager:update_config` — a per-org credential
+  (`wolf-beta`) holds `manager:read` but not the write (probed live); admin grants
+  it on `*:*:*`.
+- **Snapshot-restore reversal** (reuses migration 0017's `prior_state`): forward
+  captures the whole ossec.conf; reverse PUTs it back and **hash-verifies** the
+  restore, flipping the original to `rolled_back`.
+- **Apply + authoritative confirm** (carries the 6-e.3 lesson): snapshot → PUT →
+  `/manager/configuration/validation` → auto-rollback if invalid → **re-read +
+  confirm the block persisted** (else restore + fail honestly) → cluster restart
+  (~18s live). No phantom successes.
+
+**Files:** `wazuh/config_change.py` (domain), `wazuh/capabilities.py`
+(`manager:update_config` + class mapping), `wazuh/server_api.py`
+(`update_manager_configuration` bounded write), `gateway/validator.py` +
+`gateway/proposals.py` (severity=high) + `gateway/executors.py`
+(`_ConfigChangeExecutor`), `tools/propose_config_change.py` + registration,
+`agent/prompts.py`, dashboard `app/actions/page.tsx` (target + current→proposed
+`ConfigDiff` + result rendering).
+
+**Verified:** 31 new tests (domain/validator/severity 16, propose 6, execution 7
+incl. auto-rollback / no-persist / stale / repeated-section / reverse hash-verify,
++ capability class-mapping + cross-org isolation for config_change); full backend
+suite **771 passed**; ruff + mypy --strict clean; dashboard tsc + eslint clean.
+**No migration** (reuses 0017). Manager-global write → live web-test needs
+explicit operator go-ahead. Closes Phase 6-e (all four action classes shipped).
+
+---
+
 ## 2026-07-02 — Doc: "Scaling up" — how the tuning settings translate to bigger hardware/models
 
 **Session type:** claude-code

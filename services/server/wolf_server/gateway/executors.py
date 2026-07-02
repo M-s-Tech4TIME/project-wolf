@@ -31,10 +31,13 @@ from wolf_server.gateway.reversal import (
 from wolf_server.wazuh.active_response import interpret_ar_result
 from wolf_server.wazuh.agent_actions import OP_ASSIGN_GROUP
 from wolf_server.wazuh.capabilities import (
+    ACTION_UPDATE_MANAGER_CONFIG,
     ACTION_UPDATE_RULES,
+    RESOURCE_ANY,
     RESOURCE_LOCAL_RULES,
     resolve_agent_groups,
 )
+from wolf_server.wazuh.config_change import find_section_blocks, replace_section_block
 from wolf_server.wazuh.rule_tuning import (
     DISABLE_LEVEL,
     LOCAL_RULES_DIRNAME,
@@ -518,3 +521,217 @@ class _RuleTuningExecutor:
 
 
 register_executor("rule_tuning", _RuleTuningExecutor())
+
+
+class ConfigValidationError(WolfError):
+    """The edited ossec.conf failed validation / persistence — the write was
+    auto-rolled-back (the prior file restored) and never applied."""
+
+    http_status = 422
+    error_code = "config_validation_failed"
+
+
+class _ConfigChangeExecutor:
+    """config_change (6-e.4): forward replaces ONE allowlisted section in the
+    master's ``ossec.conf`` and APPLIES it (validate → cluster restart, with
+    auto-rollback if the edited configuration does not validate); reverse
+    performs a **real undo** by PUTting the captured ``prior_state`` whole-file
+    snapshot back (snapshot-restore, ADR 0029 §2), so a succeeded reverse flips
+    the original to ``rolled_back``.
+
+    Staleness is real here: the proposal froze the section's content at propose
+    time (``current_content`` — the approver's diff base); if the live section
+    no longer matches, the config changed under the proposal and freshness
+    refuses (re-propose against the current file)."""
+
+    @staticmethod
+    async def _read_config(ctx: ExecContext) -> str:
+        raw: str = await ctx.read_api.get_raw(
+            "/manager/configuration", params={"raw": "true"}
+        )
+        return raw
+
+    @staticmethod
+    async def _put_config(ctx: ExecContext, content: str) -> None:
+        await ctx.action_api.update_manager_configuration(
+            content=content, capabilities=ctx.capabilities
+        )
+
+    @classmethod
+    async def _write_and_validate(
+        cls, ctx: ExecContext, *, new_content: str, rollback_to: str | None
+    ) -> str:
+        """PUT ``new_content`` → validate → (restore ``rollback_to`` + raise on
+        invalid).  Returns the validation detail.  Does NOT restart — the caller
+        confirms persistence first, THEN restarts (same ordering as rule_tuning:
+        the authoritative check must not race the restart's API downtime)."""
+        await cls._put_config(ctx, new_content)
+        valid, detail = _validation_ok(await ctx.read_api.get("/manager/configuration/validation"))
+        if not valid:
+            if rollback_to is not None:
+                await cls._put_config(ctx, rollback_to)
+                raise ConfigValidationError(
+                    f"Edited configuration rejected ({detail}); restored the prior "
+                    "ossec.conf. No change applied."
+                )
+            raise ConfigValidationError(f"Configuration rejected ({detail}).")
+        return detail
+
+    def build_forward(self, proposal: ActionProposal, ctx: ExecContext) -> Callables:
+        async def _freshness(p: ActionProposal) -> tuple[bool, str]:
+            if not ctx.capabilities.can(ACTION_UPDATE_MANAGER_CONFIG, RESOURCE_ANY):
+                return False, (
+                    "Credential no longer holds manager:update_config (Superuser-scoped)."
+                )
+            section = str(p.target.get("section", ""))
+            raw = await self._read_config(ctx)
+            blocks = find_section_blocks(raw, section)
+            if len(blocks) != 1:
+                return False, (
+                    f"Section <{section}> appears {len(blocks)} time(s) in ossec.conf "
+                    "— it must appear exactly once to be editable."
+                )
+            params = p.parameters if isinstance(p.parameters, dict) else {}
+            frozen = params.get("current_content")
+            if isinstance(frozen, str) and frozen.strip() and blocks[0].strip() != frozen.strip():
+                return False, (
+                    f"Section <{section}> has changed since this was proposed — the "
+                    "approver's diff is stale. Re-propose against the current "
+                    "configuration."
+                )
+            return True, f"Section <{section}> present once and unchanged since proposal."
+
+        async def _perform(p: ActionProposal) -> dict[str, Any]:
+            section = str(p.target.get("section", ""))
+            params = p.parameters if isinstance(p.parameters, dict) else {}
+            new_block = str(params.get("section_content", "")).strip()
+
+            # Snapshot the WHOLE ossec.conf — the undo restore point.
+            snapshot = await self._read_config(ctx)
+            snap_hash = _sha256(snapshot)
+            p.prior_state = {
+                "kind": "manager_configuration",
+                "content": snapshot,
+                "sha256": snap_hash,
+            }
+
+            new_content = replace_section_block(snapshot, section, new_block)
+            if new_content is None:
+                raise ConfigValidationError(
+                    f"Section <{section}> does not appear exactly once in ossec.conf; "
+                    "cannot edit. No change applied."
+                )
+            validation = await self._write_and_validate(
+                ctx, new_content=new_content, rollback_to=snapshot
+            )
+
+            # AUTHORITATIVE confirm — re-read ossec.conf and prove OUR block
+            # actually persisted. If it didn't, restore + fail honestly rather
+            # than report a phantom success (the 6-e.3 lesson).
+            reread = await self._read_config(ctx)
+            if new_block not in reread:
+                await self._put_config(ctx, snapshot)
+                raise ConfigValidationError(
+                    f"Updated <{section}> block did not persist to ossec.conf; "
+                    "restored the prior file. No change applied."
+                )
+
+            # Apply: the manager only loads ossec.conf on restart (~18s live).
+            await ctx.action_api.restart_cluster(capabilities=ctx.capabilities)
+            return {
+                "section": section,
+                "validation": validation,
+                "restart_issued": True,
+                "prior_sha256": snap_hash,
+                "new_sha256": _sha256(reread),
+                "section_updated": True,
+            }
+
+        async def _verify(p: ActionProposal, res: dict[str, Any]) -> tuple[bool, dict[str, Any]]:
+            # Already authoritative: _perform confirmed the block PERSISTED and the
+            # config VALIDATES (it raises + auto-restores otherwise). No re-read here
+            # — it would race the restart _perform just issued.
+            ok = bool(res.get("section_updated"))
+            detail: dict[str, Any] = {
+                "ok": ok,
+                "section": res.get("section"),
+                "section_updated": res.get("section_updated"),
+                "validation": res.get("validation"),
+                "restart_issued": res.get("restart_issued", True),
+                "prior_sha256": res.get("prior_sha256"),
+                "new_sha256": res.get("new_sha256"),
+                "note": (
+                    "Section replaced in ossec.conf (master node) + configuration "
+                    "validated + cluster restart issued. The change becomes active "
+                    "~15-30s after the restart completes."
+                ),
+            }
+            return ok, detail
+
+        return _freshness, _perform, _verify
+
+    def build_reverse(self, proposal: ActionProposal, ctx: ExecContext) -> Callables:
+        db = ctx.db
+
+        async def _freshness(p: ActionProposal) -> tuple[bool, str]:
+            original = (
+                await db.get(ActionProposal, p.reverses_proposal_id)
+                if p.reverses_proposal_id is not None
+                else None
+            )
+            if original is None:
+                return False, "The original config_change proposal is no longer present."
+            if original.state == ProposalState.rolled_back:
+                return False, "The configuration change has already been reversed."
+            prior = original.prior_state if isinstance(original.prior_state, dict) else None
+            if not prior or not prior.get("content"):
+                return False, "No captured prior_state snapshot to restore."
+            return True, f"Prior ossec.conf snapshot present (original {original.id})."
+
+        async def _perform(p: ActionProposal) -> dict[str, Any]:
+            original = await db.get(ActionProposal, p.reverses_proposal_id)
+            prior = (
+                original.prior_state
+                if original is not None and isinstance(original.prior_state, dict)
+                else {}
+            )
+            content = str(prior.get("content", ""))
+            section = str(original.target.get("section", "")) if original is not None else ""
+            validation = await self._write_and_validate(ctx, new_content=content, rollback_to=None)
+            # Authoritative: the re-read file must BE the snapshot (hash equality —
+            # stronger than a substring check; restore is whole-file).
+            restored = _sha256(await self._read_config(ctx)) == _sha256(content)
+            await ctx.action_api.restart_cluster(capabilities=ctx.capabilities)
+            return {
+                "restored_from": str(original.id) if original is not None else "",
+                "section": section,
+                "validation": validation,
+                "restart_issued": True,
+                "config_restored": restored,
+            }
+
+        async def _verify(p: ActionProposal, res: dict[str, Any]) -> tuple[bool, dict[str, Any]]:
+            # Snapshot-restore is an API-executable undo — tag it completed (only
+            # when the file hash-matches the snapshot) so the API flips the
+            # original to rolled_back (reversal.complete_api_reversal).
+            ok = bool(res.get("config_restored", False))
+            detail: dict[str, Any] = {
+                "ok": ok,
+                "restored_from": res.get("restored_from"),
+                "section": res.get("section"),
+                "config_restored": res.get("config_restored", False),
+                "validation": res.get("validation"),
+                "restart_issued": res.get("restart_issued", True),
+                "reversal_state": REVERSAL_STATE_COMPLETED if ok else "failed",
+                "note": (
+                    "Restored ossec.conf to its pre-change snapshot (hash-verified) + "
+                    "validated + cluster restart issued. The configuration reverts "
+                    "~15-30s after the restart completes."
+                ),
+            }
+            return ok, detail
+
+        return _freshness, _perform, _verify
+
+
+register_executor("config_change", _ConfigChangeExecutor())

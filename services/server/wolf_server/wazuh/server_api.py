@@ -22,7 +22,9 @@ from wolf_server.wazuh.capabilities import (
     ACTION_ACTIVE_RESPONSE,
     ACTION_CLUSTER_RESTART,
     ACTION_MODIFY_GROUP,
+    ACTION_UPDATE_MANAGER_CONFIG,
     ACTION_UPDATE_RULES,
+    RESOURCE_ANY,
     RESOURCE_LOCAL_RULES,
     RESOURCE_NODE_ANY,
     CredentialCapabilities,
@@ -315,6 +317,32 @@ class WazuhServerApiActionClient:
             f"/rules/files/{filename}",
             params={"overwrite": "true", "relative_dirname": relative_dirname},
             body=content.encode("utf-8"),
+        )
+
+    async def update_manager_configuration(
+        self,
+        *,
+        content: str,
+        capabilities: CredentialCapabilities,
+    ) -> dict[str, Any]:
+        """Replace the manager's ``ossec.conf`` (``PUT /manager/configuration``) — 6-e.4.
+
+        Manager-GLOBAL and the highest-blast-radius write Wolf performs:
+        capability-checked against ``manager:update_config`` (admin grants it on
+        ``*:*:*``; a per-org credential holds it on nothing →
+        :class:`WazuhActionNotPermittedError`, fail-closed, BEFORE any request).
+        The body is the RAW file content (``application/octet-stream``).  This
+        replaces the MASTER node's ossec.conf (the cluster does not sync it to
+        workers); the caller validates via ``/manager/configuration/validation``
+        and restarts to apply."""
+        if not capabilities.can(ACTION_UPDATE_MANAGER_CONFIG, RESOURCE_ANY):
+            raise WazuhActionNotPermittedError(
+                "Credential is not authorized to update the manager configuration "
+                "(manager:update_config). Configuration changes are manager-global / "
+                "Superuser-scoped."
+            )
+        return await self._write_raw(
+            "PUT", "/manager/configuration", body=content.encode("utf-8")
         )
 
     async def restart_cluster(self, *, capabilities: CredentialCapabilities) -> dict[str, Any]:

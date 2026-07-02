@@ -385,10 +385,15 @@ inverse op, `rule_tuning`/`config_change` via **snapshot-and-restore**.
     `restore_rules` → linked + recalled); prompt #4 + `/actions` rendering. Tests:
     helpers/validator/severity, propose/capability/undo, executor forward+rollback+
     reverse, cross-org. **Superuser-scoped** (per-org creds lack `rules:update`).
-  - **6-e.4** ⏳ `config_change` — snapshot-restore of ossec.conf, highest blast
-    radius, manager restart + strong validation.
-  - **6-e.4** ⏳ `config_change` — snapshot-restore of ossec.conf, highest blast
-    radius, manager restart + strong validation.
+  - **6-e.4** ✅ `config_change` — section-scoped ossec.conf edit (allowlisted,
+    single-instance) with snapshot-restore of the whole file (reuses migration
+    0017 `prior_state`); PUT → `/manager/configuration/validation` → auto-rollback
+    if invalid → authoritative persist-confirm → cluster restart; reverse
+    hash-verifies the restore → flips original to `rolled_back`. Diff-at-propose
+    (approver reviews current→proposed) + freshness refuses a stale proposal.
+    `propose_config_change` tool; **Superuser-scoped** (`manager:update_config`;
+    per-org creds hold `manager:read` only). Highest blast radius → built last.
+    **Closes Phase 6-e** (all four ADR-0025 action classes shipped).
 
 **then** severity-tiered authority / four-eyes / crown-jewel tagging (policy
 hooks, B1 default = approval-for-all); auto-execution (Phase 13). The remaining

@@ -59,6 +59,8 @@ function targetSummary(target: Record<string, unknown>): string {
   // rule_tuning targets a rule id — read it cleanly ("rule 100700") rather
   // than dumping the raw JSON ({"rule_id":"100700"}).
   if (typeof target["rule_id"] === "string") return `rule ${target["rule_id"]}`;
+  // config_change targets an ossec.conf section ("section <sca>").
+  if (typeof target["section"] === "string") return `section <${target["section"]}>`;
   return JSON.stringify(target);
 }
 
@@ -81,6 +83,13 @@ function paramsSummary(p: ActionProposal): string | null {
     if (p.action === "disable_rule") return `disable rule ${ruleId}`;
     const lvl = typeof params["level"] === "number" ? params["level"] : "?";
     return `set rule ${ruleId} to level ${lvl}`;
+  }
+  // config_change — the section is the target; the action encodes the operation
+  // (update_section / restore_config), so undos read accurately too.
+  if (p.action_class === "config_change") {
+    const section = typeof p.target["section"] === "string" ? p.target["section"] : "?";
+    if (p.action === "restore_config") return `restore <${section}> configuration`;
+    return `update <${section}> configuration`;
   }
   const intent = typeof params["intent"] === "string" ? params["intent"] : "";
   const undo = isReversal(p);
@@ -150,6 +159,20 @@ function resultDetail(result: Record<string, unknown> | null): string | null {
     return result["override_removed"]
       ? `rule ${rid} restored: override removed from local_rules.xml + validated + cluster restart issued`
       : `rule ${rid}: restore did NOT remove the override`;
+  }
+  // config_change (6-e.4): forward result carries section_updated; the snapshot-
+  // restore reverse carries config_restored. Surface the real apply evidence.
+  if (typeof result["section_updated"] === "boolean") {
+    const sec = result["section"];
+    return result["section_updated"]
+      ? `<${sec}> updated in ossec.conf + configuration validated + cluster restart issued (active ~15–30s after restart)`
+      : `<${sec}>: change did NOT persist — not applied`;
+  }
+  if (typeof result["config_restored"] === "boolean") {
+    const sec = result["section"];
+    return result["config_restored"]
+      ? `ossec.conf restored (<${sec}> reverted) + validated + cluster restart issued`
+      : `<${sec}>: restore did NOT match the prior snapshot`;
   }
   const total = result["total_affected_items"];
   if (typeof total === "number") return `${total} target(s) affected`;
@@ -356,6 +379,11 @@ export default function ActionsPage() {
                   <CardContent className="space-y-2 text-sm">
                     {paramsSummary(p) ? (
                       <Field label="Target">{paramsSummary(p)}</Field>
+                    ) : null}
+                    {p.action_class === "config_change" && p.action === "update_section" ? (
+                      <Field label="Configuration diff">
+                        <ConfigDiff parameters={p.parameters} />
+                      </Field>
                     ) : null}
                     {isReversal(p) && p.reverses_proposal_id ? (
                       <Field label="Undoes">
@@ -593,7 +621,37 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <span className="w-28 shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">
         {label}
       </span>
-      <span className="flex-1">{children}</span>
+      <span className="min-w-0 flex-1">{children}</span>
+    </div>
+  );
+}
+
+/** config_change (6-e.4): the exact current → proposed ossec.conf section, so
+ *  the approver reviews the real change (not just "update <sca>"). Both blocks
+ *  scroll independently inside the card — no truncation, no layout break. */
+function ConfigDiff({ parameters }: { parameters: Record<string, unknown> }) {
+  const current =
+    typeof parameters["current_content"] === "string" ? parameters["current_content"] : "";
+  const proposed =
+    typeof parameters["section_content"] === "string" ? parameters["section_content"] : "";
+  return (
+    <div className="min-w-0 space-y-2">
+      <div>
+        <div className="mb-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+          Current
+        </div>
+        <pre className="max-h-48 overflow-auto rounded-md bg-muted/60 p-2 text-xs [scrollbar-width:thin]">
+          {current || "(not captured)"}
+        </pre>
+      </div>
+      <div>
+        <div className="mb-0.5 text-[10px] font-medium uppercase tracking-wide text-sky-700 dark:text-sky-400">
+          Proposed
+        </div>
+        <pre className="max-h-48 overflow-auto rounded-md bg-sky-500/10 p-2 text-xs ring-1 ring-sky-500/20 [scrollbar-width:thin]">
+          {proposed || "(empty)"}
+        </pre>
+      </div>
     </div>
   );
 }

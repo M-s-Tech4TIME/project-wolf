@@ -19,6 +19,7 @@ from wolf_server.tools.cluster import GetClusterHealthTool
 from wolf_server.tools.knowledge import QueryRunbookTool
 from wolf_server.tools.propose_active_response import ProposeActiveResponseTool
 from wolf_server.tools.propose_agent_action import ProposeAgentActionTool
+from wolf_server.tools.propose_config_change import ProposeConfigChangeTool
 from wolf_server.tools.propose_rule_tuning import ProposeRuleTuningTool
 from wolf_server.tools.registry import runtime_registry
 from wolf_server.tools.rules import GetRuleDefinitionTool
@@ -61,6 +62,7 @@ def register_all_propose_tools() -> None:
         ProposeActiveResponseTool(),
         ProposeAgentActionTool(),
         ProposeRuleTuningTool(),
+        ProposeConfigChangeTool(),
     ]
     for tool in tools:
         runtime_registry.register(tool)

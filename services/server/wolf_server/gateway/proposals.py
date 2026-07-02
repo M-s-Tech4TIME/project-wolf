@@ -109,6 +109,18 @@ def _rule_tuning_severity(action: str, parameters: dict[str, Any]) -> str:
 register_severity("rule_tuning", _rule_tuning_severity)
 
 
+def _config_change_severity(action: str, parameters: dict[str, Any]) -> str:
+    """config_change base impact — high, always (6-e.4).
+
+    An ossec.conf edit is manager-GLOBAL (it changes manager behaviour for
+    every org on the shared cluster) and a bad configuration can take the
+    manager down — the highest blast radius of any class."""
+    return SEV_HIGH
+
+
+register_severity("config_change", _config_change_severity)
+
+
 def compute_content_hash(
     *,
     organization_id: uuid.UUID,

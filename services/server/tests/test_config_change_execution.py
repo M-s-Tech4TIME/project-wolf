@@ -1,0 +1,271 @@
+"""config_change execution + snapshot-restore reversal — Phase 6-e.4 (ADR 0029).
+
+The config_change executor replaces ONE allowlisted section in ossec.conf and
+APPLIES it (validate -> cluster restart) with auto-rollback if the edited config
+does not validate.  It AUTHORITATIVELY confirms the new block actually persisted
+(``GET`` reflects the on-disk file immediately) before declaring success — a
+phantom no-op fails honestly.  Freshness refuses a STALE proposal (the section
+changed under it).  The reversal restores the captured whole-file snapshot and
+hash-verifies it.  In-memory stubs share a ``_Disk`` so a read-back reflects what
+was written — no live manager.
+"""
+
+import uuid
+from datetime import UTC, datetime
+from typing import Any
+
+import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
+from wolf_server.gateway.executors import ConfigValidationError, get_executor
+from wolf_server.gateway.models import ActionProposal, ProposalState
+from wolf_server.gateway.proposals import create_proposal
+from wolf_server.gateway.reversal import REVERSAL_STATE_COMPLETED
+from wolf_server.wazuh.capabilities import (
+    ACTION_CLUSTER_RESTART,
+    ACTION_UPDATE_MANAGER_CONFIG,
+    CredentialCapabilities,
+)
+
+_ORG = uuid.UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+_REQUESTER = uuid.UUID("11111111-1111-1111-1111-111111111111")
+_CAPS = CredentialCapabilities(
+    policies={
+        ACTION_UPDATE_MANAGER_CONFIG: {"*:*:*": "allow"},
+        ACTION_CLUSTER_RESTART: {"*:*:*": "allow"},
+    }
+)
+
+_SCA_CURRENT = "<sca>\n    <enabled>yes</enabled>\n    <interval>12h</interval>\n  </sca>"
+_SCA_NEW = "<sca><enabled>no</enabled></sca>"
+_OSSEC = f"""<ossec_config>
+  {_SCA_CURRENT}
+  <syscheck><frequency>43200</frequency></syscheck>
+</ossec_config>
+"""
+
+
+class _Disk:
+    def __init__(self, content: str) -> None:
+        self.content = content
+
+
+class _StubReadApi:
+    def __init__(self, disk: _Disk, *, validation_ok: bool = True) -> None:
+        self.disk = disk
+        self.validation_ok = validation_ok
+
+    async def get(self, path: str, *, params: Any = None) -> dict[str, Any]:
+        if path == "/manager/configuration/validation":
+            if self.validation_ok:
+                return {"data": {"affected_items": [{"name": "m", "status": "OK"}],
+                                 "total_failed_items": 0}}
+            return {"data": {"affected_items": [{"name": "m", "status": "ERROR"}],
+                             "total_failed_items": 1, "failed_items": [{"error": "bad xml"}]}}
+        return {"data": {}}
+
+    async def get_raw(self, path: str, *, params: Any = None) -> str:
+        return self.disk.content
+
+
+class _StubActionApi:
+    def __init__(self, disk: _Disk, *, persist: bool = True) -> None:
+        self.disk = disk
+        self.persist = persist
+        self.writes: list[str] = []
+        self.restarts = 0
+
+    async def update_manager_configuration(
+        self, *, content: str, capabilities: Any
+    ) -> dict[str, Any]:
+        self.writes.append(content)
+        if self.persist:
+            self.disk.content = content
+        return {"data": {"affected_items": ["ossec.conf"]}}
+
+    async def restart_cluster(self, *, capabilities: Any) -> dict[str, Any]:
+        self.restarts += 1
+        return {"data": {"affected_items": ["m"]}}
+
+
+async def _proposal(
+    db: AsyncSession,
+    *,
+    action: str,
+    parameters: dict[str, Any],
+    reverses: uuid.UUID | None = None,
+) -> ActionProposal:
+    from wolf_server.gateway.executors import ExecContext  # noqa: F401 — keep import graph warm
+
+    p = await create_proposal(
+        db,
+        organization_id=_ORG,
+        requested_by=_REQUESTER,
+        action_class="config_change",
+        target={"section": "sca"},
+        action=action,
+        parameters=parameters,
+        rationale="tune sca",
+        expected_effect="update",
+        reverses_proposal_id=reverses,
+    )
+    p.state = ProposalState.succeeded
+    p.executed_at = datetime.now(UTC)
+    await db.flush()
+    return p
+
+
+def _ctx(db: AsyncSession, disk: _Disk, *, validation_ok: bool = True, persist: bool = True):
+    from wolf_server.gateway.executors import ExecContext
+
+    return ExecContext(
+        read_api=_StubReadApi(disk, validation_ok=validation_ok),
+        action_api=_StubActionApi(disk, persist=persist),
+        capabilities=_CAPS,
+        db=db,
+    )
+
+
+@pytest.mark.asyncio
+async def test_forward_replaces_section_validates_confirms_and_restarts(db: AsyncSession) -> None:
+    proposal = await _proposal(
+        db,
+        action="update_section",
+        parameters={"section_content": _SCA_NEW, "current_content": _SCA_CURRENT},
+    )
+    disk = _Disk(_OSSEC)
+    ctx = _ctx(db, disk)
+
+    freshness, perform, verify = get_executor("config_change").build_forward(proposal, ctx)
+    assert (await freshness(proposal))[0] is True
+
+    res = await perform(proposal)
+    assert len(ctx.action_api.writes) == 1  # no rollback
+    assert ctx.action_api.restarts == 1
+    written = ctx.action_api.writes[0]
+    assert "<enabled>no</enabled>" in written
+    assert "<interval>12h</interval>" not in written  # old sca body replaced
+    assert "<frequency>43200</frequency>" in written  # other section untouched
+    # prior_state captured for the undo (whole file).
+    assert proposal.prior_state is not None
+    assert proposal.prior_state["content"] == _OSSEC
+    assert res["section_updated"] is True
+
+    ok, detail = await verify(proposal, res)
+    assert ok is True
+    assert detail["section"] == "sca"
+    assert detail["restart_issued"] is True
+
+
+@pytest.mark.asyncio
+async def test_forward_auto_rolls_back_on_validation_failure(db: AsyncSession) -> None:
+    proposal = await _proposal(
+        db,
+        action="update_section",
+        parameters={"section_content": _SCA_NEW, "current_content": _SCA_CURRENT},
+    )
+    disk = _Disk(_OSSEC)
+    ctx = _ctx(db, disk, validation_ok=False)
+
+    _f, perform, _v = get_executor("config_change").build_forward(proposal, ctx)
+    with pytest.raises(ConfigValidationError):
+        await perform(proposal)
+    # bad edit written, then prior restored — two writes, NO restart.
+    assert len(ctx.action_api.writes) == 2
+    assert ctx.action_api.writes[1] == _OSSEC
+    assert ctx.action_api.restarts == 0
+
+
+@pytest.mark.asyncio
+async def test_forward_fails_honestly_if_change_does_not_persist(db: AsyncSession) -> None:
+    proposal = await _proposal(
+        db,
+        action="update_section",
+        parameters={"section_content": _SCA_NEW, "current_content": _SCA_CURRENT},
+    )
+    disk = _Disk(_OSSEC)
+    ctx = _ctx(db, disk, persist=False)  # writes "succeed" but don't stick
+
+    _f, perform, _v = get_executor("config_change").build_forward(proposal, ctx)
+    with pytest.raises(ConfigValidationError, match="did not persist"):
+        await perform(proposal)
+    assert ctx.action_api.restarts == 0  # never applied a phantom change
+
+
+@pytest.mark.asyncio
+async def test_forward_freshness_refuses_stale_proposal(db: AsyncSession) -> None:
+    # The live section no longer matches what the approver reviewed → stale.
+    proposal = await _proposal(
+        db,
+        action="update_section",
+        parameters={"section_content": _SCA_NEW, "current_content": _SCA_CURRENT},
+    )
+    drifted = _OSSEC.replace("<interval>12h</interval>", "<interval>6h</interval>")
+    ctx = _ctx(db, _Disk(drifted))
+    freshness, _p, _v = get_executor("config_change").build_forward(proposal, ctx)
+    ok, reason = await freshness(proposal)
+    assert ok is False
+    assert "changed since" in reason
+
+
+@pytest.mark.asyncio
+async def test_forward_freshness_refuses_repeated_section(db: AsyncSession) -> None:
+    proposal = await _proposal(
+        db,
+        action="update_section",
+        parameters={"section_content": _SCA_NEW, "current_content": _SCA_CURRENT},
+    )
+    doubled = _OSSEC.replace("</ossec_config>", f"  {_SCA_CURRENT}\n</ossec_config>")
+    ctx = _ctx(db, _Disk(doubled))
+    freshness, _p, _v = get_executor("config_change").build_forward(proposal, ctx)
+    ok, reason = await freshness(proposal)
+    assert ok is False
+    assert "exactly once" in reason
+
+
+@pytest.mark.asyncio
+async def test_reverse_restores_snapshot_hash_verifies_and_marks_completed(
+    db: AsyncSession,
+) -> None:
+    original = await _proposal(
+        db,
+        action="update_section",
+        parameters={"section_content": _SCA_NEW, "current_content": _SCA_CURRENT},
+    )
+    original.prior_state = {"kind": "manager_configuration", "content": _OSSEC, "sha256": "abc"}
+    await db.flush()
+    reversal = await _proposal(db, action="restore_config", parameters={}, reverses=original.id)
+
+    # Disk currently holds the tuned config; restore should put the snapshot back.
+    tuned = _OSSEC.replace(_SCA_CURRENT, _SCA_NEW)
+    disk = _Disk(tuned)
+    ctx = _ctx(db, disk)
+
+    freshness, perform, verify = get_executor("config_change").build_reverse(reversal, ctx)
+    assert (await freshness(reversal))[0] is True
+
+    res = await perform(reversal)
+    assert ctx.action_api.writes == [_OSSEC]  # the captured snapshot, restored
+    assert ctx.action_api.restarts == 1
+    assert res["config_restored"] is True
+
+    ok, detail = await verify(reversal, res)
+    assert ok is True
+    assert detail["reversal_state"] == REVERSAL_STATE_COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_reverse_freshness_refuses_when_already_rolled_back(db: AsyncSession) -> None:
+    original = await _proposal(
+        db,
+        action="update_section",
+        parameters={"section_content": _SCA_NEW, "current_content": _SCA_CURRENT},
+    )
+    original.prior_state = {"kind": "manager_configuration", "content": _OSSEC, "sha256": "abc"}
+    original.state = ProposalState.rolled_back
+    await db.flush()
+    reversal = await _proposal(db, action="restore_config", parameters={}, reverses=original.id)
+    ctx = _ctx(db, _Disk(_OSSEC))
+    freshness, _p, _v = get_executor("config_change").build_reverse(reversal, ctx)
+    ok, reason = await freshness(reversal)
+    assert ok is False
+    assert "already been reversed" in reason
