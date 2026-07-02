@@ -1,8 +1,10 @@
 ---
 name: openrouter-quota-visibility
 description: "REFERENCE (2026-07-01, ADR 0031 addendum): OpenRouter quota/credit visibility = hardcode the CONTRACT not the NUMBERS. Reactive half shipped (ProviderQuota from 429/402 headers+body → actionable msg); proactive /key+/credits dashboard + failover chip deferred to per-org OpenRouter phase."
-metadata:
+metadata: 
+  node_type: memory
   type: reference
+  originSessionId: 5cd03513-6614-4694-a862-5bd7c8534b36
 ---
 
 **Operator design question (2026-07-01): should Wolf hardcode OpenRouter's
@@ -38,6 +40,20 @@ in **MILLISECONDS** — disambiguate from seconds by magnitude) + the error body
 - Tests: `test_provider_quota.py` (13) — classification, ms/s reset parse,
   past-reset omission, 429/402 attachment, adapter MockTransport replaying the
   REAL 429 headers+body, quota-aware loop message.
+
+**Empirical confirmation (2026-07-02, live).** `GET /key` showed `usage_daily=0`
++ `is_free_tier=true` (account cap NOT touched) YET **both** `qwen/qwen3-coder:free`
++ `qwen/qwen3-next-80b-a3b-instruct:free` returned **429 "temporarily rate-limited
+upstream"** — proving the two limits are INDEPENDENT: a fresh daily budget does NOT
+guarantee a given `:free` route is usable (the upstream provider throttles the route
+globally). At the same moment `cohere/north-mini-code:free` was **200/live** → it's the
+reliable live-fallback chat/judge when the qwen free routes are hot. Practical takeaway
+for "use OpenRouter for faster web-tests": always **smoke each `:free` route first**
+(the account quota check alone is misleading), and wire local Ollama as
+`FALLBACK_MODEL_*` so a mid-test 429 degrades instead of breaking. Dependable hosted =
+paid credits (leaves free-tier). Dev `.env` switch (gitignored): DEFAULT/GROUNDING_JUDGE
+`_MODEL_PROVIDER=openrouter` + `_MODEL_ID=<route>` + `_API_KEY_REF=model.openrouter.api_key`;
+revert = set both back to `ollama`/`qwen3:8b`.
 
 **Deferred to the per-org OpenRouter config phase (documented, not dropped):**
 the *proactive* `/key`+`/credits` Models/Settings indicator, and the
