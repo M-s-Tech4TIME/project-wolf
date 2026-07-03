@@ -333,6 +333,41 @@ blocked — a bad edit there can lock Wolf out of its own manager, an unrecovera
 - Decoder / CDB-list authoring generalization (same shape as B, after config) — tracked with
   the rule_tuning follow-ons.
 
+## Addendum (2026-07-03, slice 6-f.2) — live install: official layout, port 1307, uWSGI
+
+The host standup (operator-directed: **follow the official SearXNG step-by-step docs for
+Ubuntu/Debian verbatim**) refined Appendix A. What the live install fixed as canonical:
+
+- **Official layout supersedes the Appendix A path sketch**: user `searxng`, source at
+  `/usr/local/searxng/searxng-src` (git, **pinned commit `747cec4c` = 2026.7.3**), venv at
+  `/usr/local/searxng/searx-pyenv`, config at `/etc/searxng/settings.yml` (NOT
+  `/opt/wolf-search` / `/etc/wolf-search`). The docs clone master; Wolf records the verified
+  commit and the package pins it.
+- **Port 1307 (operator-chosen)**, loopback: `server.bind_address: 127.0.0.1`, `server.port:
+  1307` in settings.yml; `Settings.searxng_url` default updated to match.
+- **Service runner = uWSGI, not Granian**: Granian is officially "only supported in the
+  Installation container" (Docker); the documented native Ubuntu/Debian runner is uWSGI. The
+  ini is the **official Debian content verbatim at the official path**
+  (`/etc/uwsgi/apps-available/searxng.ini`, uWSGI drops to `searxng` via `uid/gid`) with ONE
+  deviation: `http-socket = 127.0.0.1:1307` replaces the unix socket + reverse proxy — Wolf's
+  only caller speaks loopback HTTP and Wolf is deliberately nginx/apache-free (they exist for
+  the public-instance use case: TLS, vhosts, socket bridging, edge protection — all
+  non-applicable or Wolf-owned). NOT symlinked into `apps-enabled` (the distro uwsgi service
+  must never double-run it); the dedicated **`wolf-search.service`** unit runs it
+  (operator-confirmed over the distro-shared pattern — Wolf-owned identity/journal, mirrors
+  wolf-database).
+- **Four settings deltas, empirically forced** (everything else stays official-template):
+  port/bind (above); `formats: [html, json]` (default html-only 403s the JSON API — reproduced
+  live); `limiter: false` + valkey block removed (template default errors at startup without
+  valkey — reproduced live; one trusted loopback caller). Deeper tuning (engine allowlist,
+  image_proxy, systemd sandboxing hardening) = a later fine-tune pass, tracked.
+- `settings.yml` tightened to `root:searxng 640` (holds `secret_key`; official cp leaves 644).
+- **Empirical verification (the 6-f.1 deferral, closed):** the unmodified `SearxngProvider`
+  parsed the live `/search?format=json` response — 5/5 hits normalized; documentation.wazuh.com
+  was the organic #1 result for a Wazuh query. Repo artifacts: `deploy/searxng/settings.yml`
+  (template, placeholder secret), `deploy/searxng/searxng-uwsgi.ini`,
+  `deploy/systemd/system/wolf-search.service`, `deploy/bin/wolf-search` (doctor/status wrapper).
+
 ## Appendix A — `wolf-search` native-venv install recipe (= the postinst)
 
 The shippable recipe; exact package name / WSGI runner finalized empirically in 6-f.2.

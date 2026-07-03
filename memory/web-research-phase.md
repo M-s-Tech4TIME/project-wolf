@@ -77,9 +77,25 @@ converge into ONE capability — **Wolf as a research-capable Wazuh expert**:
   fixed Makefile typecheck DRIFT (was missing gateway/grounding/tools vs CI). NOTE: pin env-sensitive
   Settings defaults via `Settings.model_fields[...]` in tests, NOT a bare `Settings()` (reads `.env` —
   the 6-f.3 web-test flips WEB_SEARCH_ENABLED there)
-  · 6-f.2 `wolf-search` package + host standup (NEXT) · 6-f.3 the 3 tools + full A6 security +
-  docs-first + citations · 6-f.4 config-authoring generalization. Gates: mypy --strict, no skips,
-  full suite + cross-org, restart via `systemctl --user restart wolf-server.service` for web-tests.
+  · 6-f.2 **HOST HALF DONE (2026-07-03)**: wolf-search LIVE at `127.0.0.1:1307` — installed strictly
+  per the OFFICIAL SearXNG docs (operator directive): user `searxng`, source `/usr/local/searxng/searxng-src`
+  **pinned commit `747cec4c` = 2026.7.3**, venv `searx-pyenv`, config `/etc/searxng/settings.yml`
+  (root:searxng 640 — holds secret_key). FOUR deltas only (rest official-default; fine-tune later):
+  port 1307 (operator-chosen) + loopback bind · formats +json (html-only 403s the API — reproduced) ·
+  limiter:false + valkey removed (startup ERROR w/o valkey — reproduced). Runner = **uWSGI not Granian**
+  (Granian officially container-only); official Debian ini VERBATIM at `/etc/uwsgi/apps-available/searxng.ini`,
+  ONE deviation `http-socket = 127.0.0.1:1307` (no nginx — public-instance-only component), NOT in
+  apps-enabled (distro uwsgi must never double-run); dedicated **wolf-search.service** unit (uWSGI drops
+  to searxng). `wolf-search` wrapper (`deploy/bin/wolf-search` → /usr/local/bin): doctor/status/version/
+  logs/service-ops; **doctor healthy**. EMPIRICAL: unmodified SearxngProvider parsed the live JSON 5/5,
+  documentation.wazuh.com organic #1. Repo: deploy/searxng/{settings.yml template, searxng-uwsgi.ini} +
+  deploy/systemd/system/wolf-search.service; `searxng_url` default → 1307. SUDO: password declined,
+  temp NOPASSWD drop-in, announced each step, rule removed+verified. **PACKAGING HALF = NEXT**:
+  debian/wolf-search.* postinst = this recipe pinned to 747cec4c, Recommends in `wolf` meta-package,
+  deb-smoke four→five .debs
+  · 6-f.3 the 3 tools + full A6 security + docs-first + citations · 6-f.4 config-authoring
+  generalization. Gates: mypy --strict, no skips, full suite + cross-org, restart via
+  `systemctl --user restart wolf-server.service` for web-tests.
 
 **Reusable reference from the 6-e.4 web-test.** (1) Wazuh **re-serialises ossec.conf on write** →
 verify config/rule persistence STRUCTURALLY (whitespace-tolerant / `has_override`), NEVER literal

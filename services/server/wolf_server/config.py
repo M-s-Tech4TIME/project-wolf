@@ -338,8 +338,9 @@ class Settings(BaseSettings):
     # Where the wolf-search component listens. Loopback in every recommended
     # topology (wolf-search is wolf-server's sidecar, ADR 0032 A3.1); a
     # dedicated search tier swaps this for its mTLS-fronted private URL —
-    # same seam pattern as DATABASE_URL / OLLAMA_BASE_URL.
-    searxng_url: str = "http://127.0.0.1:8888"
+    # same seam pattern as DATABASE_URL / OLLAMA_BASE_URL. Port 1307 is the
+    # operator-chosen wolf-search port (6-f.2; SearXNG's own default is 8888).
+    searxng_url: str = "http://127.0.0.1:1307"
     # Tool-facing knobs (max results / fetch caps / crawl budgets, ADR 0032
     # A7) land with the tools in 6-f.3 — settings are added when consumed.
     # All of these are Phase 6.10 GUI consumers (web-first configurability).

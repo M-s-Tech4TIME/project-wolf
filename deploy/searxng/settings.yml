@@ -1,0 +1,54 @@
+# wolf-search settings.yml TEMPLATE (ADR 0032, slice 6-f.2).
+# = the OFFICIAL SearXNG template (utils/templates/etc/searxng/settings.yml,
+# pinned commit 747cec4c) + Wolf's four minimal deltas: port 1307 (operator),
+# explicit loopback bind, json format (the SearxngProvider wire format),
+# limiter off + valkey removed (single trusted loopback caller).
+# Install: copy to /etc/searxng/settings.yml, replace ultrasecretkey via
+#   sed -i "s/ultrasecretkey/$(openssl rand -hex 16)/g" (the official step),
+#   chown root:searxng + chmod 640 (the file holds the secret key).
+
+# SearXNG settings
+
+use_default_settings: true
+
+general:
+  debug: false
+  instance_name: "SearXNG"
+
+search:
+  safe_search: 2
+  autocomplete: 'duckduckgo'
+  formats:
+    - html
+    - json
+
+server:
+  # Wolf (ADR 0032): loopback-only sidecar of wolf-server; port 1307 operator-chosen.
+  bind_address: "127.0.0.1"
+  port: 1307
+  # Is overwritten by ${SEARXNG_SECRET}
+  secret_key: "ultrasecretkey"
+  limiter: false  # Wolf: one trusted loopback client (wolf-server) — nothing to rate-limit
+  image_proxy: true
+  # public URL of the instance, to ensure correct inbound links. Is overwritten
+  # by ${SEARXNG_BASE_URL}.
+  # base_url: http://example.com/location
+
+# valkey: not used (Wolf: limiter off; add back only if upstream throttling appears)
+
+# preferences:
+#   lock:
+#     - autocomplete
+#     - method
+
+# engines:
+#
+#   - name: fdroid
+#     disabled: false
+#
+#   - name: apk mirror
+#     disabled: false
+#
+#   - name: mediathekviewweb
+#     categories: TV
+#     disabled: false

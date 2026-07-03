@@ -1,0 +1,89 @@
+#!/bin/sh
+# /usr/bin/wolf-search — operator CLI for the wolf-search component (ADR 0032).
+#
+# wolf-search is Wolf's bundled SearXNG metasearch instance: installed per the
+# OFFICIAL SearXNG step-by-step docs (user `searxng`, /usr/local/searxng,
+# /etc/searxng/settings.yml), run by the dedicated wolf-search.service
+# (uWSGI, loopback http-socket 127.0.0.1:1307 — wolf-server's sidecar).
+#
+# Mirrors the wolf-database CLI-shim pattern. Service ops + a `doctor` that
+# probes the exact endpoint wolf-server's SearxngProvider consumes.
+
+set -eu
+
+SEARXNG_URL="${SEARXNG_URL:-http://127.0.0.1:1307}"
+SETTINGS="/etc/searxng/settings.yml"
+UNIT="wolf-search.service"
+
+usage() {
+    cat <<USAGE
+wolf-search — manage Wolf's bundled SearXNG (loopback metasearch, ADR 0032)
+
+Usage: wolf-search <command>
+
+  status    systemd + listener state
+  doctor    end-to-end health: service, port, and the JSON search API
+            (the exact endpoint wolf-server's adapter consumes)
+  version   installed SearXNG version (pinned source commit)
+  logs      follow the service journal
+  start | stop | restart
+USAGE
+}
+
+need_systemctl() {
+    command -v systemctl >/dev/null 2>&1 || {
+        echo "FAIL: systemctl not found" >&2; exit 2; }
+}
+
+cmd="${1:-}"
+case "${cmd}" in
+    status)
+        need_systemctl
+        systemctl status "${UNIT}" --no-pager || true
+        ;;
+    doctor)
+        need_systemctl
+        rc=0
+        if systemctl is-active --quiet "${UNIT}"; then
+            echo "ok: ${UNIT} active"
+        else
+            echo "FAIL: ${UNIT} not active (systemctl start ${UNIT})"; rc=1
+        fi
+        if [ -r "${SETTINGS}" ] || [ "$(id -u)" -ne 0 ]; then
+            echo "ok: settings at ${SETTINGS}"
+        else
+            echo "FAIL: ${SETTINGS} missing"; rc=1
+        fi
+        # The wire probe: the same call SearxngProvider makes. A 403 means the
+        # json format is not enabled under search.formats in settings.yml.
+        code="$(curl -s -o /dev/null -w '%{http_code}' \
+            "${SEARXNG_URL}/search?q=wazuh&format=json" || echo 000)"
+        case "${code}" in
+            200) echo "ok: JSON search API answers 200 at ${SEARXNG_URL}" ;;
+            403) echo "FAIL: HTTP 403 — enable 'json' under search.formats in ${SETTINGS}"; rc=1 ;;
+            000) echo "FAIL: ${SEARXNG_URL} unreachable"; rc=1 ;;
+            *)   echo "FAIL: JSON search API answered HTTP ${code}"; rc=1 ;;
+        esac
+        [ "${rc}" -eq 0 ] && echo "wolf-search: healthy" || echo "wolf-search: UNHEALTHY"
+        exit "${rc}"
+        ;;
+    version)
+        "/usr/local/searxng/searx-pyenv/bin/pip" show searxng 2>/dev/null \
+            | grep -i '^Version:' || echo "FAIL: SearXNG venv not found" >&2
+        ;;
+    logs)
+        journalctl -u "${UNIT}" -f
+        ;;
+    start|stop|restart)
+        need_systemctl
+        systemctl "${cmd}" "${UNIT}"
+        ;;
+    ""|help|-h|--help)
+        usage
+        ;;
+    *)
+        echo "unknown command: ${cmd}" >&2
+        usage >&2
+        exit 2
+        ;;
+esac

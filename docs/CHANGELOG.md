@@ -49,6 +49,51 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-07-03 — 6-f.2 (host half): wolf-search live on port 1307 — official SearXNG install + dedicated unit + doctor
+
+**Session type:** mixed (operator granted temporary sudo via a NOPASSWD drop-in; removed + verified gone at the end)
+**Phase:** 6-f.2 (ADR 0032 — the wolf-search component; host standup half)
+**Branch / commit:** main
+
+### What we did
+- **Installed SearXNG strictly per the official step-by-step docs** (operator directive;
+  docs.searxng.org installation-basic, Ubuntu/Debian): their apt list, `searxng` system user,
+  git clone → **pinned commit `747cec4c` (2026.7.3)**, venv + PEP-517 editable install, official
+  template `settings.yml` + `openssl rand` secret, official debug-on check run (HTTP 200).
+- **Empirically confirmed both predicted defaults-vs-Wolf conflicts on the live instance**:
+  template `limiter: true` + no valkey → `ERROR searx.valkeydb: can't connect valkey DB` at
+  startup; html-only `formats` → `format=json` HTTP 403 (the exact hint `SearxngProvider`'s
+  error carries).
+- **Four minimal deltas** (everything else official-default; fine-tune pass later): port
+  **1307** (operator-chosen) + explicit loopback bind; `formats: [html, json]`; `limiter:
+  false` + valkey block removed. Verified: 1307 loopback-bound, valkey error gone, JSON 200.
+- **Service**: official Debian uWSGI ini verbatim at the official path with ONE deviation
+  (`http-socket = 127.0.0.1:1307` — no nginx bridge; NOT in apps-enabled so the distro uwsgi
+  never double-runs it) + dedicated **`wolf-search.service`** (operator-confirmed; mirrors
+  wolf-database ownership; uWSGI drops to `searxng` per the ini — verified in ps). Journal
+  clean; restart-resilient. Granian rejected for native (officially container-only).
+- **Empirical adapter verification (closes the 6-f.1 deferral):** the unmodified
+  `SearxngProvider` against the live instance — 5/5 hits parsed; documentation.wazuh.com the
+  organic #1 result for "wazuh sca security configuration assessment".
+- **`wolf-search` wrapper** (`deploy/bin/wolf-search` → `/usr/local/bin`): doctor (service +
+  settings + the exact JSON endpoint the adapter consumes, with the 403→settings.yml hint) /
+  status / version / logs / start-stop-restart. `wolf-search doctor` → healthy.
+- Hardening: `settings.yml` → `root:searxng 640` (holds `secret_key`; official cp leaves 644).
+- Repo artifacts: `deploy/searxng/settings.yml` (template, placeholder secret — the live
+  secret never enters git), `deploy/searxng/searxng-uwsgi.ini`,
+  `deploy/systemd/system/wolf-search.service`, `deploy/bin/wolf-search`; `Settings.searxng_url`
+  default → `http://127.0.0.1:1307` (+ default-pin test); ADR 0032 addendum (official layout
+  supersedes the Appendix A path sketch; 1307; uWSGI rationale).
+- **Sudo hygiene:** declined the operator's offered password (would persist in transcripts/logs);
+  temporary NOPASSWD drop-in instead, each privileged block announced with reason, rule
+  REMOVED + verified gone (`sudo -n` fails again) the moment host-privileged work ended.
+
+### What's next
+- **6-f.2 packaging half:** `debian/wolf-search.*` (postinst = this exact recipe, pinned to
+  `747cec4c`), `Recommends` in the `wolf` meta-package, deb-smoke updated (four → five .debs).
+
+---
+
 ## 2026-07-03 — 6-f.1: research/ scaffolding — SearchProvider protocol + SearXNG adapter + resolver
 
 **Session type:** claude-code

@@ -30,7 +30,7 @@ from wolf_server.research.interface import (
 from wolf_server.research.registry import get_search_provider_for_organization
 from wolf_server.research.searxng import SearxngProvider
 
-_BASE = "http://127.0.0.1:8888"
+_BASE = "http://127.0.0.1:1307"  # the operator-chosen wolf-search port (6-f.2)
 
 # A realistic SearXNG /search?format=json payload (documented shape; slice
 # 6-f.2 re-verifies it against the live instance before the tools consume it).
@@ -206,6 +206,12 @@ def test_web_search_disabled_is_the_code_default() -> None:
     # the 6-f.3 web-test will set WEB_SEARCH_ENABLED=1 there and must not
     # flip this test). A stock install ships with web research OFF.
     assert Settings.model_fields["web_search_enabled"].default is False
+
+
+def test_searxng_url_default_is_the_wolf_search_port() -> None:
+    # 1307 = the operator-chosen wolf-search port (6-f.2 live install);
+    # SearXNG's own default 8888 is NOT what wolf-search binds.
+    assert Settings.model_fields["searxng_url"].default == "http://127.0.0.1:1307"
 
 
 @pytest.mark.asyncio
