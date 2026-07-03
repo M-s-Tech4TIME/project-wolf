@@ -11,6 +11,7 @@ was written — no live manager.
 """
 
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
@@ -68,9 +69,19 @@ class _StubReadApi:
 
 
 class _StubActionApi:
-    def __init__(self, disk: _Disk, *, persist: bool = True) -> None:
+    def __init__(
+        self,
+        disk: _Disk,
+        *,
+        persist: bool = True,
+        reformat: Callable[[str], str] | None = None,
+    ) -> None:
         self.disk = disk
         self.persist = persist
+        # Simulates the manager re-serialising ossec.conf on write (it re-indents
+        # to its own house style) — the read-back is NOT byte-identical to what
+        # was PUT. Used to reproduce the live 6-e.4 persist false-negative.
+        self.reformat = reformat
         self.writes: list[str] = []
         self.restarts = 0
 
@@ -79,7 +90,7 @@ class _StubActionApi:
     ) -> dict[str, Any]:
         self.writes.append(content)
         if self.persist:
-            self.disk.content = content
+            self.disk.content = self.reformat(content) if self.reformat else content
         return {"data": {"affected_items": ["ossec.conf"]}}
 
     async def restart_cluster(self, *, capabilities: Any) -> dict[str, Any]:
@@ -114,12 +125,19 @@ async def _proposal(
     return p
 
 
-def _ctx(db: AsyncSession, disk: _Disk, *, validation_ok: bool = True, persist: bool = True):
+def _ctx(
+    db: AsyncSession,
+    disk: _Disk,
+    *,
+    validation_ok: bool = True,
+    persist: bool = True,
+    reformat: Callable[[str], str] | None = None,
+):
     from wolf_server.gateway.executors import ExecContext
 
     return ExecContext(
         read_api=_StubReadApi(disk, validation_ok=validation_ok),
-        action_api=_StubActionApi(disk, persist=persist),
+        action_api=_StubActionApi(disk, persist=persist, reformat=reformat),
         capabilities=_CAPS,
         db=db,
     )
@@ -154,6 +172,35 @@ async def test_forward_replaces_section_validates_confirms_and_restarts(db: Asyn
     assert ok is True
     assert detail["section"] == "sca"
     assert detail["restart_issued"] is True
+
+
+@pytest.mark.asyncio
+async def test_forward_confirms_persist_despite_manager_reformatting(db: AsyncSession) -> None:
+    # Reproduces the live 6-e.4 failure: the manager re-indents ossec.conf on
+    # write, so the <sca> block read back is not a byte-for-byte substring of what
+    # Wolf PUT. The change DID apply — the reformatting-tolerant persist check
+    # must confirm success. The old literal `new_block in reread` check
+    # false-failed here (twice, on the operator's cluster) and rolled back.
+    proposal = await _proposal(
+        db,
+        action="update_section",
+        parameters={"section_content": _SCA_NEW, "current_content": _SCA_CURRENT},
+    )
+
+    def _reindent(content: str) -> str:
+        return content.replace("><", ">\n      <")  # manager-style layout
+
+    disk = _Disk(_OSSEC)
+    ctx = _ctx(db, disk, reformat=_reindent)
+
+    _f, perform, verify = get_executor("config_change").build_forward(proposal, ctx)
+    res = await perform(proposal)
+    assert len(ctx.action_api.writes) == 1  # applied once, no rollback restore
+    assert ctx.action_api.restarts == 1  # reached the apply step
+    assert res["section_updated"] is True
+    assert "<enabled>no</enabled>" in disk.content  # the change really landed
+    ok, _detail = await verify(proposal, res)
+    assert ok is True
 
 
 @pytest.mark.asyncio

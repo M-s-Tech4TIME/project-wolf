@@ -306,6 +306,32 @@ async def test_create_proposal_persists_pending_and_audits(db: AsyncSession) -> 
     assert any(e.event_type == "action.proposal.created" for e in events)
 
 
+@pytest.mark.asyncio
+async def test_create_proposal_honors_explicit_ttl(db: AsyncSession) -> None:
+    proposal = await _make_pending(db, ttl_seconds=120)
+    window = (proposal.expires_at - proposal.created_at).total_seconds()
+    assert 118 <= window <= 122
+
+
+@pytest.mark.asyncio
+async def test_create_proposal_ttl_defaults_to_settings(
+    db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # No explicit ttl_seconds → the operator-configured PROPOSAL_TTL_SECONDS
+    # (Settings.proposal_ttl_seconds) governs the approval window — the 6-e.4
+    # fix so a config diff no longer expires mid-review.
+    from wolf_server.config import get_settings
+
+    monkeypatch.setenv("PROPOSAL_TTL_SECONDS", "240")
+    get_settings.cache_clear()
+    try:
+        proposal = await _make_pending(db)  # no ttl override
+        window = (proposal.expires_at - proposal.created_at).total_seconds()
+        assert 238 <= window <= 242
+    finally:
+        get_settings.cache_clear()  # don't leak the override into other tests
+
+
 # ── Approval: separation of duties + authority + TTL ──────────────────────────
 
 

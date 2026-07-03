@@ -15,6 +15,7 @@ from wolf_server.wazuh.config_change import (
     find_section_blocks,
     is_valid_section_block,
     replace_section_block,
+    section_persisted,
 )
 
 _OSSEC = """<ossec_config>
@@ -62,6 +63,33 @@ def test_replace_section_block_replaces_the_single_occurrence() -> None:
 def test_replace_section_block_refuses_when_not_exactly_one() -> None:
     assert replace_section_block(_OSSEC, "global", "<global></global>") is None  # repeated
     assert replace_section_block(_OSSEC, "remote", "<remote></remote>") is None  # absent
+
+
+# ── persist verification (reformatting-tolerant, 6-e.4 fix) ──────────────────
+
+
+def test_section_persisted_tolerates_manager_reindentation() -> None:
+    # The model writes a compact block; the manager re-indents it on write. The
+    # change DID land — persist verification must not false-negative on layout.
+    proposed = "<sca><enabled>no</enabled></sca>"
+    reindented = (
+        "<ossec_config>\n  <sca>\n    <enabled>no</enabled>\n  </sca>\n"
+        "  <syscheck><frequency>1</frequency></syscheck>\n</ossec_config>"
+    )
+    assert section_persisted(reindented, "sca", proposed) is True
+
+
+def test_section_persisted_false_on_genuine_content_mismatch() -> None:
+    proposed = "<sca><enabled>no</enabled></sca>"
+    unchanged = "<ossec_config><sca><enabled>yes</enabled></sca></ossec_config>"
+    assert section_persisted(unchanged, "sca", proposed) is False
+
+
+def test_section_persisted_false_when_section_absent_or_repeated() -> None:
+    proposed = "<sca><enabled>no</enabled></sca>"
+    assert section_persisted("<ossec_config></ossec_config>", "sca", proposed) is False
+    doubled = "<sca><enabled>no</enabled></sca>\n<sca><enabled>no</enabled></sca>"
+    assert section_persisted(doubled, "sca", proposed) is False
 
 
 # ── replacement-block shape validation ───────────────────────────────────────

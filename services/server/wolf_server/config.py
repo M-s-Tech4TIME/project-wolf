@@ -199,6 +199,18 @@ class Settings(BaseSettings):
     auto_reversal_enabled: bool = True
     auto_reversal_sweep_interval_seconds: int = 60
 
+    # ── Proposal approval window (ADR 0025/0029) ─────────────────────────────────
+    # How long a pending action proposal stays approvable before it auto-expires
+    # (state 'expired'). Was a flat 15 min, which lapsed mid-review during the
+    # 6-e.4 web-test (a <vulnerability-detection> config diff expired before the
+    # approver finished reading it — slow local inference + a careful human).
+    # Raised to 30 min for real review headroom. Staleness is still guarded
+    # INDEPENDENTLY at execute time by every class's freshness re-check (agent
+    # still present / section unchanged since proposal), so a longer approval
+    # window never risks applying a stale action. A future Phase 6.10 settings
+    # consumer; env-only (PROPOSAL_TTL_SECONDS) for now.
+    proposal_ttl_seconds: int = 1800
+
     # ── Model defaults (per-organization overrides come in a later phase) ────────
     default_model_provider: str = "ollama"  # anthropic | openai | ollama
     # Default model: qwen3:4b (Apache 2.0).  Switched from llama3.2 on

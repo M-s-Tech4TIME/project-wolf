@@ -105,6 +105,35 @@ def replace_section_block(raw: str, section: str, new_block: str) -> str | None:
     return raw[:start] + new_block.strip() + raw[end:]
 
 
+def _normalize_section(block: str) -> str:
+    """Indentation/whitespace-insensitive canonical form of a ``<section>`` block.
+
+    The Wazuh Server API RE-SERIALISES ``ossec.conf`` when it writes it (it
+    re-indents the file to its own house style), so the exact string Wolf PUT is
+    NOT a byte-for-byte substring of the file read back afterwards.  A literal
+    match therefore false-negatives a change that *did* apply — the live 6-e.4
+    web-test failure ("<sca> block did not persist", twice, on a write that
+    validated).  Collapsing inter-tag and internal whitespace compares structure
+    + content while tolerating reformatting — the same robustness rule_tuning
+    already gets from its structural ``has_override`` check (why it passed on the
+    same cluster where config_change's substring check failed).  Kept string/
+    regex based, never ElementTree, per this module's contract (multi-root
+    fragment)."""
+    collapsed = re.sub(r">\s+<", "><", (block or "").strip())
+    return re.sub(r"\s+", " ", collapsed).strip()
+
+
+def section_persisted(raw: str, section: str, proposed_block: str) -> bool:
+    """Authoritatively confirm a write stuck: ``section`` appears exactly once in
+    ``raw`` and matches ``proposed_block`` ignoring the manager's reindentation
+    (see :func:`_normalize_section`).  ``0`` or ``>1`` occurrences → not
+    persisted (the edit did not land as a single clean block)."""
+    blocks = find_section_blocks(raw, section)
+    if len(blocks) != 1:
+        return False
+    return _normalize_section(blocks[0]) == _normalize_section(proposed_block)
+
+
 def is_valid_section_block(section: str, content: str) -> tuple[bool, str]:
     """Structural validity of a proposed replacement block, with a guided reason.
 

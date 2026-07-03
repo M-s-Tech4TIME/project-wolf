@@ -49,6 +49,63 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-07-03 — 6-e.4 fix: config_change persist false-negative + configurable proposal TTL (live web-test)
+
+**Session type:** claude-code
+**Phase:** 6-e.4 hardening (driven by the operator's live config_change web-test)
+**Branch / commit:** main
+
+### What we did
+- Diagnosed the operator's live web-test from the Action-approvals screenshots + audit
+  log. Three distinct things, not one: (1) `<sca>` `update_section` **Failed** twice —
+  "block did not persist to ossec.conf; restored the prior file"; (2) a
+  `<vulnerability-detection>` proposal **Expired**; (3) "remove the virustotal
+  integration" couldn't be actioned (`<integration>` is a deliberately-excluded
+  *repeated* section, and Wolf had no way to *research* it → degraded to asking the user).
+- **Fixed the `<sca>` persist false-negative (real bug).** The executor's authoritative
+  confirm used a **literal substring** check (`new_block in reread`); the Wazuh API
+  **re-serialises ossec.conf on write** (re-indents it), so the block read back is not a
+  byte-for-byte substring of what was PUT → the guard false-rolled-back a change that
+  actually validated. Replaced with `section_persisted()` in `wazuh/config_change.py` —
+  extract the single `<section>` block from the re-read file and compare
+  whitespace/indentation-insensitively (`_normalize_section`, string/regex per the module
+  contract). This is the same robustness `rule_tuning` already had (its structural
+  `has_override` check is exactly why rules passed on the same 3-node cluster where
+  config_change failed). On a genuine miss the section read back is now surfaced in the
+  error for diagnosis.
+- **Made the proposal approval TTL configurable (the Expired case).** Was a flat 15 min,
+  which lapsed mid-review on slow local inference. New `Settings.proposal_ttl_seconds`
+  (`PROPOSAL_TTL_SECONDS`, default **30 min**); `proposals.py` resolves it (explicit
+  override → settings). Staleness is still guarded INDEPENDENTLY at execute time by each
+  class's freshness re-check, so a longer approval window never risks a stale apply.
+- Tests (+6): `section_persisted` tolerates reindentation / rejects genuine mismatch /
+  rejects absent+repeated; an executor **regression test** that reproduces the manager
+  reformatting on write and asserts the forward now succeeds (would have caught the live
+  bug); explicit-TTL + settings-default-TTL. ruff + mypy --strict clean.
+
+### What we decided
+- **Search backend for the coming web-research capability = SearXNG self-hosted (default),
+  behind a pluggable adapter** (operator's call). Zero query egress — aligns with Wolf's
+  local-Ollama, no-prompt-leak privacy posture and MSSP tenant isolation; hosted providers
+  (Brave/Tavily) remain per-org options. To be specified in a new ADR (next free number).
+- **Sequencing:** land these two config_change fixes first (unblocks the live web-test),
+  THEN plan the web-research + config-authoring-generalization phase as its own ADR.
+
+### What broke / what we discovered
+- "SCA-only" was never a hard limit — 7 sections are allowlisted; the model was just
+  steering to `<sca>`. The real gaps are (a) repeated/`<integration>`-class sections aren't
+  editable in v1, and (b) Wolf can't yet *research* how to author a change it hasn't been
+  hardcoded for. Both motivate the web-research phase (docs-first → community fallback,
+  citations into the existing evidence panel, then research-backed config authoring).
+
+### What's next
+- Re-run the config_change live web-test (fast, on hosted Cohere): `<sca>` update should now
+  apply on approve; propose→approve within the 30-min window; then restore.
+- ADR for Wolf web research (SearXNG default, provider-agnostic `web_search`/`web_fetch`,
+  SSRF-guarded fetch, docs-first policy) + config-authoring generalization.
+
+---
+
 ## 2026-07-02 — Hardening: SECRET_KEY boot guard (Gap 1) + secrets threat-model refresh
 
 **Session type:** claude-code

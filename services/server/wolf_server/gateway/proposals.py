@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from wolf_server.audit.log import write_event
+from wolf_server.config import get_settings
 from wolf_server.gateway.models import ActionProposal, ProposalState
 from wolf_server.wazuh.active_response import (
     SEV_HIGH,
@@ -25,9 +26,13 @@ from wolf_server.wazuh.active_response import (
     get_ar_command,
 )
 
-# Default proposal TTL — short, because active response is time-sensitive
-# (doc 04 §Stale proposals).  Operator-tunable via 6.10 settings later.
-DEFAULT_TTL_SECONDS = 900  # 15 minutes
+
+def _resolve_ttl(ttl_seconds: int | None) -> int:
+    """Proposal approval TTL in seconds: an explicit override, else the
+    operator-configured default (``PROPOSAL_TTL_SECONDS`` → Settings). Staleness
+    is guarded independently at execute time, so this is purely the review
+    window (see ``Settings.proposal_ttl_seconds``)."""
+    return ttl_seconds if ttl_seconds is not None else get_settings().proposal_ttl_seconds
 
 # Local accounts Wolf treats as privileged — disabling one is higher-impact than
 # disabling an ordinary user, so it escalates the base severity one tier.
@@ -197,7 +202,7 @@ async def create_proposal(
     parameters: dict[str, Any] | None = None,
     rollback_plan: str | None = None,
     reverses_proposal_id: uuid.UUID | None = None,
-    ttl_seconds: int = DEFAULT_TTL_SECONDS,
+    ttl_seconds: int | None = None,
     session_id: str | None = None,
 ) -> ActionProposal:
     """Build, hash, persist (state=pending) + audit a proposal.
@@ -239,7 +244,7 @@ async def create_proposal(
         reverses_proposal_id=reverses_proposal_id,
         state=ProposalState.pending,
         created_at=now,
-        expires_at=now + timedelta(seconds=ttl_seconds),
+        expires_at=now + timedelta(seconds=_resolve_ttl(ttl_seconds)),
     )
     db.add(proposal)
     await db.flush()
@@ -375,7 +380,7 @@ async def create_reversal_proposal(
     rationale: str,
     expected_effect: str,
     evidence: dict[str, Any] | None = None,
-    ttl_seconds: int = DEFAULT_TTL_SECONDS,
+    ttl_seconds: int | None = None,
     session_id: str | None = None,
 ) -> ActionProposal:
     """Create a reversal proposal linked to ``block`` and stamp the block so it

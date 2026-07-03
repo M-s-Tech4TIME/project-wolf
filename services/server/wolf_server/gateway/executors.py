@@ -37,7 +37,11 @@ from wolf_server.wazuh.capabilities import (
     RESOURCE_LOCAL_RULES,
     resolve_agent_groups,
 )
-from wolf_server.wazuh.config_change import find_section_blocks, replace_section_block
+from wolf_server.wazuh.config_change import (
+    find_section_blocks,
+    replace_section_block,
+    section_persisted,
+)
 from wolf_server.wazuh.rule_tuning import (
     DISABLE_LEVEL,
     LOCAL_RULES_DIRNAME,
@@ -627,13 +631,19 @@ class _ConfigChangeExecutor:
 
             # AUTHORITATIVE confirm — re-read ossec.conf and prove OUR block
             # actually persisted. If it didn't, restore + fail honestly rather
-            # than report a phantom success (the 6-e.3 lesson).
+            # than report a phantom success (the 6-e.3 lesson). The check is
+            # reformatting-tolerant (section_persisted): the manager re-indents
+            # the file on write, so a literal substring match false-negatives a
+            # change that applied (the live 6-e.4 failure). On a real miss the
+            # section read back is surfaced so an exotic transform is diagnosable.
             reread = await self._read_config(ctx)
-            if new_block not in reread:
+            if not section_persisted(reread, section, new_block):
                 await self._put_config(ctx, snapshot)
+                live = find_section_blocks(reread, section)
+                seen = live[0].strip()[:300] if len(live) == 1 else f"{len(live)} occurrence(s)"
                 raise ConfigValidationError(
-                    f"Updated <{section}> block did not persist to ossec.conf; "
-                    "restored the prior file. No change applied."
+                    f"Updated <{section}> block did not persist to ossec.conf; restored "
+                    f"the prior file. No change applied. (Section read back: {seen})"
                 )
 
             # Apply: the manager only loads ossec.conf on restart (~18s live).
