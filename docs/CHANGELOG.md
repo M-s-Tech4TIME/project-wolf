@@ -49,6 +49,61 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-07-03 — 6-f.1: research/ scaffolding — SearchProvider protocol + SearXNG adapter + resolver
+
+**Session type:** claude-code
+**Phase:** 6-f.1 (ADR 0032 — web research, first implementation slice)
+**Branch / commit:** main
+
+### What we did
+- **`wolf_server/research/` (NEW package)** — the web-research adapter layer, mirroring the
+  model-provider abstraction exactly:
+  - `interface.py` — `SearchResult` (url/title/snippet/engine/published — the provider-agnostic
+    hit shape citations point back to), runtime-checkable `SearchProvider` protocol
+    (`search(query, *, max_results)`), and the error taxonomy (`SearchProviderError` 502 /
+    `SearchProviderUnconfiguredError` 500, both `WolfError`s). Page **fetching is deliberately
+    NOT on the protocol** — the fetcher is provider-independent (ADR 0032 A2) and lands with
+    the tools in 6-f.3.
+  - `searxng.py` — `SearxngProvider`: `GET {SEARXNG_URL}/search?q=…&format=json`,
+    **schema-validated** parse (A6 §4 — pydantic top-level + per-entry models; entries missing
+    url/title are DROPPED, never guessed; `publishedDate` camelCase alias; null tolerated);
+    non-200 raises with the "enable json under search.formats" operator hint; unreachable /
+    malformed → `SearchProviderError`. Injectable `httpx.AsyncClient` (the OllamaAdapter
+    pattern) so tests stub the HTTP boundary.
+  - `registry.py` — `get_search_provider_for_organization(ctx, settings, secrets)` mirroring
+    `get_model_for_organization`: OrganizationContext + secrets accepted (reserved) so per-org
+    backend selection (Brave/Tavily + org keys) adds without changing call sites. **Fails
+    closed** when `WEB_SEARCH_ENABLED=0` (the default); deferred hosted backends (`brave`/
+    `tavily`) get a distinct "not wired yet" message vs unknown providers.
+- **Config seam (`config.py`)**: `web_search_enabled` (default **False** — a stock install
+  never advertises web tools), `web_search_provider` (`searxng`), `searxng_url`
+  (`http://127.0.0.1:8888` — the sidecar loopback; a dedicated tier swaps the URL, same seam
+  as `DATABASE_URL`/`OLLAMA_BASE_URL`). Tool-facing knobs (budgets/caps) land in 6-f.3 with
+  the tools that consume them.
+- **Tests (+15, `tests/test_research.py`)** — hermetic (httpx MockTransport, no live SearXNG):
+  documented-payload normalization, max_results cap, drop-on-missing-url/title, empty results,
+  non-200 hint, malformed/non-JSON payloads, unreachable; resolver fail-closed +
+  builds-from-settings + case normalization + deferred-vs-unknown; the disabled-by-default
+  contract pinned via `Settings.model_fields` (env-proof — a bare `Settings()` reads `.env`,
+  which the 6-f.3 web-test will flip).
+- **CI audit:** `wolf_server/research` added to the strict-mypy set in `ci.yml`; **fixed
+  Makefile drift** — its `typecheck` target was missing `gateway`/`grounding`/`tools` (added
+  to CI in Phase 6 / ADR 0026 but never back-ported despite the "matches exactly" comment);
+  now at parity including `research`.
+- Roadmap: **6-f** block added (6-f.1 ✅ / 6-f.2 package / 6-f.3 tools / 6-f.4 authoring).
+
+### What we decided
+- The scaffolding ships **inert** (nothing imports `research/` in the request path until
+  6-f.3 registers the tools) — same pattern as 6.6-a's topology backend.
+- Settings are added **when consumed**: only the three the resolver reads land now.
+
+### What's next
+- **6-f.2** — the `wolf-search` Debian package (native-venv SearXNG, unit, postinst,
+  shell-wrapper) + stand it up on the host; empirically re-verify the live JSON shape
+  against this adapter's parse before the tools consume it.
+
+---
+
 ## 2026-07-03 — ADR 0032: web research + config-authoring generalization (planning)
 
 **Session type:** claude-code

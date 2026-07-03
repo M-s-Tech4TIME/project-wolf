@@ -395,6 +395,31 @@ inverse op, `rule_tuning`/`config_change` via **snapshot-and-restore**.
     per-org creds hold `manager:read` only). Highest blast radius → built last.
     **Closes Phase 6-e** (all four ADR-0025 action classes shipped).
 
+**6-f — web research + config-authoring generalization** (ADR 0032; operator-
+directed from the 6-e.4 web-test): Wolf as a research-capable Wazuh expert —
+internet research "like Claude" (model-decided `web_search`/`web_fetch`/bounded
+`web_crawl` behind a pluggable `SearchProvider`; SearXNG self-hosted free
+default as the `wolf-search` sidecar component; docs-first → community; 14-class
+security taxonomy; citations → evidence panel) + config_change generalized to
+"author ANY ossec.conf change from a precise OR descriptive request" (research →
+confirm-diff → dry-run-validate → propose; block-identity for repeated sections).
+
+  - **6-f.1** ✅ — `research/` scaffolding: `SearchProvider` protocol +
+    `SearxngProvider` (schema-validated `/search?format=json` parse, injectable
+    httpx client) + resolver mirroring `model_resolver` (per-org seam reserved;
+    fails closed while disabled); config seam `WEB_SEARCH_ENABLED` (default OFF)
+    / `WEB_SEARCH_PROVIDER` / `SEARXNG_URL`. Inert at runtime until 6-f.3
+    registers the tools; HTTP boundary stubbed in tests (hermetic CI).
+  - **6-f.2** — `wolf-search` package: native-venv SearXNG, own Debian package
+    mirroring wolf-database, systemd unit + postinst + shell-wrapper; stand up
+    on the host; empirically verify the live JSON shape.
+  - **6-f.3** — the `web_search`/`web_fetch`/`web_crawl` tools: full A6 security
+    (SSRF guard, caps, robots/rate-limit), docs-first policy, citations, system
+    prompt, tool registration gated on the flag. Web-test: docs-first + citations.
+  - **6-f.4** — config-authoring generalization (research → confirm → dry-run →
+    propose; repeated sections via block-identity; free-form within rails).
+    Web-test: the `<integration>`/virustotal case end-to-end.
+
 **then** severity-tiered authority / four-eyes / crown-jewel tagging (policy
 hooks, B1 default = approval-for-all); auto-execution (Phase 13). The remaining
 original scope below stands as the target the follow-ons fill in.

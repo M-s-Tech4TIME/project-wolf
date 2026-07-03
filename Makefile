@@ -87,6 +87,10 @@ typecheck: ## Type-check safety-critical packages with mypy (strict)
 	           services/server/wolf_server/wazuh \
 	           services/server/wolf_server/guardrails \
 	           services/server/wolf_server/agent \
+	           services/server/wolf_server/gateway \
+	           services/server/wolf_server/grounding \
+	           services/server/wolf_server/tools \
+	           services/server/wolf_server/research \
 	           --strict
 
 probe: ## Run the model probe (PROVIDER=ollama MODEL=llama3.2)

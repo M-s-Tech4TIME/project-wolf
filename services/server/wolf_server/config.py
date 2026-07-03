@@ -324,6 +324,26 @@ class Settings(BaseSettings):
         mode = self.grounding_mode.strip().lower()
         return mode if mode in {"blocking", "deferred", "incremental"} else "blocking"
 
+    # ── Web research (ADR 0032 — slice 6-f.1 config seam) ───────────────────
+    # Opt-in: OFF by default so a stock install never advertises web tools it
+    # can't run (wolf-search is a Recommends, not a Depends). Enabling gates
+    # the web_search/web_fetch/web_crawl tool REGISTRATION (6-f.3); the
+    # resolver additionally fails closed if called while disabled.
+    web_search_enabled: bool = False
+    # Backend behind the pluggable SearchProvider adapter. `searxng` (the
+    # free, self-hosted default) is the only wired backend; `brave`/`tavily`
+    # are reserved per-org hosted options (ADR 0032 out-of-scope until the
+    # default path is proven).
+    web_search_provider: str = "searxng"  # searxng | brave | tavily
+    # Where the wolf-search component listens. Loopback in every recommended
+    # topology (wolf-search is wolf-server's sidecar, ADR 0032 A3.1); a
+    # dedicated search tier swaps this for its mTLS-fronted private URL —
+    # same seam pattern as DATABASE_URL / OLLAMA_BASE_URL.
+    searxng_url: str = "http://127.0.0.1:8888"
+    # Tool-facing knobs (max results / fetch caps / crawl budgets, ADR 0032
+    # A7) land with the tools in 6-f.3 — settings are added when consumed.
+    # All of these are Phase 6.10 GUI consumers (web-first configurability).
+
     # ── Embedding stack (Phase 3 — knowledge layer) ────────────────────────
     # `ollama` (default) reuses the Ollama daemon already running for the LLM
     # — no torch in wolf-server's wheel set; recommended per ADR 0007.

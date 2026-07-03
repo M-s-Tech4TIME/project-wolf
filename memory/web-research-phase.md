@@ -69,9 +69,16 @@ converge into ONE capability — **Wolf as a research-capable Wazuh expert**:
   Repeated/merge-semantic sections via **block-identity** (address `<integration><name>virustotal</name>`
   by stable key, not position → the virustotal fix); free-form within rails; break-the-manager sections
   (cluster/auth/indexer/ruleset) STAY blocked.
-- **Slices:** 6-f.1 ADR + `research/` scaffolding (SearXNG boundary STUBBED — no live dep, hermetic CI)
-  · 6-f.2 `wolf-search` package + host standup · 6-f.3 the 3 tools + full A6 security + docs-first +
-  citations · 6-f.4 config-authoring generalization. Gates: mypy --strict (add `research/`), no skips,
+- **Slices:** 6-f.1 ✅ SHIPPED (2026-07-03): `research/` scaffolding — `SearchProvider` protocol +
+  `SearxngProvider` (schema-validated JSON parse, injectable httpx client = OllamaAdapter stub pattern)
+  + `get_search_provider_for_organization` resolver (per-org seam + secrets reserved; fails closed when
+  disabled); config seam `WEB_SEARCH_ENABLED` (default OFF)/`WEB_SEARCH_PROVIDER`/`SEARXNG_URL`; INERT
+  at runtime until 6-f.3; +15 hermetic tests (798 total/0 skip); `research/` ADDED to ci.yml strict set;
+  fixed Makefile typecheck DRIFT (was missing gateway/grounding/tools vs CI). NOTE: pin env-sensitive
+  Settings defaults via `Settings.model_fields[...]` in tests, NOT a bare `Settings()` (reads `.env` —
+  the 6-f.3 web-test flips WEB_SEARCH_ENABLED there)
+  · 6-f.2 `wolf-search` package + host standup (NEXT) · 6-f.3 the 3 tools + full A6 security +
+  docs-first + citations · 6-f.4 config-authoring generalization. Gates: mypy --strict, no skips,
   full suite + cross-org, restart via `systemctl --user restart wolf-server.service` for web-tests.
 
 **Reusable reference from the 6-e.4 web-test.** (1) Wazuh **re-serialises ossec.conf on write** →

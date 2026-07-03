@@ -67,6 +67,10 @@ jobs:
         # validator (now with the deferred/incremental execution modes +
         # concurrent batched judging) is first-class safety-critical code,
         # not just transitively covered via agent/.
+        # ADR 0032 (6-f.1): wolf_server/research added — the web-research
+        # adapter layer (SearchProvider protocol + SearXNG backend +
+        # resolver); it will feed model-visible tools, so it's strict-typed
+        # from its first commit.
         run: |
           uv run mypy packages/common/wolf_common \
                        packages/secrets/wolf_secrets \
@@ -85,6 +89,7 @@ jobs:
                        services/server/wolf_server/gateway \
                        services/server/wolf_server/grounding \
                        services/server/wolf_server/tools \
+                       services/server/wolf_server/research \
                        --strict
 
   test:
