@@ -1,0 +1,22 @@
+# debian/wolf-search.install — what ends up inside wolf-search.deb.
+#
+# Format: <source path relative to repo>  <install dir under debian/wolf-search/>
+#
+# The .deb itself carries only the Wolf-owned artifacts: the CLI
+# wrapper + the two config templates + the systemd unit (shipped via
+# debian/wolf-search.service). SearXNG itself is NOT in the .deb —
+# the postinst installs it per the official recipe (git clone pinned
+# to the Wolf-verified commit + venv under /usr/local/searxng),
+# exactly as the 6-f.2 host standup did by hand.
+
+# The operator CLI (health/status/version/logs/service ops). Same
+# script the manual install drops; the .deb ships it directly.
+deploy/bin/wolf-search  usr/bin/
+
+# Config templates. postinst installs each to its /etc destination
+# ONLY if absent (operator edits survive upgrades):
+#   settings.yml       -> /etc/searxng/settings.yml (+ per-host
+#                         secret_key via openssl, root:searxng 640)
+#   searxng-uwsgi.ini  -> /etc/uwsgi/apps-available/searxng.ini
+deploy/searxng/settings.yml       usr/lib/wolf-search/
+deploy/searxng/searxng-uwsgi.ini  usr/lib/wolf-search/

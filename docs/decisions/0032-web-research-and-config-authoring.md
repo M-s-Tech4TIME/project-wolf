@@ -368,19 +368,38 @@ Ubuntu/Debian verbatim**) refined Appendix A. What the live install fixed as can
   (template, placeholder secret), `deploy/searxng/searxng-uwsgi.ini`,
   `deploy/systemd/system/wolf-search.service`, `deploy/bin/wolf-search` (health/status wrapper;
   the check was briefly named `doctor` — renamed `health` by operator request, 2026-07-03).
+- **Packaging half (same day):** `debian/wolf-search.*` shipped. The postinst IS the recipe
+  above at the same pin (`747cec4c`) — user, clone-at-pin, venv + official pip steps,
+  settings template + per-host `openssl` secret (install-once: operator edits + the live
+  secret survive upgrades), uWSGI ini to apps-available (never apps-enabled). The .deb
+  carries only Wolf-owned artifacts (wrapper + two templates + unit); SearXNG itself is
+  fetched at install time — **postinst requires network** (github.com + PyPI), the ratified
+  trade-off since air-gapped installs skip wolf-search (`Recommends`, not `Depends`, of the
+  `wolf` meta-package). `Architecture: all`; `Depends` = the official install's apt list.
+  Upgrades are incremental (fetch + re-checkout + pip re-install; postrm keeps the checkout
+  across upgrades, removes it on remove/purge, preserves `/etc/searxng` until purge).
+  CI: smoke-deb + release expect **five** .debs; smoke-deb-install installs wolf-search on a
+  clean runner, asserts every postinst effect (pin, venv, 640 secret, no apps-enabled
+  symlink), then — uniquely among Wolf components, since it needs no operator-provisioned
+  env — **starts the service and runs `wolf-search health` end-to-end**.
 
 ## Appendix A — `wolf-search` native-venv install recipe (= the postinst)
 
-The shippable recipe; exact package name / WSGI runner finalized empirically in 6-f.2.
+**Finalized in 6-f.2 — the canonical, executable recipe is `debian/wolf-search.postinst`**
+(pinned commit, official layout under `/usr/local/searxng`, `/etc/searxng/settings.yml`,
+uWSGI + dedicated `wolf-search.service`; see the Addendum above). The original sketch below
+predates the live install and is kept for the decision trail — where they differ (paths,
+port, runner), the Addendum + postinst win.
 
-1. Create an unprivileged `wolf-search` system user (like `wolf-database`'s user).
-2. `python3 -m venv /opt/wolf-search/venv`; install SearXNG into it (`pip install` from the
-   pinned SearXNG source/wheel — **no container**).
-3. Write `/etc/wolf-search/settings.yml`: `server.bind_address: 127.0.0.1`, `server.port: 8888`,
-   generated `server.secret_key`, `search.formats: [html, json]`, an **engine allowlist**
-   (docs-friendly general engines), and the bot-limiter **off** (single trusted loopback
-   client).
-4. `wolf-search.service` — `ExecStart` runs the venv's WSGI server (granian/uwsgi) bound to
-   loopback; `User=wolf-search`; enable + start.
+1. Create an unprivileged system user (like `wolf-database`'s user). *(Final: `searxng`,
+   per the official docs.)*
+2. `python3 -m venv`; install SearXNG into it from the pinned source — **no container**.
+   *(Final: `/usr/local/searxng/searx-pyenv`, editable install of `searxng-src` at the pin.)*
+3. Write settings: loopback bind, generated `server.secret_key`, `search.formats: [html,
+   json]`, bot-limiter **off** (single trusted loopback client). *(Final: port 1307,
+   `/etc/searxng/settings.yml`, root:searxng 640; engine allowlist deferred to the
+   fine-tune pass.)*
+4. `wolf-search.service` — loopback WSGI server. *(Final: uWSGI via the official Debian ini;
+   Granian is container-only upstream.)*
 5. `wolf-search health` (shell-wrapper) probes `GET /search?format=json&q=wazuh` and reports
    health; the wolf-server adapter uses the same endpoint.

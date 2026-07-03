@@ -1,0 +1,18 @@
+# wolf-search — Wolf's bundled SearXNG (ADR 0032). Dedicated unit mirroring
+# wolf-database's owned-component pattern: Wolf identity + journal, while the
+# app config stays the OFFICIAL SearXNG uWSGI ini (uid/gid drop to `searxng`
+# is done by uWSGI itself, as in the official Debian pattern).
+[Unit]
+Description=Wolf search component (SearXNG metasearch, loopback-only)
+Documentation=https://docs.searxng.org/admin/installation-searxng.html
+After=network.target
+
+[Service]
+Type=notify
+ExecStart=/usr/bin/uwsgi --ini /etc/uwsgi/apps-available/searxng.ini
+Restart=on-failure
+KillSignal=SIGQUIT
+NotifyAccess=all
+
+[Install]
+WantedBy=multi-user.target

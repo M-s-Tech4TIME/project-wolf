@@ -73,6 +73,41 @@ Description: Wolf edge component (Next.js)
  Built from Next.js 16 with output: "standalone" so production
  doesn't need npm at runtime — just node.
 
+Package: wolf-search
+Architecture: all
+Depends:
+ ${misc:Depends},
+ python3-dev,
+ python3-babel,
+ python3-venv,
+ python-is-python3,
+ uwsgi,
+ uwsgi-plugin-python3,
+ git,
+ build-essential,
+ libxslt-dev,
+ zlib1g-dev,
+ libffi-dev,
+ libssl-dev,
+ openssl,
+ curl,
+ ca-certificates,
+Description: Wolf bundled-SearXNG component (loopback metasearch)
+ wolf-search wraps a SearXNG metasearch instance installed per the
+ official SearXNG Ubuntu/Debian step-by-step docs, pinned to a
+ Wolf-verified upstream commit. It is wolf-server's sidecar for the
+ web-research tools (ADR 0032): loopback-only on 127.0.0.1:1307,
+ called by nothing but wolf-server, no accounts, no API keys, no
+ per-query cost.
+ .
+ The Depends list is the official SearXNG install's apt list —
+ postinst executes that exact recipe (git clone at the pinned
+ commit + dedicated venv under /usr/local/searxng), so installing
+ this package REQUIRES network access to github.com and PyPI.
+ Air-gapped installs skip wolf-search (it is a Recommends of the
+ wolf meta-package, not a Depends) and use a hosted search backend
+ or none.
+
 Package: wolf
 Architecture: all
 Depends:
@@ -80,11 +115,15 @@ Depends:
  wolf-database (= ${binary:Version}),
  wolf-server (= ${binary:Version}),
  wolf-dashboard (= ${binary:Version}),
+Recommends:
+ wolf-search (= ${binary:Version}),
 Description: Wolf — agentic AI for Wazuh (all-in-one meta-package)
- Installs all three Wolf components on a single host. Convenience
- meta-package for the common all-in-one deployment; distributed
- deployments install the individual component packages on each
- host instead.
+ Installs all three core Wolf components on a single host, plus
+ wolf-search (SearXNG web research) as a Recommends — installed by
+ default, skippable via --no-install-recommends for air-gapped or
+ hosted-search-backend deployments. Convenience meta-package for
+ the common all-in-one deployment; distributed deployments install
+ the individual component packages on each host instead.
  .
  After installation, see /usr/share/doc/wolf/README for the
  one-command bring-up: wolf-database init + wolf-cert init +

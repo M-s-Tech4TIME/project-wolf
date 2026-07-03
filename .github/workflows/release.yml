@@ -8,7 +8,7 @@ name: Release
 #   git push origin v0.X.Y
 #
 # What happens:
-#   1. Build the four wolf-*.deb files (same as smoke-deb).
+#   1. Build the five wolf-*.deb files (same as smoke-deb).
 #   2. Sign each .deb with the Wolf maintainers' GPG key.
 #   3. Produce SHA256SUMS + sign that too.
 #   4. Create a GitHub Release at https://github.com/M-s-Tech4TIME/
@@ -80,7 +80,7 @@ jobs:
             nodejs npm \
             ca-certificates
 
-      - name: Build all four .debs
+      - name: Build all five .debs
         run: dpkg-buildpackage -b -us -uc
 
       - name: Stage .debs inside the workspace
@@ -88,8 +88,8 @@ jobs:
           mkdir -p packaging/build/debs
           mv ../wolf*.deb packaging/build/debs/
           count=$(ls packaging/build/debs/wolf*.deb 2>/dev/null | wc -l)
-          if [ "$count" -lt 4 ]; then
-            echo "FAIL: expected 4 .debs, got $count"
+          if [ "$count" -lt 5 ]; then
+            echo "FAIL: expected 5 .debs, got $count"
             exit 1
           fi
           echo "OK: ${count} .debs produced for ${{ steps.version.outputs.version }}"

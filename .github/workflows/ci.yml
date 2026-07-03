@@ -467,9 +467,10 @@ jobs:
   # syntactic + presence-of-fail-loud-branches validation. Catches
   # regressions in unit-file syntax, shim shell logic, and the
   # install.sh CLI surface.
-  # Phase 5.9-e: build all four wolf-*.deb on a clean ubuntu-latest
-  # runner. Catches build-time issues across the per-component
-  # debian/ artifacts authored in 5.9-a/b/c/d that the per-slice
+  # Phase 5.9-e: build all five wolf-*.deb on a clean ubuntu-latest
+  # runner (wolf-search joined in slice 6-f.2, ADR 0032). Catches
+  # build-time issues across the per-component debian/ artifacts
+  # authored in 5.9-a/b/c/d + 6-f.2 that the per-slice
   # static checks (bash -n, syntax-only validation) can't reach.
   # Runs natively on the runner (vs Docker-in-Docker) — faster, no
   # nested-container quirks.
@@ -511,7 +512,7 @@ jobs:
             python3 python3-pip python3-venv python3-build \
             nodejs npm \
             ca-certificates
-      - name: Build all four .debs
+      - name: Build all five .debs
         run: dpkg-buildpackage -b -us -uc
       - name: Stage .debs inside the workspace for upload
         # dpkg-buildpackage drops .deb files in the parent of the
@@ -522,8 +523,8 @@ jobs:
           mv ../wolf*.deb packaging/build/debs/
           ls -la packaging/build/debs/
           count=$(ls packaging/build/debs/wolf*.deb 2>/dev/null | wc -l)
-          if [ "$count" -lt 4 ]; then
-            echo "FAIL: expected 4 .debs, got $count"
+          if [ "$count" -lt 5 ]; then
+            echo "FAIL: expected 5 .debs, got $count"
             exit 1
           fi
           echo "OK: $count .debs produced"
@@ -632,7 +633,9 @@ jobs:
     # NodeSource). add-apt-repository ppa:deadsnakes can hang on a slow
     # launchpad/keyserver — with no timeout it wedges at GitHub's 6-hour
     # default. Cap it so an infra hang fails fast in minutes, not hours.
-    timeout-minutes: 15
+    # 25 (was 15): wolf-search's postinst clones SearXNG + pip-installs
+    # its deps over the network (~3-5 min on a runner) — slice 6-f.2.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v6
       - name: Download .debs from smoke-deb
@@ -683,16 +686,21 @@ jobs:
           sudo apt-get install -y python3.13 python3.13-venv nodejs
           python3.13 --version
           node --version
-      - name: Install all four wolf-*.debs
+      - name: Install all five wolf-*.debs
         # apt install resolves the inter-package deps automatically
         # (wolf-server depends on wolf-database, the meta wolf
-        # depends on all three components, etc.).
+        # depends on all three components, etc.). wolf-search's
+        # Depends (uwsgi, git, libxslt-dev, ...) come from stock
+        # noble; its postinst clones SearXNG at the Wolf-verified
+        # pin + builds the venv — real network install, by design
+        # (ADR 0032: the postinst IS the official install recipe).
         run: |
           ls -la debs/
           sudo apt install -y \
               ./debs/wolf-database_*.deb \
               ./debs/wolf-server_*.deb \
               ./debs/wolf-dashboard_*.deb \
+              ./debs/wolf-search_*.deb \
               ./debs/wolf_*.deb
       - name: Verify service users + group created by postinst
         run: |
@@ -752,11 +760,12 @@ jobs:
           /usr/bin/wolf-cert --help 2>&1 | head -5
           echo "OK: shims executable + CLIs respond"
       - name: Verify systemd units are loaded
-        # Don't start them (needs operator-driven init); just
-        # confirm systemd recognises the units so they could be
-        # started.
+        # Don't start the three core components (needs operator-driven
+        # init); just confirm systemd recognises the units so they
+        # could be started. wolf-search gets a REAL start below — it
+        # is the one component whose postinst leaves it fully runnable.
         run: |
-          for unit in wolf-database wolf-server wolf-dashboard; do
+          for unit in wolf-database wolf-server wolf-dashboard wolf-search; do
               systemctl status "$unit" --no-pager 2>&1 | head -3 || true
               # `is-enabled` returns "disabled" for fresh installs
               # (postinst doesn't auto-enable; operator does that
@@ -765,12 +774,59 @@ jobs:
               systemctl cat "$unit" >/dev/null 2>&1 \
                   || { echo "FAIL: systemctl can't load $unit unit"; exit 1; }
           done
-          echo "OK: all 3 systemd units loaded + parseable"
+          echo "OK: all 4 systemd units loaded + parseable"
+      - name: Verify wolf-search postinst effects (slice 6-f.2)
+        # The postinst = the official SearXNG recipe pinned to the
+        # Wolf-verified commit. Verify each of its jobs actually
+        # happened on this clean runner.
+        run: |
+          getent passwd searxng || { echo "FAIL: searxng user missing"; exit 1; }
+          pin="747cec4c2304fc2e06ceb4a46dbe25bfb769db1e"
+          head=$(sudo -u searxng git -C /usr/local/searxng/searxng-src rev-parse HEAD)
+          [ "$head" = "$pin" ] \
+              || { echo "FAIL: searxng-src at $head, expected pin $pin"; exit 1; }
+          test -x /usr/local/searxng/searx-pyenv/bin/python \
+              || { echo "FAIL: searx-pyenv venv missing"; exit 1; }
+          perms=$(stat -c "%a %U %G" /etc/searxng/settings.yml)
+          [ "$perms" = "640 root searxng" ] \
+              || { echo "FAIL: settings.yml is '$perms', expected '640 root searxng'"; exit 1; }
+          if sudo grep -q "ultrasecretkey" /etc/searxng/settings.yml; then
+              echo "FAIL: secret_key placeholder not substituted"; exit 1
+          fi
+          test -f /etc/uwsgi/apps-available/searxng.ini \
+              || { echo "FAIL: uwsgi ini missing"; exit 1; }
+          if test -L /etc/uwsgi/apps-enabled/searxng.ini; then
+              echo "FAIL: ini must NOT be in apps-enabled (double-run)"; exit 1
+          fi
+          test -x /usr/bin/wolf-search || { echo "FAIL: wolf-search shim missing"; exit 1; }
+          /usr/bin/wolf-search help | grep -q "health" \
+              || { echo "FAIL: wolf-search help doesn't list health"; exit 1; }
+          echo "OK: searxng user + pinned checkout + venv + settings(640) + ini + shim"
+      - name: Start wolf-search + end-to-end health check
+        # Unlike the three core components, wolf-search needs no
+        # operator-provisioned env — postinst leaves it runnable.
+        # `wolf-search health` probes the exact JSON endpoint
+        # wolf-server's SearxngProvider consumes; SearXNG answers
+        # HTTP 200 regardless of upstream-engine luck, so this is
+        # stable on a datacenter runner.
+        run: |
+          sudo systemctl start wolf-search
+          for i in $(seq 1 12); do
+              if /usr/bin/wolf-search health; then
+                  echo "OK: wolf-search healthy end-to-end (loopback 1307, JSON API 200)"
+                  exit 0
+              fi
+              sleep 5
+          done
+          echo "FAIL: wolf-search not healthy after 60s"
+          sudo journalctl -u wolf-search --no-pager | tail -40
+          exit 1
       - name: Smoke summary
         run: |
           echo "=== smoke-deb-install: PASS ==="
           echo "wolf-* packages installed cleanly on ubuntu-latest"
           echo "users / group / FHS dirs / venvs / shims / systemd units all verified"
+          echo "wolf-search: postinst recipe verified + service started + health OK"
 
   smoke-systemd:
     name: systemd + shims smoke (Phase 5.8-d)

@@ -91,9 +91,18 @@ converge into ONE capability — **Wolf as a research-capable Wazuh expert**:
   **health check healthy**. EMPIRICAL: unmodified SearxngProvider parsed the live JSON 5/5,
   documentation.wazuh.com organic #1. Repo: deploy/searxng/{settings.yml template, searxng-uwsgi.ini} +
   deploy/systemd/system/wolf-search.service; `searxng_url` default → 1307. SUDO: password declined,
-  temp NOPASSWD drop-in, announced each step, rule removed+verified. **PACKAGING HALF = NEXT**:
-  debian/wolf-search.* postinst = this recipe pinned to 747cec4c, Recommends in `wolf` meta-package,
-  deb-smoke four→five .debs
+  temp NOPASSWD drop-in, announced each step, rule removed+verified. **PACKAGING HALF SHIPPED
+  (2026-07-03) → 6-f.2 CLOSED**: `debian/wolf-search.*` — Architecture:all, Depends = the official
+  apt list, .deb carries ONLY Wolf-owned artifacts (wrapper+templates+unit); **postinst = the exact
+  host recipe pinned to `747cec4c`** (runuser not sudo; pip -e $SRC not cd; settings/ini
+  install-ONCE so operator edits + live secret survive upgrades); postinst needs NETWORK
+  (github+PyPI) — ratified trade-off, air-gap skips it (`Recommends` in `wolf` meta, NOT Depends);
+  upgrades incremental (postrm keeps checkout on upgrade, removes /usr/local/searxng on remove,
+  /etc/searxng only on purge, searxng user never). CI four→FIVE .debs (smoke-deb + release.yml);
+  smoke-deb-install asserts every postinst effect then STARTS the service + `wolf-search health`
+  END-TO-END on the clean runner (only component needing no operator env; timeout 15→25);
+  smoke-systemd covers the 4th unit template. NOTE for this host: when installing the .deb here
+  later, remove the manual `/usr/local/bin/wolf-search` (shadows the .deb's `/usr/bin` copy in PATH)
   · 6-f.3 the 3 tools + full A6 security + docs-first + citations · 6-f.4 config-authoring
   generalization. Gates: mypy --strict, no skips, full suite + cross-org, restart via
   `systemctl --user restart wolf-server.service` for web-tests.

@@ -12,15 +12,16 @@ A "release" is:
 
 1. A git tag of the form `vMAJOR.MINOR.PATCH` (semver, see
    [SUPPORT.md](SUPPORT.md)).
-2. Four signed `.deb` files attached as assets to a GitHub
+2. Five signed `.deb` files attached as assets to a GitHub
    Release with that tag's name:
    - `wolf-database_X.Y.Z_amd64.deb`
    - `wolf-server_X.Y.Z_amd64.deb`
    - `wolf-dashboard_X.Y.Z_amd64.deb`
+   - `wolf-search_X.Y.Z_all.deb` (SearXNG sidecar, ADR 0032)
    - `wolf_X.Y.Z_all.deb` (meta-package)
 3. Detached signatures (`*.asc`) alongside each `.deb`.
 4. A signed `SHA256SUMS` (+ `SHA256SUMS.asc`) covering all
-   four `.deb` files.
+   five `.deb` files.
 5. Release notes pulled from `docs/CHANGELOG.md` (or a
    fallback if no matching section exists).
 
@@ -108,7 +109,7 @@ Pushing the tag triggers `.github/workflows/release.yml`,
 which:
 
 1. Verifies the tag version matches `debian/changelog`.
-2. Builds all four `.deb` files via `dpkg-buildpackage`.
+2. Builds all five `.deb` files via `dpkg-buildpackage`.
 3. Imports the Wolf signing key from `GPG_PRIVATE_KEY`
    secret + signs each `.deb` (detached `.asc` signature).
 4. Generates `SHA256SUMS` + signs that too.
@@ -133,8 +134,8 @@ v0.X.Y` to the release being live.
 Run this once the release workflow completes:
 
 ```bash
-# 1. Confirm the release exists with all 9 expected assets
-#    (4 .debs + 4 .asc + SHA256SUMS + SHA256SUMS.asc = 10).
+# 1. Confirm the release exists with all 12 expected assets
+#    (5 .debs + 5 .asc + SHA256SUMS + SHA256SUMS.asc = 12).
 gh release view v0.X.Y
 
 # 2. Download + verify locally as an operator would.

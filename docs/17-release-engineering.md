@@ -45,7 +45,7 @@ Every piece of this is something Wolf needs an equivalent of.
 |---|---|---|
 | Open-source license (Apache 2.0) | `LICENSE`, `debian/copyright` | ✅ |
 | CI with full quality gates (ruff, mypy, tsc, eslint, pytest, 4 smokes) | `.github/workflows/ci.yml` | ✅ |
-| `dpkg-buildpackage` produces 4 `.deb` files | `debian/` (Phase 5.9) | ✅ |
+| `dpkg-buildpackage` produces 5 `.deb` files | `debian/` (Phase 5.9; wolf-search added in 6-f.2) | ✅ |
 | CI uploads `.debs` as workflow artifacts | smoke-deb job | ✅ |
 | Per-component packages + meta-package | `debian/control` | ✅ |
 | FHS install paths + service users + hardened systemd | `deploy/systemd/system/`, `install-users.sh` | ✅ |
@@ -152,11 +152,11 @@ operator playbook (pre-release checklist, cut commands, post-
 release verification, yank/amend, security-patch flow).
 `.github/workflows/release.yml` triggers on `v*` tag pushes,
 asserts tag-version-matches-debian-changelog, builds + signs
-the four .debs, generates a signed SHA256SUMS, extracts
-release notes from docs/CHANGELOG.md (or falls back to a
-generic stub), and creates a GitHub Release with all 10
-artifacts attached (4 .debs + 4 .asc signatures + SHA256SUMS
-+ SHA256SUMS.asc).
+the five .debs (wolf-search joined in slice 6-f.2), generates
+a signed SHA256SUMS, extracts release notes from
+docs/CHANGELOG.md (or falls back to a generic stub), and
+creates a GitHub Release with all 12 artifacts attached
+(5 .debs + 5 .asc signatures + SHA256SUMS + SHA256SUMS.asc).
 
 **What it is:** A discipline of cutting Wolf releases via
 `git tag v0.1.0` (semver), each tag producing shipping artifacts

@@ -1,0 +1,9 @@
+# Empty directories the package ships. Mirrors wolf-database.dirs.
+#
+# /usr/local/searxng + /etc/searxng are NOT listed here — the
+# postinst is the canonical owner of those paths (it executes the
+# official SearXNG install recipe, which creates them with the
+# right ownership); having debhelper also create them would be a
+# coordination footgun.
+
+usr/lib/wolf-search

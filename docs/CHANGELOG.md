@@ -49,6 +49,56 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-07-03 — 6-f.2 (packaging half): wolf-search.deb — postinst = the pinned official recipe; five .debs; CI installs + health-checks it
+
+**Session type:** claude-code
+**Phase:** 6-f.2 (ADR 0032 — the wolf-search component; packaging half; closes 6-f.2)
+**Branch / commit:** main
+
+### What we did
+- **`debian/wolf-search.*`** mirroring the wolf-database precedent: control stanza
+  (`Architecture: all`; `Depends` = the official SearXNG install's apt list + openssl/curl/
+  ca-certificates), `.dirs`, `.install` (wrapper → `/usr/bin`, the two config templates →
+  `/usr/lib/wolf-search/`), `.service` (= the deploy unit), postinst, prerm, postrm.
+- **postinst = the exact 6-f.2 host recipe, pinned to `747cec4c`**: searxng user (official
+  `useradd` line), clone + `checkout --detach` at the pin (never master), `searx-pyenv` venv +
+  the official pip sequence + PEP-517 editable install, settings template + per-host
+  `openssl rand` secret (install-once — operator edits + live secret survive upgrades;
+  root:searxng 640), uWSGI ini to apps-available (NEVER apps-enabled). Mechanical adaptations
+  only: `sudo -H -u` → `runuser` (sudo not guaranteed in maintainer scripts), `cd && pip -e .`
+  → `pip -e $SRC`. **Postinst requires network** (github.com + PyPI) — the ratified ADR 0032
+  trade-off; air-gapped installs skip wolf-search.
+- **`Recommends: wolf-search (= ${binary:Version})`** in the `wolf` meta-package (installed by
+  default, skippable via `--no-install-recommends`).
+- **Upgrade/remove semantics:** upgrades are incremental (fetch + re-pin + pip re-install;
+  postrm keeps the checkout across upgrades — no wasteful re-clone); `remove` deletes
+  `/usr/local/searxng` (pure runtime artifacts) but preserves `/etc/searxng` +
+  the uwsgi ini; `purge` removes those too; the searxng user is never removed (precedent).
+- **CI + release: four → five .debs** (smoke-deb + release.yml counts/names);
+  **smoke-deb-install** now installs wolf-search on the clean runner, asserts every postinst
+  effect (searxng user, checkout AT the pin, venv, settings `640 root searxng` + secret
+  substituted, ini present, NO apps-enabled symlink, shim lists `health`) and then — uniquely,
+  since wolf-search needs no operator-provisioned env — **starts the service and runs
+  `wolf-search health` end-to-end** (job timeout 15→25 min for the network install).
+- `make smoke-systemd` check 3 covers the wolf-search unit template (three → four).
+- Docs: RELEASING.md (five debs, 12 release assets), docs/17 (counts), ONBOARDING.md
+  (two-host topology diagram + sideload command include wolf-search), roadmap 6-f.2 ✅,
+  ADR 0032 addendum (packaging paragraph) + Appendix A now points at the real postinst.
+
+### What we decided
+- Ship only Wolf-owned artifacts in the .deb (wrapper + templates + unit); SearXNG itself is
+  fetched at install time by the postinst — keeps the .deb tiny, the recipe official, and the
+  operator's hand-install and the package the SAME artifact (ADR 0032's stated goal).
+- Config files are install-once from templates (settings.yml needs a per-host secret so it
+  can't be a dpkg conffile; the ini follows the same pattern for symmetry).
+
+### What's next
+- **6-f.3** — the `web_search`/`web_fetch`/bounded `web_crawl` tools: full A6 security
+  (SSRF guard, caps, robots/rate-limit), docs-first policy, citations → evidence panel,
+  tool registration gated on `WEB_SEARCH_ENABLED`. Web-test: docs-first + citations.
+
+---
+
 ## 2026-07-03 — 6-f.2 (host half): wolf-search live on port 1307 — official SearXNG install + dedicated unit + health check
 
 **Session type:** mixed (operator granted temporary sudo via a NOPASSWD drop-in; removed + verified gone at the end)

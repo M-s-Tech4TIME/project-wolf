@@ -1,0 +1,50 @@
+#!/bin/sh
+# debian/wolf-search.postrm — runs AFTER wolf-search.deb is removed.
+#
+# ADR 0032, slice 6-f.2. The postinst created the SearXNG source
+# checkout + venv under /usr/local/searxng — pure runtime artifacts
+# (no user data lives there), rebuilt from scratch by any future
+# postinst run. dpkg doesn't track them, so we remove them here on
+# both remove and purge.
+#
+# /etc/searxng/settings.yml is operator config (their engine tuning
+# + the per-host secret): preserved on `remove`, deleted on `purge`
+# — the same conservative convention wolf-database follows. The
+# uWSGI ini at /etc/uwsgi/apps-available/searxng.ini follows the
+# settings file's lifecycle.
+#
+# We deliberately do NOT remove the searxng user — same rationale
+# as wolf-database (file-ownership references). Operator removes it
+# manually via `sudo deluser searxng` if they really want it gone.
+
+set -e
+
+SEARXNG_HOME="/usr/local/searxng"
+SETTINGS_DIR="/etc/searxng"
+UWSGI_INI="/etc/uwsgi/apps-available/searxng.ini"
+
+case "$1" in
+    upgrade|failed-upgrade|abort-install|abort-upgrade)
+        # Keep the checkout + venv across upgrades — the new
+        # postinst upgrades them INCREMENTALLY (fetch + checkout the
+        # new pin + pip re-install); deleting here would force a
+        # full re-clone on every upgrade.
+        ;;
+    remove|disappear)
+        # Runtime artifacts only; config in /etc stays.
+        rm -rf "${SEARXNG_HOME}"
+        ;;
+    purge)
+        rm -rf "${SEARXNG_HOME}"
+        rm -f "${UWSGI_INI}"
+        rm -rf "${SETTINGS_DIR}"
+        ;;
+    *)
+        echo "postrm called with unknown argument \`$1'" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

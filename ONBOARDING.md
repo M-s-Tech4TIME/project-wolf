@@ -736,6 +736,7 @@ threat model.
                   │ wolf-server host       │
                   │ (internal "brain" VLAN)│
                   │  - wolf-server.deb     │
+                  │  - wolf-search.deb**   │
                   └───────────┬────────────┘
                               │ Wazuh API
                               ▼
@@ -745,6 +746,11 @@ threat model.
 
 * wolf-database can live on either host. Most operators
   co-locate it with wolf-server (less network surface).
+** wolf-search (SearXNG web research, ADR 0032) is
+  wolf-server's sidecar: ALWAYS co-located with wolf-server,
+  loopback-only (127.0.0.1:1307) — in every topology. Optional:
+  skip it (it's a Recommends) for air-gapped installs or
+  hosted search backends.
 ```
 
 **Three-host topology (brain + edge + DB):**
@@ -770,9 +776,12 @@ wolf-database first (it owns the schema), then wolf-server
 
 ```bash
 # 1. Add the Wolf APT repository (URL pending; tracked as
-#    docs/17 gap 2). Until then, sideload the .deb files:
+#    docs/17 gap 2). Until then, sideload the .deb files.
+#    wolf-search is optional-but-default (web research; its
+#    postinst needs network to github.com + PyPI):
 sudo apt install ./wolf-database_0.1.0_amd64.deb \
-                 ./wolf-server_0.1.0_amd64.deb
+                 ./wolf-server_0.1.0_amd64.deb \
+                 ./wolf-search_0.1.0_all.deb
 
 # 2. Initialize the cluster (one-shot):
 sudo -u wolf-database \

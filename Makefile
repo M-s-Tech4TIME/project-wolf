@@ -254,10 +254,11 @@ smoke-systemd: ## End-to-end systemd + shim smoke (Phase 5.8-d)
 		echo "    OK: all three installed user units are clean"; \
 		\
 		echo "--- 3/5: systemd-analyze passes on system-level unit templates ---"; \
-		echo "    (filtering expected \"/usr/bin/wolf-* is not executable\"; that lands with the .deb)"; \
+		echo "    (filtering expected \"... is not executable\"; binaries land with the .debs)"; \
 		for u in deploy/systemd/system/wolf-database.service \
 		         deploy/systemd/system/wolf-server.service \
-		         deploy/systemd/system/wolf-dashboard.service; do \
+		         deploy/systemd/system/wolf-dashboard.service \
+		         deploy/systemd/system/wolf-search.service; do \
 		  out=$$(systemd-analyze verify --man=no "$$u" 2>&1 | \
 		    grep -v "is not executable" || true); \
 		  if [ -n "$$out" ]; then \
@@ -265,7 +266,7 @@ smoke-systemd: ## End-to-end systemd + shim smoke (Phase 5.8-d)
 		    echo "$$out"; exit 1; \
 		  fi; \
 		done; \
-		echo "    OK: all three system unit templates have clean directives"; \
+		echo "    OK: all four system unit templates have clean directives"; \
 		\
 		echo "--- 4/5: every shim fails loud with exit 2 when its venv is missing ---"; \
 		for shim in deploy/bin/wolf-cert deploy/bin/wolf-database \

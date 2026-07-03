@@ -410,9 +410,15 @@ confirm-diff → dry-run-validate → propose; block-identity for repeated secti
     fails closed while disabled); config seam `WEB_SEARCH_ENABLED` (default OFF)
     / `WEB_SEARCH_PROVIDER` / `SEARXNG_URL`. Inert at runtime until 6-f.3
     registers the tools; HTTP boundary stubbed in tests (hermetic CI).
-  - **6-f.2** — `wolf-search` package: native-venv SearXNG, own Debian package
-    mirroring wolf-database, systemd unit + postinst + shell-wrapper; stand up
-    on the host; empirically verify the live JSON shape.
+  - **6-f.2** ✅ — `wolf-search` component, both halves. HOST: SearXNG installed
+    per the official docs (pinned `747cec4c` = 2026.7.3), live loopback :1307
+    under the dedicated `wolf-search.service` (uWSGI), `wolf-search health`
+    wrapper, live JSON shape verified against the unmodified adapter.
+    PACKAGING: `debian/wolf-search.*` (postinst = the exact host recipe at the
+    same pin; templates install-once; postrm preserves config on remove),
+    `Recommends: wolf-search` in the `wolf` meta-package, smoke-deb + release
+    4→5 .debs, smoke-deb-install starts the service + runs the health check
+    end-to-end on a clean runner.
   - **6-f.3** — the `web_search`/`web_fetch`/`web_crawl` tools: full A6 security
     (SSRF guard, caps, robots/rate-limit), docs-first policy, citations, system
     prompt, tool registration gated on the flag. Web-test: docs-first + citations.

@@ -1,0 +1,143 @@
+#!/bin/sh
+# debian/wolf-search.postinst — runs after wolf-search.deb installs.
+#
+# ADR 0032, slice 6-f.2. This IS the official SearXNG Ubuntu/Debian
+# step-by-step install (docs.searxng.org installation-basic), pinned
+# to the Wolf-verified upstream commit — the same recipe the 6-f.2
+# host standup executed by hand, so the operator's install and the
+# shipped package are the same artifact. Idempotent: re-installs and
+# upgrades skip whatever is already in place; operator-edited config
+# in /etc is never overwritten.
+#
+# Mechanical adaptations from the by-hand run (behaviour-identical):
+#   - `sudo -H -u searxng` -> `runuser -u searxng -- env HOME=...`
+#     (sudo isn't guaranteed in maintainer-script environments;
+#     runuser ships in util-linux, which is Essential).
+#   - `cd searxng-src && pip install -e .` -> `pip install -e $SRC`
+#     (same editable install, no directory change needed).
+#
+# NETWORK: this postinst clones github.com/searxng/searxng and pip-
+# installs from PyPI. That is the ratified ADR 0032 trade-off — the
+# official recipe is source-based, and air-gapped installs skip
+# wolf-search entirely (Recommends, not Depends).
+
+set -e
+
+SEARXNG_USER="searxng"
+SEARXNG_HOME="/usr/local/searxng"
+SEARXNG_SRC="${SEARXNG_HOME}/searxng-src"
+SEARXNG_VENV="${SEARXNG_HOME}/searx-pyenv"
+# The Wolf-verified upstream commit (= 2026.7.3, verified live on the
+# 6-f.2 host standup: JSON API parsed 5/5 by wolf-server's adapter).
+# Bumping this pin is a deliberate, tested change — never track master.
+SEARXNG_PIN="747cec4c2304fc2e06ceb4a46dbe25bfb769db1e"
+SETTINGS_DIR="/etc/searxng"
+SETTINGS="${SETTINGS_DIR}/settings.yml"
+UWSGI_INI="/etc/uwsgi/apps-available/searxng.ini"
+TEMPLATES="/usr/lib/wolf-search"
+
+as_searxng() {
+    runuser -u "${SEARXNG_USER}" -- env HOME="${SEARXNG_HOME}" "$@"
+}
+
+case "$1" in
+    configure)
+        # ── User + home (official step) ───────────────────────────
+        if ! getent passwd "${SEARXNG_USER}" >/dev/null; then
+            useradd --shell /bin/sh --system \
+                --home-dir "${SEARXNG_HOME}" \
+                --comment 'Privacy-respecting metasearch engine' \
+                "${SEARXNG_USER}"
+        fi
+        if [ ! -d "${SEARXNG_HOME}" ]; then
+            mkdir "${SEARXNG_HOME}"
+            chown -R "${SEARXNG_USER}:${SEARXNG_USER}" "${SEARXNG_HOME}"
+        fi
+
+        # ── Source at the pinned commit (official clone + Wolf pin) ─
+        if [ ! -d "${SEARXNG_SRC}/.git" ]; then
+            as_searxng git clone "https://github.com/searxng/searxng.git" \
+                "${SEARXNG_SRC}"
+        fi
+        if [ "$(as_searxng git -C "${SEARXNG_SRC}" rev-parse HEAD)" != "${SEARXNG_PIN}" ]; then
+            as_searxng git -C "${SEARXNG_SRC}" fetch origin
+            as_searxng git -C "${SEARXNG_SRC}" checkout --detach "${SEARXNG_PIN}"
+        fi
+
+        # ── Venv + install (official steps, re-run on upgrade so a
+        #    new pin actually takes effect; pip no-ops when current) ─
+        if [ ! -x "${SEARXNG_VENV}/bin/pip" ]; then
+            as_searxng python3 -m venv "${SEARXNG_VENV}"
+        fi
+        if ! grep -qs "searx-pyenv/bin/activate" "${SEARXNG_HOME}/.profile"; then
+            echo ". ${SEARXNG_VENV}/bin/activate" \
+                | as_searxng tee -a "${SEARXNG_HOME}/.profile" >/dev/null
+        fi
+        as_searxng "${SEARXNG_VENV}/bin/pip" install -U pip setuptools wheel
+        as_searxng "${SEARXNG_VENV}/bin/pip" install -U \
+            pyyaml msgspec typing-extensions pybind11
+        as_searxng "${SEARXNG_VENV}/bin/pip" install \
+            --use-pep517 --no-build-isolation -e "${SEARXNG_SRC}"
+
+        # ── settings.yml (template + per-host secret, install-once) ─
+        # The shipped template = official SearXNG template + the four
+        # Wolf deltas (port 1307/loopback bind, formats +json,
+        # limiter off + no valkey — see ADR 0032 addendum). Never
+        # overwritten: operator edits (and the live secret) survive
+        # upgrades. root:searxng 0640 — it holds secret_key.
+        install -d "${SETTINGS_DIR}"
+        if [ ! -f "${SETTINGS}" ]; then
+            install -m 0640 -o root -g "${SEARXNG_USER}" \
+                "${TEMPLATES}/settings.yml" "${SETTINGS}"
+            sed -i "s|ultrasecretkey|$(openssl rand -hex 16)|" "${SETTINGS}"
+        fi
+
+        # ── uWSGI ini (official Debian content, http-socket 1307) ──
+        # Installed to apps-available but NEVER symlinked into
+        # apps-enabled — the distro uwsgi service must not double-run
+        # it; the dedicated wolf-search.service unit runs it instead.
+        # Install-once for the same operator-edit reason as above.
+        if [ ! -f "${UWSGI_INI}" ]; then
+            install -m 0644 -o root -g root \
+                "${TEMPLATES}/searxng-uwsgi.ini" "${UWSGI_INI}"
+        fi
+
+        # ── systemd ───────────────────────────────────────────────
+        # dh_installsystemd snippets land at the substitution point
+        # below (daemon-reload etc.); we just print the operator-
+        # facing follow-up, mirroring wolf-database's convention.
+        cat <<'EOF'
+
+  wolf-search installed (SearXNG pinned + venv built).
+
+  Next steps:
+    1. Start the service:
+
+         sudo systemctl enable --now wolf-search
+
+    2. Verify end-to-end (service + settings + the JSON search API
+       wolf-server's adapter consumes):
+
+         wolf-search health
+
+  wolf-search binds 127.0.0.1:1307 only — no network exposure. To
+  point wolf-server at it, SEARXNG_URL=http://127.0.0.1:1307 is
+  already the default; enable the research tools with
+  WEB_SEARCH_ENABLED=1 (slice 6-f.3).
+
+EOF
+        ;;
+
+    abort-upgrade|abort-remove|abort-deconfigure)
+        # No-op; the configure path handles all setup.
+        ;;
+
+    *)
+        echo "postinst called with unknown argument \`$1'" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0
