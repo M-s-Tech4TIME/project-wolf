@@ -49,6 +49,63 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-07-03 — ADR 0032: web research + config-authoring generalization (planning)
+
+**Session type:** claude-code
+**Phase:** web-research phase planning (future Phase 6-f; ADR 0032)
+**Branch / commit:** main
+
+### What we did
+- Wrote **ADR 0032** (`docs/decisions/0032-web-research-and-config-authoring.md`) — the
+  operator-directed "Wolf as a research-capable Wazuh expert" phase, planned in full before any
+  code (the operator's "first find, study, analyze, then implement" mandate).
+- **A — web research:** three provider-agnostic read-tier tools (`web_search`, `web_fetch`,
+  bounded `web_crawl`) the agent loop chains, mirroring how Claude does model-decided progressive
+  search; a pluggable `SearchProvider` adapter (mirrors the `ModelProvider` abstraction) with
+  **SearXNG self-hosted as the free default**, Brave/Tavily optional per-org hosted backends;
+  docs-first ladder (documentation.wazuh.com → wazuh.com/blog → github.com/wazuh → community on a
+  miss); citations into the existing evidence/grounding panel (grounding enrichment).
+- **`wolf-search` as its own component** (operator decisions locked): **native venv** (not a
+  container — keeps Wolf container-free), its **own Debian package mirroring `wolf-database`**,
+  `Recommends` not `Depends` (opt-in; air-gap / hosted-backend installs skip it). Native-venv
+  install recipe = the postinst (Appendix A).
+- **Deployment topology (operator-raised gap, closed):** wolf-search is **wolf-server's sidecar**
+  (only wolf-server calls it). Single-server + default distributed = **co-located, loopback-bound,
+  zero network exposure**; only an optional dedicated/HA search tier leaves loopback → binds the
+  private NIC with **mTLS-required** (wolf-cert mesh, ADR 0023) since SearXNG has no native auth.
+  `SEARXNG_URL` flips like `DATABASE_URL`/`OLLAMA_BASE_URL` (ADR 0016 per-component pattern).
+- **Bounded crawling (operator-requested):** `web_crawl` reads a site/topic *fully but relevantly*
+  — query-driven, same-registrable-domain, depth/page-capped, sitemap-first, robots-respecting,
+  rate-limited; **never an unbounded spider** (rejected in Out-of-scope).
+- **Full security taxonomy (operator-requested exhaustiveness):** expanded from 3 to **14 threat
+  classes** — SSRF (+DNS-rebinding / IP-encoding / redirect-revalidation), indirect prompt
+  injection, query egress, decompression/parse bombs, resource+context budgets, denial-of-wallet
+  (paid backends only), secret handling, service hardening, MSSP isolation, TLS+URL validation
+  (eTLD+1), crawler politeness, audit/log hygiene, cache safety, graceful degradation. Added a
+  **"free vs bounded" clarifier**: SearXNG web access is free + uncapped; the budgets are
+  self-protection + tenant-fairness (the model's finite context window; a runaway crawl mustn't
+  crash wolf-server), **not** a paywall on analysts.
+- **B — config-authoring generalization:** research → confirm-diff-with-user → dry-run validate
+  (`/manager/configuration/validation`) → propose; repeated sections (`<integration>`/virustotal)
+  via **block-identity**; free-form within rails; break-the-manager sections stay blocked.
+- Sequenced as slices **6-f.1 → 6-f.4** (scaffold+stub → `wolf-search` package+standup → tools →
+  config generalization); CI stays hermetic (HTTP boundary stubbed, live SearXNG only in web-tests).
+
+### What we decided
+- SearXNG self-hosted = free default behind a pluggable adapter; **native venv**; **own package
+  mirroring wolf-database**; opt-in (`WEB_SEARCH_ENABLED=0`). (ADR 0032.)
+- wolf-search = **wolf-server sidecar** → loopback in single-server + default-distributed;
+  mTLS-required only for an optional dedicated search tier.
+- **Bounded, never unbounded** crawling; the model judges relevance at each hop.
+
+### What's next
+- SearXNG is **not** installed yet by design — the install lands at slice **6-f.2** (recipe = the
+  postinst); the ADR is design, unit tests stub the HTTP boundary (hermetic CI).
+- Begin **6-f.1**: `research/` adapter scaffolding (`SearchProvider` + `SearxngProvider` +
+  resolver) with stubbed tests.
+
+---
+
 ## 2026-07-03 — 6-e.4 fix: config_change persist false-negative + configurable proposal TTL (live web-test)
 
 **Session type:** claude-code
