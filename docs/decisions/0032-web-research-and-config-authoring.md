@@ -104,7 +104,7 @@ Two halves under one ADR because they are one capability; **sliced separately** 
   hard `Depends`** of `wolf-server`. Air-gapped installs and hosted-backend (Brave/Tavily) orgs
   skip it. Search is opt-in (`WEB_SEARCH_ENABLED=0` default). The packaging separability
   mirrors the runtime separability — SearXNG is the *default*, never *required*.
-- A `wolf-search` **shell-wrapper** (`doctor`/status), honoring the shell-wrapper-required
+- A `wolf-search` **shell-wrapper** (`health`/status), honoring the shell-wrapper-required
   pattern, fronts service ops.
 - The exact native-venv recipe is **Appendix A** and *is* the postinst — the operator's install
   and the shipped package are the **same artifact** (finalized empirically in slice 6-f.2).
@@ -366,7 +366,8 @@ Ubuntu/Debian verbatim**) refined Appendix A. What the live install fixed as can
   parsed the live `/search?format=json` response — 5/5 hits normalized; documentation.wazuh.com
   was the organic #1 result for a Wazuh query. Repo artifacts: `deploy/searxng/settings.yml`
   (template, placeholder secret), `deploy/searxng/searxng-uwsgi.ini`,
-  `deploy/systemd/system/wolf-search.service`, `deploy/bin/wolf-search` (doctor/status wrapper).
+  `deploy/systemd/system/wolf-search.service`, `deploy/bin/wolf-search` (health/status wrapper;
+  the check was briefly named `doctor` — renamed `health` by operator request, 2026-07-03).
 
 ## Appendix A — `wolf-search` native-venv install recipe (= the postinst)
 
@@ -381,5 +382,5 @@ The shippable recipe; exact package name / WSGI runner finalized empirically in 
    client).
 4. `wolf-search.service` — `ExecStart` runs the venv's WSGI server (granian/uwsgi) bound to
    loopback; `User=wolf-search`; enable + start.
-5. `wolf-search doctor` (shell-wrapper) probes `GET /search?format=json&q=wazuh` and reports
+5. `wolf-search health` (shell-wrapper) probes `GET /search?format=json&q=wazuh` and reports
    health; the wolf-server adapter uses the same endpoint.

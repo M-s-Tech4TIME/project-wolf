@@ -6,8 +6,8 @@
 # /etc/searxng/settings.yml), run by the dedicated wolf-search.service
 # (uWSGI, loopback http-socket 127.0.0.1:1307 — wolf-server's sidecar).
 #
-# Mirrors the wolf-database CLI-shim pattern. Service ops + a `doctor` that
-# probes the exact endpoint wolf-server's SearxngProvider consumes.
+# Mirrors the wolf-database CLI-shim pattern. Service ops + a `health` check
+# that probes the exact endpoint wolf-server's SearxngProvider consumes.
 
 set -eu
 
@@ -22,7 +22,7 @@ wolf-search — manage Wolf's bundled SearXNG (loopback metasearch, ADR 0032)
 Usage: wolf-search <command>
 
   status    systemd + listener state
-  doctor    end-to-end health: service, port, and the JSON search API
+  health    end-to-end health: service, port, and the JSON search API
             (the exact endpoint wolf-server's adapter consumes)
   version   installed SearXNG version (pinned source commit)
   logs      follow the service journal
@@ -41,7 +41,7 @@ case "${cmd}" in
         need_systemctl
         systemctl status "${UNIT}" --no-pager || true
         ;;
-    doctor)
+    health)
         need_systemctl
         rc=0
         if systemctl is-active --quiet "${UNIT}"; then

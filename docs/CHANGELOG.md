@@ -49,7 +49,7 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
-## 2026-07-03 — 6-f.2 (host half): wolf-search live on port 1307 — official SearXNG install + dedicated unit + doctor
+## 2026-07-03 — 6-f.2 (host half): wolf-search live on port 1307 — official SearXNG install + dedicated unit + health check
 
 **Session type:** mixed (operator granted temporary sudo via a NOPASSWD drop-in; removed + verified gone at the end)
 **Phase:** 6-f.2 (ADR 0032 — the wolf-search component; host standup half)
@@ -75,9 +75,11 @@ Copy this block and fill in at the start of each session entry:
 - **Empirical adapter verification (closes the 6-f.1 deferral):** the unmodified
   `SearxngProvider` against the live instance — 5/5 hits parsed; documentation.wazuh.com the
   organic #1 result for "wazuh sca security configuration assessment".
-- **`wolf-search` wrapper** (`deploy/bin/wolf-search` → `/usr/local/bin`): doctor (service +
+- **`wolf-search` wrapper** (`deploy/bin/wolf-search` → `/usr/local/bin`): health (service +
   settings + the exact JSON endpoint the adapter consumes, with the 403→settings.yml hint) /
-  status / version / logs / start-stop-restart. `wolf-search doctor` → healthy.
+  status / version / logs / start-stop-restart. `wolf-search health` → healthy. (Shipped as
+  `doctor`; renamed `health` the same day by operator request — no packaged version ever
+  carried the old name.)
 - Hardening: `settings.yml` → `root:searxng 640` (holds `secret_key`; official cp leaves 644).
 - Repo artifacts: `deploy/searxng/settings.yml` (template, placeholder secret — the live
   secret never enters git), `deploy/searxng/searxng-uwsgi.ini`,

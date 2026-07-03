@@ -86,8 +86,9 @@ converge into ONE capability — **Wolf as a research-capable Wazuh expert**:
   (Granian officially container-only); official Debian ini VERBATIM at `/etc/uwsgi/apps-available/searxng.ini`,
   ONE deviation `http-socket = 127.0.0.1:1307` (no nginx — public-instance-only component), NOT in
   apps-enabled (distro uwsgi must never double-run); dedicated **wolf-search.service** unit (uWSGI drops
-  to searxng). `wolf-search` wrapper (`deploy/bin/wolf-search` → /usr/local/bin): doctor/status/version/
-  logs/service-ops; **doctor healthy**. EMPIRICAL: unmodified SearxngProvider parsed the live JSON 5/5,
+  to searxng). `wolf-search` wrapper (`deploy/bin/wolf-search` → /usr/local/bin): **health**/status/
+  version/logs/service-ops (health check renamed from `doctor` same-day by operator request);
+  **health check healthy**. EMPIRICAL: unmodified SearxngProvider parsed the live JSON 5/5,
   documentation.wazuh.com organic #1. Repo: deploy/searxng/{settings.yml template, searxng-uwsgi.ini} +
   deploy/systemd/system/wolf-search.service; `searxng_url` default → 1307. SUDO: password declined,
   temp NOPASSWD drop-in, announced each step, rule removed+verified. **PACKAGING HALF = NEXT**:
