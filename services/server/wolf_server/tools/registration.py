@@ -6,6 +6,7 @@ not be called twice — the registries raise on duplicate registration.
 
 import structlog
 
+from wolf_server.config import Settings, get_settings
 from wolf_server.tools.active_blocks import ListActiveBlocksTool
 from wolf_server.tools.agents import GetAgentDetailTool, ListAgentsTool
 from wolf_server.tools.alerts import (
@@ -23,16 +24,24 @@ from wolf_server.tools.propose_config_change import ProposeConfigChangeTool
 from wolf_server.tools.propose_rule_tuning import ProposeRuleTuningTool
 from wolf_server.tools.registry import runtime_registry
 from wolf_server.tools.rules import GetRuleDefinitionTool
+from wolf_server.tools.web_research import WebCrawlTool, WebFetchTool, WebSearchTool
 
 logger = structlog.get_logger(__name__)
 
 
-def register_all_read_tools() -> None:
+def register_all_read_tools(settings: Settings | None = None) -> None:
     """Register Wolf's read tools.
 
     Phase 2A: 9 Wazuh-backed read tools (alerts, agents, rules, cluster).
     Phase 3: query_runbook (RAG over knowledge corpora).
+    ADR 0032 (6-f.3): web_search / web_fetch / web_crawl — registered ONLY
+    when web research is enabled (opt-in, `WEB_SEARCH_ENABLED=1`), so a
+    stock install never advertises tools it can't run. Backend availability
+    is a CALL-time concern (a down wolf-search degrades to an honest tool
+    error, ADR 0032 A6 §14) — probing it at registration would couple tool
+    availability to boot order, which ADR 0016's independent units forbid.
     """
+    settings = settings or get_settings()
     tools = [
         SearchAlertsTool(),
         AggregateAlertsTool(),
@@ -46,9 +55,16 @@ def register_all_read_tools() -> None:
         QueryRunbookTool(),
         ListActiveBlocksTool(),
     ]
+    if settings.web_search_enabled:
+        tools.extend([WebSearchTool(), WebFetchTool(), WebCrawlTool()])
     for tool in tools:
         runtime_registry.register(tool)
-    logger.info("read_tools_registered", count=len(tools), names=[t.name for t in tools])
+    logger.info(
+        "read_tools_registered",
+        count=len(tools),
+        names=[t.name for t in tools],
+        web_research=settings.web_search_enabled,
+    )
 
 
 def register_all_propose_tools() -> None:

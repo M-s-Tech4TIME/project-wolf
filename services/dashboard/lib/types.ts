@@ -384,6 +384,14 @@ export type Citation = {
   query: Record<string, unknown>;
   timestamp: string;
   result_count: number | null;
+  /** Web-research provenance (ADR 0032, slice 6-f.3). Set only by the
+   *  web_search / web_fetch / web_crawl tools; absent/null for Wazuh and
+   *  knowledge citations. `source` is the docs-first tier —
+   *  "official_docs" | "official" | "official_github" | "community" —
+   *  so official documentation is visually distinguished in the panel. */
+  url?: string | null;
+  title?: string | null;
+  source?: string | null;
 };
 
 export type ConversationTurn = {

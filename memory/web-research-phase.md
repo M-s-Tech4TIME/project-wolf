@@ -1,6 +1,6 @@
 ---
 name: web-research-phase
-description: "PLANNED PHASE, ADR 0032 LANDED (2026-07-03): Wolf web-research + config-authoring generalization — provider-agnostic web_search/web_fetch/bounded web_crawl (agent-loop-chained, model-decided like Claude), SearXNG self-hosted FREE DEFAULT behind a pluggable SearchProvider adapter (Brave/Tavily optional per-org), docs-first→community fallback, citations→existing evidence panel. wolf-search = its OWN native-venv Debian package mirroring wolf-database + wolf-server SIDECAR (loopback single-server AND default-distributed; mTLS-required only for an optional dedicated tier). 14-class security taxonomy. Config-authoring = research→confirm→dry-run→propose + block-identity for repeated <integration>. Slices 6-f.1–6-f.4, NOT started."
+description: "ACTIVE PHASE, ADR 0032 (2026-07-03): Wolf web-research + config-authoring generalization — provider-agnostic web_search/web_fetch/bounded web_crawl (agent-loop-chained, model-decided like Claude), SearXNG self-hosted FREE DEFAULT behind a pluggable SearchProvider adapter (Brave/Tavily optional per-org), docs-first→community fallback, citations→existing evidence panel. wolf-search = its OWN native-venv Debian package mirroring wolf-database + wolf-server SIDECAR (loopback single-server AND default-distributed; mTLS-required only for an optional dedicated tier). 14-class security taxonomy. Config-authoring = research→confirm→dry-run→propose + block-identity for repeated <integration>. 6-f.1 ✅ 6-f.2 ✅ 6-f.3 ✅ (tools LIVE 2026-07-05, self-validated; operator web-test pending); 6-f.4 = NEXT."
 metadata:
   node_type: memory
   type: project
@@ -103,9 +103,35 @@ converge into ONE capability — **Wolf as a research-capable Wazuh expert**:
   END-TO-END on the clean runner (only component needing no operator env; timeout 15→25);
   smoke-systemd covers the 4th unit template. NOTE for this host: when installing the .deb here
   later, remove the manual `/usr/local/bin/wolf-search` (shadows the .deb's `/usr/bin` copy in PATH)
-  · 6-f.3 the 3 tools + full A6 security + docs-first + citations · 6-f.4 config-authoring
-  generalization. Gates: mypy --strict, no skips, full suite + cross-org, restart via
-  `systemctl --user restart wolf-server.service` for web-tests.
+  · 6-f.3 **SHIPPED 2026-07-05 (self-validated live; operator web-test pending)**: the 3 tools
+  end-to-end. `research/` request path: `weburl` (SSRF guard — every resolved address vetted,
+  connect PINNED to the vetted IP w/ hostname in Host+SNI so TLS verify still runs; redirects
+  re-validated per hop; CPython gotcha: v4 multicast is `is_global=True` → rejected explicitly;
+  203.0.113.x doc-range IPs are is_private → use real public IPs in test fixtures) · `extract`
+  (stdlib-only HTML→text/links; no bs4/lxml — lean wheels) · `fetcher` (DECOMPRESSED byte-cap
+  streaming abort, content-type enforcement, whole-fetch deadline, injectable client+resolver)
+  · `policy` (docs-first tiers official_docs/official/official_github(path-aware)/community;
+  suffix-anchored matching; blocklist ships EMPTY — operator curation → Phase 6.10; stdlib
+  eTLD+1 approximation) · `crawl` (robots fail-open convention, sitemap via regex `<loc>` —
+  entity-bomb-immune, same-registrable-domain, seed always first, off-domain filtering at POP
+  time so the skip counter fires, 120s deadline) · `context` (per-request ResearchContext w/
+  budget; async CM owns client lifecycles). Tools: envelope `[BEGIN/END UNTRUSTED WEB CONTENT]`
+  16K fetch / 3K crawl-page caps; web_search = one Citation PER result (plural `citations`
+  field, loop collects both); model inputs narrow NEVER widen server caps. KEY WIRING FACTS:
+  registration gated on the FLAG alone (reachability = call-time degradation — deliberate A1
+  refinement, no boot-order coupling per ADR 0016); `WEB_RESEARCH_SUFFIX` prompt section rides
+  the same gate; NEW `ToolDegradedError` (tools/base.py) + dispatcher branch `tool.call.degraded`
+  = expected failures degrade cleanly (WolfError still re-raises; budget = GuardrailViolation);
+  Citation gained url/title/source; evidence panel renders links + official badges. 7 A7 knobs
+  (WEB_SEARCH_MAX_RESULTS 8, WEB_SEARCH_BUDGET_PER_REQUEST 12, WEB_FETCH_MAX_BYTES 2MB,
+  WEB_FETCH_TIMEOUT_SECONDS 20, WEB_CRAWL_MAX_DEPTH 2, WEB_CRAWL_MAX_PAGES 12,
+  WEB_CRAWL_PER_HOST_RATE 1s). 866 tests/0 skips (+68 hermetic). LIVE: qwen3:8b chained 1
+  search + 3 fetches unprompted, documentation.wazuh.com organic #1, cited answer 53s;
+  `.env` now has WEB_SEARCH_ENABLED=1 (stays on for the operator web-test). Live-probe recipe:
+  login needs the mTLS client cert `.local/certs/dashboard-client/{cert,key}.pem` + POST
+  `/api/v1/auth/login` (cookie session) + `X-Organization-Id` header on `/api/v1/chat`
+  · 6-f.4 = NEXT: config-authoring generalization. Gates: mypy --strict, no skips, full suite
+  + cross-org, restart via `systemctl --user restart wolf-server.service` for web-tests.
 
 **Reusable reference from the 6-e.4 web-test.** (1) Wazuh **re-serialises ossec.conf on write** →
 verify config/rule persistence STRUCTURALLY (whitespace-tolerant / `has_override`), NEVER literal

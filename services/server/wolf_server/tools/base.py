@@ -22,6 +22,20 @@ from wolf_server.guardrails.limits import ResourceLimits
 from wolf_server.organization.context import OrganizationContext
 
 
+class ToolDegradedError(Exception):
+    """An expected, non-security tool failure that must degrade gracefully.
+
+    Raised by tools whose backing service can be legitimately unavailable or
+    whose input can be legitimately unfetchable (ADR 0032 A6 §14 — e.g. the
+    web tools: SearXNG down, a page 404ing, an SSRF-refused URL). The
+    dispatcher converts it into a clean, audited `success=False` result the
+    model can act on — unlike `WolfError`s, which re-raise as security-
+    relevant, and unlike generic exceptions, which log a full traceback.
+    Deliberately NOT a WolfError so the dispatcher's WolfError re-raise
+    never swallows it.
+    """
+
+
 class Citation(BaseModel):
     """A traceable pointer back to where a fact came from.
 
@@ -40,6 +54,14 @@ class Citation(BaseModel):
         description="When the call was made",
     )
     result_count: int | None = Field(default=None, description="How many records")
+    # Web-research provenance (ADR 0032 A5, slice 6-f.3). Set only by the
+    # web tools; None for Wazuh/knowledge citations. `source` is the
+    # docs-first tier ("official_docs" / "official" / "official_github" /
+    # "community") so the evidence panel can visually distinguish official
+    # documentation from community sources.
+    url: str | None = Field(default=None, description="Web source URL, if web-sourced")
+    title: str | None = Field(default=None, description="Web page/result title")
+    source: str | None = Field(default=None, description="Docs-first source tier")
 
 
 @dataclass
@@ -72,6 +94,11 @@ class ToolExecContext:
     # persist the proposal they emit into the approval queue. The dispatcher
     # wires the live session; it commits with the rest of the request.
     db: Any | None = None
+    # ADR 0032 (slice 6-f.3) — the per-request ResearchContext (search
+    # provider + guarded fetcher + web budget). Typed Any to avoid an import
+    # cycle; None whenever web research is disabled — the web tools are only
+    # REGISTERED when it is enabled, so they treat None as a wiring bug.
+    research: Any | None = None
 
 
 class ReadTool(ABC):

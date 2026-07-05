@@ -49,6 +49,88 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-07-05 — 6-f.3: web_search / web_fetch / web_crawl live — full A6 security, docs-first, citations in the evidence panel
+
+**Session type:** claude-code
+**Phase:** 6-f.3 (ADR 0032 — the three web-research tools; closes 6-f.3)
+**Branch / commit:** main
+
+### What we did
+- **`research/` request path** (6 new modules): `weburl` (URL validation +
+  SSRF guard: http/https-only, creds-in-URL rejected, punycode-normalized
+  hosts, every resolved address vetted — loopback/private/link-local/ULA/
+  mapped-v6/multicast/reserved all refused — and the connection PINNED to the
+  vetted IP with hostname in Host + TLS SNI; redirects re-validated per hop,
+  5-hop cap); `extract` (stdlib-only HTML→title/text/links, chrome stripped,
+  control chars sanitized); `fetcher` (one guarded fetch path: DECOMPRESSED
+  byte cap streams-and-aborts, text-ish content-type enforcement, whole-fetch
+  deadline, honest UA, injectable client+resolver for hermetic tests);
+  `policy` (docs-first tiers official_docs/official/official_github/community
+  with suffix-anchored matching that defeats `wazuh.com.evil.com`; EMPTY
+  operator-curated blocklist mechanism; stdlib eTLD+1 approximation);
+  `crawl` (BoundedCrawler: robots.txt per host, sitemap-first via regex
+  `<loc>` scan — no XML parser, no entity bombs —, same-registrable-domain,
+  per-host politeness delay, best-first query-scored frontier, seed always
+  first, depth/page caps + 120s crawl deadline); `context` (per-request
+  `ResearchContext`: provider + fetcher + config snapshot + web budget;
+  `open_research_context` async CM owns client lifecycles, yields None when
+  disabled).
+- **The three `ReadTool`s** (`tools/web_research.py`): docs-first re-ranked
+  `web_search` with one Citation PER result; `web_fetch` with the
+  untrusted-content envelope (16K-char cap); `web_crawl` with per-page
+  enveloped excerpts (3K) + honest bookkeeping (robots-skipped / off-domain /
+  errors / caps hit) — model inputs can narrow but never widen server caps.
+- **Wiring**: registration gated on `WEB_SEARCH_ENABLED` (14 tools when on,
+  11 when off); `WEB_RESEARCH_SUFFIX` appended to the system prompt only when
+  the request has a ResearchContext; dispatcher gained the `research` slot +
+  a `ToolDegradedError` branch (`tool.call.degraded` audit) for expected
+  failures — WolfErrors still re-raise, budget exhaustion stays
+  `GuardrailViolation`; the loop collects plural `citations`; both chat
+  endpoints open the per-request context.
+- **Citations/GUI**: `Citation` + dashboard type gained `url`/`title`/
+  `source`; the evidence panel renders web citations as clickable links with
+  an official-source badge (docs-first trust signal, A5).
+- **Config (A7)**: 7 new knobs — `WEB_SEARCH_MAX_RESULTS` (8),
+  `WEB_SEARCH_BUDGET_PER_REQUEST` (12), `WEB_FETCH_MAX_BYTES` (2 MB
+  decompressed), `WEB_FETCH_TIMEOUT_SECONDS` (20), `WEB_CRAWL_MAX_DEPTH` (2),
+  `WEB_CRAWL_MAX_PAGES` (12), `WEB_CRAWL_PER_HOST_RATE` (1 s). All Phase 6.10
+  GUI consumers.
+- **Tests**: +68 hermetic tests (83 web-research total; MockTransport +
+  injectable resolver — no live DNS/HTTP in CI): the full SSRF matrix,
+  redirect-bounce rejection, byte-cap truncation, content-type refusal,
+  robots/sitemap/domain/depth/page-cap crawler bounds, docs-first ranking,
+  envelope, budget, degradation, registration gating. **866 passed / 0
+  skips**; ruff + mypy --strict (116 files) + dashboard tsc/eslint green.
+- **Live self-validation** (flag on, restart, real chat): qwen3:8b chained
+  1 `web_search` + 3 `web_fetch` unprompted; documentation.wazuh.com organic
+  first (`official_docs`), cited official-docs answer in 53 s.
+
+### What we decided
+- Registration gates on the FLAG alone; backend reachability is a call-time
+  graceful-degradation concern (ADR 0016 boot-order independence). ADR 0032
+  addendum records this + every refinement above.
+- Blocklist ships empty — operator curation belongs to Phase 6.10, not
+  hardcoded third-party judgments.
+- Stdlib-only extraction + eTLD+1 approximation (lean wheels, ADR 0007) —
+  no bs4/lxml/tldextract.
+
+### What broke / what we discovered
+- CPython `ipaddress`: IPv4 **multicast is `is_global=True`** — the SSRF
+  guard rejects it explicitly on top of `not is_global`.
+- Documentation-range IPs (203.0.113.x) are `is_private` → the guard
+  correctly refuses them; test fixtures had to use real public IPs.
+- The off-domain crawl counter only fires if link filtering happens at
+  POP time (single enforcement point), not at push.
+
+### What's next
+- **6-f.4** — config-authoring generalization (research → confirm-diff →
+  dry-run-validate → propose; block-identity for repeated `<integration>`
+  sections). Web-test: virustotal end-to-end.
+- Operator web-test of 6-f.3 (flag already on): docs-first + citations +
+  a bounded doc-topic crawl in the GUI.
+
+---
+
 ## 2026-07-03 — 6-f.2 (packaging half): wolf-search.deb — postinst = the pinned official recipe; five .debs; CI installs + health-checks it
 
 **Session type:** claude-code

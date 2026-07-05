@@ -33,7 +33,7 @@ from wolf_schema import ChatRequest, ChatResponse, ToolResult
 from wolf_schema.chat import Message, MessageRole
 
 from wolf_server.agent.events import EventCallback, LoopEvent, LoopEventType
-from wolf_server.agent.prompts import RETRY_NUDGE
+from wolf_server.agent.prompts import RETRY_NUDGE, WEB_RESEARCH_SUFFIX
 from wolf_server.agent.strategies import Strategy
 from wolf_server.audit.log import write_event_from_context
 from wolf_server.grounding import GroundingValidator, ValidationResult
@@ -206,14 +206,21 @@ class AgentLoop:
         grounding_mode: str = "blocking",
         cache: Any | None = None,
         retry_nudge: bool = False,
+        research: Any | None = None,
     ) -> AgentAnswer:
         capability = self.provider.capability()
         budget = self.strategy.step_budget(capability)
         tools = self.strategy.model_tools(schema_registry.model_tools())
 
         loop_id = uuid.uuid4().hex
+        # The web-research teaching rides the system prompt ONLY when the
+        # request actually has a ResearchContext (ADR 0032 — tools are
+        # registration-gated; never teach tools the model may not have).
+        system_prompt = self.strategy.system_prompt()
+        if research is not None:
+            system_prompt += WEB_RESEARCH_SUFFIX
         messages: list[Message] = [
-            Message(role=MessageRole.system, content=self.strategy.system_prompt()),
+            Message(role=MessageRole.system, content=system_prompt),
         ]
         # Replay prior user/assistant turns so follow-up questions have
         # context.  Only role+content is replayed; we do not re-execute
@@ -423,6 +430,7 @@ class AgentLoop:
                     limits=self.limits,
                     knowledge_store=knowledge_store,
                     cache=cache,
+                    research=research,
                 )
                 await _emit(
                     event_callback,
@@ -433,6 +441,11 @@ class AgentLoop:
                     citation = dispatch_result.result.get("citation")
                     if isinstance(citation, dict):
                         citations.append(Citation.model_validate(citation))
+                    # Web tools emit one citation PER result/page (ADR 0032
+                    # A1/A5) via a plural `citations` list.
+                    for cited in dispatch_result.result.get("citations") or []:
+                        if isinstance(cited, dict):
+                            citations.append(Citation.model_validate(cited))
                     # Validator evidence — split query_runbook hits out as
                     # knowledge chunks; everything else stays as a tool
                     # result. Better provenance in the judge's prompt.

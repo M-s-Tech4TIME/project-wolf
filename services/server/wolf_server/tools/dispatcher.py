@@ -40,6 +40,7 @@ from wolf_server.guardrails.rate_limit import OrganizationRateLimiter, default_r
 from wolf_server.models.registry import registry as schema_registry
 from wolf_server.organization.context import OrganizationContext
 from wolf_server.tools.base import (
+    ToolDegradedError,
     ToolExecContext,
     sanitize_organization_id_from_args,
     strip_explicit_nulls,
@@ -96,6 +97,7 @@ async def dispatch_tool_call(
     rate_limiter: OrganizationRateLimiter = default_rate_limiter,
     knowledge_store: Any | None = None,
     cache: Any | None = None,
+    research: Any | None = None,
 ) -> ToolDispatchResult:
     """Validate, guardrail, audit, run, and validate-out a single tool call.
 
@@ -163,11 +165,17 @@ async def dispatch_tool_call(
         knowledge_store=knowledge_store,
         cache=cache,
         db=db,
+        research=research,
     )
     try:
         result = await runner.run(exec_ctx, args_model)
     except GuardrailViolation as exc:
         return await _audit_failure(db, ctx, call, "tool.call.guardrail", str(exc), start)
+    except ToolDegradedError as exc:
+        # Expected degradation (ADR 0032 A6 §14): backing service down, page
+        # unfetchable, SSRF-refused URL. Clean audited failure the model can
+        # relay honestly — no traceback noise, and never a bubbled error.
+        return await _audit_failure(db, ctx, call, "tool.call.degraded", str(exc), start)
     except WolfError:
         # OrganizationMismatchError or other security-relevant Wolf errors — bubble.
         raise

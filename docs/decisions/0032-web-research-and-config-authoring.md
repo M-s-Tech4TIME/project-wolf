@@ -383,6 +383,70 @@ Ubuntu/Debian verbatim**) refined Appendix A. What the live install fixed as can
   symlink), then — uniquely among Wolf components, since it needs no operator-provisioned
   env — **starts the service and runs `wolf-search health` end-to-end**.
 
+## Addendum (2026-07-05, slice 6-f.3) — the three tools, live end-to-end
+
+A1/A2 (fetch path)/A4/A5/A6/A7 shipped: `research/weburl|extract|fetcher|policy|
+crawl|context` + `tools/web_research.py` + wiring (registration, dispatcher,
+agent loop, chat endpoints, system prompt, evidence panel). Implementation
+decisions that refine the ratified design:
+
+- **Registration gate is the FLAG alone** — a deliberate refinement of A1's
+  "enabled **and** the backend is reachable": probing wolf-search at
+  registration would couple tool availability to boot order, which ADR 0016's
+  fully-independent units forbid (wolf-search may start after wolf-server).
+  Reachability is a **call-time** concern: a down backend degrades to an honest
+  "web search is unavailable" tool error (§14), never a hang, never a hidden
+  tool. The `WEB_RESEARCH_SUFFIX` system-prompt section rides the same flag —
+  the model is never taught tools it doesn't have.
+- **`ToolDegradedError`** (`tools/base.py`) — a new dispatcher branch
+  (`tool.call.degraded` audit event) for *expected, non-security* tool
+  failures: backend down, page 404/unfetchable, SSRF-refused URL, blocklisted
+  domain. Needed because `WolfError`s re-raise out of the dispatcher (security
+  posture) while generic exceptions log tracebacks; degradation is neither.
+  Budget exhaustion is distinct: `GuardrailViolation` (`tool.call.guardrail`),
+  one unit per web-tool CALL from `web_search_budget_per_request`.
+- **SSRF guard specifics** (§1/§10): every resolved address must be vetted
+  (a half-poisoned record rejects the whole host); connection goes to the
+  pinned IP with the hostname in `Host` + TLS SNI (`sni_hostname` extension),
+  so certificate verification still runs against the real name. CPython
+  gotcha: IPv4 **multicast is `is_global=True`** — rejected explicitly on top
+  of the `not is_global` check. IPv4-mapped IPv6 is unwrapped before checking.
+- **Registrable domain (eTLD+1) is a stdlib approximation** — last-two-labels
+  plus an embedded set of common second-level suffixes (`co.uk`, `com.au`, …)
+  instead of a `tldextract`/PSL dependency (lean-wheels, ADR 0007). The
+  allowlist match itself needs no PSL (suffix-anchored compare defeats
+  `documentation.wazuh.com.evil.com`); the approximation only scopes the
+  crawler, and every crawled URL passes the full SSRF guard regardless.
+- **The blocklist ships EMPTY as a wired mechanism** — Wolf hardcodes no
+  third-party "bad domain" judgments; curation is an operator knob for the
+  Phase 6.10 config plane. Filtering + fetch-refusal paths are tested with a
+  patched entry.
+- **Crawler conventions** (§11): the seed always reads first (the user pointed
+  at it); discovered candidates then compete on query-term relevance.
+  Unreadable robots.txt fails OPEN for that host (standard crawler
+  convention — absence means no restrictions) while SSRF still guards every
+  page. Sitemap XML is scanned with a `<loc>` regex, not an XML parser —
+  immune to entity-expansion bombs by construction. One overall crawl
+  deadline (120 s) backstops the per-page timeout.
+- **Untrusted-content envelope** (§2): fetched text reaches the model wrapped
+  in `[BEGIN/END UNTRUSTED WEB CONTENT …]` markers, capped (16 K chars per
+  fetch, 3 K per crawled page — §5, protects `num_ctx`); `web_crawl` input
+  caps can narrow but never widen the server's A7 knobs.
+- **Citations** (A5): `Citation` gained optional `url`/`title`/`source`;
+  `web_search` emits one citation **per result** via a plural `citations`
+  output field (the loop collects both singular and plural); the evidence
+  panel renders web citations as clickable links with a tier badge —
+  official sources visually distinguished.
+- **HTML→text extraction is stdlib-only** (`html.parser`) — title, readable
+  text (script/style/nav/chrome stripped), absolute links; no bs4/lxml
+  (lean wheels). Control characters are stripped (§12 log-forging).
+- **Live self-validation (2026-07-05)**: with `WEB_SEARCH_ENABLED=1` against
+  the live wolf-search sidecar, qwen3:8b chained 1 `web_search` + 3
+  `web_fetch` calls unprompted; documentation.wazuh.com ranked first
+  (`official_docs`), the answer summarized the official steps with sources,
+  and every citation carried url + tier. 866 backend tests / 0 skips; the
+  full A6 matrix is unit-pinned (83 web-research tests).
+
 ## Appendix A — `wolf-search` native-venv install recipe (= the postinst)
 
 **Finalized in 6-f.2 — the canonical, executable recipe is `debian/wolf-search.postinst`**

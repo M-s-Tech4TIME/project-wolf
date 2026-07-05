@@ -341,9 +341,32 @@ class Settings(BaseSettings):
     # same seam pattern as DATABASE_URL / OLLAMA_BASE_URL. Port 1307 is the
     # operator-chosen wolf-search port (6-f.2; SearXNG's own default is 8888).
     searxng_url: str = "http://127.0.0.1:1307"
-    # Tool-facing knobs (max results / fetch caps / crawl budgets, ADR 0032
-    # A7) land with the tools in 6-f.3 — settings are added when consumed.
-    # All of these are Phase 6.10 GUI consumers (web-first configurability).
+    # Tool-facing knobs (ADR 0032 A7, consumed by the 6-f.3 tools). Under the
+    # SearXNG default web access is FREE and uncapped — these budgets are
+    # self-protection (finite model context; a runaway crawl must not exhaust
+    # wolf-server) + MSSP tenant-fairness, NOT a paywall (ADR 0032 A6 "free
+    # vs bounded"). Defaults are generous; all are Phase 6.10 GUI consumers
+    # (web-first configurability).
+    #
+    # Results returned per web_search call (the tool input may ask for fewer).
+    web_search_max_results: int = 8
+    # Combined web_search + web_fetch + web_crawl calls allowed per chat
+    # request — the `max_uses` analog from Claude's web tools. Exhausting it
+    # degrades to an honest "budget exhausted" tool error, never a hang.
+    web_search_budget_per_request: int = 12
+    # Hard cap on the DECOMPRESSED response body per fetched page (a gzip
+    # bomb is caught by this, not just wire size — ADR 0032 A6 §4).
+    web_fetch_max_bytes: int = 2_000_000
+    # Whole-fetch deadline (connect + headers + body). Also the slow-loris
+    # guard: one glacial page can never stall the agent loop (A6 §14).
+    web_fetch_timeout_seconds: float = 20.0
+    # Bounded-crawl caps (A1/A6 §11): link-depth from the seed page and total
+    # pages fetched per web_crawl call. The tool input may lower, never raise.
+    web_crawl_max_depth: int = 2
+    web_crawl_max_pages: int = 12
+    # Crawler politeness: minimum seconds between two requests to the same
+    # host during a crawl (A6 §11).
+    web_crawl_per_host_rate: float = 1.0
 
     # ── Embedding stack (Phase 3 — knowledge layer) ────────────────────────
     # `ollama` (default) reuses the Ollama daemon already running for the LLM

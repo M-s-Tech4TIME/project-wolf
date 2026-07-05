@@ -419,9 +419,24 @@ confirm-diff → dry-run-validate → propose; block-identity for repeated secti
     `Recommends: wolf-search` in the `wolf` meta-package, smoke-deb + release
     4→5 .debs, smoke-deb-install starts the service + runs the health check
     end-to-end on a clean runner.
-  - **6-f.3** — the `web_search`/`web_fetch`/`web_crawl` tools: full A6 security
-    (SSRF guard, caps, robots/rate-limit), docs-first policy, citations, system
-    prompt, tool registration gated on the flag. Web-test: docs-first + citations.
+  - **6-f.3** ✅ — the `web_search`/`web_fetch`/`web_crawl` tools, live
+    end-to-end. Full A6 security: SSRF guard (scheme/creds/punycode checks +
+    pinned-IP resolve rejecting every non-global address incl. IPv4-mapped-v6
+    and multicast; redirects re-validated per hop), decompressed-byte cap +
+    content-type enforcement + fetch deadline, bounded crawler (robots.txt,
+    sitemap-first, same-registrable-domain, per-host politeness delay,
+    depth/page caps the model can narrow but never widen), docs-first re-rank
+    (`official_docs`/`official`/`official_github`/`community` tiers; empty
+    operator-curated blocklist mechanism), untrusted-content envelope +
+    per-request budget (`GuardrailViolation` on exhaustion), graceful
+    degradation via the new `ToolDegradedError` dispatcher branch. Citations
+    extended with `url`/`title`/`source`; evidence panel renders clickable
+    links + official-source badges. Registration + a `WEB_RESEARCH_SUFFIX`
+    system-prompt section are both gated on `WEB_SEARCH_ENABLED` (backend
+    reachability is a CALL-time concern — no boot-order coupling, ADR 0016).
+    7 new A7 knobs; stdlib-only HTML extraction (lean wheels). Self-validated
+    live: 1 search + 3 chained fetches, official docs ranked first, cited
+    answer. 866 tests / 0 skips.
   - **6-f.4** — config-authoring generalization (research → confirm → dry-run →
     propose; repeated sections via block-identity; free-form within rails).
     Web-test: the `<integration>`/virustotal case end-to-end.

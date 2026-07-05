@@ -61,7 +61,13 @@ class SearxngProvider:
         self._base_url = base_url.rstrip("/")
         # Injectable client so tests stub the HTTP boundary (httpx.MockTransport)
         # — same pattern as OllamaAdapter; hermetic CI, no live SearXNG.
+        self._owns_client = client is None
         self._client = client or httpx.AsyncClient(timeout=timeout)
+
+    async def aclose(self) -> None:
+        """Close the HTTP client — only if this instance created it."""
+        if self._owns_client:
+            await self._client.aclose()
 
     async def search(self, query: str, *, max_results: int) -> list[SearchResult]:
         """Run one search against SearXNG and normalize the hits."""

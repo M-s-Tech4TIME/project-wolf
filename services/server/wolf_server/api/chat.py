@@ -43,6 +43,7 @@ from wolf_server.knowledge.embeddings import (
 from wolf_server.knowledge.store import PgvectorKnowledgeStore
 from wolf_server.organization.context import OrganizationContext
 from wolf_server.organization.rbac import Capability, require_capability
+from wolf_server.research.context import open_research_context
 from wolf_server.secrets_factory import get_secrets_backend
 from wolf_server.tools.base import Citation
 from wolf_server.wazuh.opensearch import WazuhOpenSearchClient
@@ -156,6 +157,10 @@ async def chat(
     async with (
         WazuhOpenSearchClient(connection) as opensearch,
         WazuhServerApiClient(connection) as server_api,
+        # ADR 0032 (6-f.3): per-request web-research context — None when
+        # WEB_SEARCH_ENABLED=0 (the default); the web tools are also
+        # registration-gated on the same flag.
+        open_research_context(ctx, _settings, secrets) as research,
     ):
         loop = AgentLoop(provider=provider, strategy=strategy)
         answer = await loop.run(
@@ -171,6 +176,7 @@ async def chat(
             # grounding (ADR 0026).
             cache=cache,
             retry_nudge=body.retry_nudge,
+            research=research,
         )
 
     # Persist the audit trail produced by the loop.
@@ -257,6 +263,9 @@ async def chat_stream(
             async with (
                 WazuhOpenSearchClient(connection) as opensearch,
                 WazuhServerApiClient(connection) as server_api,
+                # ADR 0032 (6-f.3): per-request web-research context — None
+                # when WEB_SEARCH_ENABLED=0 (the default).
+                open_research_context(ctx, _settings, secrets) as research,
             ):
                 loop = AgentLoop(provider=provider, strategy=strategy)
                 await loop.run(
@@ -274,6 +283,7 @@ async def chat_stream(
                     grounding_mode=_settings.grounding_mode_normalized,
                     cache=cache,
                     retry_nudge=body.retry_nudge,
+                    research=research,
                 )
             await db.commit()
         except Exception as exc:
