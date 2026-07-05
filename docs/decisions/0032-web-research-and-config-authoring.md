@@ -301,7 +301,9 @@ blocked — a bad edit there can lock Wolf out of its own manager, an unrecovera
   citations into the evidence panel, system-prompt integration, config seam). **Web-test:** research
   a Wazuh question → verify official-doc-first + citations + a bounded doc-topic crawl.
 - **6-f.4** — config-authoring generalization B (research → confirm → dry-run → propose;
-  block-identity for repeated sections; free-form within rails). **Web-test:** the
+  block-identity for repeated sections; free-form within rails) **+ the research-first agent
+  posture** (2026-07-05 addendum: research as a first-class step in ANY task Wolf doesn't
+  already know, chained into propose/execute flows). **Web-test:** the
   `<integration>`/virustotal case end-to-end.
 - *(Brave/Tavily hosted backends + per-org selection + the Phase 6.10 GUI surface — after the
   SearXNG default path is proven and web-tested.)*
@@ -446,6 +448,51 @@ decisions that refine the ratified design:
   (`official_docs`), the answer summarized the official steps with sources,
   and every citation carried url + tier. 866 backend tests / 0 skips; the
   full A6 matrix is unit-pinned (83 web-research tests).
+
+## Addendum (2026-07-05, post-6-f.3 web-test) — web research is Wolf's UNIVERSAL power; grounding-enrichment phase pulled into the plan
+
+The operator web-tested 6-f.3 live (decoder/rule authoring research, integration research) and
+**PASSED it** — docs-first citations, official-source badges, and clickable evidence all worked
+on real questions. Two operator directives came out of that test, and both reshape scope:
+
+**1. Web research is a foundational, universal capability — not a config-authoring accessory.**
+The operator's mandate: Wolf must use `web_search` / `web_fetch` / `web_crawl` **to the fullest,
+as its own power** — the way Claude uses web research. Concretely:
+
+- **Research-to-act, not just research-to-answer.** When Wolf is asked to do something outside
+  its trained knowledge — any security operation, active-response design, integration,
+  detection-engineering task, anything in the Wazuh ecosystem — it must not stop at "I don't
+  know." It researches the web (docs-first, valid sources, references kept), **learns the
+  procedure in-session, and then acts on it** through its existing capability-gated write paths
+  (propose → approve → execute). The web tools are the *go-to amplifier for every other tool*,
+  not a standalone Q&A feature.
+- **Learning with provenance.** Everything Wolf "learns" from the web stays evidence-backed:
+  citations carry url + source tier, the untrusted-content envelope keeps web text as
+  data-not-instructions, and grounding verdicts apply to research-derived claims like any other.
+  "Train itself with valid source and references" — provenance is what makes the learning safe.
+- **Scope consequence for B / 6-f.4:** the config-authoring loop (B1 research → confirm-diff →
+  dry-run → propose) is the *first consumer* of this posture, not its definition. 6-f.4 also
+  hardens the **agent posture itself** (`WEB_RESEARCH_SUFFIX` / strategy prompts): research is
+  a first-class step in ANY task Wolf doesn't already know how to perform, chained into
+  propose/execute flows — while the authority model is unchanged (research informs; the
+  approval gateway + RBAC capability checks still gate every write; ADR 0025/0029).
+- This extends `wolf-unrestricted-full-power` (2026-06-18): Wolf's restriction comes from the
+  credential's RBAC, never from Wolf limiting itself — and now, never from the limits of its
+  trained knowledge either.
+
+**2. Grounding enrichment gets a dedicated phase (roadmap Phase 6.13), and web evidence joins it.**
+The same web-test showed true, well-sourced answers still landing mostly Uncertain / Not
+Verified (e.g. `grounding 0✓ 2⚠ 1✗` on an answer built directly from official docs). The
+operator wants a **fully dedicated phase to enhance + enrich Wolf's grounding across every
+aspect, present and future** — more Verified verdicts, accurately, with proper verification,
+justification and validation — and explicitly wants **web-research grounding in that plan**:
+the judge must be able to verify claims against `web_search`/`web_fetch`/`web_crawl` evidence
+(source-tier-aware — official docs are strong evidence; community content weaker), alongside
+the long-tracked enrichment items (more evidence-supplying tools, per-claim evidence selection
+deferred from ADR 0026, judge/verdict quality). Detailed scope lives in the roadmap Phase 6.13
+section + the `grounding-enrichment-tools-future-phase` memory; it will need its own ADR when
+the phase opens. Sequencing stays operator-driven ("we will do that later") — 6-f.4 proceeds
+first.
 
 ## Appendix A — `wolf-search` native-venv install recipe (= the postinst)
 

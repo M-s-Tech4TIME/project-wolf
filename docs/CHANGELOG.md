@@ -49,6 +49,56 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-07-05 — 6-f.3 web-test PASSED; two operator directives: web research = universal power, grounding enrichment = committed Phase 6.13
+
+**Session type:** mixed (operator web-test + claude-code docs)
+**Phase:** 6-f (closing 6-f.3, opening 6-f.4)
+**Branch / commit:** main
+
+### What we did
+- Operator **web-tested 6-f.3 live and PASSED it** (decoder/rule authoring +
+  integration research on the real cluster): docs-first citations, official
+  badges, clickable evidence links all confirmed working. `WEB_SEARCH_ENABLED=1`
+  stays on — the feature is operator-accepted.
+- Documented the two directives the test produced (ADR 0032 2026-07-05
+  addendum + roadmap 6-f intro + Phase 6.13 section + memory):
+  new `web-research-as-universal-power` memory, upgraded
+  `grounding-enrichment-tools-future-phase` memory, updated
+  `web-research-phase` memory + MEMORY.md index (both mirrors).
+
+### What we decided
+- **Web research is Wolf's UNIVERSAL power** (foundational directive, ADR 0032
+  addendum): research-to-act, not just research-to-answer — when a task is
+  outside Wolf's trained knowledge (any security operation, AR design,
+  integration, detection engineering), Wolf researches docs-first with valid
+  sources, learns the procedure in-session, and acts through the
+  capability-gated propose/approve/execute paths — the way Claude works.
+  Extends `wolf-unrestricted-full-power` to the knowledge dimension; the
+  authority model is unchanged (RBAC + approval gateway still gate every
+  write). 6-f.4 gains the research-first agent-posture work alongside
+  config-authoring generalization.
+- **Grounding enrichment is now a committed, fully dedicated phase — roadmap
+  Phase 6.13** (was a tracked idea since 2026-05-28): enhance + enrich
+  grounding across every aspect so verdicts land Verified more often,
+  accurately, with proper verification/justification/validation — never by
+  loosening the judge. Operator-explicit: web-research evidence joins the
+  judge's vocabulary, source-tier-aware. Scope in the roadmap section; own
+  ADR when the phase opens; sequencing "later" — 6-f.4 proceeds first.
+
+### What broke / what we discovered
+- The web-test showed correct, official-docs-sourced answers still landing
+  mostly Uncertain/Not-Verified (`grounding 0✓ 2⚠ 1✗`) — the trigger for
+  Phase 6.13: the judge can't yet treat fetched documentation as
+  verification-grade evidence.
+
+### What's next
+- Slice 6-f.4: config-authoring generalization (B1 research→confirm-diff→
+  dry-run→propose, B2 block-identity, B3 free-form within rails) + the
+  research-first agent posture; web-test = `<integration>`/virustotal
+  end-to-end.
+
+---
+
 ## 2026-07-05 — 6-f.3: web_search / web_fetch / web_crawl live — full A6 security, docs-first, citations in the evidence panel
 
 **Session type:** claude-code

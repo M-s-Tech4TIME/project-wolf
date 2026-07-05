@@ -403,6 +403,15 @@ default as the `wolf-search` sidecar component; docs-first → community; 14-cla
 security taxonomy; citations → evidence panel) + config_change generalized to
 "author ANY ossec.conf change from a precise OR descriptive request" (research →
 confirm-diff → dry-run-validate → propose; block-identity for repeated sections).
+**Operator directive (2026-07-05, post-6-f.3 web-test): web research is Wolf's
+UNIVERSAL power, not a config-authoring accessory** — research-to-act: when a
+task is outside Wolf's trained knowledge (any security operation, AR design,
+integration, detection engineering — anything in the ecosystem), Wolf researches
+docs-first with valid sources + references, learns the procedure in-session, and
+acts on it through the capability-gated propose/approve/execute paths — the way
+Claude works. Extends `wolf-unrestricted-full-power`; the authority model is
+unchanged (research informs; RBAC + the approval gateway still gate every
+write). See the ADR 0032 2026-07-05 addendum.
 
   - **6-f.1** ✅ — `research/` scaffolding: `SearchProvider` protocol +
     `SearxngProvider` (schema-validated `/search?format=json` parse, injectable
@@ -436,9 +445,16 @@ confirm-diff → dry-run-validate → propose; block-identity for repeated secti
     reachability is a CALL-time concern — no boot-order coupling, ADR 0016).
     7 new A7 knobs; stdlib-only HTML extraction (lean wheels). Self-validated
     live: 1 search + 3 chained fetches, official docs ranked first, cited
-    answer. 866 tests / 0 skips.
+    answer. 866 tests / 0 skips. **Operator web-test PASSED 2026-07-05**
+    (decoder/rule + integration research on the live cluster: docs-first
+    citations, official badges, clickable evidence links all confirmed).
+    Observation from that test → grounding verdicts on well-sourced answers
+    still mostly Uncertain/Not-Verified → Phase 6.13 (grounding enrichment)
+    pulled into the plan.
   - **6-f.4** — config-authoring generalization (research → confirm → dry-run →
-    propose; repeated sections via block-identity; free-form within rails).
+    propose; repeated sections via block-identity; free-form within rails)
+    **+ the research-first agent posture** (the 2026-07-05 directive above,
+    wired into the strategy prompts + propose/execute flows).
     Web-test: the `<integration>`/virustotal case end-to-end.
 
 **then** severity-tiered authority / four-eyes / crown-jewel tagging (policy
@@ -1193,6 +1209,50 @@ Dependencies: **Notification infra (6.7) + SSE push (6.8)** for delivery —
 sequences AFTER them. Notifications stay isolated from audit/logs
 (`notification-and-realtime-phases`). Likely its own ADR (the collaboration
 model + the cross-org isolation rules for assisted sessions).
+
+## Phase 6.13 — Grounding enrichment & verification depth (dedicated)
+
+**Operator mandate (2026-07-05, from the 6-f.3 web-test):** answers built directly
+from official documentation were still landing mostly Uncertain / Not Verified
+(`grounding 0✓ 2⚠ 1✗` on a correct, well-sourced decoder-authoring answer). The
+long-standing "grounding enrichment" idea (tracked since 2026-05-28 as a
+continuous evaluation + optional phase) is now a **committed, fully dedicated
+phase**: enhance and enrich Wolf's grounding capabilities **across every aspect
+Wolf has and will have**, so verdicts land **Verified more often, accurately,
+with proper verification, justification and validation** — more green chips
+because more claims are *actually verified*, never by loosening the judge.
+
+Scope (needs its own ADR when the phase opens):
+
+- **Web-research evidence joins grounding** (operator-explicit): the judge must
+  verify claims against `web_search` / `web_fetch` / `web_crawl` evidence —
+  **source-tier-aware** (official docs = strong evidence; community = weaker;
+  the untrusted-content envelope stays authoritative — web text is evidence,
+  never instructions). Today web content flows to the model and citations to
+  the panel, but the judge's evidence vocabulary doesn't understand tiers or
+  treat fetched documentation as verification-grade ground truth.
+- **More evidence-supplying supporting tools** (the original enrichment list):
+  `get_agent_details`, `lookup_ip_reputation`, `get_attack_technique` (MITRE),
+  `get_cve_details`, `quote_runbook` (exact-passage retrieval with line
+  numbers), expanded `get_rule_definition` coverage — every tool scoped via the
+  existing per-org patterns; external feeds ride the secrets backend.
+- **Per-claim evidence selection** — deferred here from ADR 0026 when the
+  `cited` evidence-scope was pulled (name-keyed dedup starved the judge):
+  per-claim relevance matching instead of all-or-nothing evidence windows.
+- **Judge / verdict quality:** verification depth (multi-source corroboration),
+  justification (the *why* behind each verdict, surfaced in the UI chips),
+  validation of the judge's own output shape; update ADR 0015 + the validator
+  prompt as the evidence-source vocabulary grows so the judge knows every
+  source type that exists.
+- **Verdict calibration measurement:** a small labelled harness (claims with
+  known truth + evidence) so "more Verified" is measured as calibration
+  improving, not chips drifting green.
+
+Applies to everything downstream: Phase 7 report generation, 7.5 self-validation,
+8+ detection engineering all inherit whatever the judge can verify. Related
+memory: `grounding-enrichment-tools-future-phase`. Sequencing: operator-driven
+("we will do that later") — after the active 6-f work; the continuous half of
+the rule (evaluate every new tool for evidence value) stays in force meanwhile.
 
 ## Phase 7 — Cases and reporting (wolf-hunt foundation)
 

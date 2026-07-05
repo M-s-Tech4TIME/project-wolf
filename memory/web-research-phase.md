@@ -1,6 +1,6 @@
 ---
 name: web-research-phase
-description: "ACTIVE PHASE, ADR 0032 (2026-07-03): Wolf web-research + config-authoring generalization — provider-agnostic web_search/web_fetch/bounded web_crawl (agent-loop-chained, model-decided like Claude), SearXNG self-hosted FREE DEFAULT behind a pluggable SearchProvider adapter (Brave/Tavily optional per-org), docs-first→community fallback, citations→existing evidence panel. wolf-search = its OWN native-venv Debian package mirroring wolf-database + wolf-server SIDECAR (loopback single-server AND default-distributed; mTLS-required only for an optional dedicated tier). 14-class security taxonomy. Config-authoring = research→confirm→dry-run→propose + block-identity for repeated <integration>. 6-f.1 ✅ 6-f.2 ✅ 6-f.3 ✅ (tools LIVE 2026-07-05, self-validated; operator web-test pending); 6-f.4 = NEXT."
+description: "ACTIVE PHASE, ADR 0032 (2026-07-03): Wolf web-research + config-authoring generalization — provider-agnostic web_search/web_fetch/bounded web_crawl (agent-loop-chained, model-decided like Claude), SearXNG self-hosted FREE DEFAULT behind a pluggable SearchProvider adapter (Brave/Tavily optional per-org), docs-first→community fallback, citations→existing evidence panel. wolf-search = its OWN native-venv Debian package mirroring wolf-database + wolf-server SIDECAR (loopback single-server AND default-distributed; mTLS-required only for an optional dedicated tier). 14-class security taxonomy. Config-authoring = research→confirm→dry-run→propose + block-identity for repeated <integration>. 6-f.1 ✅ 6-f.2 ✅ 6-f.3 ✅ (tools LIVE 2026-07-05, self-validated + operator web-test PASSED); 6-f.4 = ACTIVE (+ research-first agent posture per the universal-power directive)."
 metadata:
   node_type: memory
   type: project
@@ -103,7 +103,11 @@ converge into ONE capability — **Wolf as a research-capable Wazuh expert**:
   END-TO-END on the clean runner (only component needing no operator env; timeout 15→25);
   smoke-systemd covers the 4th unit template. NOTE for this host: when installing the .deb here
   later, remove the manual `/usr/local/bin/wolf-search` (shadows the .deb's `/usr/bin` copy in PATH)
-  · 6-f.3 **SHIPPED 2026-07-05 (self-validated live; operator web-test pending)**: the 3 tools
+  · 6-f.3 **SHIPPED 2026-07-05; operator web-test PASSED 2026-07-05** (decoder/rule +
+  integration research on the live cluster — docs-first citations, official badges, clickable
+  evidence confirmed; observation: well-sourced answers still mostly Uncertain/Not-Verified →
+  grounding-enrichment became committed Phase 6.13, see [[grounding-enrichment-tools-future-phase]]):
+  the 3 tools
   end-to-end. `research/` request path: `weburl` (SSRF guard — every resolved address vetted,
   connect PINNED to the vetted IP w/ hostname in Host+SNI so TLS verify still runs; redirects
   re-validated per hop; CPython gotcha: v4 multicast is `is_global=True` → rejected explicitly;
@@ -127,10 +131,14 @@ converge into ONE capability — **Wolf as a research-capable Wazuh expert**:
   WEB_FETCH_TIMEOUT_SECONDS 20, WEB_CRAWL_MAX_DEPTH 2, WEB_CRAWL_MAX_PAGES 12,
   WEB_CRAWL_PER_HOST_RATE 1s). 866 tests/0 skips (+68 hermetic). LIVE: qwen3:8b chained 1
   search + 3 fetches unprompted, documentation.wazuh.com organic #1, cited answer 53s;
-  `.env` now has WEB_SEARCH_ENABLED=1 (stays on for the operator web-test). Live-probe recipe:
+  `.env` now has WEB_SEARCH_ENABLED=1 (stays ON — feature is operator-accepted). Live-probe recipe:
   login needs the mTLS client cert `.local/certs/dashboard-client/{cert,key}.pem` + POST
   `/api/v1/auth/login` (cookie session) + `X-Organization-Id` header on `/api/v1/chat`
-  · 6-f.4 = NEXT: config-authoring generalization. Gates: mypy --strict, no skips, full suite
+  · 6-f.4 = ACTIVE (opened 2026-07-05): config-authoring generalization (B1 research→confirm-diff→
+  dry-run→propose · B2 block-identity for repeated `<integration>`/`<localfile>`/`<command>` ·
+  B3 free-form within rails, cluster/auth/indexer/ruleset stay blocked) **+ the research-first
+  agent posture** ([[web-research-as-universal-power]]: research-to-act wired into strategy
+  prompts + propose/execute flows). Gates: mypy --strict, no skips, full suite
   + cross-org, restart via `systemctl --user restart wolf-server.service` for web-tests.
 
 **Reusable reference from the 6-e.4 web-test.** (1) Wazuh **re-serialises ossec.conf on write** →
