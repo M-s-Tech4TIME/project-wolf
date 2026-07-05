@@ -451,11 +451,29 @@ write). See the ADR 0032 2026-07-05 addendum.
     Observation from that test → grounding verdicts on well-sourced answers
     still mostly Uncertain/Not-Verified → Phase 6.13 (grounding enrichment)
     pulled into the plan.
-  - **6-f.4** — config-authoring generalization (research → confirm → dry-run →
-    propose; repeated sections via block-identity; free-form within rails)
-    **+ the research-first agent posture** (the 2026-07-05 directive above,
-    wired into the strategy prompts + propose/execute flows).
-    Web-test: the `<integration>`/virustotal case end-to-end.
+  - **6-f.4** ✅ — config-authoring generalization + the research-first agent
+    posture. B3: the 7-section allowlist replaced by the break-the-manager
+    BLOCKLIST (`auth`/`cluster`/`indexer`/`rule_test`/`ruleset` stay
+    hand-edited; everything else authorable); `update_section` ADDS an absent
+    single-instance section. B2 (the virustotal fix): `upsert_block` /
+    `remove_block` address ONE instance of a repeated section by
+    **block-identity** (`integration`→`<name>`, `localfile`→`<location>`,
+    `command`→`<name>`); the upsert content must carry the addressed identity
+    (no address-X-write-Y), duplicate-key files refuse, persistence proof is
+    identity-scoped, `restore_config` matches an optional `block_key`. B1: the
+    confirm-diff step is TWO-PHASE IN THE TOOL — an unconfirmed call does the
+    full author-time work (validation + live read + `build_candidate` dry-run,
+    the SAME transformation the executor applies) and returns a
+    `needs_confirmation` PREVIEW with the current content, queueing nothing;
+    only the `user_confirmed=true` re-call queues (author-time manager
+    validation is impossible without a write — the endpoint validates on-disk
+    only — so the dry-run is the transformation; manager validation stays at
+    execute with auto-rollback). Prompts: `SYSTEM_PROMPT` #4 teaches THE
+    AUTHORING LOOP (research → preview → show diff → confirm → propose);
+    `WEB_RESEARCH_SUFFIX` gained RESEARCH-TO-ACT (the universal-power
+    directive, approval posture unchanged). GUI: block-op targets, upsert
+    diffs, removal cards. Web-test: the `<integration>`/virustotal case
+    end-to-end.
 
 **then** severity-tiered authority / four-eyes / crown-jewel tagging (policy
 hooks, B1 default = approval-for-all); auto-execution (Phase 13). The remaining

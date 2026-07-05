@@ -58,10 +58,19 @@ class _StubReadApi:
     async def get(self, path: str, *, params: Any = None) -> dict[str, Any]:
         if path == "/manager/configuration/validation":
             if self.validation_ok:
-                return {"data": {"affected_items": [{"name": "m", "status": "OK"}],
-                                 "total_failed_items": 0}}
-            return {"data": {"affected_items": [{"name": "m", "status": "ERROR"}],
-                             "total_failed_items": 1, "failed_items": [{"error": "bad xml"}]}}
+                return {
+                    "data": {
+                        "affected_items": [{"name": "m", "status": "OK"}],
+                        "total_failed_items": 0,
+                    }
+                }
+            return {
+                "data": {
+                    "affected_items": [{"name": "m", "status": "ERROR"}],
+                    "total_failed_items": 1,
+                    "failed_items": [{"error": "bad xml"}],
+                }
+            }
         return {"data": {}}
 
     async def get_raw(self, path: str, *, params: Any = None) -> str:
@@ -104,6 +113,7 @@ async def _proposal(
     action: str,
     parameters: dict[str, Any],
     reverses: uuid.UUID | None = None,
+    target: dict[str, Any] | None = None,
 ) -> ActionProposal:
     from wolf_server.gateway.executors import ExecContext  # noqa: F401 — keep import graph warm
 
@@ -112,7 +122,7 @@ async def _proposal(
         organization_id=_ORG,
         requested_by=_REQUESTER,
         action_class="config_change",
-        target={"section": "sca"},
+        target=target or {"section": "sca"},
         action=action,
         parameters=parameters,
         rationale="tune sca",
@@ -267,6 +277,145 @@ async def test_forward_freshness_refuses_repeated_section(db: AsyncSession) -> N
     ok, reason = await freshness(proposal)
     assert ok is False
     assert "exactly once" in reason
+
+
+# ── block-identity ops (6-f.4, ADR 0032 B2) ─────────────────────────────────
+
+_SLACK_BLOCK = (
+    "<integration>\n    <name>slack</name>\n"
+    "    <hook_url>https://hooks.example.invalid/services/T0</hook_url>\n  </integration>"
+)
+_VT_BLOCK = (
+    "<integration><name>virustotal</name><api_key>KEY</api_key>"
+    "<group>syscheck</group></integration>"
+)
+_OSSEC_INTEG = f"""<ossec_config>
+  {_SCA_CURRENT}
+  {_SLACK_BLOCK}
+</ossec_config>
+"""
+
+
+@pytest.mark.asyncio
+async def test_upsert_block_adds_the_keyed_instance_and_restarts(db: AsyncSession) -> None:
+    # THE virustotal case: no virustotal block exists (current_content "") — the
+    # executor ADDS it, leaves the slack instance untouched, validates, restarts.
+    proposal = await _proposal(
+        db,
+        action="upsert_block",
+        parameters={"section_content": _VT_BLOCK, "current_content": ""},
+        target={"section": "integration", "block_key": "virustotal"},
+    )
+    disk = _Disk(_OSSEC_INTEG)
+    ctx = _ctx(db, disk)
+
+    freshness, perform, verify = get_executor("config_change").build_forward(proposal, ctx)
+    ok, reason = await freshness(proposal)
+    assert ok is True
+    assert "still absent" in reason
+
+    res = await perform(proposal)
+    assert len(ctx.action_api.writes) == 1
+    assert ctx.action_api.restarts == 1
+    assert "virustotal" in disk.content
+    assert "hooks.example.invalid" in disk.content  # slack untouched
+    assert proposal.prior_state is not None
+    assert proposal.prior_state["content"] == _OSSEC_INTEG  # whole-file undo point
+    assert res["section_updated"] is True
+    assert res["block_key"] == "virustotal"
+
+    ok, detail = await verify(proposal, res)
+    assert ok is True
+    assert detail["operation"] == "upsert_block"
+
+
+@pytest.mark.asyncio
+async def test_upsert_block_replaces_only_the_keyed_instance(db: AsyncSession) -> None:
+    new_slack = (
+        "<integration><name>slack</name>"
+        "<hook_url>https://hooks.example.invalid/services/NEW</hook_url></integration>"
+    )
+    proposal = await _proposal(
+        db,
+        action="upsert_block",
+        parameters={"section_content": new_slack, "current_content": _SLACK_BLOCK},
+        target={"section": "integration", "block_key": "slack"},
+    )
+    disk = _Disk(_OSSEC_INTEG)
+    ctx = _ctx(db, disk)
+    freshness, perform, _v = get_executor("config_change").build_forward(proposal, ctx)
+    assert (await freshness(proposal))[0] is True
+    res = await perform(proposal)
+    assert "services/NEW" in disk.content
+    assert "services/T0" not in disk.content
+    assert res["section_updated"] is True
+
+
+@pytest.mark.asyncio
+async def test_remove_block_removes_the_keyed_instance(db: AsyncSession) -> None:
+    proposal = await _proposal(
+        db,
+        action="remove_block",
+        parameters={"current_content": _SLACK_BLOCK},
+        target={"section": "integration", "block_key": "slack"},
+    )
+    disk = _Disk(_OSSEC_INTEG)
+    ctx = _ctx(db, disk)
+    freshness, perform, verify = get_executor("config_change").build_forward(proposal, ctx)
+    assert (await freshness(proposal))[0] is True
+    res = await perform(proposal)
+    assert "hooks.example.invalid" not in disk.content  # gone
+    assert "<interval>12h</interval>" in disk.content  # sca untouched
+    assert ctx.action_api.restarts == 1
+    ok, detail = await verify(proposal, res)
+    assert ok is True
+    assert detail["operation"] == "remove_block"
+
+
+@pytest.mark.asyncio
+async def test_block_freshness_refuses_stale_or_appeared_targets(db: AsyncSession) -> None:
+    # (a) an UPDATE whose keyed block drifted since propose → stale.
+    drifted = _OSSEC_INTEG.replace("services/T0", "services/DRIFT")
+    update = await _proposal(
+        db,
+        action="upsert_block",
+        parameters={"section_content": _VT_BLOCK, "current_content": _SLACK_BLOCK},
+        target={"section": "integration", "block_key": "slack"},
+    )
+    freshness, _p, _v = get_executor("config_change").build_forward(
+        update, _ctx(db, _Disk(drifted))
+    )
+    ok, reason = await freshness(update)
+    assert ok is False
+    assert "changed since" in reason
+    # (b) an ADD whose key has appeared since propose → stale (the config changed).
+    added = _OSSEC_INTEG.replace("</ossec_config>", f"  {_VT_BLOCK}\n</ossec_config>")
+    add = await _proposal(
+        db,
+        action="upsert_block",
+        parameters={"section_content": _VT_BLOCK, "current_content": ""},
+        target={"section": "integration", "block_key": "virustotal"},
+    )
+    freshness, _p, _v = get_executor("config_change").build_forward(add, _ctx(db, _Disk(added)))
+    ok, reason = await freshness(add)
+    assert ok is False
+    assert "ADDS it" in reason
+
+
+@pytest.mark.asyncio
+async def test_remove_block_fails_honestly_if_removal_does_not_persist(db: AsyncSession) -> None:
+    proposal = await _proposal(
+        db,
+        action="remove_block",
+        parameters={"current_content": _SLACK_BLOCK},
+        target={"section": "integration", "block_key": "slack"},
+    )
+    disk = _Disk(_OSSEC_INTEG)
+    ctx = _ctx(db, disk, persist=False)  # writes "succeed" but don't stick
+    _f, perform, _v = get_executor("config_change").build_forward(proposal, ctx)
+    with pytest.raises(ConfigValidationError, match="did not persist"):
+        await perform(proposal)
+    assert ctx.action_api.restarts == 0
 
 
 @pytest.mark.asyncio

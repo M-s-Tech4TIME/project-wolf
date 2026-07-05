@@ -33,9 +33,14 @@ from wolf_server.wazuh.active_response import (
 )
 from wolf_server.wazuh.agent_actions import AGENT_ACTION_OPS, is_valid_group
 from wolf_server.wazuh.config_change import (
+    BLOCKED_SECTIONS,
     CONFIG_CHANGE_FORWARD_OPS,
-    EDITABLE_SECTIONS,
+    IDENTITY_KEYS,
+    OP_REMOVE_BLOCK,
+    OP_UPSERT_BLOCK,
+    identity_of,
     is_valid_section_block,
+    is_valid_section_name,
 )
 from wolf_server.wazuh.rule_tuning import (
     OP_ADJUST_LEVEL,
@@ -199,9 +204,7 @@ def _validate_agent_action(
         )
     group = parameters.get("group")
     if not isinstance(group, str) or not group.strip():
-        return ValidationResult(
-            ok=False, reason=f"{action!r} needs a target group ('group')."
-        )
+        return ValidationResult(ok=False, reason=f"{action!r} needs a target group ('group').")
     if not is_valid_group(group.strip()):
         return ValidationResult(
             ok=False, reason=f"Group name {group!r} is not a valid Wazuh group name."
@@ -259,14 +262,16 @@ register_validator("rule_tuning", _validate_rule_tuning)
 def _validate_config_change(
     *, target: dict[str, Any], action: str, parameters: dict[str, Any]
 ) -> ValidationResult:
-    """Structural checks for config_change (6-e.4) — the tightest gate of any class.
+    """Structural checks for config_change (6-e.4, generalized in 6-f.4 / ADR 0032 B).
 
-    The target is ONE allowlisted, single-instance ossec.conf section
-    (manager-global; the break-the-manager sections are not in the allowlist),
-    the action a known forward op, and the replacement content must be exactly
-    one well-formed ``<section>`` block within the review-size cap.
-    ``restore_config`` is reversal-only (created via ``create_reversal_proposal``,
-    which bypasses this validator), so a *forward* restore is refused here."""
+    The target is ONE ossec.conf section outside the break-the-manager blocklist
+    (free-form within rails — B3), the action a known forward op, and per-op:
+    ``update_section`` needs a well-formed replacement block; the block-identity
+    ops (B2) additionally need a resolved ``block_key`` on an identity-keyed
+    section, and an upsert's content must actually CARRY that key (so a proposal
+    can't address instance X while writing instance Y).  ``restore_config`` is
+    reversal-only (created via ``create_reversal_proposal``, which bypasses this
+    validator), so a *forward* restore is refused here."""
     section = target.get("section")
     if not isinstance(section, str) or not section.strip():
         return ValidationResult(
@@ -278,13 +283,18 @@ def _validate_config_change(
         return ValidationResult(
             ok=False, reason="Target section is a wildcard — blast radius is unbounded."
         )
-    if section not in EDITABLE_SECTIONS:
+    if not is_valid_section_name(section):
+        return ValidationResult(
+            ok=False,
+            reason=f"Section {section!r} is not a valid ossec.conf section name.",
+        )
+    if section in BLOCKED_SECTIONS:
         return ValidationResult(
             ok=False,
             reason=(
-                f"Section {section!r} is not editable in v1; editable sections: "
-                f"{', '.join(sorted(EDITABLE_SECTIONS))}. Cluster/auth/indexer/"
-                "ruleset and repeated sections (global, localfile, …) stay "
+                f"Section <{section}> is not editable by Wolf: "
+                f"{', '.join(sorted(BLOCKED_SECTIONS))} can break the manager "
+                "(enrollment / cluster / indexer / ruleset loading) and stay "
                 "hand-edited."
             ),
         )
@@ -296,6 +306,35 @@ def _validate_config_change(
                 f"{', '.join(sorted(CONFIG_CHANGE_FORWARD_OPS))}."
             ),
         )
+
+    # Block-identity ops (B2): a resolved, non-wildcard key on an identity section.
+    if action in (OP_UPSERT_BLOCK, OP_REMOVE_BLOCK):
+        if section not in IDENTITY_KEYS:
+            return ValidationResult(
+                ok=False,
+                reason=(
+                    f"Section <{section}> has no block-identity key; "
+                    f"{action!r} applies to: {', '.join(sorted(IDENTITY_KEYS))}. "
+                    "Use 'update_section' for single-instance sections."
+                ),
+            )
+        block_key = target.get("block_key")
+        if not isinstance(block_key, str) or not block_key.strip():
+            return ValidationResult(
+                ok=False,
+                reason=(
+                    f"{action!r} needs a resolved 'block_key' — the instance's "
+                    f"<{IDENTITY_KEYS[section]}> value (e.g. an integration's name)."
+                ),
+            )
+        if _is_blast(block_key):
+            return ValidationResult(
+                ok=False, reason="Target block key is a wildcard — blast radius is unbounded."
+            )
+
+    if action == OP_REMOVE_BLOCK:
+        return ValidationResult(ok=True)  # a removal carries no content
+
     content = parameters.get("section_content")
     if not isinstance(content, str):
         return ValidationResult(
@@ -305,6 +344,20 @@ def _validate_config_change(
     ok, reason = is_valid_section_block(section, content)
     if not ok:
         return ValidationResult(ok=False, reason=reason)
+    if action == OP_UPSERT_BLOCK:
+        block_key = str(target.get("block_key", "")).strip()
+        carried = identity_of(section, content)
+        if carried != block_key:
+            return ValidationResult(
+                ok=False,
+                reason=(
+                    f"The proposed <{section}> block carries "
+                    f"<{IDENTITY_KEYS[section]}>{carried or '(none)'}</"
+                    f"{IDENTITY_KEYS[section]}> but the proposal addresses "
+                    f"{block_key!r} — the content must identify the instance it "
+                    "targets."
+                ),
+            )
     return ValidationResult(ok=True)
 
 

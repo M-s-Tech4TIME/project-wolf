@@ -494,6 +494,59 @@ section + the `grounding-enrichment-tools-future-phase` memory; it will need its
 the phase opens. Sequencing stays operator-driven ("we will do that later") — 6-f.4 proceeds
 first.
 
+## Addendum (2026-07-05, slice 6-f.4) — config-authoring generalization: how B landed
+
+**B1 — the confirm-diff step is TWO-PHASE IN THE TOOL, not prompt-only.** A
+`propose_config_change` call without `user_confirmed=true` performs the full
+author-time work (capability pre-flight, structural validation, live config
+read, transformation dry-run) and returns `state="needs_confirmation"` with the
+target's **current content** — queueing NOTHING. The model shows the analyst
+the exact current → proposed change and re-calls with `user_confirmed=true`
+only after explicit confirmation. This makes the conversational confirm
+*enforceable* (an unconfirmed call cannot queue) and solves a real gap: the
+model has no ossec.conf read tool, so the preview is what supplies the current
+content for the diff it must show.
+
+**B1.3 refinement — author-time "dry-run validate" is the transformation, not
+the manager endpoint.** `GET /manager/configuration/validation` validates the
+ON-DISK file only; validating a candidate would require PUTting it first — a
+write, which a propose tool must never perform. So author time dry-runs the
+exact whole-file transformation (`build_candidate` — SHARED by the tool and the
+executor, so what was previewed is exactly what runs) and refuses a change that
+does not apply cleanly; the manager-side validation still runs at execute time
+with auto-rollback (unchanged from 6-e.4).
+
+**B3 mechanics.** `EDITABLE_SECTIONS` (allowlist of 7) replaced by
+`BLOCKED_SECTIONS = {auth, cluster, indexer, rule_test, ruleset}` — any other
+well-formed section is authorable. `update_section` on an ABSENT section is an
+**ADD** (inserted before the file's final `</ossec_config>`), so "enable a
+section the stock file doesn't carry" works; freshness treats a frozen-empty
+`current_content` as "must still be absent" (an add whose target appeared is
+stale).
+
+**B2 mechanics.** `IDENTITY_KEYS = {integration→name, localfile→location,
+command→name}`; ops `upsert_block` / `remove_block` + `block_key`. Safety
+properties: the upsert content must CARRY the addressed identity (no
+address-X-write-Y); a key matching more than one live instance refuses
+(hand-fix first — Wolf never guesses among duplicates); persistence proof is
+identity-scoped (`block_persisted` / `block_removed` — reformatting-tolerant,
+per the 6-e.4 lesson); `restore_config` accepts an optional `block_key` so
+"undo the virustotal change" matches that instance's proposal, not just "the
+last integration change". Repeated NON-identity sections (`<global>` ×2 stock)
+still refuse with guidance. Reversal is unchanged — whole-file snapshot-restore
+already covers every op.
+
+**Research-first agent posture (the 2026-07-05 universal-power directive).**
+`SYSTEM_PROMPT` #4 now teaches THE AUTHORING LOOP (research → preview → show
+diff → confirm → propose) and `WEB_RESEARCH_SUFFIX` gained RESEARCH-TO-ACT:
+when asked to DO something outside its knowledge, Wolf researches official
+docs, learns the procedure, and acts through the propose tools citing sources
+— the approval flow and RBAC gates unchanged.
+
+GUI: the approval card renders block-op targets (`section <integration>
+'virustotal'`), the current→proposed diff for upserts (an ADD shows "none —
+this adds a new block"), and removal cards show only what is removed.
+
 ## Appendix A — `wolf-search` native-venv install recipe (= the postinst)
 
 **Finalized in 6-f.2 — the canonical, executable recipe is `debian/wolf-search.postinst`**

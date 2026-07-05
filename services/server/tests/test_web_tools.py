@@ -253,3 +253,30 @@ def test_prompt_suffix_teaches_the_three_tools() -> None:
 
     for token in ("web_search", "web_fetch", "web_crawl", "UNTRUSTED", "GENERIC"):
         assert token in WEB_RESEARCH_SUFFIX
+
+
+def test_prompt_suffix_teaches_research_to_act() -> None:
+    # 6-f.4 (the universal-power directive): research is a step in DOING, not
+    # just answering — the suffix must chain research into the propose flow
+    # without weakening the approval posture.
+    from wolf_server.agent.prompts import WEB_RESEARCH_SUFFIX
+
+    for token in ("RESEARCH-TO-ACT", "propose_config_change", "approval"):
+        assert token in WEB_RESEARCH_SUFFIX
+
+
+def test_system_prompt_teaches_the_config_authoring_loop() -> None:
+    # 6-f.4 (ADR 0032 B1): preview → show the analyst the diff → confirm →
+    # propose; plus the generalized ops and the blocked-section rail.
+    from wolf_server.agent.prompts import SYSTEM_PROMPT
+
+    for token in (
+        "THE AUTHORING LOOP",
+        "needs_confirmation",
+        "user_confirmed=true",
+        "upsert_block",
+        "remove_block",
+        "block_key",
+        "cluster/auth/indexer/ruleset",
+    ):
+        assert token in SYSTEM_PROMPT

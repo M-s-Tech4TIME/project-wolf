@@ -59,8 +59,12 @@ function targetSummary(target: Record<string, unknown>): string {
   // rule_tuning targets a rule id — read it cleanly ("rule 100700") rather
   // than dumping the raw JSON ({"rule_id":"100700"}).
   if (typeof target["rule_id"] === "string") return `rule ${target["rule_id"]}`;
-  // config_change targets an ossec.conf section ("section <sca>").
-  if (typeof target["section"] === "string") return `section <${target["section"]}>`;
+  // config_change targets an ossec.conf section ("section <sca>"); a block-
+  // identity op (6-f.4) also names the instance ("section <integration> 'virustotal'").
+  if (typeof target["section"] === "string") {
+    const key = typeof target["block_key"] === "string" && target["block_key"] ? ` '${target["block_key"]}'` : "";
+    return `section <${target["section"]}>${key}`;
+  }
   return JSON.stringify(target);
 }
 
@@ -84,12 +88,17 @@ function paramsSummary(p: ActionProposal): string | null {
     const lvl = typeof params["level"] === "number" ? params["level"] : "?";
     return `set rule ${ruleId} to level ${lvl}`;
   }
-  // config_change — the section is the target; the action encodes the operation
-  // (update_section / restore_config), so undos read accurately too.
+  // config_change — the section (+ block identity, 6-f.4) is the target; the
+  // action encodes the operation, so undos read accurately too.
   if (p.action_class === "config_change") {
     const section = typeof p.target["section"] === "string" ? p.target["section"] : "?";
+    const key = typeof p.target["block_key"] === "string" ? p.target["block_key"] : "";
+    const adding = typeof params["current_content"] === "string" && params["current_content"] === "";
     if (p.action === "restore_config") return `restore <${section}> configuration`;
-    return `update <${section}> configuration`;
+    if (p.action === "upsert_block")
+      return `${adding ? "add" : "update"} <${section}> block '${key}'`;
+    if (p.action === "remove_block") return `remove <${section}> block '${key}'`;
+    return `${adding ? "add" : "update"} <${section}> configuration`;
   }
   const intent = typeof params["intent"] === "string" ? params["intent"] : "";
   const undo = isReversal(p);
@@ -160,13 +169,19 @@ function resultDetail(result: Record<string, unknown> | null): string | null {
       ? `rule ${rid} restored: override removed from local_rules.xml + validated + cluster restart issued`
       : `rule ${rid}: restore did NOT remove the override`;
   }
-  // config_change (6-e.4): forward result carries section_updated; the snapshot-
-  // restore reverse carries config_restored. Surface the real apply evidence.
+  // config_change (6-e.4, block ops 6-f.4): forward result carries
+  // section_updated (+ operation/block_key); the snapshot-restore reverse
+  // carries config_restored. Surface the real apply evidence.
   if (typeof result["section_updated"] === "boolean") {
     const sec = result["section"];
+    const key = typeof result["block_key"] === "string" && result["block_key"] ? ` '${result["block_key"]}'` : "";
+    const applied =
+      result["operation"] === "remove_block"
+        ? `<${sec}>${key} removed from ossec.conf`
+        : `<${sec}>${key} updated in ossec.conf`;
     return result["section_updated"]
-      ? `<${sec}> updated in ossec.conf + configuration validated + cluster restart issued (active ~15–30s after restart)`
-      : `<${sec}>: change did NOT persist — not applied`;
+      ? `${applied} + configuration validated + cluster restart issued (active ~15–30s after restart)`
+      : `<${sec}>${key}: change did NOT persist — not applied`;
   }
   if (typeof result["config_restored"] === "boolean") {
     const sec = result["section"];
@@ -380,9 +395,13 @@ export default function ActionsPage() {
                     {paramsSummary(p) ? (
                       <Field label="Target">{paramsSummary(p)}</Field>
                     ) : null}
-                    {p.action_class === "config_change" && p.action === "update_section" ? (
+                    {p.action_class === "config_change" &&
+                    ["update_section", "upsert_block", "remove_block"].includes(p.action) ? (
                       <Field label="Configuration diff">
-                        <ConfigDiff parameters={p.parameters} />
+                        <ConfigDiff
+                          parameters={p.parameters}
+                          removal={p.action === "remove_block"}
+                        />
                       </Field>
                     ) : null}
                     {isReversal(p) && p.reverses_proposal_id ? (
@@ -626,10 +645,18 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-/** config_change (6-e.4): the exact current → proposed ossec.conf section, so
- *  the approver reviews the real change (not just "update <sca>"). Both blocks
- *  scroll independently inside the card — no truncation, no layout break. */
-function ConfigDiff({ parameters }: { parameters: Record<string, unknown> }) {
+/** config_change (6-e.4, block ops 6-f.4): the exact current → proposed
+ *  ossec.conf content, so the approver reviews the real change (not just
+ *  "update <sca>"). An ADD shows "(none — this adds a new block)" as current; a
+ *  removal shows only what is removed. Both blocks scroll independently inside
+ *  the card — no truncation, no layout break. */
+function ConfigDiff({
+  parameters,
+  removal,
+}: {
+  parameters: Record<string, unknown>;
+  removal?: boolean;
+}) {
   const current =
     typeof parameters["current_content"] === "string" ? parameters["current_content"] : "";
   const proposed =
@@ -638,20 +665,22 @@ function ConfigDiff({ parameters }: { parameters: Record<string, unknown> }) {
     <div className="min-w-0 space-y-2">
       <div>
         <div className="mb-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-          Current
+          {removal ? "Removed" : "Current"}
         </div>
         <pre className="max-h-48 overflow-auto rounded-md bg-muted/60 p-2 text-xs [scrollbar-width:thin]">
-          {current || "(not captured)"}
+          {current || "(none — this adds a new block)"}
         </pre>
       </div>
-      <div>
-        <div className="mb-0.5 text-[10px] font-medium uppercase tracking-wide text-sky-700 dark:text-sky-400">
-          Proposed
+      {removal ? null : (
+        <div>
+          <div className="mb-0.5 text-[10px] font-medium uppercase tracking-wide text-sky-700 dark:text-sky-400">
+            Proposed
+          </div>
+          <pre className="max-h-48 overflow-auto rounded-md bg-sky-500/10 p-2 text-xs ring-1 ring-sky-500/20 [scrollbar-width:thin]">
+            {proposed || "(empty)"}
+          </pre>
         </div>
-        <pre className="max-h-48 overflow-auto rounded-md bg-sky-500/10 p-2 text-xs ring-1 ring-sky-500/20 [scrollbar-width:thin]">
-          {proposed || "(empty)"}
-        </pre>
-      </div>
+      )}
     </div>
   );
 }

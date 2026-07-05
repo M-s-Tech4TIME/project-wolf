@@ -1,18 +1,24 @@
-"""config_change operation catalog + ossec.conf section editing (6-e.4, ADR 0029).
+"""config_change operation catalog + ossec.conf section editing (6-e.4 → 6-f.4).
 
 ``config_change`` edits the manager's ``ossec.conf`` — the LAST and highest-
 blast-radius action class: a malformed configuration can take the manager down
-for every org on the shared cluster.  v1 is deliberately narrow:
+for every org on the shared cluster.  6-f.4 (ADR 0032 B) generalized the v1
+allowlist into free-form-within-rails:
 
-  - **Section-scoped, allowlisted edits only** (``update_section``): the model
-    proposes a full replacement ``<section>…</section>`` block for ONE known,
-    single-instance section.  Wolf refuses sections outside the allowlist and
-    files where the section appears more than once (repeated sections are
-    merge-semantic in Wazuh — replacing "the" block is ambiguous; the live
-    stock file carries e.g. ``<global>`` ×2, ``<localfile>`` ×8).
-  - **Highest-risk sections are excluded** (``cluster``/``auth``/``indexer``/
-    ``ruleset``): breaking enrollment, cluster membership, indexer connectivity
-    or the ruleset loader is the one category v1 keeps hand-edited.
+  - **Blocklist, not allowlist** (B3): any well-formed section is authorable
+    EXCEPT the break-the-manager set (:data:`BLOCKED_SECTIONS` — breaking
+    enrollment, cluster membership, indexer connectivity or the ruleset loader
+    can lock Wolf out of its own manager, so those stay hand-edited).
+  - **Single-instance sections** (``update_section``): a full replacement
+    ``<section>…</section>`` block; if the section is ABSENT the edit is an
+    ADD (inserted before the file's final ``</ossec_config>``).
+  - **Repeated / merge-semantic sections** (B2, ``upsert_block`` /
+    ``remove_block``): one INSTANCE is addressed by **block-identity** — a
+    stable key read from the instance's identity element
+    (:data:`IDENTITY_KEYS`: ``<integration>`` → ``<name>``, ``<localfile>`` →
+    ``<location>``, ``<command>`` → ``<name>``) — never by position.  This is
+    the ``<integration><name>virustotal</name>`` fix: add/update/remove of a
+    specific instance is precise and reversible.
   - The **diff is captured at propose time** (the current block rides in the
     proposal parameters) so the approver sees exactly old → new before
     approving, and the executor can detect a config that changed under the
@@ -37,38 +43,48 @@ from __future__ import annotations
 import re
 
 # Operations.
-OP_UPDATE_SECTION = "update_section"  # replace one allowlisted section block
+OP_UPDATE_SECTION = "update_section"  # replace (or add) one single-instance section
+OP_UPSERT_BLOCK = "upsert_block"  # add/replace ONE identity-keyed instance (B2)
+OP_REMOVE_BLOCK = "remove_block"  # remove ONE identity-keyed instance (B2)
 OP_RESTORE_CONFIG = "restore_config"  # reversal-only: restore the file snapshot
 
 # Forward ops a propose tool / validator may accept (restore is reversal-only and
 # is created via create_reversal_proposal, which bypasses the structural validator).
-CONFIG_CHANGE_FORWARD_OPS = frozenset({OP_UPDATE_SECTION})
+CONFIG_CHANGE_FORWARD_OPS = frozenset({OP_UPDATE_SECTION, OP_UPSERT_BLOCK, OP_REMOVE_BLOCK})
 
 # Approver-facing phrasing.
 OP_LABELS: dict[str, str] = {
     OP_UPDATE_SECTION: "Update configuration section",
+    OP_UPSERT_BLOCK: "Add/update configuration block",
+    OP_REMOVE_BLOCK: "Remove configuration block",
     OP_RESTORE_CONFIG: "Restore configuration",
 }
 
-# v1 editable sections — single-instance in the stock manager ossec.conf and
-# realistic tuning targets (SCA / vuln-detection / FIM / log settings).  NOT
-# included, deliberately:
-#   - repeated-in-stock sections (global ×2, wodle, command, active-response,
-#     localfile, integration) — "the" block is ambiguous under Wazuh's
-#     merge-on-repeat semantics;
-#   - the break-the-manager set (cluster, auth, indexer, ruleset, rule_test) —
-#     v1 keeps those hand-edited.
-EDITABLE_SECTIONS = frozenset(
-    {
-        "alerts",
-        "logging",
-        "remote",
-        "rootcheck",
-        "sca",
-        "syscheck",
-        "vulnerability-detection",
-    }
-)
+# The break-the-manager set (B3): a bad edit here can break enrollment, cluster
+# membership, indexer connectivity or the ruleset loader — an unrecoverable
+# state that can lock Wolf out of its own manager.  These stay hand-edited;
+# EVERYTHING else is authorable (blocklist, not allowlist — ADR 0032 B3).
+BLOCKED_SECTIONS = frozenset({"auth", "cluster", "indexer", "rule_test", "ruleset"})
+
+# Repeated / merge-semantic sections addressable by block-identity (B2): the
+# child element whose text is the instance's stable key.  Sections NOT in this
+# map are treated as single-instance (update_section); a repeated occurrence of
+# a non-identity section (e.g. <global> ×2 in stock) is refused as ambiguous.
+IDENTITY_KEYS: dict[str, str] = {
+    "command": "name",
+    "integration": "name",
+    "localfile": "location",
+}
+
+# Section names are lowercase XML element names in every stock ossec.conf.
+_SECTION_NAME_RE = re.compile(r"^[a-z][a-z0-9_-]*$")
+
+
+def is_valid_section_name(section: str) -> bool:
+    """Syntactic validity of a section (element) name — the pre-check before any
+    regex is built from it."""
+    return bool(_SECTION_NAME_RE.fullmatch(section or ""))
+
 
 # A proposed section block must stay reviewable — an approver reads it in the
 # queue. 16 KB is ~4× the largest stock section.
@@ -105,6 +121,83 @@ def replace_section_block(raw: str, section: str, new_block: str) -> str | None:
     return raw[:start] + new_block.strip() + raw[end:]
 
 
+def insert_section_block(raw: str, new_block: str) -> str | None:
+    """Insert ``new_block`` before the LAST ``</ossec_config>`` in ``raw`` — the
+    ADD path for a section/instance that is not in the file yet.  Returns the
+    new file content, or ``None`` when the file has no closing wrapper to
+    anchor on (a config that malformed is not something to append to)."""
+    anchor = (raw or "").rfind("</ossec_config>")
+    if anchor < 0:
+        return None
+    return raw[:anchor] + "  " + new_block.strip() + "\n\n" + raw[anchor:]
+
+
+def identity_of(section: str, block: str) -> str | None:
+    """The block-identity key of one ``<section>`` instance — the text of its
+    identity element (e.g. ``<name>virustotal</name>`` inside an
+    ``<integration>`` block).  ``None`` when the section has no identity
+    element defined or the block does not carry one."""
+    key_element = IDENTITY_KEYS.get(section)
+    if key_element is None:
+        return None
+    match = re.search(
+        rf"<{re.escape(key_element)}>\s*(.*?)\s*</{re.escape(key_element)}>",
+        block or "",
+        re.DOTALL,
+    )
+    return match.group(1).strip() if match else None
+
+
+def find_identified_blocks(raw: str, section: str, block_key: str) -> list[str]:
+    """Every ``<section>`` instance in ``raw`` whose identity element equals
+    ``block_key`` (exact, stripped).  The caller enforces the exactly-one /
+    exactly-zero rules per operation."""
+    wanted = (block_key or "").strip()
+    return [
+        block
+        for block in find_section_blocks(raw, section)
+        if identity_of(section, block) == wanted
+    ]
+
+
+def upsert_identified_block(raw: str, section: str, block_key: str, new_block: str) -> str | None:
+    """Replace the SINGLE ``<section>`` instance keyed ``block_key`` with
+    ``new_block`` — or ADD it (before the final ``</ossec_config>``) when no
+    instance carries that key.  Returns the new file content, or ``None`` when
+    the key matches more than one instance (ambiguous — the file needs a hand
+    fix first) or the add-anchor is missing."""
+    pattern = _section_block_re(section)
+    matches = [
+        m for m in pattern.finditer(raw or "") if identity_of(section, m.group(0)) == block_key
+    ]
+    if len(matches) > 1:
+        return None
+    if len(matches) == 1:
+        start, end = matches[0].span()
+        return raw[:start] + new_block.strip() + raw[end:]
+    return insert_section_block(raw, new_block)
+
+
+def remove_identified_block(raw: str, section: str, block_key: str) -> str | None:
+    """Remove the SINGLE ``<section>`` instance keyed ``block_key``.  Returns
+    the new file content, or ``None`` unless exactly one instance carries the
+    key (nothing to remove / ambiguous are both the caller's refusal)."""
+    pattern = _section_block_re(section)
+    matches = [
+        m for m in pattern.finditer(raw or "") if identity_of(section, m.group(0)) == block_key
+    ]
+    if len(matches) != 1:
+        return None
+    start, end = matches[0].span()
+    # Take the line's leading indent + trailing newline with the block so the
+    # removal doesn't leave a blank hole.
+    while start > 0 and raw[start - 1] in " \t":
+        start -= 1
+    if end < len(raw) and raw[end] == "\n":
+        end += 1
+    return raw[:start] + raw[end:]
+
+
 def _normalize_section(block: str) -> str:
     """Indentation/whitespace-insensitive canonical form of a ``<section>`` block.
 
@@ -132,6 +225,39 @@ def section_persisted(raw: str, section: str, proposed_block: str) -> bool:
     if len(blocks) != 1:
         return False
     return _normalize_section(blocks[0]) == _normalize_section(proposed_block)
+
+
+def build_candidate(raw: str, op: str, section: str, block_key: str, new_block: str) -> str | None:
+    """The whole-file result of applying one forward op to ``raw`` — the SINGLE
+    transformation used by BOTH the propose tool's author-time dry-run and the
+    executor's real write, so what was previewed is exactly what runs.
+    ``None`` when the change does not apply cleanly (ambiguous target /
+    missing insertion anchor)."""
+    if op == OP_UPDATE_SECTION:
+        if find_section_blocks(raw, section):
+            return replace_section_block(raw, section, new_block)
+        return insert_section_block(raw, new_block)
+    if op == OP_UPSERT_BLOCK:
+        return upsert_identified_block(raw, section, block_key, new_block)
+    if op == OP_REMOVE_BLOCK:
+        return remove_identified_block(raw, section, block_key)
+    return None
+
+
+def block_persisted(raw: str, section: str, block_key: str, proposed_block: str) -> bool:
+    """Authoritatively confirm an upsert stuck: exactly one ``<section>``
+    instance in ``raw`` carries ``block_key`` and it matches ``proposed_block``
+    ignoring the manager's reindentation (see :func:`_normalize_section`)."""
+    blocks = find_identified_blocks(raw, section, block_key)
+    if len(blocks) != 1:
+        return False
+    return _normalize_section(blocks[0]) == _normalize_section(proposed_block)
+
+
+def block_removed(raw: str, section: str, block_key: str) -> bool:
+    """Authoritatively confirm a removal stuck: NO ``<section>`` instance in
+    ``raw`` carries ``block_key`` any more."""
+    return len(find_identified_blocks(raw, section, block_key)) == 0
 
 
 def is_valid_section_block(section: str, content: str) -> tuple[bool, str]:

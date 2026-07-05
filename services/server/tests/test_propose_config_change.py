@@ -1,10 +1,13 @@
-"""propose_config_change tool — Phase 6-e.4 (ADR 0029).
+"""propose_config_change tool — 6-e.4, generalized in 6-f.4 (ADR 0032 B).
 
-The tool validates the section (allowlist + single-instance) + op + block shape,
+The tool validates the section (blocklist + shape + block-identity) + op,
 capability-pre-flights ``manager:update_config`` (Superuser-scoped, manager-global),
-captures the CURRENT section content (the approver's diff base + staleness check),
-and on success queues a *pending* proposal — never executes. ``restore_config``
-for a section with an active prior Wolf change is the UNDO: linked + recalled.
+captures the CURRENT content (the approver's diff base + staleness check), and
+dry-runs the exact transformation.  The flow is TWO-PHASE (B1 confirm-diff): a
+call without ``user_confirmed`` returns a ``needs_confirmation`` PREVIEW with the
+current content and queues NOTHING; only the confirmed re-call queues a *pending*
+proposal — never executes.  ``restore_config`` for a target with an active prior
+Wolf change is the UNDO: linked + recalled (block-identity aware).
 """
 
 import uuid
@@ -34,8 +37,17 @@ _OSSEC = """<ossec_config>
   </sca>
   <global><logall>no</logall></global>
   <global><jsonout_output>yes</jsonout_output></global>
+  <integration>
+    <name>slack</name>
+    <hook_url>https://hooks.example.invalid/services/T0</hook_url>
+  </integration>
 </ossec_config>
 """
+
+_VT_BLOCK = (
+    "<integration><name>virustotal</name><api_key>KEY</api_key>"
+    "<group>syscheck</group><alert_format>json</alert_format></integration>"
+)
 
 
 class _StubServerApi:
@@ -81,6 +93,30 @@ def _exec_ctx(
 
 
 @pytest.mark.asyncio
+async def test_unconfirmed_call_returns_a_preview_and_queues_nothing(
+    db: AsyncSession, seed_organization_and_user: dict[str, Any]
+) -> None:
+    # Phase 1 of the confirm-diff loop (B1): no user_confirmed → PREVIEW with the
+    # live current content; NOTHING enters the queue.
+    ctx = _ctx(seed_organization_and_user)
+    out = await ProposeConfigChangeTool().run(
+        _exec_ctx(db, ctx, _ALLOW_CONFIG),
+        ProposeConfigChangeInput(
+            section="sca",
+            operation="update_section",
+            section_content="<sca><enabled>no</enabled></sca>",
+        ),
+    )
+    assert out.permitted is False
+    assert out.state == "needs_confirmation"
+    assert out.proposal_id == ""
+    assert "<interval>12h</interval>" in out.current_content  # the live block, for the diff
+    assert "user_confirmed=true" in out.summary
+    rows = (await db.execute(select(ActionProposal))).scalars().all()
+    assert all(r.action_class != "config_change" for r in rows)
+
+
+@pytest.mark.asyncio
 async def test_update_section_queues_pending_with_diff_base(
     db: AsyncSession, seed_organization_and_user: dict[str, Any]
 ) -> None:
@@ -93,6 +129,7 @@ async def test_update_section_queues_pending_with_diff_base(
             operation="update_section",
             section_content="<sca><enabled>no</enabled></sca>",
             rationale="SCA too noisy for this fleet",
+            user_confirmed=True,
         ),
     )
     assert out.permitted is True
@@ -129,7 +166,7 @@ async def test_refused_without_manager_update_config(
 
 
 @pytest.mark.asyncio
-async def test_refused_for_non_allowlisted_section(
+async def test_refused_for_blocked_section(
     db: AsyncSession, seed_organization_and_user: dict[str, Any]
 ) -> None:
     ctx = _ctx(seed_organization_and_user)
@@ -144,20 +181,209 @@ async def test_refused_for_non_allowlisted_section(
 
 
 @pytest.mark.asyncio
-async def test_refused_when_section_absent_or_repeated(
+async def test_absent_section_becomes_an_add(
     db: AsyncSession, seed_organization_and_user: dict[str, Any]
 ) -> None:
+    # 6-f.4 (B3): an absent single-instance section is an ADD, not a refusal.
     ctx = _ctx(seed_organization_and_user)
     tool = ProposeConfigChangeTool()
-    # 'remote' is allowlisted but not present in this stub ossec.conf.
-    absent = await tool.run(
+    preview = await tool.run(
         _exec_ctx(db, ctx, _ALLOW_CONFIG),
         ProposeConfigChangeInput(
             section="remote", operation="update_section", section_content="<remote></remote>"
         ),
     )
-    assert absent.permitted is False
-    assert "not present" in absent.detail or "not in the current" in absent.summary
+    assert preview.state == "needs_confirmation"
+    assert preview.current_content == ""  # nothing exists yet — this adds
+    assert "add <remote>" in preview.summary
+    out = await tool.run(
+        _exec_ctx(db, ctx, _ALLOW_CONFIG),
+        ProposeConfigChangeInput(
+            section="remote",
+            operation="update_section",
+            section_content="<remote></remote>",
+            user_confirmed=True,
+        ),
+    )
+    assert out.permitted is True
+    row = (
+        await db.execute(
+            select(ActionProposal).where(ActionProposal.id == uuid.UUID(out.proposal_id))
+        )
+    ).scalar_one()
+    assert row.parameters["current_content"] == ""
+
+
+@pytest.mark.asyncio
+async def test_refused_when_section_repeated_without_identity(
+    db: AsyncSession, seed_organization_and_user: dict[str, Any]
+) -> None:
+    # <global> appears twice and has no identity key — ambiguous, refused.
+    ctx = _ctx(seed_organization_and_user)
+    out = await ProposeConfigChangeTool().run(
+        _exec_ctx(db, ctx, _ALLOW_CONFIG),
+        ProposeConfigChangeInput(
+            section="global",
+            operation="update_section",
+            section_content="<global><logall>yes</logall></global>",
+            user_confirmed=True,
+        ),
+    )
+    assert out.permitted is False
+    assert "more than once" in out.summary or "ambiguous" in out.detail
+
+
+@pytest.mark.asyncio
+async def test_repeated_identity_section_guides_to_upsert_block(
+    db: AsyncSession, seed_organization_and_user: dict[str, Any]
+) -> None:
+    # update_section on a repeated IDENTITY section points at the right op.
+    doubled = _OSSEC.replace(
+        "</ossec_config>",
+        "<integration><name>shuffle</name></integration>\n</ossec_config>",
+    )
+    ctx = _ctx(seed_organization_and_user)
+    out = await ProposeConfigChangeTool().run(
+        _exec_ctx(db, ctx, _ALLOW_CONFIG, raw=doubled),
+        ProposeConfigChangeInput(
+            section="integration",
+            operation="update_section",
+            section_content=_VT_BLOCK,
+            user_confirmed=True,
+        ),
+    )
+    assert out.permitted is False
+    assert "upsert_block" in out.detail
+
+
+@pytest.mark.asyncio
+async def test_upsert_block_adds_a_new_integration(
+    db: AsyncSession, seed_organization_and_user: dict[str, Any]
+) -> None:
+    # THE virustotal case (ADR 0032 B2): one <integration> exists (slack);
+    # adding virustotal addresses the new instance by its <name>.
+    ctx = _ctx(seed_organization_and_user)
+    tool = ProposeConfigChangeTool()
+    preview = await tool.run(
+        _exec_ctx(db, ctx, _ALLOW_CONFIG),
+        ProposeConfigChangeInput(
+            section="integration",
+            operation="upsert_block",
+            block_key="virustotal",
+            section_content=_VT_BLOCK,
+        ),
+    )
+    assert preview.state == "needs_confirmation"
+    assert preview.current_content == ""  # no virustotal block exists yet
+    out = await tool.run(
+        _exec_ctx(db, ctx, _ALLOW_CONFIG),
+        ProposeConfigChangeInput(
+            section="integration",
+            operation="upsert_block",
+            block_key="virustotal",
+            section_content=_VT_BLOCK,
+            rationale="enable VirusTotal file-hash lookups for FIM alerts",
+            user_confirmed=True,
+        ),
+    )
+    assert out.permitted is True
+    assert out.state == "pending"
+    row = (
+        await db.execute(
+            select(ActionProposal).where(ActionProposal.id == uuid.UUID(out.proposal_id))
+        )
+    ).scalar_one()
+    assert row.action == "upsert_block"
+    assert row.target == {"section": "integration", "block_key": "virustotal"}
+    assert row.parameters["current_content"] == ""
+    assert row.parameters["section_content"] == _VT_BLOCK
+
+
+@pytest.mark.asyncio
+async def test_upsert_block_updates_the_keyed_instance_with_diff_base(
+    db: AsyncSession, seed_organization_and_user: dict[str, Any]
+) -> None:
+    ctx = _ctx(seed_organization_and_user)
+    new_slack = (
+        "<integration><name>slack</name>"
+        "<hook_url>https://hooks.example.invalid/services/NEW</hook_url></integration>"
+    )
+    out = await ProposeConfigChangeTool().run(
+        _exec_ctx(db, ctx, _ALLOW_CONFIG),
+        ProposeConfigChangeInput(
+            section="integration",
+            operation="upsert_block",
+            block_key="slack",
+            section_content=new_slack,
+            user_confirmed=True,
+        ),
+    )
+    assert out.permitted is True
+    row = (
+        await db.execute(
+            select(ActionProposal).where(ActionProposal.id == uuid.UUID(out.proposal_id))
+        )
+    ).scalar_one()
+    # the LIVE slack block was captured as the diff base
+    assert "services/T0" in row.parameters["current_content"]
+
+
+@pytest.mark.asyncio
+async def test_remove_block_requires_an_existing_instance(
+    db: AsyncSession, seed_organization_and_user: dict[str, Any]
+) -> None:
+    ctx = _ctx(seed_organization_and_user)
+    tool = ProposeConfigChangeTool()
+    missing = await tool.run(
+        _exec_ctx(db, ctx, _ALLOW_CONFIG),
+        ProposeConfigChangeInput(
+            section="integration",
+            operation="remove_block",
+            block_key="virustotal",
+            user_confirmed=True,
+        ),
+    )
+    assert missing.permitted is False
+    assert "nothing to remove" in missing.detail.lower()
+    out = await tool.run(
+        _exec_ctx(db, ctx, _ALLOW_CONFIG),
+        ProposeConfigChangeInput(
+            section="integration",
+            operation="remove_block",
+            block_key="slack",
+            user_confirmed=True,
+        ),
+    )
+    assert out.permitted is True
+    row = (
+        await db.execute(
+            select(ActionProposal).where(ActionProposal.id == uuid.UUID(out.proposal_id))
+        )
+    ).scalar_one()
+    assert row.action == "remove_block"
+    assert "services/T0" in row.parameters["current_content"]  # what gets removed
+    assert "section_content" not in row.parameters
+
+
+@pytest.mark.asyncio
+async def test_upsert_block_refuses_identity_mismatch(
+    db: AsyncSession, seed_organization_and_user: dict[str, Any]
+) -> None:
+    # addressing 'virustotal' while the content names 'slack' — the validator's
+    # X-for-Y guard, exercised through the tool.
+    ctx = _ctx(seed_organization_and_user)
+    out = await ProposeConfigChangeTool().run(
+        _exec_ctx(db, ctx, _ALLOW_CONFIG),
+        ProposeConfigChangeInput(
+            section="integration",
+            operation="upsert_block",
+            block_key="virustotal",
+            section_content="<integration><name>slack</name></integration>",
+            user_confirmed=True,
+        ),
+    )
+    assert out.permitted is False
+    assert "must identify" in out.detail
 
 
 @pytest.mark.asyncio
@@ -200,6 +426,60 @@ async def test_restore_config_undoes_active_prior_change(
         )
     ).scalar_one()
     assert reversal.action == "restore_config"
+    assert reversal.reverses_proposal_id == prior.id
+
+
+@pytest.mark.asyncio
+async def test_restore_config_matches_the_block_key(
+    db: AsyncSession, seed_organization_and_user: dict[str, Any]
+) -> None:
+    # 6-f.4: with a block_key the undo targets THAT instance's change — a prior
+    # change on a different key is not matched.
+    ctx = _ctx(seed_organization_and_user)
+    prior = ActionProposal(
+        organization_id=ctx.organization_id,
+        action_class="config_change",
+        target={"section": "integration", "block_key": "virustotal"},
+        action="upsert_block",
+        parameters={"section_content": _VT_BLOCK, "current_content": ""},
+        rationale="original: add virustotal",
+        evidence={},
+        expected_effect="virustotal integration added",
+        rollback_plan=None,
+        severity="high",
+        requested_by=ctx.user_id,
+        content_hash=f"seed-{uuid.uuid4().hex}",
+        state=ProposalState.succeeded,
+        created_at=datetime.now(UTC),
+        expires_at=datetime.now(UTC),
+        executed_at=datetime.now(UTC),
+    )
+    db.add(prior)
+    await db.flush()
+
+    tool = ProposeConfigChangeTool()
+    wrong_key = await tool.run(
+        _exec_ctx(db, ctx, _ALLOW_CONFIG),
+        ProposeConfigChangeInput(
+            section="integration", operation="restore_config", block_key="slack"
+        ),
+    )
+    assert wrong_key.permitted is False
+    assert "Nothing to undo" in wrong_key.summary
+
+    out = await tool.run(
+        _exec_ctx(db, ctx, _ALLOW_CONFIG),
+        ProposeConfigChangeInput(
+            section="integration", operation="restore_config", block_key="virustotal"
+        ),
+    )
+    assert out.permitted is True
+    assert "original: add virustotal" in out.summary
+    reversal = (
+        await db.execute(
+            select(ActionProposal).where(ActionProposal.id == uuid.UUID(out.proposal_id))
+        )
+    ).scalar_one()
     assert reversal.reverses_proposal_id == prior.id
 
 

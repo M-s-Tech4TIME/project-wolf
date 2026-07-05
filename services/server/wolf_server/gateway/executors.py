@@ -38,8 +38,13 @@ from wolf_server.wazuh.capabilities import (
     resolve_agent_groups,
 )
 from wolf_server.wazuh.config_change import (
+    OP_UPDATE_SECTION,
+    OP_UPSERT_BLOCK,
+    block_persisted,
+    block_removed,
+    build_candidate,
+    find_identified_blocks,
     find_section_blocks,
-    replace_section_block,
     section_persisted,
 )
 from wolf_server.wazuh.rule_tuning import (
@@ -80,6 +85,7 @@ def _validation_ok(body: dict[str, Any]) -> tuple[bool, str]:
         if bad:
             return False, f"node validation not OK: {str(bad)[:300]}"
     return True, "ruleset valid on all nodes"
+
 
 # The callable shapes execute_proposal consumes (mirrors gateway/execution.py).
 Freshness = Callable[[ActionProposal], Awaitable[tuple[bool, str]]]
@@ -217,12 +223,16 @@ class _AgentActionExecutor:
             agent_groups = await resolve_agent_groups(read_api, agent_id)
             if p.action == OP_ASSIGN_GROUP:
                 res: dict[str, Any] = await action_api.assign_agent_group(
-                    agent_id=agent_id, group=group, capabilities=capabilities,
+                    agent_id=agent_id,
+                    group=group,
+                    capabilities=capabilities,
                     agent_groups=agent_groups,
                 )
             else:
                 res = await action_api.remove_agent_group(
-                    agent_id=agent_id, group=group, capabilities=capabilities,
+                    agent_id=agent_id,
+                    group=group,
+                    capabilities=capabilities,
                     agent_groups=agent_groups,
                 )
             return res
@@ -536,24 +546,66 @@ class ConfigValidationError(WolfError):
 
 
 class _ConfigChangeExecutor:
-    """config_change (6-e.4): forward replaces ONE allowlisted section in the
-    master's ``ossec.conf`` and APPLIES it (validate → cluster restart, with
+    """config_change (6-e.4, generalized 6-f.4 / ADR 0032 B): forward applies ONE
+    authored change to the master's ``ossec.conf`` — replace/add a
+    single-instance section (``update_section``) or add/update/remove ONE
+    block-identity-addressed instance of a repeated section (``upsert_block`` /
+    ``remove_block``) — and APPLIES it (validate → cluster restart, with
     auto-rollback if the edited configuration does not validate); reverse
     performs a **real undo** by PUTting the captured ``prior_state`` whole-file
     snapshot back (snapshot-restore, ADR 0029 §2), so a succeeded reverse flips
     the original to ``rolled_back``.
 
-    Staleness is real here: the proposal froze the section's content at propose
-    time (``current_content`` — the approver's diff base); if the live section
-    no longer matches, the config changed under the proposal and freshness
-    refuses (re-propose against the current file)."""
+    Staleness is real here: the proposal froze the targeted content at propose
+    time (``current_content`` — the approver's diff base; ``""`` when the change
+    ADDS something new); if the live target no longer matches, the config
+    changed under the proposal and freshness refuses (re-propose against the
+    current file)."""
 
     @staticmethod
     async def _read_config(ctx: ExecContext) -> str:
-        raw: str = await ctx.read_api.get_raw(
-            "/manager/configuration", params={"raw": "true"}
-        )
+        raw: str = await ctx.read_api.get_raw("/manager/configuration", params={"raw": "true"})
         return raw
+
+    @staticmethod
+    def _live_target_blocks(raw: str, p: ActionProposal) -> list[str]:
+        """The live block(s) the proposal addresses — occurrence-based for
+        ``update_section``, identity-keyed for the B2 ops."""
+        section = str(p.target.get("section", ""))
+        if p.action == OP_UPDATE_SECTION:
+            return find_section_blocks(raw, section)
+        return find_identified_blocks(raw, section, str(p.target.get("block_key", "")))
+
+    @classmethod
+    def _target_fresh(cls, raw: str, p: ActionProposal) -> tuple[bool, str]:
+        """Frozen-vs-live staleness for any forward op: an ADD (frozen ``""``)
+        needs the target still absent; an update/remove needs exactly one live
+        match still equal to the frozen content."""
+        section = str(p.target.get("section", ""))
+        block_key = str(p.target.get("block_key", ""))
+        described = f"<{section}>" + (f" '{block_key}'" if block_key else "")
+        params = p.parameters if isinstance(p.parameters, dict) else {}
+        frozen = str(params.get("current_content", "")).strip()
+        blocks = cls._live_target_blocks(raw, p)
+        if not frozen:
+            if blocks:
+                return False, (
+                    f"{described} now exists in ossec.conf but this proposal ADDS it "
+                    "— the config changed since it was proposed. Re-propose against "
+                    "the current configuration."
+                )
+            return True, f"{described} still absent — the add applies cleanly."
+        if len(blocks) != 1:
+            return False, (
+                f"{described} appears {len(blocks)} time(s) in ossec.conf — it must "
+                "appear exactly once to be edited."
+            )
+        if blocks[0].strip() != frozen:
+            return False, (
+                f"{described} has changed since this was proposed — the approver's "
+                "diff is stale. Re-propose against the current configuration."
+            )
+        return True, f"{described} present once and unchanged since proposal."
 
     @staticmethod
     async def _put_config(ctx: ExecContext, content: str) -> None:
@@ -581,34 +633,33 @@ class _ConfigChangeExecutor:
             raise ConfigValidationError(f"Configuration rejected ({detail}).")
         return detail
 
+    @staticmethod
+    def _change_persisted(raw: str, p: ActionProposal, new_block: str) -> bool:
+        """Op-aware persistence proof against the re-read file: the replaced/added
+        content matches (reformatting-tolerant), or the removed instance is gone."""
+        section = str(p.target.get("section", ""))
+        block_key = str(p.target.get("block_key", ""))
+        if p.action == OP_UPDATE_SECTION:
+            return section_persisted(raw, section, new_block)
+        if p.action == OP_UPSERT_BLOCK:
+            return block_persisted(raw, section, block_key, new_block)
+        return block_removed(raw, section, block_key)
+
     def build_forward(self, proposal: ActionProposal, ctx: ExecContext) -> Callables:
         async def _freshness(p: ActionProposal) -> tuple[bool, str]:
             if not ctx.capabilities.can(ACTION_UPDATE_MANAGER_CONFIG, RESOURCE_ANY):
                 return False, (
                     "Credential no longer holds manager:update_config (Superuser-scoped)."
                 )
-            section = str(p.target.get("section", ""))
             raw = await self._read_config(ctx)
-            blocks = find_section_blocks(raw, section)
-            if len(blocks) != 1:
-                return False, (
-                    f"Section <{section}> appears {len(blocks)} time(s) in ossec.conf "
-                    "— it must appear exactly once to be editable."
-                )
-            params = p.parameters if isinstance(p.parameters, dict) else {}
-            frozen = params.get("current_content")
-            if isinstance(frozen, str) and frozen.strip() and blocks[0].strip() != frozen.strip():
-                return False, (
-                    f"Section <{section}> has changed since this was proposed — the "
-                    "approver's diff is stale. Re-propose against the current "
-                    "configuration."
-                )
-            return True, f"Section <{section}> present once and unchanged since proposal."
+            return self._target_fresh(raw, p)
 
         async def _perform(p: ActionProposal) -> dict[str, Any]:
             section = str(p.target.get("section", ""))
+            block_key = str(p.target.get("block_key", ""))
             params = p.parameters if isinstance(p.parameters, dict) else {}
             new_block = str(params.get("section_content", "")).strip()
+            described = f"<{section}>" + (f" '{block_key}'" if block_key else "")
 
             # Snapshot the WHOLE ossec.conf — the undo restore point.
             snapshot = await self._read_config(ctx)
@@ -619,37 +670,44 @@ class _ConfigChangeExecutor:
                 "sha256": snap_hash,
             }
 
-            new_content = replace_section_block(snapshot, section, new_block)
+            # The SAME transformation the propose tool dry-ran (build_candidate:
+            # replace/add the single-instance section, or upsert/remove the
+            # identity-keyed instance — ADR 0032 B).
+            new_content = build_candidate(snapshot, p.action, section, block_key, new_block)
             if new_content is None:
                 raise ConfigValidationError(
-                    f"Section <{section}> does not appear exactly once in ossec.conf; "
-                    "cannot edit. No change applied."
+                    f"The change no longer applies cleanly to ossec.conf "
+                    f"({p.action} on {described}); cannot edit. No change applied."
                 )
             validation = await self._write_and_validate(
                 ctx, new_content=new_content, rollback_to=snapshot
             )
 
-            # AUTHORITATIVE confirm — re-read ossec.conf and prove OUR block
+            # AUTHORITATIVE confirm — re-read ossec.conf and prove OUR change
             # actually persisted. If it didn't, restore + fail honestly rather
             # than report a phantom success (the 6-e.3 lesson). The check is
-            # reformatting-tolerant (section_persisted): the manager re-indents
-            # the file on write, so a literal substring match false-negatives a
-            # change that applied (the live 6-e.4 failure). On a real miss the
-            # section read back is surfaced so an exotic transform is diagnosable.
+            # reformatting-tolerant (the manager re-indents the file on write, so
+            # a literal substring match false-negatives a change that applied —
+            # the live 6-e.4 failure) and op-aware (an upsert proves the keyed
+            # block matches; a removal proves the keyed block is GONE). On a real
+            # miss the content read back is surfaced so an exotic transform is
+            # diagnosable.
             reread = await self._read_config(ctx)
-            if not section_persisted(reread, section, new_block):
+            if not self._change_persisted(reread, p, new_block):
                 await self._put_config(ctx, snapshot)
-                live = find_section_blocks(reread, section)
+                live = self._live_target_blocks(reread, p)
                 seen = live[0].strip()[:300] if len(live) == 1 else f"{len(live)} occurrence(s)"
                 raise ConfigValidationError(
-                    f"Updated <{section}> block did not persist to ossec.conf; restored "
-                    f"the prior file. No change applied. (Section read back: {seen})"
+                    f"Change to {described} did not persist to ossec.conf; restored "
+                    f"the prior file. No change applied. (Target read back: {seen})"
                 )
 
             # Apply: the manager only loads ossec.conf on restart (~18s live).
             await ctx.action_api.restart_cluster(capabilities=ctx.capabilities)
             return {
                 "section": section,
+                "block_key": block_key,
+                "operation": p.action,
                 "validation": validation,
                 "restart_issued": True,
                 "prior_sha256": snap_hash,
@@ -658,20 +716,22 @@ class _ConfigChangeExecutor:
             }
 
         async def _verify(p: ActionProposal, res: dict[str, Any]) -> tuple[bool, dict[str, Any]]:
-            # Already authoritative: _perform confirmed the block PERSISTED and the
+            # Already authoritative: _perform confirmed the change PERSISTED and the
             # config VALIDATES (it raises + auto-restores otherwise). No re-read here
             # — it would race the restart _perform just issued.
             ok = bool(res.get("section_updated"))
             detail: dict[str, Any] = {
                 "ok": ok,
                 "section": res.get("section"),
+                "block_key": res.get("block_key"),
+                "operation": res.get("operation"),
                 "section_updated": res.get("section_updated"),
                 "validation": res.get("validation"),
                 "restart_issued": res.get("restart_issued", True),
                 "prior_sha256": res.get("prior_sha256"),
                 "new_sha256": res.get("new_sha256"),
                 "note": (
-                    "Section replaced in ossec.conf (master node) + configuration "
+                    "Change applied to ossec.conf (master node) + configuration "
                     "validated + cluster restart issued. The change becomes active "
                     "~15-30s after the restart completes."
                 ),

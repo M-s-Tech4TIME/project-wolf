@@ -49,6 +49,86 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-07-05 — 6-f.4: config-authoring generalization + research-first agent posture
+
+**Session type:** claude-code
+**Phase:** 6-f.4 (ADR 0032 B; closes 6-f.4 pending the operator web-test)
+**Branch / commit:** main
+
+### What we did
+- **B3 — free-form within rails:** `wazuh/config_change.py` replaced the
+  7-section `EDITABLE_SECTIONS` allowlist with `BLOCKED_SECTIONS`
+  (`auth`/`cluster`/`indexer`/`rule_test`/`ruleset` stay hand-edited); any
+  other well-formed section name is authorable (`is_valid_section_name`).
+  `update_section` now ADDS an absent single-instance section
+  (`insert_section_block` — before the file's final `</ossec_config>`).
+- **B2 — block-identity ops (the virustotal fix):** `IDENTITY_KEYS`
+  (`integration`→`<name>`, `localfile`→`<location>`, `command`→`<name>`);
+  new forward ops `upsert_block` / `remove_block` + `block_key` targeting ONE
+  instance of a repeated section (`identity_of` / `find_identified_blocks` /
+  `upsert_identified_block` / `remove_identified_block`); identity-scoped,
+  reformatting-tolerant persistence proofs (`block_persisted` /
+  `block_removed`). Validator: upsert content must CARRY the addressed
+  identity (no address-X-write-Y); duplicate-key files refuse; repeated
+  non-identity sections (`<global>` ×2) still refuse with guidance.
+- **B1 — the authoring loop, two-phase in the tool:** `propose_config_change`
+  without `user_confirmed=true` does the full author-time work (capability
+  pre-flight, structural validation, live config read, `build_candidate`
+  dry-run — the SAME transformation the executor applies) and returns
+  `state="needs_confirmation"` + the current content, queueing NOTHING; the
+  model shows the analyst the exact diff and re-calls confirmed. Author-time
+  manager validation is impossible without a write (the endpoint validates
+  the on-disk file) — recorded as an ADR refinement; execute-time validation
+  + auto-rollback unchanged. `restore_config` gained optional `block_key`
+  matching (undo THAT instance's change).
+- **Executor:** per-op freshness (`_target_fresh` — an ADD whose target
+  appeared is stale; updates/removes need the frozen block unchanged),
+  perform via shared `build_candidate`, op-aware persistence confirm,
+  `operation`/`block_key` in the result payload.
+- **Prompts:** `SYSTEM_PROMPT` #4 teaches THE AUTHORING LOOP (research →
+  preview → show diff → confirm → propose) + the generalized ops;
+  `WEB_RESEARCH_SUFFIX` gained RESEARCH-TO-ACT (the universal-power
+  directive — research chains into the propose tools, approval posture
+  unchanged).
+- **GUI (actions page):** block-op targets (`section <integration>
+  'virustotal'`), upsert diff (ADD shows "none — this adds a new block"),
+  removal card shows what is removed, result lines carry op + key.
+- **Tests:** 896 backend / 0 skips (+30): identity helpers + build_candidate
+  + insert/persist proofs; validator blocklist/identity matrix; the two-phase
+  confirm flow (preview queues nothing); upsert add/update, remove,
+  identity-mismatch, block-key restore matching; executor block-op
+  perform/freshness/persist-failure paths; prompt-token pins. mypy --strict
+  (116 files), ruff + format, dashboard tsc + eslint all green.
+
+### What we decided
+- The confirm-diff step is enforced IN THE TOOL (unconfirmed calls cannot
+  queue), not prompt-only — and the preview supplies the current content the
+  model has no read tool for. Recorded in the ADR 0032 6-f.4 addendum.
+
+### What broke / what we discovered
+- **Live self-validation (wiring):** with the new code live, qwen3:8b chained
+  research (`query_runbook`) → `propose_config_change` with
+  `operation=upsert_block, section=integration, block_key=virustotal` — the
+  new B2 surface selected unprompted — and the capability pre-flight
+  correctly refused (the org's scoped credential lacks
+  `manager:update_config`); the model relayed the refusal honestly with
+  Superuser guidance. Preview → confirm → queue phases are unit-pinned and
+  get their live run in the operator web-test (Superuser-scoped credential).
+- The operator's live chat model was `cohere/north-mini-code:free`
+  (OpenRouter); it emitted its tool call as prose instead of completing the
+  loop (known free-model reality, ADR 0031). The probe ran on local
+  `qwen3:8b` via a temporary `.env` flip; the operator's posture was restored
+  byte-identical afterwards and wolf-server restarted on it.
+
+### What's next
+- Operator web-test: the `<integration>`/virustotal case end-to-end
+  (research → preview diff → confirm → approve in /actions → verify on the
+  manager → `restore_config` undo) — needs the credential holding
+  `manager:update_config` (the admin `wazuh-wui` mapping, as in the 6-e.3/6-e.4
+  web-tests) and a chat model that completes agentic loops (qwen3:8b).
+
+---
+
 ## 2026-07-05 — 6-f.3 web-test PASSED; two operator directives: web research = universal power, grounding enrichment = committed Phase 6.13
 
 **Session type:** mixed (operator web-test + claude-code docs)

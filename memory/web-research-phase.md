@@ -1,6 +1,6 @@
 ---
 name: web-research-phase
-description: "ACTIVE PHASE, ADR 0032 (2026-07-03): Wolf web-research + config-authoring generalization — provider-agnostic web_search/web_fetch/bounded web_crawl (agent-loop-chained, model-decided like Claude), SearXNG self-hosted FREE DEFAULT behind a pluggable SearchProvider adapter (Brave/Tavily optional per-org), docs-first→community fallback, citations→existing evidence panel. wolf-search = its OWN native-venv Debian package mirroring wolf-database + wolf-server SIDECAR (loopback single-server AND default-distributed; mTLS-required only for an optional dedicated tier). 14-class security taxonomy. Config-authoring = research→confirm→dry-run→propose + block-identity for repeated <integration>. 6-f.1 ✅ 6-f.2 ✅ 6-f.3 ✅ (tools LIVE 2026-07-05, self-validated + operator web-test PASSED); 6-f.4 = ACTIVE (+ research-first agent posture per the universal-power directive)."
+description: "ACTIVE PHASE, ADR 0032 (2026-07-03): Wolf web-research + config-authoring generalization — provider-agnostic web_search/web_fetch/bounded web_crawl (agent-loop-chained, model-decided like Claude), SearXNG self-hosted FREE DEFAULT behind a pluggable SearchProvider adapter (Brave/Tavily optional per-org), docs-first→community fallback, citations→existing evidence panel. wolf-search = its OWN native-venv Debian package mirroring wolf-database + wolf-server SIDECAR (loopback single-server AND default-distributed; mTLS-required only for an optional dedicated tier). 14-class security taxonomy. Config-authoring = research→confirm→dry-run→propose + block-identity for repeated <integration>. 6-f.1 ✅ 6-f.2 ✅ 6-f.3 ✅ (operator web-test PASSED); 6-f.4 ✅ SHIPPED 2026-07-05 (blocklist+add-if-absent, block-identity upsert/remove, two-phase confirm-diff in the tool, research-to-act posture; operator web-test = virustotal end-to-end pending)."
 metadata:
   node_type: memory
   type: project
@@ -134,11 +134,22 @@ converge into ONE capability — **Wolf as a research-capable Wazuh expert**:
   `.env` now has WEB_SEARCH_ENABLED=1 (stays ON — feature is operator-accepted). Live-probe recipe:
   login needs the mTLS client cert `.local/certs/dashboard-client/{cert,key}.pem` + POST
   `/api/v1/auth/login` (cookie session) + `X-Organization-Id` header on `/api/v1/chat`
-  · 6-f.4 = ACTIVE (opened 2026-07-05): config-authoring generalization (B1 research→confirm-diff→
-  dry-run→propose · B2 block-identity for repeated `<integration>`/`<localfile>`/`<command>` ·
-  B3 free-form within rails, cluster/auth/indexer/ruleset stay blocked) **+ the research-first
-  agent posture** ([[web-research-as-universal-power]]: research-to-act wired into strategy
-  prompts + propose/execute flows). Gates: mypy --strict, no skips, full suite
+  · 6-f.4 **SHIPPED 2026-07-05** (operator web-test pending): config-authoring generalization +
+  research-first posture. B3: `EDITABLE_SECTIONS` allowlist → `BLOCKED_SECTIONS`
+  {auth,cluster,indexer,rule_test,ruleset}; update_section ADDS an absent section (insert before
+  final `</ossec_config>`). B2 (virustotal fix): `IDENTITY_KEYS` {integration→name,
+  localfile→location, command→name}; ops `upsert_block`/`remove_block`+`block_key`; upsert
+  content must CARRY the addressed identity; duplicate-key refuses; identity-scoped
+  reformatting-tolerant persist proofs (`block_persisted`/`block_removed`); restore_config
+  matches optional block_key. B1: confirm-diff is **TWO-PHASE IN THE TOOL** — unconfirmed call
+  = full author-time work (capability+validate+live read+`build_candidate` dry-run, SAME
+  transformation the executor runs) → `state="needs_confirmation"`+current_content, queues
+  NOTHING; only `user_confirmed=true` queues. KEY REFINEMENT: author-time manager validation
+  impossible without a write (`/manager/configuration/validation` validates ON-DISK only) →
+  dry-run = the transformation; manager validation stays at execute w/ auto-rollback. Prompts:
+  SYSTEM_PROMPT #4 = THE AUTHORING LOOP; WEB_RESEARCH_SUFFIX += RESEARCH-TO-ACT
+  ([[web-research-as-universal-power]]). GUI: block-op targets/diffs/removal cards. 896 tests/0
+  skip (+30). Gates: mypy --strict, no skips, full suite
   + cross-org, restart via `systemctl --user restart wolf-server.service` for web-tests.
 
 **Reusable reference from the 6-e.4 web-test.** (1) Wazuh **re-serialises ossec.conf on write** →
