@@ -158,6 +158,15 @@ substring (the `<sca>` "did not persist" false-negative; fixed commit ecc3562). 
 **model steering, not a code limit** (7 sections allowlisted). (3) 30-min approval TTL is
 `PROPOSAL_TTL_SECONDS`; staleness still guarded at execute by each class's freshness re-check.
 
+**6-f.5 SHIPPED 2026-07-06** (the 6-f.4 web-test feedback fixes, ADR 0032 addendum 2026-07-06):
+unbounded agent persistence + any-unique-field block disambiguation — full detail in
+[[no-hard-step-caps-unbounded-persistence]] + [[block-disambiguation-any-unique-field]].
+908 tests / 0 skips. NEXT in 6-f: **6-f.6 deployment-aware config application**
+([[deployment-aware-config-application]] — per-node `/cluster/{node_id}/configuration`
+verified empirically; ossec.conf NOT cluster-synced, today's PUT writes the master only;
+indexer/dashboard = wolf-pack boundary); after both: the operator's Nemotron model-switch
+evaluation ([[model-switch-nemotron-after-slices]]).
+
 Links: [[grounding-enrichment-tools-future-phase]], [[runbook-authoring-and-actionable-runbooks]],
 [[phase-6e3-rule-tuning-web-test]], [[grounding-execution-modes]], [[config-settings-system-phase]],
 [[ollama-num-ctx-tool-truncation]], [[native-https-and-wolf-cert]], [[same-network-gate-deferred]].

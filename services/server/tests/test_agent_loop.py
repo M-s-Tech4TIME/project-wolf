@@ -4,7 +4,10 @@ The MockProvider returns a queued sequence of ChatResponses so we can
 deterministically drive the loop through:
   - immediate-answer (no tool calls) → stop_reason="answer"
   - tool-call → tool-result → final-answer (citations aggregated)
-  - exhausted budget → stop_reason="budget_exhausted"
+  - unbounded persistence (6-f.5): the loop sails past the model's graded
+    step count (a soft checkpoint, never a wall) and every forced stop
+    (no progress / operator breaker / context-fit) SYNTHESIZES a best-effort
+    answer — "budget_exhausted" no longer exists
   - provider raises → stop_reason="loop_error"
 """
 
@@ -311,49 +314,145 @@ async def test_loop_handles_tool_call_then_final_answer(
     assert len(tool_calls) == 1
 
 
-# ─── Test: budget exhausted ──────────────────────────────────────────────────
+# ─── Tests: unbounded persistence (6-f.5) ────────────────────────────────────
+
+
+def _distinct_tool_call_responses(count: int) -> list[ChatResponse]:
+    """DISTINCT calls each step (varying time_from) so the repeated-tool-call
+    guard does NOT trip — a model doing genuinely NEW work every step."""
+    now = datetime.now(UTC)
+    return [
+        _response(
+            tool_calls=[
+                ToolCall(
+                    id=f"c-loop-{i}",
+                    name="search_alerts",
+                    arguments={
+                        "time_from": (now - timedelta(hours=i + 1)).isoformat(),
+                        "time_to": now.isoformat(),
+                    },
+                )
+            ],
+            stop_reason="tool_use",
+        )
+        for i in range(count)
+    ]
 
 
 @pytest.mark.asyncio
-async def test_loop_returns_budget_exhausted_when_model_keeps_calling_tools(
+async def test_loop_persists_past_the_graded_step_count(
     db: AsyncSession, organization_ctx: OrganizationContext
 ) -> None:
+    """No hard step cap (operator directive 2026-07-06): a model making real
+    progress runs PAST max_safe_autonomous_steps (5 here) — the grade is a
+    soft take-stock checkpoint, never a wall — and still lands its answer."""
     _register_search_alerts()
-    now = datetime.now(UTC)
-    # DISTINCT calls each step (varying time_from) so the repeated-tool-call
-    # guard does NOT trip — this test exercises genuine budget exhaustion, a
-    # model that keeps doing *new* work until the step budget runs out.
     provider = MockProvider(
         [
-            _response(
-                tool_calls=[
-                    ToolCall(
-                        id=f"c-loop-{i}",
-                        name="search_alerts",
-                        arguments={
-                            "time_from": (now - timedelta(hours=i + 1)).isoformat(),
-                            "time_to": now.isoformat(),
-                        },
-                    )
-                ],
-                stop_reason="tool_use",
-            )
-            for i in range(10)
+            *_distinct_tool_call_responses(10),
+            _response("After a long investigation, here is the full picture."),
         ]
     )
     loop = AgentLoop(provider=provider, strategy=FrontierStrategy())
     os_client, server_api = _fake_clients()
 
     answer = await loop.run(
-        question="loop forever?",
+        question="investigate deeply",
         ctx=organization_ctx,
         db=db,
         opensearch=os_client,
         server_api=server_api,
     )
-    assert answer.stop_reason == "budget_exhausted"
-    assert answer.step_count == 5  # capability.max_safe_autonomous_steps
-    assert answer.tool_call_count == 5
+    assert answer.stop_reason == "answer"
+    assert answer.step_count == 11  # 10 tool steps + the answer — past the old 5-step wall
+    assert answer.tool_call_count == 10
+    assert "full picture" in answer.content
+    # The checkpoint nudge was injected at the graded cadence (steps 5 and 10).
+    assert provider.last_request is not None
+    nudges = [
+        m
+        for m in provider.last_request.messages
+        if m.content and m.content.startswith("Checkpoint —")
+    ]
+    assert len(nudges) == 2
+
+
+@pytest.mark.asyncio
+async def test_step_breaker_forces_best_effort_synthesis(
+    db: AsyncSession, organization_ctx: OrganizationContext
+) -> None:
+    """The OPTIONAL operator circuit breaker: reaching it forces a synthesis
+    from the gathered evidence — a real answer, never a canned failure."""
+    _register_search_alerts()
+    provider = MockProvider(
+        [
+            *_distinct_tool_call_responses(3),
+            _response("Best-effort summary from the evidence gathered so far."),
+        ]
+    )
+    loop = AgentLoop(provider=provider, strategy=FrontierStrategy(), step_breaker=3)
+    os_client, server_api = _fake_clients()
+
+    answer = await loop.run(
+        question="investigate",
+        ctx=organization_ctx,
+        db=db,
+        opensearch=os_client,
+        server_api=server_api,
+    )
+    assert answer.stop_reason == "answer"
+    assert answer.step_count == 3
+    assert answer.tool_call_count == 3
+    assert "Best-effort summary" in answer.content
+    # The synthesis call carries the forced-synthesis instruction and NO tools.
+    assert provider.last_request is not None
+    assert provider.last_request.tools is None
+    assert any(
+        m.content and "best possible final answer" in m.content
+        for m in provider.last_request.messages
+    )
+
+
+@pytest.mark.asyncio
+async def test_context_fit_guard_synthesizes_before_the_window_overflows(
+    db: AsyncSession, organization_ctx: OrganizationContext
+) -> None:
+    """When the transcript nears the model's effective context window
+    (8192 × 0.8 = 6553 here), the loop stops gathering — further evidence
+    physically cannot fit — and synthesizes from what it has."""
+    _register_search_alerts()
+    now = datetime.now(UTC)
+    big_step = ChatResponse(
+        content="",
+        tool_calls=[
+            ToolCall(
+                id="c-big",
+                name="search_alerts",
+                arguments={
+                    "time_from": (now - timedelta(hours=1)).isoformat(),
+                    "time_to": now.isoformat(),
+                },
+            )
+        ],
+        input_tokens=7000,  # ≥ the 6553 fit limit
+        output_tokens=20,
+        stop_reason="tool_use",
+        model_id="mock-model",
+    )
+    provider = MockProvider([big_step, _response("Answer composed from the evidence that fits.")])
+    loop = AgentLoop(provider=provider, strategy=FrontierStrategy())
+    os_client, server_api = _fake_clients()
+
+    answer = await loop.run(
+        question="investigate",
+        ctx=organization_ctx,
+        db=db,
+        opensearch=os_client,
+        server_api=server_api,
+    )
+    assert answer.stop_reason == "answer"
+    assert answer.step_count == 1
+    assert "evidence that fits" in answer.content
 
 
 # ─── Test: repeated-tool-call guard ──────────────────────────────────────────
@@ -366,7 +465,8 @@ async def test_loop_guard_forces_synthesis_on_repeated_identical_tool_calls(
     """A model that repeats the SAME tool call (same name + args) is stopped by
     the repeated-tool-call guard: it's nudged, and after two consecutive
     redundant steps a final answer is synthesized from what it already has —
-    instead of looping to budget_exhausted (the 2026-07-01 runaway)."""
+    the no-progress stop (since 6-f.5 the loop's primary guard: with no fixed
+    step ceiling, a looping model must be stopped by its lack of progress)."""
     _register_search_alerts()
     now = datetime.now(UTC)
     identical = ToolCall(
@@ -395,11 +495,10 @@ async def test_loop_guard_forces_synthesis_on_repeated_identical_tool_calls(
         opensearch=os_client,
         server_api=server_api,
     )
-    # Forced synthesis returns a real answer well before the 5-step budget.
+    # Forced synthesis returns a real answer as soon as progress stops.
     assert answer.stop_reason == "answer"
     assert answer.step_count == 3
     assert "summary" in answer.content.lower()
-    # The guard stopped the loop early — far fewer than budget_exhausted's 5.
     assert answer.tool_call_count == 3
 
 

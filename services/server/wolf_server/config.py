@@ -324,6 +324,22 @@ class Settings(BaseSettings):
         mode = self.grounding_mode.strip().lower()
         return mode if mode in {"blocking", "deferred", "incremental"} else "blocking"
 
+    # ── Agent persistence (6-f.5 — operator directive: no hard step caps) ────
+    # The agent loop persists until the model answers, the no-progress guard
+    # trips, or the context-fit guard fires — there is NO fixed step ceiling.
+    # AGENT_STEP_BREAKER is an OPTIONAL operator circuit breaker (cost
+    # protection on paid per-token APIs): 0 (default) = disabled/unbounded;
+    # when set >0, reaching it forces a best-effort SYNTHESIS from the evidence
+    # gathered so far — never a canned failure. Phase 6.10 GUI consumer.
+    agent_step_breaker: int = 0
+    # Fraction of the model's effective context window the transcript may
+    # occupy before the loop stops gathering and synthesizes the best answer
+    # from the evidence it has. This is the natural (non-arbitrary) bound:
+    # past it, hosted providers hard-400 and Ollama silently TRUNCATES the
+    # transcript head (dropping the system prompt + tool catalog — the
+    # 2026-07-01 num_ctx regression), so continuing cannot help.
+    agent_context_fit_threshold: float = 0.8
+
     # ── Web research (ADR 0032 — slice 6-f.1 config seam) ───────────────────
     # Opt-in: OFF by default so a stock install never advertises web tools it
     # can't run (wolf-search is a Recommends, not a Depends). Enabling gates
@@ -353,7 +369,10 @@ class Settings(BaseSettings):
     # Combined web_search + web_fetch + web_crawl calls allowed per chat
     # request — the `max_uses` analog from Claude's web tools. Exhausting it
     # degrades to an honest "budget exhausted" tool error, never a hang.
-    web_search_budget_per_request: int = 12
+    # Raised 12 → 32 in 6-f.5 (operator directive: web research "requires
+    # persistence until satisfied") — still self-protection/tenant-fairness,
+    # generous enough to never starve a legitimate deep investigation.
+    web_search_budget_per_request: int = 32
     # Hard cap on the DECOMPRESSED response body per fetched page (a gzip
     # bomb is caught by this, not just wire size — ADR 0032 A6 §4).
     web_fetch_max_bytes: int = 2_000_000

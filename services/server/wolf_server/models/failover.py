@@ -113,13 +113,9 @@ def _conservative_capability(links: list[CapabilityDescriptor]) -> CapabilityDes
         model_id=primary.model_id,
         provider=primary.provider,
         context_window=min(link.context_window for link in links),
-        native_tool_calling=_min_by_rank(
-            [link.native_tool_calling for link in links], _TOOL_RANK
-        ),
+        native_tool_calling=_min_by_rank([link.native_tool_calling for link in links], _TOOL_RANK),
         reasoning_tier=_min_by_rank([link.reasoning_tier for link in links], _TIER_RANK),
-        structured_output=_min_by_rank(
-            [link.structured_output for link in links], _SO_RANK
-        ),
+        structured_output=_min_by_rank([link.structured_output for link in links], _SO_RANK),
         max_safe_autonomous_steps=min(link.max_safe_autonomous_steps for link in links),
         recommended_strategy=_min_by_rank(
             [link.recommended_strategy for link in links], _STRAT_RANK
@@ -159,6 +155,20 @@ class FailoverProvider:
 
     def capability(self) -> CapabilityDescriptor:
         return self._capability
+
+    def effective_context_window(self) -> int:
+        """Conservative floor across the chain — any link may end up serving
+        the request, so the loop's context-fit guard (6-f.5) must fit the
+        smallest effective window in the chain (same philosophy as
+        :func:`_conservative_capability`)."""
+        windows: list[int] = []
+        for provider in self.providers:
+            fn = getattr(provider, "effective_context_window", None)
+            if callable(fn):
+                windows.append(int(fn()))
+            else:
+                windows.append(int(provider.capability().context_window))
+        return min(windows)
 
     async def chat(self, request: ChatRequest) -> ChatResponse:
         errors: list[Exception] = []

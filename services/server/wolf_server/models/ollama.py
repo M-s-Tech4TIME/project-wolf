@@ -129,6 +129,17 @@ class OllamaAdapter:
     def capability(self) -> CapabilityDescriptor:
         return self._descriptor
 
+    def effective_context_window(self) -> int:
+        """The context Ollama will actually serve — the loaded ``num_ctx``
+        (typically far below the model family's nominal window), else the
+        descriptor's nominal window.  The agent loop's context-fit guard
+        (6-f.5) uses this so unbounded persistence stops BEFORE Ollama's
+        silent head-truncation (the 2026-07-01 num_ctx regression), not
+        after."""
+        if self._num_ctx is not None:
+            return min(self._num_ctx, self._descriptor.context_window)
+        return self._descriptor.context_window
+
     async def _raw_chat(self, request: ChatRequest) -> ChatResponse:
         messages = [_message_to_ollama(m) for m in request.messages]
         options: dict[str, Any] = {"temperature": request.temperature}

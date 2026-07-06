@@ -162,7 +162,12 @@ async def chat(
         # registration-gated on the same flag.
         open_research_context(ctx, _settings, secrets) as research,
     ):
-        loop = AgentLoop(provider=provider, strategy=strategy)
+        loop = AgentLoop(
+            provider=provider,
+            strategy=strategy,
+            step_breaker=_settings.agent_step_breaker,
+            context_fit_threshold=_settings.agent_context_fit_threshold,
+        )
         answer = await loop.run(
             question=body.question,
             history=[(t.role, t.content) for t in body.history],
@@ -267,7 +272,12 @@ async def chat_stream(
                 # when WEB_SEARCH_ENABLED=0 (the default).
                 open_research_context(ctx, _settings, secrets) as research,
             ):
-                loop = AgentLoop(provider=provider, strategy=strategy)
+                loop = AgentLoop(
+                    provider=provider,
+                    strategy=strategy,
+                    step_breaker=_settings.agent_step_breaker,
+                    context_fit_threshold=_settings.agent_context_fit_threshold,
+                )
                 await loop.run(
                     question=body.question,
                     history=[(t.role, t.content) for t in body.history],

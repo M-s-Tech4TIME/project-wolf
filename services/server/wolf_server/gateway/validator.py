@@ -38,7 +38,7 @@ from wolf_server.wazuh.config_change import (
     IDENTITY_KEYS,
     OP_REMOVE_BLOCK,
     OP_UPSERT_BLOCK,
-    identity_of,
+    content_carries_key,
     is_valid_section_block,
     is_valid_section_name,
 )
@@ -267,11 +267,13 @@ def _validate_config_change(
     The target is ONE ossec.conf section outside the break-the-manager blocklist
     (free-form within rails — B3), the action a known forward op, and per-op:
     ``update_section`` needs a well-formed replacement block; the block-identity
-    ops (B2) additionally need a resolved ``block_key`` on an identity-keyed
-    section, and an upsert's content must actually CARRY that key (so a proposal
-    can't address instance X while writing instance Y).  ``restore_config`` is
-    reversal-only (created via ``create_reversal_proposal``, which bypasses this
-    validator), so a *forward* restore is refused here."""
+    ops (B2) additionally need a resolved ``block_key`` — the instance's identity
+    element OR any uniquely-identifying leaf value (6-f.5), so ANY unblocked
+    section is addressable — and an upsert's content must actually CARRY that
+    key (so a proposal can't address instance X while writing instance Y).
+    ``restore_config`` is reversal-only (created via
+    ``create_reversal_proposal``, which bypasses this validator), so a *forward*
+    restore is refused here."""
     section = target.get("section")
     if not isinstance(section, str) or not section.strip():
         return ValidationResult(
@@ -307,24 +309,23 @@ def _validate_config_change(
             ),
         )
 
-    # Block-identity ops (B2): a resolved, non-wildcard key on an identity section.
+    # Block-identity ops (B2): a resolved, non-wildcard key.  Since 6-f.5 the
+    # key may be the section's identity element (IDENTITY_KEYS) OR any leaf
+    # value that uniquely selects one live instance — uniqueness is enforced at
+    # capture/apply time, where the live file is in hand.
     if action in (OP_UPSERT_BLOCK, OP_REMOVE_BLOCK):
-        if section not in IDENTITY_KEYS:
-            return ValidationResult(
-                ok=False,
-                reason=(
-                    f"Section <{section}> has no block-identity key; "
-                    f"{action!r} applies to: {', '.join(sorted(IDENTITY_KEYS))}. "
-                    "Use 'update_section' for single-instance sections."
-                ),
-            )
         block_key = target.get("block_key")
         if not isinstance(block_key, str) or not block_key.strip():
+            hint = (
+                f"the instance's <{IDENTITY_KEYS[section]}> value"
+                if section in IDENTITY_KEYS
+                else "a leaf value unique to the instance"
+            )
             return ValidationResult(
                 ok=False,
                 reason=(
-                    f"{action!r} needs a resolved 'block_key' — the instance's "
-                    f"<{IDENTITY_KEYS[section]}> value (e.g. an integration's name)."
+                    f"{action!r} needs a resolved 'block_key' — {hint} "
+                    "(or any field value that identifies exactly one instance)."
                 ),
             )
         if _is_blast(block_key):
@@ -346,16 +347,15 @@ def _validate_config_change(
         return ValidationResult(ok=False, reason=reason)
     if action == OP_UPSERT_BLOCK:
         block_key = str(target.get("block_key", "")).strip()
-        carried = identity_of(section, content)
-        if carried != block_key:
+        if not content_carries_key(section, content, block_key):
             return ValidationResult(
                 ok=False,
                 reason=(
-                    f"The proposed <{section}> block carries "
-                    f"<{IDENTITY_KEYS[section]}>{carried or '(none)'}</"
-                    f"{IDENTITY_KEYS[section]}> but the proposal addresses "
-                    f"{block_key!r} — the content must identify the instance it "
-                    "targets."
+                    f"The proposed <{section}> block does not contain the "
+                    f"addressed key {block_key!r} (as its identity element or any "
+                    "field value) — the content must identify the instance it "
+                    "targets. To change the addressing field itself, address the "
+                    "instance by a different unique field."
                 ),
             )
     return ValidationResult(ok=True)

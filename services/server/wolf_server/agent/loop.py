@@ -1,4 +1,4 @@
-"""Core agent loop — plan-act-observe with bounded step budget.
+"""Core agent loop — plan-act-observe, unbounded persistence (6-f.5).
 
 The loop is provider- and strategy-agnostic.  It is given:
   - a ModelProvider (any adapter that satisfies the protocol)
@@ -7,7 +7,23 @@ The loop is provider- and strategy-agnostic.  It is given:
 
 It calls the model, dispatches any tool calls through the Phase 2A dispatcher,
 feeds the structured results back, and terminates when the model returns a
-final answer or the step budget is exhausted.
+final answer.  There is NO fixed step ceiling (operator directive 2026-07-06:
+"utilize the step count, but never limit it to any specific value") — the loop
+persists until the model is satisfied, and the only stops besides a real
+answer are grounded in actual progress, not a number:
+
+  - the no-progress guard (a whole step of exact-repeat tool calls, twice) —
+    the model is looping, more steps cannot help;
+  - the context-fit guard — the transcript is about to outgrow the model's
+    effective context window, so further gathering physically cannot fit;
+  - an OPTIONAL operator circuit breaker (``AGENT_STEP_BREAKER``, default
+    off) for cost protection on paid APIs.
+
+EVERY such stop ends in a forced best-effort SYNTHESIS from the evidence
+already gathered — never a canned "budget exhausted" apology.  The model's
+graded ``max_safe_autonomous_steps`` survives as a soft CHECKPOINT: at that
+cadence the loop nudges the model to take stock (answer if it can, refocus if
+it can't), which utilizes the grading without walling on it.
 
 Every model call is audited (success or failure).  Every tool call is audited
 inside the dispatcher.  Citations are aggregated across tool results so the
@@ -74,11 +90,13 @@ _EMPTY_ANSWER_FALLBACK = (
 
 # Repeated-tool-call guard (2026-07-01). Weaker models sometimes loop on the
 # same tool call — e.g. calling query_runbook with the same args over and over —
-# never synthesizing, until the step budget is exhausted (a bad, expensive UX:
-# 15 steps / 200 K+ tokens for no answer). When a whole step's tool calls are
-# all EXACT repeats of earlier calls, we nudge the model to answer from what it
-# has; after two consecutive redundant steps we force a final synthesis. This
-# is model-agnostic — a strong model never trips it; a looping one is stopped.
+# never synthesizing (a bad, expensive UX: 200 K+ tokens for no answer). When a
+# whole step's tool calls are all EXACT repeats of earlier calls, we nudge the
+# model to answer from what it has; after two consecutive redundant steps we
+# force a final synthesis. Since 6-f.5 this is the loop's primary stop besides
+# a real answer — it detects NO PROGRESS, which is the honest reason to stop
+# (a step count never was). This is model-agnostic — a strong model never
+# trips it; a looping one is stopped.
 _REDUNDANT_TOOL_NUDGE = (
     "You have already run these exact queries and their results are in the "
     "transcript above — running them again returns the same data. Stop searching "
@@ -87,6 +105,30 @@ _REDUNDANT_TOOL_NUDGE = (
     "repeating a search."
 )
 _MAX_REDUNDANT_STREAK = 2
+
+# Soft checkpoint (6-f.5): at every `max_safe_autonomous_steps` boundary the
+# loop asks the model to take stock — answer if the evidence suffices, refocus
+# if not. A nudge, NEVER a wall: the loop keeps going as long as the model
+# makes real progress.
+_CHECKPOINT_NUDGE = (
+    "Checkpoint — you have taken several investigation steps. Take stock: if "
+    "the evidence gathered above already answers the user's question, write "
+    "the final answer now. If something specific is still missing, name it to "
+    "yourself and continue — focused on retrieving exactly that."
+)
+
+# Forced-synthesis stops (6-f.5): when the loop must stop without the model
+# volunteering an answer (no progress / context full / operator breaker), it
+# re-prompts once WITHOUT tools to compose the best possible answer from the
+# evidence already gathered — honestly noting gaps — instead of returning a
+# canned failure.
+_FORCED_SYNTHESIS_NUDGE = (
+    "Stop investigating now and write the best possible final answer from the "
+    "evidence already gathered above. Be direct and complete about what the "
+    "evidence supports; if something the user asked for could not be "
+    "established, say plainly what is missing and what you would check next. "
+    "Do not call any tools."
+)
 
 
 class AgentAnswer(BaseModel):
@@ -98,7 +140,9 @@ class AgentAnswer(BaseModel):
     tool_call_count: int
     input_tokens: int
     output_tokens: int
-    stop_reason: str  # "answer" | "budget_exhausted" | "loop_error"
+    # "answer" | "loop_error" — "budget_exhausted" is gone since 6-f.5 (no
+    # fixed step ceiling exists; forced-synthesis stops are real answers).
+    stop_reason: str
     loop_id: str
     # Phase 3 Slice 2B — grounding validator counts. None if the validator
     # didn't run (no citations, empty answer, or judge call failed).
@@ -190,6 +234,23 @@ class AgentLoop:
     provider: ModelProvider
     strategy: Strategy
     limits: ResourceLimits = field(default_factory=lambda: DEFAULT_LIMITS)
+    # 6-f.5 persistence knobs (wired from Settings by the chat API; the
+    # defaults here mirror the Settings defaults for direct construction).
+    # 0 = no operator circuit breaker — unbounded persistence.
+    step_breaker: int = 0
+    # Transcript share of the model's effective context window at which the
+    # loop stops gathering and synthesizes from what it has.
+    context_fit_threshold: float = 0.8
+
+    def _effective_context_window(self) -> int:
+        """The context the provider will actually serve — the adapter's own
+        effective window when it exposes one (Ollama's loaded ``num_ctx`` is
+        typically far below the model family's nominal window), else the
+        capability descriptor's nominal window."""
+        fn = getattr(self.provider, "effective_context_window", None)
+        if callable(fn):
+            return int(fn())
+        return int(self.provider.capability().context_window)
 
     async def run(
         self,
@@ -209,7 +270,10 @@ class AgentLoop:
         research: Any | None = None,
     ) -> AgentAnswer:
         capability = self.provider.capability()
-        budget = self.strategy.step_budget(capability)
+        # 6-f.5: the strategy's step budget is a soft CHECKPOINT cadence (take
+        # stock, answer if you can), never a wall — see the module docstring.
+        checkpoint_every = max(1, self.strategy.step_budget(capability))
+        context_fit_limit = int(self._effective_context_window() * self.context_fit_threshold)
         tools = self.strategy.model_tools(schema_registry.model_tools())
 
         loop_id = uuid.uuid4().hex
@@ -269,7 +333,9 @@ class AgentLoop:
             organization_id=str(ctx.organization_id),
             strategy=self.strategy.name,
             model_id=capability.model_id,
-            step_budget=budget,
+            checkpoint_every=checkpoint_every,
+            step_breaker=self.step_breaker,
+            context_fit_limit=context_fit_limit,
             tool_catalog_size=len(tools),
         )
         await _emit(
@@ -280,11 +346,12 @@ class AgentLoop:
                 "strategy": self.strategy.name,
                 "model_id": capability.model_id,
                 "provider": capability.provider,
-                "step_budget": budget,
             },
         )
 
-        for step in range(budget):
+        step = -1
+        while True:
+            step += 1
             await _emit(event_callback, "step.started", {"step": step})
             request = ChatRequest(messages=messages, tools=tools or None)
 
@@ -484,8 +551,8 @@ class AgentLoop:
             # Repeated-tool-call guard (2026-07-01): if this whole step only
             # repeated earlier calls, the model is looping. Nudge it to answer;
             # after _MAX_REDUNDANT_STREAK consecutive redundant steps, force a
-            # final synthesis (no tools) so a looping model can't burn the whole
-            # budget for no answer.
+            # final synthesis (no tools) — more steps cannot produce new
+            # evidence, so this is the honest stop (6-f.5's primary guard).
             if step_had_new_call:
                 redundant_streak = 0
             else:
@@ -497,75 +564,147 @@ class AgentLoop:
                     redundant_streak=redundant_streak,
                 )
                 if redundant_streak >= _MAX_REDUNDANT_STREAK:
-                    forced = await self._synthesize_final(messages, loop_id=loop_id)
-                    if forced is not None:
-                        total_input_tokens += forced.input_tokens
-                        total_output_tokens += forced.output_tokens
-                    forced_content = (forced.content if forced else "") or ""
-                    if not forced_content.strip():
-                        forced_content = (
-                            next(
-                                (
-                                    m.content
-                                    for m in reversed(messages)
-                                    if m.role == MessageRole.assistant and m.content
-                                ),
-                                "",
-                            )
-                            or _EMPTY_ANSWER_FALLBACK
-                        )
-                    logger.info(
-                        "agent_loop_completed",
+                    return await self._synthesized_stop(
+                        cause="no_progress",
+                        messages=messages,
                         loop_id=loop_id,
-                        stop_reason="answer",
-                        steps=step + 1,
-                        tool_calls=tool_call_count,
-                        redundant_guard_tripped=True,
-                    )
-                    answer = AgentAnswer(
-                        content=forced_content,
-                        citations=citations,
-                        step_count=step + 1,
+                        steps_done=step + 1,
                         tool_call_count=tool_call_count,
-                        input_tokens=total_input_tokens,
-                        output_tokens=total_output_tokens,
-                        stop_reason="answer",
-                        loop_id=loop_id,
-                    )
-                    return await self._finalize_answer(
-                        answer,
-                        validator=grounding_validator,
-                        tool_results=all_tool_results,
-                        retrieved_chunks=all_retrieved_chunks,
-                        tool_failures=all_tool_failures,
+                        total_input_tokens=total_input_tokens,
+                        total_output_tokens=total_output_tokens,
+                        citations=citations,
+                        grounding_validator=grounding_validator,
+                        all_tool_results=all_tool_results,
+                        all_retrieved_chunks=all_retrieved_chunks,
+                        all_tool_failures=all_tool_failures,
                         db=db,
                         ctx=ctx,
                         event_callback=event_callback,
-                        mode=grounding_mode,
+                        grounding_mode=grounding_mode,
                     )
                 messages.append(Message(role=MessageRole.user, content=_REDUNDANT_TOOL_NUDGE))
 
-        # Budget exhausted without final answer.
-        logger.warning(
-            "agent_loop_budget_exhausted",
-            loop_id=loop_id,
-            steps=budget,
-            tool_calls=tool_call_count,
+            # 6-f.5 persistence guards — each grounded in something real (an
+            # operator's explicit breaker; the physical context window), never
+            # a hardcoded step number.
+            steps_done = step + 1
+            if self.step_breaker > 0 and steps_done >= self.step_breaker:
+                logger.warning(
+                    "agent_loop_step_breaker_tripped",
+                    loop_id=loop_id,
+                    steps=steps_done,
+                    breaker=self.step_breaker,
+                )
+                return await self._synthesized_stop(
+                    cause="step_breaker",
+                    messages=messages,
+                    loop_id=loop_id,
+                    steps_done=steps_done,
+                    tool_call_count=tool_call_count,
+                    total_input_tokens=total_input_tokens,
+                    total_output_tokens=total_output_tokens,
+                    citations=citations,
+                    grounding_validator=grounding_validator,
+                    all_tool_results=all_tool_results,
+                    all_retrieved_chunks=all_retrieved_chunks,
+                    all_tool_failures=all_tool_failures,
+                    db=db,
+                    ctx=ctx,
+                    event_callback=event_callback,
+                    grounding_mode=grounding_mode,
+                )
+            if response.input_tokens >= context_fit_limit:
+                logger.warning(
+                    "agent_loop_context_fit_stop",
+                    loop_id=loop_id,
+                    steps=steps_done,
+                    input_tokens=response.input_tokens,
+                    context_fit_limit=context_fit_limit,
+                )
+                return await self._synthesized_stop(
+                    cause="context_full",
+                    messages=messages,
+                    loop_id=loop_id,
+                    steps_done=steps_done,
+                    tool_call_count=tool_call_count,
+                    total_input_tokens=total_input_tokens,
+                    total_output_tokens=total_output_tokens,
+                    citations=citations,
+                    grounding_validator=grounding_validator,
+                    all_tool_results=all_tool_results,
+                    all_retrieved_chunks=all_retrieved_chunks,
+                    all_tool_failures=all_tool_failures,
+                    db=db,
+                    ctx=ctx,
+                    event_callback=event_callback,
+                    grounding_mode=grounding_mode,
+                )
+            # Soft checkpoint: utilize the model's graded step comfort zone as
+            # a take-stock cadence — never a wall.
+            if steps_done % checkpoint_every == 0:
+                messages.append(Message(role=MessageRole.user, content=_CHECKPOINT_NUDGE))
+
+    async def _synthesized_stop(
+        self,
+        *,
+        cause: str,
+        messages: list[Message],
+        loop_id: str,
+        steps_done: int,
+        tool_call_count: int,
+        total_input_tokens: int,
+        total_output_tokens: int,
+        citations: list[Citation],
+        grounding_validator: GroundingValidator | None,
+        all_tool_results: list[dict[str, Any]],
+        all_retrieved_chunks: list[dict[str, Any]],
+        all_tool_failures: list[dict[str, Any]],
+        db: AsyncSession,
+        ctx: OrganizationContext,
+        event_callback: EventCallback | None,
+        grounding_mode: str,
+    ) -> AgentAnswer:
+        """Force a best-effort final synthesis (no tools) and finalize it.
+
+        Every stop that isn't the model volunteering an answer lands here — no
+        progress, context full, operator breaker.  The result is a REAL answer
+        composed from the gathered evidence (stop_reason="answer", honest about
+        gaps via the synthesis nudge), never a canned failure (6-f.5)."""
+        forced = await self._synthesize_final(
+            messages, loop_id=loop_id, nudge=_FORCED_SYNTHESIS_NUDGE
         )
-        last_assistant = next(
-            (m.content for m in reversed(messages) if m.role == MessageRole.assistant),
-            "",
+        if forced is not None:
+            total_input_tokens += forced.input_tokens
+            total_output_tokens += forced.output_tokens
+        forced_content = (forced.content if forced else "") or ""
+        if not forced_content.strip():
+            forced_content = (
+                next(
+                    (
+                        m.content
+                        for m in reversed(messages)
+                        if m.role == MessageRole.assistant and m.content
+                    ),
+                    "",
+                )
+                or _EMPTY_ANSWER_FALLBACK
+            )
+        logger.info(
+            "agent_loop_completed",
+            loop_id=loop_id,
+            stop_reason="answer",
+            steps=steps_done,
+            tool_calls=tool_call_count,
+            forced_synthesis=cause,
         )
         answer = AgentAnswer(
-            content=last_assistant
-            or "The step budget was exhausted before I could complete the investigation. "
-            "Please narrow your question or try again.",
+            content=forced_content,
             citations=citations,
-            step_count=budget,
+            step_count=steps_done,
             tool_call_count=tool_call_count,
             input_tokens=total_input_tokens,
             output_tokens=total_output_tokens,
-            stop_reason="budget_exhausted",
+            stop_reason="answer",
             loop_id=loop_id,
         )
         return await self._finalize_answer(
@@ -629,18 +768,20 @@ class AgentLoop:
         return response
 
     async def _synthesize_final(
-        self, messages: list[Message], *, loop_id: str
+        self, messages: list[Message], *, loop_id: str, nudge: str = _SYNTHESIS_NUDGE
     ) -> ChatResponse | None:
-        """Re-prompt once (no tools) to recover from an empty final answer.
+        """Re-prompt once (no tools) to coax a written answer from the evidence.
 
+        Used to recover an empty final answer (default nudge) and to compose
+        the best-effort answer on a forced stop (``_FORCED_SYNTHESIS_NUDGE``).
         Returns the retry response, or None if the call itself failed. The
         caller decides whether the recovered content is usable. Never raises —
         recovery is best-effort; a failure just leaves the fallback message.
         """
         try:
-            nudge = [*messages, Message(role=MessageRole.user, content=_SYNTHESIS_NUDGE)]
+            prompted = [*messages, Message(role=MessageRole.user, content=nudge)]
             # tools omitted → the model must write prose, not call a tool.
-            return await self.provider.chat(ChatRequest(messages=nudge))
+            return await self.provider.chat(ChatRequest(messages=prompted))
         except Exception as exc:
             logger.warning(
                 "agent_loop_synthesis_retry_failed",

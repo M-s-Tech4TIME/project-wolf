@@ -474,6 +474,33 @@ write). See the ADR 0032 2026-07-05 addendum.
     directive, approval posture unchanged). GUI: block-op targets, upsert
     diffs, removal cards. Web-test: the `<integration>`/virustotal case
     end-to-end.
+  - **6-f.5** ✅ — web-test feedback (2026-07-06): unbounded persistence +
+    any-unique-field disambiguation. (1) NO hard step caps (operator
+    directive: "utilize the step count, but never limit it to any specific
+    value"): the loop persists until the model answers; the only other stops
+    are the no-progress guard, the context-fit guard (0.8 × the provider's
+    EFFECTIVE window — Ollama's loaded `num_ctx`, chain = min across links)
+    and the optional `AGENT_STEP_BREAKER` (default off; Phase 6.10 GUI
+    consumer) — and EVERY forced stop synthesizes a best-effort answer from
+    the gathered evidence (`budget_exhausted` retired). The graded
+    `max_safe_autonomous_steps` became a soft take-stock checkpoint cadence.
+    Web budget 12 → 32. `SYSTEM_PROMPT` #7 PERSIST UNTIL SATISFIED (dynamic
+    think/reason/verify/justify/validate on ANY request shape). (2) The
+    duplicate-name fix (live tracecat scenario): `block_key` matches identity
+    first, then ANY leaf value uniquely selecting one instance
+    (`<hook_url>`/`<api_key>`); one shared selector across tool preview /
+    `build_candidate` / executor / persistence proofs; B2 ops on ANY
+    unblocked section; ambiguous-key refusals ENUMERATE each instance's
+    discriminating fields so the model re-addresses instead of hallucinating.
+    ADR 0032 addendum (2026-07-06).
+  - **6-f.6** (next) — deployment-aware config application (operator
+    directive): detect all-in-one vs distributed via `/cluster/status`;
+    distributed applies per node via the per-node cluster configuration
+    endpoints (verify empirically first — ossec.conf is NOT cluster-synced;
+    today's `PUT /manager/configuration` writes the master only), per-node
+    validation + rollback, one restart, node list surfaced to the approver.
+    Indexer/dashboard config files are unreachable via the Server API →
+    wolf-pack (Phase 12) scope, stated honestly.
 
 **then** severity-tiered authority / four-eyes / crown-jewel tagging (policy
 hooks, B1 default = approval-for-all); auto-execution (Phase 13). The remaining

@@ -143,6 +143,17 @@ def test_conservative_capability_takes_the_floor() -> None:
     assert cap.context_window == 131_072  # min
 
 
+def test_effective_context_window_takes_the_chain_floor() -> None:
+    # 6-f.5 context-fit guard: the chain's effective window is the smallest a
+    # link will actually serve — an adapter's own effective_context_window
+    # (e.g. Ollama's loaded num_ctx) beats its nominal descriptor window.
+    primary = _Stub(_desc(model_id="cloud", provider="openrouter", ctx=256_000))
+    fallback = _Stub(_desc(model_id="qwen3:8b", provider="ollama", ctx=131_072))
+    fallback.effective_context_window = lambda: 16_384  # type: ignore[attr-defined]
+    chain = FailoverProvider(providers=[primary, fallback])
+    assert chain.effective_context_window() == 16_384
+
+
 @pytest.mark.asyncio
 async def test_chat_falls_back_on_primary_error() -> None:
     primary = _Stub(_desc(), error=ModelProviderRateLimitError("429 capped"))

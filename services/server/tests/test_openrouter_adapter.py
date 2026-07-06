@@ -79,12 +79,30 @@ async def test_chat_stream_yields_content_deltas_then_done() -> None:
 async def test_chat_stream_accumulates_fragmented_tool_calls() -> None:
     # arguments arrive as concatenated JSON fragments keyed by index (OpenAI SSE).
     sse = _sse(
-        {"choices": [{"delta": {"tool_calls": [
-            {"index": 0, "id": "call_1", "function": {"name": "get_weather", "arguments": "{\"ci"}}
-        ]}}]},
-        {"choices": [{"delta": {"tool_calls": [
-            {"index": 0, "function": {"arguments": "ty\": \"Paris\"}"}}
-        ]}}]},
+        {
+            "choices": [
+                {
+                    "delta": {
+                        "tool_calls": [
+                            {
+                                "index": 0,
+                                "id": "call_1",
+                                "function": {"name": "get_weather", "arguments": '{"ci'},
+                            }
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            "choices": [
+                {
+                    "delta": {
+                        "tool_calls": [{"index": 0, "function": {"arguments": 'ty": "Paris"}'}}]
+                    }
+                }
+            ]
+        },
         {"choices": [{"delta": {}, "finish_reason": "tool_calls"}]},
     )
 
@@ -304,9 +322,7 @@ async def test_config_check_validates_fallback_independently() -> None:
         fallback_model_id="qwen/qwen3-next-80b-a3b-instruct:free",
         fallback_model_api_key_ref="missing.fallback.key",
     )
-    problems = await check_model_config(
-        settings, _Secrets({"model.openrouter.api_key"})
-    )  # type: ignore[arg-type]
+    problems = await check_model_config(settings, _Secrets({"model.openrouter.api_key"}))  # type: ignore[arg-type]
     assert len(problems) == 1
     assert problems[0].startswith("fallback model")
 
@@ -325,9 +341,7 @@ async def test_config_check_passes_for_ollama_fallback_without_key() -> None:
         fallback_model_id="qwen3:8b",
         fallback_model_api_key_ref="",
     )
-    problems = await check_model_config(
-        settings, _Secrets({"model.openrouter.api_key"})
-    )  # type: ignore[arg-type]
+    problems = await check_model_config(settings, _Secrets({"model.openrouter.api_key"}))  # type: ignore[arg-type]
     assert problems == []
 
 
@@ -367,3 +381,7 @@ async def test_chat_ollama_build_applies_num_ctx() -> None:
     )
     assert isinstance(provider, OllamaAdapter)
     assert provider._num_ctx == 20000
+    # 6-f.5 context-fit guard: the loaded num_ctx IS the effective window
+    # (bounded by the descriptor's nominal window) — the agent loop must stop
+    # gathering before Ollama silently truncates the transcript head.
+    assert provider.effective_context_window() == 20000

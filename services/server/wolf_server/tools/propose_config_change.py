@@ -4,10 +4,12 @@ The model authors a change to the manager's ``ossec.conf`` — free-form within
 rails (any section outside the break-the-manager blocklist), covering both
 single-instance sections (``update_section``, which ADDS the section when it is
 absent) and repeated / merge-semantic sections addressed by **block-identity**
-(``upsert_block`` / ``remove_block`` + ``block_key`` — e.g. one specific
-``<integration>`` by its ``<name>``).  Like every propose tool it changes
-nothing itself: it validates + capability-pre-flights + queues a *pending*
-proposal a human must approve.
+(``upsert_block`` / ``remove_block`` + ``block_key`` — one specific
+``<integration>`` by its ``<name>``, or by ANY field value unique to the
+instance when identities collide, 6-f.5; an ambiguous key is refused WITH each
+instance's distinguishing fields so the model can re-address precisely).  Like
+every propose tool it changes nothing itself: it validates +
+capability-pre-flights + queues a *pending* proposal a human must approve.
 
 **The authoring loop is two-phase (B1 confirm-diff):** a call WITHOUT
 ``user_confirmed=true`` performs the full author-time work — structural
@@ -52,13 +54,13 @@ from wolf_server.wazuh.capabilities import (
 )
 from wolf_server.wazuh.config_change import (
     BLOCKED_SECTIONS,
-    IDENTITY_KEYS,
     OP_LABELS,
     OP_REMOVE_BLOCK,
     OP_RESTORE_CONFIG,
     OP_UPDATE_SECTION,
     OP_UPSERT_BLOCK,
     build_candidate,
+    describe_instances,
     find_identified_blocks,
     find_section_blocks,
 )
@@ -79,8 +81,8 @@ class ProposeConfigChangeInput(BaseModel):
             "'update_section' — replace a single-instance section wholesale (or ADD "
             "it when absent); provide 'section_content'. "
             "'upsert_block' — add or update ONE instance of a repeated section "
-            "(integration / localfile / command) addressed by 'block_key'; provide "
-            "'section_content'. "
+            "(e.g. integration / localfile / command) addressed by 'block_key'; "
+            "provide 'section_content'. "
             "'remove_block' — remove ONE instance addressed by 'block_key'. "
             "'restore_config' — UNDO a configuration change Wolf previously made "
             "(Wolf links it, recalls why, and restores the prior ossec.conf)."
@@ -92,16 +94,20 @@ class ProposeConfigChangeInput(BaseModel):
             "The FULL replacement <section>…</section> block (required for "
             "'update_section' and 'upsert_block'). Must be exactly one well-formed "
             "block for the target section; for 'upsert_block' it must contain the "
-            "identity element matching 'block_key'."
+            "'block_key' value (as its identity element or a field value)."
         ),
     )
     block_key: str = Field(
         default="",
         description=(
-            "For 'upsert_block' / 'remove_block': the stable identity of the ONE "
-            "instance to change — an <integration>'s <name>, a <localfile>'s "
-            "<location>, a <command>'s <name>. Take it from the user's request or "
-            "the researched configuration; never guess."
+            "For 'upsert_block' / 'remove_block': a value identifying the ONE "
+            "instance to change — its identity element (an <integration>'s <name>, "
+            "a <localfile>'s <location>, a <command>'s <name>) or, when several "
+            "instances share that identity, ANY field value unique to the instance "
+            "(e.g. its <hook_url> or <api_key>). Take it from the user's request "
+            "or the researched configuration; never guess. If the key is ambiguous "
+            "the tool lists each instance's distinguishing fields — re-call with "
+            "one of them."
         ),
     )
     user_confirmed: bool = Field(
@@ -157,9 +163,11 @@ class ProposeConfigChangeTool(ProposeTool):
         "section EXCEPT " + ", ".join(sorted(BLOCKED_SECTIONS)) + " (those stay "
         "hand-edited). Operations: 'update_section' replaces (or adds) a "
         "single-instance section wholesale; 'upsert_block'/'remove_block' add, "
-        "update or remove ONE instance of a repeated section (integration / "
-        "localfile / command) addressed by 'block_key' (e.g. an integration's "
-        "<name>). Does NOT execute — the flow is: (1) call WITHOUT "
+        "update or remove ONE instance of a repeated section (e.g. integration / "
+        "localfile / command) addressed by 'block_key' — its identity (an "
+        "integration's <name>) or any field value unique to the instance (its "
+        "<hook_url>, <api_key>, …) when names collide. Does NOT execute — the "
+        "flow is: (1) call WITHOUT "
         "user_confirmed to get a PREVIEW with the current content; (2) show the "
         "analyst the exact current vs proposed change and ask them to confirm; "
         "(3) re-call with user_confirmed=true — it queues a proposal a human "
@@ -340,11 +348,15 @@ class ProposeConfigChangeTool(ProposeTool):
         if op == OP_UPDATE_SECTION:
             blocks = find_section_blocks(raw, section)
             if len(blocks) > 1:
+                discriminators = describe_instances(blocks)
                 hint = (
-                    f" Use 'upsert_block' with the instance's <{IDENTITY_KEYS[section]}> "
-                    "as 'block_key' to address one of them."
-                    if section in IDENTITY_KEYS
-                    else ""
+                    f" Use 'upsert_block' with 'block_key' set to a value unique to "
+                    f"ONE instance ({discriminators})."
+                    if discriminators
+                    else (
+                        " The instances are indistinguishable (no field value is "
+                        "unique to one of them) — the file needs a hand fix first."
+                    )
                 )
                 return self._refused(
                     query,
@@ -356,11 +368,22 @@ class ProposeConfigChangeTool(ProposeTool):
             return blocks[0].strip() if blocks else ""
         matches = find_identified_blocks(raw, section, block_key)
         if len(matches) > 1:
+            discriminators = describe_instances(matches)
+            guidance = (
+                f" Each instance differs by: {discriminators}. Re-call with "
+                "'block_key' set to one of these uniquely-identifying values "
+                "(e.g. the instance's <hook_url> or other distinguishing field)."
+                if discriminators
+                else (
+                    " The matching instances are truly indistinguishable (no field "
+                    "value is unique to one of them) — the file needs a hand fix "
+                    "before Wolf can address that instance."
+                )
+            )
             return self._refused(
                 query,
-                f"{len(matches)} <{section}> blocks carry the key {block_key!r} — "
-                "the file is ambiguous and needs a hand fix before Wolf can "
-                "address that instance.",
+                f"{len(matches)} <{section}> blocks match the key {block_key!r} — "
+                "ambiguous." + guidance,
                 f"Not proposed — multiple <{section}> blocks match '{block_key}'.",
             )
         if op == OP_REMOVE_BLOCK and not matches:

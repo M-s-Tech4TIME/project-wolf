@@ -14,7 +14,12 @@ from wolf_server.agent.prompts import GUIDED_SUFFIX, PIPELINE_SUFFIX, SYSTEM_PRO
 
 
 class Strategy(ABC):
-    """A driver that decides step budget, prompt, and tool surface for the loop."""
+    """A driver that decides checkpoint cadence, prompt, and tool surface.
+
+    ``step_budget`` is a SOFT CHECKPOINT since 6-f.5 (operator directive: no
+    hard step caps) — the loop nudges the model to take stock at this cadence
+    but persists until a real stop (answer / no progress / context-fit /
+    operator breaker)."""
 
     name: str
 
@@ -29,7 +34,7 @@ class Strategy(ABC):
 
 
 class FrontierStrategy(Strategy):
-    """Full autonomy — the model plans and acts within a generous step budget."""
+    """Full autonomy — the model plans and acts; checkpoints at its graded cadence."""
 
     name = "frontier"
 
@@ -44,7 +49,7 @@ class FrontierStrategy(Strategy):
 
 
 class GuidedStrategy(Strategy):
-    """Shorter budget with explicit sub-task narration in the prompt."""
+    """Tighter checkpoint cadence with explicit sub-task narration in the prompt."""
 
     name = "guided"
 

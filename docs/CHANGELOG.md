@@ -49,6 +49,84 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-07-06 — 6-f.5: unbounded persistence + any-unique-field disambiguation (web-test feedback)
+
+**Session type:** claude-code
+**Phase:** 6-f.5 (ADR 0032 addendum 2026-07-06; operator web-test feedback on 6-f.4)
+**Branch / commit:** main
+
+### What we did
+- **No hard step caps** (operator directive: "utilize the step count, but never
+  limit the step count to any specific value"). `agent/loop.py` replaced
+  `for step in range(budget)` with unbounded persistence: the loop runs until
+  the model answers; the only other stops are (a) the no-progress guard (two
+  consecutive all-repeat steps — unchanged mechanism, now the primary guard),
+  (b) a NEW context-fit guard (last call's `input_tokens` ≥
+  `AGENT_CONTEXT_FIT_THRESHOLD` (0.8) × the provider's EFFECTIVE context window
+  — new `effective_context_window()`: Ollama returns its loaded `num_ctx`,
+  `FailoverProvider` the min across links, others the descriptor window), and
+  (c) a NEW optional operator circuit breaker `AGENT_STEP_BREAKER` (default
+  0 = off; Phase 6.10 GUI consumer). EVERY forced stop now runs
+  `_synthesized_stop` — a no-tools re-prompt composing the best answer from
+  gathered evidence, honest about gaps — so `stop_reason="budget_exhausted"`
+  and its canned apology are RETIRED (TS union keeps the member for legacy
+  rows; the dashboard already has no-budget step phrases). The graded
+  `max_safe_autonomous_steps` became a soft checkpoint cadence (take-stock
+  nudge every N steps). Web-research per-request budget raised 12 → 32.
+- **Any-unique-field disambiguation** (the live duplicate `custom-tracecat`
+  failure): `block_key` now matches the identity element first and falls back
+  to ANY leaf value that uniquely selects one live instance (`<hook_url>`,
+  `<api_key>`, …) — one shared `_identified_matches` selector behind
+  `find_identified_blocks`, so tool capture, `build_candidate`, the executor
+  and the persistence proofs all agree; B2 ops accepted on ANY unblocked
+  section; validator identity-carry became `content_carries_key` (identity OR
+  leaf value); ambiguous-key refusals ENUMERATE each instance's discriminating
+  fields (`describe_instances`) + tell the model to re-call with one — the
+  refusal now teaches the fix instead of starving the model into
+  hallucination. True duplicates (no unique field) stay hand-fix.
+- Prompts: `SYSTEM_PROMPT` gained principle **#7 PERSIST UNTIL SATISFIED**
+  (dynamic think/reason/verify/justify/validate on ANY request shape; act on
+  tool guidance instead of giving up) + the #4 block_key teaching; GUIDED and
+  WEB_RESEARCH suffixes lost their "keep the budget tight" phrasing for
+  persistence phrasing.
+- Wired `agent_step_breaker` / `agent_context_fit_threshold` Settings into
+  both `AgentLoop` constructions in `api/chat.py`.
+- Tests: 908 passed / 0 skips (+12): persists-past-the-grade (11 steps on a
+  5-step grade + 2 checkpoint nudges pinned), breaker synthesis (no-tools +
+  forced nudge pinned), context-fit stop, tracecat duplicate-name matrix
+  (domain + tool level: enumerated refusal, hook_url-addressed preview/queue),
+  validator any-section B2 + leaf-value carry, `effective_context_window`
+  (Ollama num_ctx + chain floor), prompt tokens.
+- Gates: `make typecheck` Success (116 files), ruff clean, dashboard tsc +
+  eslint clean (types.ts comment only).
+
+### What we decided
+- Stops must be grounded in reality (no progress / physical context limit /
+  explicit operator budget), never a hardcoded number — and every stop path
+  produces a real best-effort answer. Recorded as an ADR 0032 addendum.
+- Deployment-aware config application = **6-f.6** (next): per-node apply via
+  `/cluster/{node_id}/configuration` (verify empirically), honest wolf-pack
+  boundary for indexer/dashboard files. Roadmap updated.
+
+### What broke / what we discovered
+- The live 8-step wall was the failover chain's conservative floor (min across
+  links → qwen3:8b's 8), not the cohere grade (15).
+- Wolf had actually TRIED `block_key=<hook_url>` in the web-test — the right
+  instinct, rejected by name-only matching; the starved refusal then led it to
+  hallucinate "identical hook_urls". The fix makes the refusal itself carry
+  the disambiguation data.
+- Repo-wide `ruff format --check` drift (~47 files) pre-exists this slice; CI
+  gates `ruff check` only. Formatted only the files this slice touched.
+
+### What's next
+- Operator web-test of 6-f.5 (rerun the two tracecat scenarios) — needs the
+  `manager:update_config` credential; a loop-capable chat model (qwen3:8b)
+  recommended over `cohere/north-mini-code:free`.
+- 6-f.6 deployment-aware config application; then the Nemotron 3 Ultra/Super
+  (free) model-switch evaluation the operator requested.
+
+---
+
 ## 2026-07-05 — 6-f.4: config-authoring generalization + research-first agent posture
 
 **Session type:** claude-code

@@ -17,6 +17,10 @@ from wolf_server.wazuh.config_change import (
     block_persisted,
     block_removed,
     build_candidate,
+    carries_value,
+    content_carries_key,
+    describe_instances,
+    element_entries,
     find_identified_blocks,
     find_section_blocks,
     identity_of,
@@ -132,6 +136,105 @@ def test_find_identified_blocks_matches_exactly() -> None:
     assert len(find_identified_blocks(_OSSEC, "integration", "virustotal")) == 0
     # exact key, never substring
     assert len(find_identified_blocks(_OSSEC, "integration", "sla")) == 0
+
+
+# ── any-unique-field disambiguation (6-f.5 — the duplicate-name web-test fix) ─
+
+# Three <integration> blocks sharing one <name> — the operator's live tracecat
+# scenario: only <hook_url>/<api_key> distinguish the instances.
+_DUPES = """<ossec_config>
+  <integration>
+    <name>custom-tracecat</name>
+    <hook_url>https://tc.example.invalid/hook/AAA</hook_url>
+    <api_key>key-AAA</api_key>
+    <level>5</level>
+  </integration>
+  <integration>
+    <name>custom-tracecat</name>
+    <hook_url>https://tc.example.invalid/hook/BBB</hook_url>
+    <api_key>key-BBB</api_key>
+    <level>5</level>
+  </integration>
+  <integration>
+    <name>custom-tracecat</name>
+    <hook_url>https://tc.example.invalid/hook/CCC</hook_url>
+    <api_key>key-CCC</api_key>
+    <level>5</level>
+  </integration>
+</ossec_config>
+"""
+
+
+def test_element_entries_and_carries_value_read_leaf_fields() -> None:
+    block = find_section_blocks(_DUPES, "integration")[0]
+    entries = dict(element_entries(block))
+    assert entries["name"] == "custom-tracecat"
+    assert entries["hook_url"] == "https://tc.example.invalid/hook/AAA"
+    assert carries_value(block, "key-AAA") is True
+    assert carries_value(block, "key-BBB") is False
+    # exact value, never substring; empty never matches
+    assert carries_value(block, "key-AA") is False
+    assert carries_value(block, "") is False
+
+
+def test_content_carries_key_accepts_identity_or_any_leaf_value() -> None:
+    block = find_section_blocks(_DUPES, "integration")[1]
+    assert content_carries_key("integration", block, "custom-tracecat") is True
+    assert content_carries_key("integration", block, "key-BBB") is True
+    assert content_carries_key("integration", block, "key-AAA") is False
+
+
+def test_shared_name_is_ambiguous_but_a_unique_field_selects_one() -> None:
+    # The shared <name> matches all three → ambiguous (callers refuse).
+    assert len(find_identified_blocks(_DUPES, "integration", "custom-tracecat")) == 3
+    # A unique <hook_url> or <api_key> selects exactly the one instance.
+    by_url = find_identified_blocks(_DUPES, "integration", "https://tc.example.invalid/hook/BBB")
+    assert len(by_url) == 1
+    assert "key-BBB" in by_url[0]
+    assert len(find_identified_blocks(_DUPES, "integration", "key-CCC")) == 1
+
+
+def test_describe_instances_enumerates_the_discriminating_fields() -> None:
+    matches = find_identified_blocks(_DUPES, "integration", "custom-tracecat")
+    described = describe_instances(matches)
+    # Every instance's unique fields are listed; the shared name/level are not.
+    assert "instance 1" in described and "instance 3" in described
+    assert "https://tc.example.invalid/hook/AAA" in described
+    assert "<api_key>key-CCC</api_key>" in described
+    assert "<name>" not in described
+    assert "<level>" not in described
+
+
+def test_describe_instances_empty_for_true_duplicates() -> None:
+    clone = "<integration><name>x</name><level>3</level></integration>"
+    assert describe_instances([clone, clone]) == ""
+
+
+def test_upsert_and_remove_by_unique_field_value() -> None:
+    new_bbb = (
+        "<integration>\n"
+        "    <name>custom-tracecat</name>\n"
+        "    <hook_url>https://tc.example.invalid/hook/BBB</hook_url>\n"
+        "    <api_key>key-BBB</api_key>\n"
+        "    <level>3</level>\n"
+        "  </integration>"
+    )
+    out = upsert_identified_block(
+        _DUPES, "integration", "https://tc.example.invalid/hook/BBB", new_bbb
+    )
+    assert out is not None
+    # Only the addressed instance changed level; its siblings kept level 5.
+    assert out.count("<level>3</level>") == 1
+    assert out.count("<level>5</level>") == 2
+    assert block_persisted(out, "integration", "https://tc.example.invalid/hook/BBB", new_bbb)
+    # The shared name stays ambiguous for upsert (refused at the domain level).
+    assert upsert_identified_block(_DUPES, "integration", "custom-tracecat", new_bbb) is None
+    # Removal by unique field removes exactly that instance.
+    removed = remove_identified_block(_DUPES, "integration", "key-AAA")
+    assert removed is not None
+    assert "hook/AAA" not in removed
+    assert "hook/BBB" in removed and "hook/CCC" in removed
+    assert block_removed(removed, "integration", "key-AAA")
 
 
 def test_upsert_identified_block_adds_a_new_instance() -> None:
@@ -334,30 +437,42 @@ def test_validator_refuses_missing_or_malformed_content() -> None:
     assert _validate("sca", "update_section", "not xml").ok is False
 
 
-def test_validator_block_ops_need_an_identity_section_and_key() -> None:
+def test_validator_block_ops_need_a_resolved_key() -> None:
     vt = "<integration><name>virustotal</name><group>syscheck</group></integration>"
     # good: identity section + key + content carrying the key
     assert _validate("integration", "upsert_block", vt, block_key="virustotal").ok is True
     assert _validate("integration", "remove_block", "", block_key="virustotal").ok is True
-    # sca has no identity key → block ops refused with guidance
-    res = _validate("sca", "upsert_block", "<sca></sca>", block_key="x")
-    assert res.ok is False
-    assert "block-identity" in res.reason
-    # missing / wildcard key
+    # 6-f.5: block ops work on ANY unblocked section — a unique leaf value
+    # addresses the instance (uniqueness enforced against the live file).
+    ok = _validate("global", "upsert_block", "<global><logall>yes</logall></global>", "yes")
+    assert ok.ok is True
+    # missing / wildcard key still refused
     assert _validate("integration", "upsert_block", vt, block_key="").ok is False
     assert _validate("integration", "remove_block", "", block_key="*").ok is False
     assert _validate("integration", "remove_block", "", block_key=None).ok is False
 
 
-def test_validator_upsert_content_must_carry_the_addressed_identity() -> None:
+def test_validator_upsert_content_must_carry_the_addressed_key() -> None:
     # addressing 'virustotal' while the block names 'slack' → refused (X-for-Y).
     slack = "<integration><name>slack</name></integration>"
     res = _validate("integration", "upsert_block", slack, block_key="virustotal")
     assert res.ok is False
     assert "must identify" in res.reason
-    # a block with NO identity element is refused too
+    # a block with NO matching value anywhere is refused too
     anon = "<integration><level>3</level></integration>"
     assert _validate("integration", "upsert_block", anon, block_key="virustotal").ok is False
+    # 6-f.5: the key may be carried as ANY leaf value, not only the identity
+    # element — addressing an integration by its unique <hook_url> is valid.
+    by_url = (
+        "<integration><name>custom-tracecat</name>"
+        "<hook_url>https://tc.example.invalid/hook/1</hook_url></integration>"
+    )
+    assert (
+        _validate(
+            "integration", "upsert_block", by_url, block_key="https://tc.example.invalid/hook/1"
+        ).ok
+        is True
+    )
 
 
 # ── severity ──────────────────────────────────────────────────────────────

@@ -256,6 +256,104 @@ async def test_repeated_identity_section_guides_to_upsert_block(
     assert "upsert_block" in out.detail
 
 
+# Three <integration> blocks sharing one <name> — the operator's live tracecat
+# web-test scenario (2026-07-06): only <hook_url>/<api_key> distinguish them.
+_TRACECAT_DUPES = """<ossec_config>
+  <integration>
+    <name>custom-tracecat</name>
+    <hook_url>https://tc.example.invalid/hook/AAA</hook_url>
+    <api_key>key-AAA</api_key>
+    <level>5</level>
+  </integration>
+  <integration>
+    <name>custom-tracecat</name>
+    <hook_url>https://tc.example.invalid/hook/BBB</hook_url>
+    <api_key>key-BBB</api_key>
+    <level>5</level>
+  </integration>
+  <integration>
+    <name>custom-tracecat</name>
+    <hook_url>https://tc.example.invalid/hook/CCC</hook_url>
+    <api_key>key-CCC</api_key>
+    <level>5</level>
+  </integration>
+</ossec_config>
+"""
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_key_refusal_enumerates_discriminating_fields(
+    db: AsyncSession, seed_organization_and_user: dict[str, Any]
+) -> None:
+    # 6-f.5: the refusal must TEACH the fix — list each instance's unique
+    # fields so the model re-addresses precisely instead of hallucinating.
+    ctx = _ctx(seed_organization_and_user)
+    out = await ProposeConfigChangeTool().run(
+        _exec_ctx(db, ctx, _ALLOW_CONFIG, raw=_TRACECAT_DUPES),
+        ProposeConfigChangeInput(
+            section="integration",
+            operation="upsert_block",
+            block_key="custom-tracecat",
+            section_content=(
+                "<integration><name>custom-tracecat</name>"
+                "<hook_url>https://tc.example.invalid/hook/BBB</hook_url>"
+                "<api_key>key-BBB</api_key><level>3</level></integration>"
+            ),
+        ),
+    )
+    assert out.permitted is False
+    assert out.state == "rejected"
+    assert "https://tc.example.invalid/hook/AAA" in out.detail
+    assert "https://tc.example.invalid/hook/CCC" in out.detail
+    assert "Re-call with 'block_key'" in out.detail
+
+
+@pytest.mark.asyncio
+async def test_upsert_by_unique_hook_url_selects_among_same_name_instances(
+    db: AsyncSession, seed_organization_and_user: dict[str, Any]
+) -> None:
+    # The smart path the operator expected: address the ONE instance by its
+    # unique <hook_url> even though all three share a <name>.
+    ctx = _ctx(seed_organization_and_user)
+    tool = ProposeConfigChangeTool()
+    key = "https://tc.example.invalid/hook/BBB"
+    content = (
+        "<integration><name>custom-tracecat</name>"
+        f"<hook_url>{key}</hook_url>"
+        "<api_key>key-BBB</api_key><level>3</level></integration>"
+    )
+    preview = await tool.run(
+        _exec_ctx(db, ctx, _ALLOW_CONFIG, raw=_TRACECAT_DUPES),
+        ProposeConfigChangeInput(
+            section="integration",
+            operation="upsert_block",
+            block_key=key,
+            section_content=content,
+        ),
+    )
+    assert preview.state == "needs_confirmation"
+    assert "key-BBB" in preview.current_content  # the addressed instance is the diff base
+    assert "key-AAA" not in preview.current_content
+    out = await tool.run(
+        _exec_ctx(db, ctx, _ALLOW_CONFIG, raw=_TRACECAT_DUPES),
+        ProposeConfigChangeInput(
+            section="integration",
+            operation="upsert_block",
+            block_key=key,
+            section_content=content,
+            user_confirmed=True,
+        ),
+    )
+    assert out.permitted is True
+    row = (
+        await db.execute(
+            select(ActionProposal).where(ActionProposal.id == uuid.UUID(out.proposal_id))
+        )
+    ).scalar_one()
+    assert row.target == {"section": "integration", "block_key": key}
+    assert "key-BBB" in row.parameters["current_content"]
+
+
 @pytest.mark.asyncio
 async def test_upsert_block_adds_a_new_integration(
     db: AsyncSession, seed_organization_and_user: dict[str, Any]

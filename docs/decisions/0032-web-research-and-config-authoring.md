@@ -547,6 +547,55 @@ GUI: the approval card renders block-op targets (`section <integration>
 'virustotal'`), the current→proposed diff for upserts (an ADD shows "none —
 this adds a new block"), and removal cards show only what is removed.
 
+## Addendum (2026-07-06, slice 6-f.5) — web-test feedback: unbounded persistence + any-unique-field disambiguation
+
+The operator's 6-f.4 web-test (the duplicate `custom-tracecat` scenario) surfaced
+two failures and one directive; 6-f.5 lands the first two, 6-f.6 the third
+(deployment-aware config application — its own addendum when it ships).
+
+**1. No hard step caps (operator directive: "utilize the step count, but never
+limit the step count to any specific value").** The generic-request test died at
+8 steps with a canned "step budget was exhausted" + Non-factual chips — 8 being
+the failover chain's conservative floor (`min()` across links → qwen3:8b's
+graded 8), and the 119 K tokens of good docs-first evidence it had gathered
+were thrown away. The loop now has **no fixed step ceiling**: it persists until
+the model answers, and the only other stops are grounded in reality — the
+no-progress guard (a whole step of exact-repeat tool calls, twice — more steps
+cannot produce new evidence), the **context-fit guard** (last call's
+input_tokens ≥ `AGENT_CONTEXT_FIT_THRESHOLD` (0.8) × the provider's *effective*
+context window — past that, hosted providers hard-400 and Ollama silently
+head-truncates, so continuing physically cannot help; `effective_context_window()`
+on the Ollama adapter returns the loaded `num_ctx`, and the failover chain takes
+the min across links), and an **optional operator circuit breaker**
+(`AGENT_STEP_BREAKER`, default 0 = off; a Phase 6.10 GUI consumer) for cost
+protection on paid APIs. **Every forced stop ends in a best-effort synthesis**
+(a no-tools re-prompt composing the answer from gathered evidence, honest about
+gaps) — `stop_reason="budget_exhausted"` no longer exists (the TS union keeps
+the member for conversations persisted before 6-f.5). The model's graded
+`max_safe_autonomous_steps` survives as a soft **checkpoint cadence**: every N
+steps the loop nudges "take stock — answer if you can, refocus if not". The
+web-research per-request budget (self-protection, A6) rose 12 → 32 and stays
+env-tunable. `SYSTEM_PROMPT` gained principle #7 PERSIST UNTIL SATISFIED
+(dynamic think/reason/verify/justify/validate posture for ANY request shape;
+act on tool guidance instead of giving up).
+
+**2. Any-unique-field block disambiguation (the duplicate-name fix).** Live, 3
+`<integration>` blocks named `custom-tracecat` made every upsert refuse; the
+model even tried `block_key=<the hook_url>` — the right instinct — and was
+rejected, because matching read ONLY `IDENTITY_KEYS`. Starved of guidance it
+then hallucinated "identical hook_urls". Now: `block_key` matches the identity
+element first and falls back to **any leaf-element value that uniquely selects
+one live instance** (`<hook_url>`, `<api_key>`, …) — one shared selector
+(`_identified_matches`) used by the tool's capture, `build_candidate`, the
+executor and the persistence proofs, so preview/write/verify agree; the B2 ops
+now work on ANY unblocked section (a unique leaf value addresses repeated
+non-identity sections too); the validator's identity-carry guard accepts the
+key as identity OR carried leaf value (`content_carries_key`); and an ambiguous
+key refusal **enumerates each instance's discriminating fields**
+(`describe_instances` — fields whose value no other instance shares) plus the
+instruction to re-call with one, so the model self-corrects instead of
+guessing. Truly indistinguishable duplicates remain a hand-fix refusal.
+
 ## Appendix A — `wolf-search` native-venv install recipe (= the postinst)
 
 **Finalized in 6-f.2 — the canonical, executable recipe is `debian/wolf-search.postinst`**

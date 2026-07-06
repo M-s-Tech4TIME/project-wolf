@@ -13,12 +13,18 @@ allowlist into free-form-within-rails:
     ``<section>…</section>`` block; if the section is ABSENT the edit is an
     ADD (inserted before the file's final ``</ossec_config>``).
   - **Repeated / merge-semantic sections** (B2, ``upsert_block`` /
-    ``remove_block``): one INSTANCE is addressed by **block-identity** — a
-    stable key read from the instance's identity element
+    ``remove_block``): one INSTANCE is addressed by **block-identity** — never
+    by position.  ``block_key`` matches the instance's identity element first
     (:data:`IDENTITY_KEYS`: ``<integration>`` → ``<name>``, ``<localfile>`` →
-    ``<location>``, ``<command>`` → ``<name>``) — never by position.  This is
-    the ``<integration><name>virustotal</name>`` fix: add/update/remove of a
-    specific instance is precise and reversible.
+    ``<location>``, ``<command>`` → ``<name>``); when that yields nothing it
+    falls back to ANY leaf-element value that selects the instance (6-f.5 —
+    e.g. a ``<hook_url>`` or ``<api_key>`` when three integrations share a
+    ``<name>``).  Selection must be UNIQUE: >1 match refuses, and the refusal
+    enumerates each instance's discriminating fields
+    (:func:`describe_instances`) so the caller can re-address precisely.
+    This is the ``<integration><name>virustotal</name>`` fix plus the 6-f.5
+    duplicate-name fix: add/update/remove of a specific instance is precise
+    and reversible even among same-name blocks.
   - The **diff is captured at propose time** (the current block rides in the
     proposal parameters) so the approver sees exactly old → new before
     approving, and the executor can detect a config that changed under the
@@ -66,10 +72,11 @@ OP_LABELS: dict[str, str] = {
 # EVERYTHING else is authorable (blocklist, not allowlist — ADR 0032 B3).
 BLOCKED_SECTIONS = frozenset({"auth", "cluster", "indexer", "rule_test", "ruleset"})
 
-# Repeated / merge-semantic sections addressable by block-identity (B2): the
-# child element whose text is the instance's stable key.  Sections NOT in this
-# map are treated as single-instance (update_section); a repeated occurrence of
-# a non-identity section (e.g. <global> ×2 in stock) is refused as ambiguous.
+# The PRIMARY identity element per repeated / merge-semantic section (B2): the
+# child element whose text is the instance's natural stable key.  Since 6-f.5
+# this is the preferred key, not the only one — any uniquely-identifying leaf
+# value also addresses an instance (see find_identified_blocks), so sections
+# outside this map are addressable too when a unique leaf value exists.
 IDENTITY_KEYS: dict[str, str] = {
     "command": "name",
     "integration": "name",
@@ -148,28 +155,89 @@ def identity_of(section: str, block: str) -> str | None:
     return match.group(1).strip() if match else None
 
 
-def find_identified_blocks(raw: str, section: str, block_key: str) -> list[str]:
-    """Every ``<section>`` instance in ``raw`` whose identity element equals
-    ``block_key`` (exact, stripped).  The caller enforces the exactly-one /
-    exactly-zero rules per operation."""
+# Leaf elements only — no nested markup, no attributes.  The pool of candidate
+# identifying values inside one section instance (<name>, <hook_url>, <api_key>,
+# <location>, …).  Container elements (whose body holds further tags) are not
+# identifying values and are excluded by the [^<] body.
+_LEAF_ELEMENT_RE = re.compile(r"<([a-z][\w.-]*)>\s*([^<]*?)\s*</\1>", re.DOTALL)
+
+
+def element_entries(block: str) -> list[tuple[str, str]]:
+    """Every ``(tag, value)`` leaf element in one section instance, in document
+    order — the candidate identifying values for block addressing and for the
+    discriminating-field guidance in ambiguity refusals."""
+    return [(m.group(1), m.group(2).strip()) for m in _LEAF_ELEMENT_RE.finditer(block or "")]
+
+
+def carries_value(block: str, value: str) -> bool:
+    """Whether ANY leaf element of ``block`` has exactly ``value`` as its text
+    (stripped).  The 6-f.5 fallback addressing: a <hook_url>/<api_key>/… value
+    selects an instance when the primary identity key is ambiguous or absent."""
+    wanted = (value or "").strip()
+    if not wanted:
+        return False
+    return any(v == wanted for _, v in element_entries(block))
+
+
+def content_carries_key(section: str, content: str, block_key: str) -> bool:
+    """Whether proposed ``content`` carries the ``block_key`` it addresses —
+    either as the section's identity element or as any leaf value.  The
+    validator's no-address-X-write-Y guard (an upsert must keep the value it
+    used to address the instance, or it could silently retarget)."""
     wanted = (block_key or "").strip()
-    return [
-        block
-        for block in find_section_blocks(raw, section)
-        if identity_of(section, block) == wanted
-    ]
+    if not wanted:
+        return False
+    return identity_of(section, content) == wanted or carries_value(content, wanted)
+
+
+def _identified_matches(raw: str, section: str, block_key: str) -> list[re.Match[str]]:
+    """The regex matches (spans + text) selected by ``block_key`` — primary
+    identity-element equality first; when the identity key selects nothing,
+    fall back to any-leaf-value equality.  Shared by every keyed operation so
+    tool preview, executor write and persistence proof all agree on which
+    instance a key addresses."""
+    wanted = (block_key or "").strip()
+    matches = list(_section_block_re(section).finditer(raw or ""))
+    primary = [m for m in matches if identity_of(section, m.group(0)) == wanted]
+    if primary:
+        return primary
+    return [m for m in matches if carries_value(m.group(0), wanted)]
+
+
+def find_identified_blocks(raw: str, section: str, block_key: str) -> list[str]:
+    """Every ``<section>`` instance selected by ``block_key`` — identity-element
+    equality first, any-leaf-value fallback (6-f.5).  The caller enforces the
+    exactly-one / exactly-zero rules per operation."""
+    return [m.group(0) for m in _identified_matches(raw, section, block_key)]
+
+
+def describe_instances(blocks: list[str]) -> str:
+    """Guided-refusal enumeration for an ambiguous key: for each instance, the
+    leaf fields whose value no OTHER instance shares — the usable
+    discriminators (e.g. ``<hook_url>``/``<api_key>`` when three
+    ``<integration>`` blocks share a ``<name>``).  Empty string when the
+    instances are truly indistinguishable (no leaf value is unique), which is
+    the genuine hand-fix case."""
+    entries = [list(dict.fromkeys(element_entries(b))) for b in blocks]
+    carriers: dict[tuple[str, str], int] = {}
+    for entry in entries:
+        for pair in entry:
+            carriers[pair] = carriers.get(pair, 0) + 1
+    parts: list[str] = []
+    for i, entry in enumerate(entries, start=1):
+        uniques = [f"<{t}>{v}</{t}>" for t, v in entry if v and carriers[(t, v)] == 1]
+        if uniques:
+            parts.append(f"instance {i}: " + ", ".join(uniques))
+    return "; ".join(parts)
 
 
 def upsert_identified_block(raw: str, section: str, block_key: str, new_block: str) -> str | None:
-    """Replace the SINGLE ``<section>`` instance keyed ``block_key`` with
+    """Replace the SINGLE ``<section>`` instance selected by ``block_key`` with
     ``new_block`` — or ADD it (before the final ``</ossec_config>``) when no
-    instance carries that key.  Returns the new file content, or ``None`` when
-    the key matches more than one instance (ambiguous — the file needs a hand
-    fix first) or the add-anchor is missing."""
-    pattern = _section_block_re(section)
-    matches = [
-        m for m in pattern.finditer(raw or "") if identity_of(section, m.group(0)) == block_key
-    ]
+    instance matches.  Returns the new file content, or ``None`` when the key
+    selects more than one instance (ambiguous — re-address by a unique field)
+    or the add-anchor is missing."""
+    matches = _identified_matches(raw, section, block_key)
     if len(matches) > 1:
         return None
     if len(matches) == 1:
@@ -179,13 +247,10 @@ def upsert_identified_block(raw: str, section: str, block_key: str, new_block: s
 
 
 def remove_identified_block(raw: str, section: str, block_key: str) -> str | None:
-    """Remove the SINGLE ``<section>`` instance keyed ``block_key``.  Returns
-    the new file content, or ``None`` unless exactly one instance carries the
-    key (nothing to remove / ambiguous are both the caller's refusal)."""
-    pattern = _section_block_re(section)
-    matches = [
-        m for m in pattern.finditer(raw or "") if identity_of(section, m.group(0)) == block_key
-    ]
+    """Remove the SINGLE ``<section>`` instance selected by ``block_key``.
+    Returns the new file content, or ``None`` unless exactly one instance
+    matches (nothing to remove / ambiguous are both the caller's refusal)."""
+    matches = _identified_matches(raw, section, block_key)
     if len(matches) != 1:
         return None
     start, end = matches[0].span()

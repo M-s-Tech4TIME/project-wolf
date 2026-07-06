@@ -452,9 +452,11 @@ export type ChatResponseBody = {
   input_tokens: number;
   output_tokens: number;
   /**
-   * Why the agent loop ended. Three are emitted by the backend
-   * (`answer` | `budget_exhausted` | `loop_error`); `interrupted` is
-   * client-only, synthesised when the user clicks the Stop button
+   * Why the agent loop ended. The backend emits `answer` | `loop_error`
+   * (`budget_exhausted` is retired since 6-f.5 — the loop has no fixed
+   * step ceiling and every forced stop synthesizes a real answer; the
+   * member stays for conversations persisted before then). `interrupted`
+   * is client-only, synthesised when the user clicks the Stop button
    * and the SSE fetch is aborted before the `answer` event arrives
    * (Slice 5.0c-k). MessageThread renders a small "Response
    * interrupted by user" footer under partial answers carrying this

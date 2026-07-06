@@ -280,3 +280,19 @@ def test_system_prompt_teaches_the_config_authoring_loop() -> None:
         "cluster/auth/indexer/ruleset",
     ):
         assert token in SYSTEM_PROMPT
+
+
+def test_prompts_teach_persistence_and_unique_field_addressing() -> None:
+    # 6-f.5 (operator directives from the tracecat web-test): persist until
+    # satisfied on ANY request shape; act on tool guidance instead of giving
+    # up; disambiguate repeated blocks by any unique field value.
+    from wolf_server.agent.prompts import SYSTEM_PROMPT, WEB_RESEARCH_SUFFIX
+
+    for token in (
+        "PERSIST UNTIL SATISFIED",
+        "guidance and act on it",
+        "ANY field value unique to the",
+        "distinguishing fields",
+    ):
+        assert token in SYSTEM_PROMPT
+    assert "PERSIST until satisfied" in WEB_RESEARCH_SUFFIX
