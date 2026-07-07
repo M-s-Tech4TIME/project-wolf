@@ -22,6 +22,7 @@ from wolf_server.wazuh.capabilities import (
     ACTION_ACTIVE_RESPONSE,
     ACTION_CLUSTER_RESTART,
     ACTION_MODIFY_GROUP,
+    ACTION_UPDATE_CLUSTER_CONFIG,
     ACTION_UPDATE_MANAGER_CONFIG,
     ACTION_UPDATE_RULES,
     RESOURCE_ANY,
@@ -29,6 +30,7 @@ from wolf_server.wazuh.capabilities import (
     RESOURCE_NODE_ANY,
     CredentialCapabilities,
 )
+from wolf_server.wazuh.cluster import node_configuration_path
 from wolf_server.wazuh.config import WazuhConnection
 
 logger = structlog.get_logger(__name__)
@@ -341,8 +343,37 @@ class WazuhServerApiActionClient:
                 "(manager:update_config). Configuration changes are manager-global / "
                 "Superuser-scoped."
             )
+        return await self._write_raw("PUT", "/manager/configuration", body=content.encode("utf-8"))
+
+    async def update_node_configuration(
+        self,
+        node_name: str,
+        *,
+        content: str,
+        capabilities: CredentialCapabilities,
+    ) -> dict[str, Any]:
+        """Replace ONE cluster node's ``ossec.conf``
+        (``PUT /cluster/{node_id}/configuration``) — 6-f.6, the distributed half
+        of config_change.
+
+        Wazuh's cluster does NOT sync ossec.conf between nodes (probed live
+        2026-07-06 — the operator's three nodes genuinely diverge), so a
+        distributed deployment applies a config change per node through this
+        endpoint.  Capability-checked against ``cluster:update_config`` on the
+        node (admin grants it on ``*:*:*``; a per-org credential does not hold
+        it → :class:`WazuhActionNotPermittedError`, fail-closed, BEFORE any
+        request).  The body is the RAW file content
+        (``application/octet-stream``).  The caller validates via ONE
+        ``GET /cluster/configuration/validation`` (per-node statuses) and
+        restarts the cluster to apply."""
+        if not capabilities.can(ACTION_UPDATE_CLUSTER_CONFIG, f"node:id:{node_name}"):
+            raise WazuhActionNotPermittedError(
+                f"Credential is not authorized to update the configuration of "
+                f"cluster node {node_name!r} (cluster:update_config). Distributed "
+                "configuration changes are Superuser-scoped."
+            )
         return await self._write_raw(
-            "PUT", "/manager/configuration", body=content.encode("utf-8")
+            "PUT", node_configuration_path(node_name), body=content.encode("utf-8")
         )
 
     async def restart_cluster(self, *, capabilities: CredentialCapabilities) -> dict[str, Any]:
@@ -414,13 +445,15 @@ class WazuhServerApiActionClient:
         if self._token is None:
             await self._authenticate()
         auth_headers = {**headers, "Authorization": f"Bearer {self._token}"}
-        response = await self._client.request(method, path, params=params, content=body,
-                                              headers=auth_headers)
+        response = await self._client.request(
+            method, path, params=params, content=body, headers=auth_headers
+        )
         if response.status_code == 401:
             await self._authenticate()
             auth_headers = {**headers, "Authorization": f"Bearer {self._token}"}
-            response = await self._client.request(method, path, params=params, content=body,
-                                                  headers=auth_headers)
+            response = await self._client.request(
+                method, path, params=params, content=body, headers=auth_headers
+            )
         if response.status_code >= 400:
             logger.warning(
                 "wazuh_action_http_error",

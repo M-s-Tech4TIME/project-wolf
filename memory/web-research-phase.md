@@ -161,11 +161,9 @@ substring (the `<sca>` "did not persist" false-negative; fixed commit ecc3562). 
 **6-f.5 SHIPPED 2026-07-06** (the 6-f.4 web-test feedback fixes, ADR 0032 addendum 2026-07-06):
 unbounded agent persistence + any-unique-field block disambiguation — full detail in
 [[no-hard-step-caps-unbounded-persistence]] + [[block-disambiguation-any-unique-field]].
-908 tests / 0 skips. NEXT in 6-f: **6-f.6 deployment-aware config application**
-([[deployment-aware-config-application]] — per-node `/cluster/{node_id}/configuration`
-verified empirically; ossec.conf NOT cluster-synced, today's PUT writes the master only;
-indexer/dashboard = wolf-pack boundary); after both: the operator's Nemotron model-switch
-evaluation ([[model-switch-nemotron-after-slices]]).
+908 tests / 0 skips.
+
+**6-f.6 SHIPPED 2026-07-07** (deployment-aware config application, ADR 0032 addendum 2026-07-06): config changes apply per deployment type — all-in-one direct, distributed per cluster node (ossec.conf NOT cluster-synced, live-confirmed) — full detail in [[deployment-aware-config-application]]. 924 tests / 0 skips. NEXT in 6-f: the operator's Nemotron 3 Ultra/Super (free) model-switch evaluation ([[model-switch-nemotron-after-slices]]).
 
 Links: [[grounding-enrichment-tools-future-phase]], [[runbook-authoring-and-actionable-runbooks]],
 [[phase-6e3-rule-tuning-web-test]], [[grounding-execution-modes]], [[config-settings-system-phase]],

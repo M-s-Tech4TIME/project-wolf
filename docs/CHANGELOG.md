@@ -49,6 +49,76 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-07-07 — 6-f.6: deployment-aware config application (all-in-one vs distributed cluster)
+
+**Session type:** claude-code
+**Phase:** 6-f.6 (ADR 0032 addendum 2026-07-06; the third 6-f.4 web-test directive)
+**Branch / commit:** main
+
+### What we did
+- **Live read-only cluster probe** (operator's 3-node cluster, via wolf-server's
+  own resolver): confirmed `GET /cluster/status` (enabled/running), `GET
+  /cluster/nodes` (master + 2 workers), `GET/PUT /cluster/{node}/configuration`
+  (raw body), and ONE `GET /cluster/configuration/validation` (per-node
+  statuses). Confirmed the nodes' ossec.conf files GENUINELY DIVERGE (master 5
+  integrations / workers 4) — i.e. the cluster does NOT sync ossec.conf, so the
+  6-e.4/6-f.4 master-only write left workers stale. `wazuh-wui` holds both
+  `manager:update_config` and `cluster:update_config` on `*:*:*`. No writes.
+- **`wazuh/cluster.py`** (new): `get_cluster_nodes` (status→nodes, master-first;
+  `[]` for all-in-one; RAISES on an unusable/invalid inventory — no silent
+  master-only fallback), `is_valid_node_name` + `node_configuration_path`
+  (path-injection-safe node names).
+- **Capability** `ACTION_UPDATE_CLUSTER_CONFIG = "cluster:update_config"`;
+  `WazuhServerApiActionClient.update_node_configuration(node, …)` (capability-
+  checked per node, raw octet-stream body).
+- **Propose tool** deployment-aware: detects at propose time; for a cluster
+  captures + dry-runs per node and freezes `deployment="cluster"` +
+  `node_current_contents` (node→diff base). Scope respects instance locality
+  (single-instance section = uniform cluster-wide; repeated instance = only the
+  nodes that carry it; upsert present nowhere = cluster-wide ADD). Preview
+  summary names in-scope + untouched nodes. Distributed apply needs
+  `cluster:update_config` (fail closed).
+- **Executor** branches on `deployment`: cluster path snapshots each in-scope
+  node's whole file (`prior_state.kind="cluster_configuration"`), applies
+  `build_candidate` per node, writes each, validates the cluster once, proves
+  persistence per node, restarts ONCE — ALL-OR-NOTHING (any failure restores
+  every written node). Freshness re-detects the cluster + per-node staleness;
+  reverse restores each node's snapshot hash-verified. All-in-one path
+  unchanged. The staleness message now names the file/node ("has changed in
+  node 'worker-1' since…").
+- **GUI** actions page: `scopeSummary` renders "…in N cluster node(s) (…)" vs
+  "…ossec.conf" for both apply and restore.
+- **Prompt** #4: a one-line note that Wolf handles the deployment automatically
+  and states the in-scope nodes.
+- Tests: 924 passed / 0 skips (+16): `test_cluster.py` (7 — detection +
+  name-validation), distributed executor (6 — all-node update, locality-scoped
+  upsert, validation rollback-all, single-node freshness refusal, missing
+  cluster:update_config refusal, per-node reversal), distributed propose (3 —
+  all-node scope, locality scope, cluster-cap refusal). mypy --strict 117 files,
+  ruff, dashboard tsc + eslint.
+
+### What we decided
+- Distributed scope respects INSTANCE LOCALITY (integrations live on a subset of
+  nodes; don't push them cluster-wide) while single-instance global sections go
+  to every node. All-or-nothing per-node apply with restore-on-any-failure.
+- Indexer/dashboard config files are OUT of Server-API reach → wolf-pack (Phase
+  12), stated honestly rather than faked.
+
+### What broke / what we discovered
+- `GET /cluster/{node}/configuration/validation` is 404 — the cluster-wide
+  `GET /cluster/configuration/validation` is the validation surface (per-node
+  statuses in one call).
+- The nodes' ossec.conf really do diverge on the live cluster — locality-aware
+  scoping is not hypothetical.
+
+### What's next
+- Operator web-test of 6-f.6 on the live cluster (a distributed change → verify
+  all relevant nodes updated + one restart; undo restores each node).
+- Then the operator-requested Nemotron 3 Ultra/Super (free) model-switch
+  evaluation; Phase 6.13 grounding enrichment remains queued "later".
+
+---
+
 ## 2026-07-06 — 6-f.5: unbounded persistence + any-unique-field disambiguation (web-test feedback)
 
 **Session type:** claude-code

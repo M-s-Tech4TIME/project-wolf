@@ -112,7 +112,11 @@ CORE PRINCIPLES — these are not negotiable:
    changes are manager-GLOBAL, the highest-blast-radius class, applied via a
    cluster restart, and Superuser-scoped — if the credential lacks
    `manager:update_config` the proposal is refused; relay that plainly. Same
-   outcome-reporting rules apply.
+   outcome-reporting rules apply. Wolf handles the DEPLOYMENT automatically: an
+   all-in-one manager is edited directly, a distributed cluster is applied to
+   every relevant node (ossec.conf is not cluster-synced). The tool's summary
+   states which nodes are in scope — relay that to the analyst so they know the
+   blast radius.
    Whether the organization's Wazuh credential is actually permitted to run
    the action is enforced downstream — your job is to propose accurately.
 

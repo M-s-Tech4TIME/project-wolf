@@ -493,14 +493,23 @@ write). See the ADR 0032 2026-07-05 addendum.
     unblocked section; ambiguous-key refusals ENUMERATE each instance's
     discriminating fields so the model re-addresses instead of hallucinating.
     ADR 0032 addendum (2026-07-06).
-  - **6-f.6** (next) — deployment-aware config application (operator
-    directive): detect all-in-one vs distributed via `/cluster/status`;
-    distributed applies per node via the per-node cluster configuration
-    endpoints (verify empirically first — ossec.conf is NOT cluster-synced;
-    today's `PUT /manager/configuration` writes the master only), per-node
-    validation + rollback, one restart, node list surfaced to the approver.
-    Indexer/dashboard config files are unreachable via the Server API →
-    wolf-pack (Phase 12) scope, stated honestly.
+  - **6-f.6** ✅ — deployment-aware config application (operator directive).
+    New `wazuh/cluster.py` detects the deployment (`GET /cluster/status` +
+    `/cluster/nodes`, master-first; `[]` = all-in-one; an unusable inventory
+    RAISES — never a silent master-only fallback). The propose tool captures +
+    dry-runs against EVERY node's own file for a cluster and freezes
+    `deployment`/`node_current_contents`; scope respects instance locality (a
+    single-instance section is uniform cluster-wide; a repeated instance
+    touches only the nodes that carry it, an upsert present nowhere is a
+    cluster-wide ADD). The executor writes each in-scope node via `PUT
+    /cluster/{node}/configuration` (`cluster:update_config`), validates the
+    cluster once, proves persistence per node, restarts ONCE, and is
+    ALL-OR-NOTHING (any failure restores every written node). Reverse restores
+    each node's snapshot. GUI surfaces the node list. Grounded live 2026-07-06:
+    ossec.conf is NOT cluster-synced (the nodes genuinely diverge) — this
+    closes the "workers left on old config" gap. Indexer/dashboard config
+    files remain unreachable via the Server API → wolf-pack (Phase 12), stated
+    honestly. ADR 0032 addendum (2026-07-06).
 
 **then** severity-tiered authority / four-eyes / crown-jewel tagging (policy
 hooks, B1 default = approval-for-all); auto-execution (Phase 13). The remaining

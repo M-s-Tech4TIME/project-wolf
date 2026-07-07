@@ -25,7 +25,10 @@ from wolf_server.tools.propose_config_change import (
     ProposeConfigChangeInput,
     ProposeConfigChangeTool,
 )
-from wolf_server.wazuh.capabilities import ACTION_UPDATE_MANAGER_CONFIG
+from wolf_server.wazuh.capabilities import (
+    ACTION_UPDATE_CLUSTER_CONFIG,
+    ACTION_UPDATE_MANAGER_CONFIG,
+)
 
 _ALLOW_CONFIG = {ACTION_UPDATE_MANAGER_CONFIG: {"*:*:*": "allow"}}
 _DENY: dict[str, dict[str, str]] = {}
@@ -592,3 +595,151 @@ async def test_restore_config_with_no_prior_is_refused(
     )
     assert out.permitted is False
     assert "Nothing to undo" in out.summary
+
+
+# ── distributed deployment (6-f.6) ───────────────────────────────────────────
+
+_ALLOW_CLUSTER = {
+    ACTION_UPDATE_MANAGER_CONFIG: {"*:*:*": "allow"},
+    ACTION_UPDATE_CLUSTER_CONFIG: {"*:*:*": "allow"},
+}
+
+# Master carries sca + slack + virustotal; workers carry only sca (a genuine
+# divergence — the operator's live 3-node cluster looks like this).
+_MASTER = """<ossec_config>
+  <sca><enabled>yes</enabled></sca>
+  <integration><name>slack</name></integration>
+  <integration><name>virustotal</name><api_key>OLD</api_key></integration>
+</ossec_config>
+"""
+_WORKER = """<ossec_config>
+  <sca><enabled>yes</enabled></sca>
+</ossec_config>
+"""
+
+
+class _ClusterStubServerApi:
+    """A distributed 3-node cluster: serves status/nodes + per-node raw reads."""
+
+    def __init__(self, policies: dict[str, dict[str, str]]) -> None:
+        self._policies = policies
+        self.nodes = {
+            "wazuh-master-node": _MASTER,
+            "worker-node-1": _WORKER,
+            "worker-node-2": _WORKER,
+        }
+
+    async def get(self, path: str, *, params: Any = None) -> Any:
+        if path == "/cluster/status":
+            return {"data": {"enabled": "yes", "running": "yes"}}
+        if path == "/cluster/nodes":
+            return {
+                "data": {
+                    "affected_items": [
+                        {"name": "wazuh-master-node", "type": "master"},
+                        {"name": "worker-node-1", "type": "worker"},
+                        {"name": "worker-node-2", "type": "worker"},
+                    ]
+                }
+            }
+        return {"data": self._policies}
+
+    async def get_raw(self, path: str, *, params: Any = None) -> str:
+        if path.startswith("/cluster/"):
+            node = path.split("/")[2]
+            return self.nodes.get(node, "")
+        return _MASTER
+
+
+def _cluster_exec_ctx(
+    db: AsyncSession, ctx: OrganizationContext, policies: dict[str, dict[str, str]]
+) -> ToolExecContext:
+    return ToolExecContext(
+        organization=ctx,
+        limits=DEFAULT_LIMITS,
+        opensearch=None,
+        server_api=_ClusterStubServerApi(policies),
+        db=db,
+    )
+
+
+@pytest.mark.asyncio
+async def test_distributed_update_section_scopes_all_nodes(
+    db: AsyncSession, seed_organization_and_user: dict[str, Any]
+) -> None:
+    # A single-instance section is uniform cluster-wide → all 3 nodes in scope.
+    ctx = _ctx(seed_organization_and_user)
+    tool = ProposeConfigChangeTool()
+    preview = await tool.run(
+        _cluster_exec_ctx(db, ctx, _ALLOW_CLUSTER),
+        ProposeConfigChangeInput(
+            section="sca",
+            operation="update_section",
+            section_content="<sca><enabled>no</enabled></sca>",
+        ),
+    )
+    assert preview.state == "needs_confirmation"
+    assert "3 of the 3 manager cluster nodes" in preview.summary
+    out = await tool.run(
+        _cluster_exec_ctx(db, ctx, _ALLOW_CLUSTER),
+        ProposeConfigChangeInput(
+            section="sca",
+            operation="update_section",
+            section_content="<sca><enabled>no</enabled></sca>",
+            user_confirmed=True,
+        ),
+    )
+    assert out.permitted is True
+    row = (
+        await db.execute(
+            select(ActionProposal).where(ActionProposal.id == uuid.UUID(out.proposal_id))
+        )
+    ).scalar_one()
+    assert row.parameters["deployment"] == "cluster"
+    assert set(row.parameters["node_current_contents"]) == {
+        "wazuh-master-node",
+        "worker-node-1",
+        "worker-node-2",
+    }
+
+
+@pytest.mark.asyncio
+async def test_distributed_upsert_scopes_only_nodes_with_the_instance(
+    db: AsyncSession, seed_organization_and_user: dict[str, Any]
+) -> None:
+    # virustotal exists ONLY on the master → only the master is in scope; the
+    # workers (which never had it) are reported as untouched.
+    ctx = _ctx(seed_organization_and_user)
+    new_vt = "<integration><name>virustotal</name><api_key>NEW</api_key></integration>"
+    preview = await ProposeConfigChangeTool().run(
+        _cluster_exec_ctx(db, ctx, _ALLOW_CLUSTER),
+        ProposeConfigChangeInput(
+            section="integration",
+            operation="upsert_block",
+            block_key="virustotal",
+            section_content=new_vt,
+        ),
+    )
+    assert preview.state == "needs_confirmation"
+    assert "1 of the 3 manager cluster nodes" in preview.summary
+    assert "wazuh-master-node" in preview.summary
+    assert "not touched" in preview.detail  # workers reported as already in desired state
+
+
+@pytest.mark.asyncio
+async def test_distributed_refused_without_cluster_update_config(
+    db: AsyncSession, seed_organization_and_user: dict[str, Any]
+) -> None:
+    # Holds manager:update_config but NOT cluster:update_config → refused on a
+    # distributed deployment (fail closed).
+    ctx = _ctx(seed_organization_and_user)
+    out = await ProposeConfigChangeTool().run(
+        _cluster_exec_ctx(db, ctx, _ALLOW_CONFIG),
+        ProposeConfigChangeInput(
+            section="sca",
+            operation="update_section",
+            section_content="<sca><enabled>no</enabled></sca>",
+        ),
+    )
+    assert out.permitted is False
+    assert "cluster:update_config" in out.detail

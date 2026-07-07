@@ -1,4 +1,4 @@
-"""`propose_config_change` — author a manager ossec.conf change (6-e.4 → 6-f.4, ADR 0032 B).
+"""`propose_config_change` — author a manager ossec.conf change (6-e.4 → 6-f.6, ADR 0032 B).
 
 The model authors a change to the manager's ``ossec.conf`` — free-form within
 rails (any section outside the break-the-manager blocklist), covering both
@@ -10,6 +10,17 @@ instance when identities collide, 6-f.5; an ambiguous key is refused WITH each
 instance's distinguishing fields so the model can re-address precisely).  Like
 every propose tool it changes nothing itself: it validates +
 capability-pre-flights + queues a *pending* proposal a human must approve.
+
+**Deployment-aware (6-f.6).**  The tool detects the deployment type at propose
+time (``GET /cluster/status`` + ``/cluster/nodes``).  On an all-in-one manager
+it captures + dry-runs against the single ossec.conf.  On a distributed cluster
+it captures + dry-runs against EVERY node's own file (the cluster does not sync
+ossec.conf — a master-only write would leave workers on the old config), and
+records the per-node diff base + scope in the proposal (``deployment`` +
+``node_current_contents``).  Scope respects instance locality: a single-instance
+section is uniform cluster-wide; a repeated instance is changed only on the
+nodes that carry it (an upsert of an instance present nowhere is a cluster-wide
+ADD).  Distributed apply needs ``cluster:update_config`` in addition.
 
 **The authoring loop is two-phase (B1 confirm-diff):** a call WITHOUT
 ``user_confirmed=true`` performs the full author-time work — structural
@@ -48,10 +59,13 @@ from wolf_server.gateway.validator import validate_proposal
 from wolf_server.organization.context import OrganizationContext
 from wolf_server.tools.base import Citation, ProposeTool, ToolExecContext
 from wolf_server.wazuh.capabilities import (
+    ACTION_UPDATE_CLUSTER_CONFIG,
     ACTION_UPDATE_MANAGER_CONFIG,
     RESOURCE_ANY,
+    RESOURCE_NODE_ANY,
     fetch_credential_capabilities,
 )
+from wolf_server.wazuh.cluster import ManagerNode, get_cluster_nodes, node_configuration_path
 from wolf_server.wazuh.config_change import (
     BLOCKED_SECTIONS,
     OP_LABELS,
@@ -250,38 +264,89 @@ class ProposeConfigChangeTool(ProposeTool):
                 query, verdict.reason, "Proposal rejected by the action validator."
             )
 
-        # 4. Read the live config + capture the CURRENT content — the analyst's
-        #    preview base, the approver's diff base, the executor's staleness check.
+        # 4. Deployment detection (6-f.6) — the apply surface depends on it:
+        #    an all-in-one manager takes the change directly; a distributed
+        #    cluster takes it on EVERY node's own file (ossec.conf is NOT
+        #    cluster-synced — probed live 2026-07-06). Detection failure
+        #    refuses: never a blind master-only write that leaves workers
+        #    diverged.
         try:
-            raw: str = await exec_ctx.server_api.get_raw(
-                "/manager/configuration", params={"raw": "true"}
-            )
+            nodes = await get_cluster_nodes(exec_ctx.server_api)
         except Exception as exc:  # noqa: BLE001 — surfaced as a guided refusal
             return self._refused(
                 query,
-                f"Could not read the current manager configuration ({exc}); a "
-                "config change cannot be proposed without its current content.",
-                "Not proposed — the current configuration could not be read.",
+                f"Could not determine the Wazuh deployment type ({exc}); a config "
+                "change is applied per deployment (all-in-one directly, distributed "
+                "per cluster node) and cannot proceed blind.",
+                "Not proposed — the deployment type could not be determined.",
             )
-        captured = self._capture_current(raw, op, section, block_key)
-        if isinstance(captured, ProposeConfigChangeOutput):
-            return captured  # a guided refusal
-        current = captured
-
-        # 5. Author-time DRY-RUN — apply the exact transformation the executor
-        #    will apply; a change that cannot be applied is refused NOW, not at
-        #    approve time (B1.3; the manager-side validation still runs at execute).
         new_block = str(parameters.get("section_content", ""))
-        candidate = build_candidate(raw, op, section, block_key, new_block)
-        if candidate is None:
-            return self._refused(
-                query,
-                f"The change could not be applied to the current ossec.conf "
-                f"(dry-run failed for {OP_LABELS.get(op, op)!r} on <{section}>"
-                + (f" '{block_key}'" if block_key else "")
-                + "); the file may be malformed or the target ambiguous.",
-                "Not proposed — the change does not apply cleanly to the current configuration.",
+
+        # 5. Capture the CURRENT content — the analyst's preview base, the
+        #    approver's diff base, the executor's staleness check — and DRY-RUN
+        #    the exact transformation the executor will apply (B1.3; the
+        #    manager-side validation still runs at execute). Distributed: both
+        #    happen per node.
+        scope_note = ""
+        scope_detail = ""
+        if nodes:
+            # Distributed: cluster:update_config is required to write a node's
+            # file (distinct from manager:update_config; fail closed).
+            if not capabilities.can(ACTION_UPDATE_CLUSTER_CONFIG, RESOURCE_NODE_ANY):
+                return self._refused(
+                    query,
+                    "This is a distributed Wazuh deployment; applying a config "
+                    "change per node needs cluster:update_config, which this "
+                    "credential lacks. Distributed configuration changes are "
+                    "Superuser-scoped.",
+                    "Not proposed — the credential cannot write per-node cluster configuration.",
+                )
+            captured_cluster = await self._capture_cluster(
+                exec_ctx, query, nodes, op, section, block_key, new_block
             )
+            if isinstance(captured_cluster, ProposeConfigChangeOutput):
+                return captured_cluster  # a guided refusal
+            current, node_current = captured_cluster
+            parameters["deployment"] = "cluster"
+            parameters["node_current_contents"] = node_current
+            in_scope = list(node_current)
+            scope_note = (
+                f" on {len(in_scope)} of the {len(nodes)} manager cluster nodes "
+                f"({', '.join(in_scope)})"
+            )
+            skipped = [n.name for n in nodes if n.name not in node_current]
+            if skipped:
+                scope_detail = (
+                    " Nodes not touched (the target is not present on them, so they "
+                    "are already in the desired state): " + ", ".join(skipped) + "."
+                )
+        else:
+            try:
+                raw: str = await exec_ctx.server_api.get_raw(
+                    "/manager/configuration", params={"raw": "true"}
+                )
+            except Exception as exc:  # noqa: BLE001 — surfaced as a guided refusal
+                return self._refused(
+                    query,
+                    f"Could not read the current manager configuration ({exc}); a "
+                    "config change cannot be proposed without its current content.",
+                    "Not proposed — the current configuration could not be read.",
+                )
+            captured = self._capture_current(raw, op, section, block_key)
+            if isinstance(captured, ProposeConfigChangeOutput):
+                return captured  # a guided refusal
+            current = captured
+            candidate = build_candidate(raw, op, section, block_key, new_block)
+            if candidate is None:
+                return self._refused(
+                    query,
+                    f"The change could not be applied to the current ossec.conf "
+                    f"(dry-run failed for {OP_LABELS.get(op, op)!r} on <{section}>"
+                    + (f" '{block_key}'" if block_key else "")
+                    + "); the file may be malformed or the target ambiguous.",
+                    "Not proposed — the change does not apply cleanly to the "
+                    "current configuration.",
+                )
 
         adding = current == ""
         describe = self._describe(op, section, block_key, adding=adding)
@@ -294,13 +359,13 @@ class ProposeConfigChangeTool(ProposeTool):
                 state="needs_confirmation",
                 summary=(
                     f"PREVIEW ONLY — nothing was proposed yet. The change would "
-                    f"{describe}. Show the analyst the exact current vs proposed "
-                    "content, ask them to confirm, then re-call with "
+                    f"{describe}{scope_note}. Show the analyst the exact current vs "
+                    "proposed content, ask them to confirm, then re-call with "
                     "user_confirmed=true."
                 ),
                 detail=(
                     "Awaiting the analyst's explicit confirmation of the exact "
-                    "change (current_content holds the live content it replaces)."
+                    "change (current_content holds the live content it replaces)." + scope_detail
                 ),
                 current_content=current,
                 citation=self.make_citation(query, result_count=1),
@@ -311,7 +376,8 @@ class ProposeConfigChangeTool(ProposeTool):
             args.rationale.strip() or "Requested via chat — no explicit rationale was given."
         )
         expected = args.expected_effect or (
-            f"{OP_LABELS.get(op, op)}: {describe} (manager-global; applied via a cluster restart)."
+            f"{OP_LABELS.get(op, op)}: {describe}{scope_note} (manager-global; "
+            "applied via a cluster restart)."
         )
         proposal = await create_proposal(
             exec_ctx.db,
@@ -331,9 +397,9 @@ class ProposeConfigChangeTool(ProposeTool):
             state="pending",
             proposal_id=str(proposal.id),
             summary=(
-                f"Proposed: {describe} in ossec.conf; awaiting approval before it "
-                "is applied (manager-global change, applied via a cluster restart). "
-                "The approver sees the exact current vs proposed content."
+                f"Proposed: {describe}{scope_note} in ossec.conf; awaiting approval "
+                "before it is applied (manager-global change, applied via a cluster "
+                "restart). The approver sees the exact current vs proposed content."
             ),
             current_content=current,
             citation=self.make_citation(query, result_count=1),
@@ -394,6 +460,107 @@ class ProposeConfigChangeTool(ProposeTool):
                 f"Not proposed — no <{section}> block matches '{block_key}'.",
             )
         return matches[0].strip() if matches else ""
+
+    async def _capture_cluster(
+        self,
+        exec_ctx: ToolExecContext,
+        query: dict[str, Any],
+        nodes: list[ManagerNode],
+        op: str,
+        section: str,
+        block_key: str,
+        new_block: str,
+    ) -> tuple[str, dict[str, str]] | ProposeConfigChangeOutput:
+        """Per-node capture + dry-run for a distributed deployment (6-f.6).
+
+        Returns ``(preview_current, node_targets)`` where ``node_targets`` maps
+        each IN-SCOPE node → its own current target content (the per-node
+        staleness base; ``""`` when the change ADDS to that node), or a guided
+        refusal.  Scope respects instance locality: a single-instance section
+        (``update_section``) is uniform cluster-wide (every node in scope; ADD
+        where absent); a repeated instance (``upsert_block`` / ``remove_block``)
+        touches only the nodes that actually carry it — EXCEPT an upsert whose
+        instance exists on NO node, which is a cluster-wide ADD.  A node where
+        the op can't apply cleanly (ambiguous key / >1 section block) refuses,
+        naming the node."""
+        node_raw: dict[str, str] = {}
+        for node in nodes:
+            try:
+                node_raw[node.name] = await exec_ctx.server_api.get_raw(
+                    node_configuration_path(node.name), params={"raw": "true"}
+                )
+            except Exception as exc:  # noqa: BLE001 — surfaced as a guided refusal
+                return self._refused(
+                    query,
+                    f"Could not read the configuration of cluster node "
+                    f"{node.name!r} ({exc}); a distributed config change needs "
+                    "every node's current content.",
+                    f"Not proposed — node {node.name!r} configuration unreadable.",
+                )
+
+        if op == OP_UPDATE_SECTION:
+            targets: dict[str, str] = {}
+            for name, raw in node_raw.items():
+                blocks = find_section_blocks(raw, section)
+                if len(blocks) > 1:
+                    return self._refused(
+                        query,
+                        f"Section <{section}> appears {len(blocks)} times on cluster "
+                        f"node {name!r}; replacing 'the' block is ambiguous. Use "
+                        "'upsert_block' with a unique field value.",
+                        f"Not proposed — <{section}> appears more than once on {name!r}.",
+                    )
+                targets[name] = blocks[0].strip() if blocks else ""
+        else:
+            per_node: dict[str, list[str]] = {}
+            for name, raw in node_raw.items():
+                matches = find_identified_blocks(raw, section, block_key)
+                if len(matches) > 1:
+                    discriminators = describe_instances(matches)
+                    guidance = (
+                        f" Each differs by: {discriminators}. Re-call with a unique value."
+                        if discriminators
+                        else f" They are indistinguishable — hand-fix node {name!r} first."
+                    )
+                    return self._refused(
+                        query,
+                        f"{len(matches)} <{section}> blocks match {block_key!r} on "
+                        f"cluster node {name!r} — ambiguous." + guidance,
+                        f"Not proposed — multiple <{section}> blocks match "
+                        f"'{block_key}' on {name!r}.",
+                    )
+                per_node[name] = matches
+            total = sum(len(m) for m in per_node.values())
+            if op == OP_REMOVE_BLOCK and total == 0:
+                return self._refused(
+                    query,
+                    f"No <{section}> block with key {block_key!r} exists on any "
+                    "cluster node — nothing to remove.",
+                    f"Not proposed — no <{section}> block matches '{block_key}'.",
+                )
+            if op == OP_UPSERT_BLOCK and total == 0:
+                # New instance, present nowhere → a uniform cluster-wide ADD.
+                targets = dict.fromkeys(node_raw, "")
+            else:
+                # Update/remove touches only the nodes that carry the instance.
+                targets = {name: m[0].strip() for name, m in per_node.items() if m}
+
+        for name in targets:
+            if build_candidate(node_raw[name], op, section, block_key, new_block) is None:
+                return self._refused(
+                    query,
+                    f"The change does not apply cleanly to cluster node {name!r} "
+                    f"({OP_LABELS.get(op, op)!r} on <{section}>"
+                    + (f" '{block_key}'" if block_key else "")
+                    + "); that node's file may be malformed or the target ambiguous.",
+                    f"Not proposed — the change does not apply cleanly on {name!r}.",
+                )
+
+        # Preview base for the analyst: the master's target content (fall back
+        # to the first in-scope node when the master isn't touched).
+        master_name = nodes[0].name
+        preview_current = targets.get(master_name, next(iter(targets.values())))
+        return preview_current, targets
 
     async def _propose_restore(
         self,

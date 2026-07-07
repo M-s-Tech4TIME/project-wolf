@@ -23,6 +23,7 @@ from wolf_server.gateway.proposals import create_proposal
 from wolf_server.gateway.reversal import REVERSAL_STATE_COMPLETED
 from wolf_server.wazuh.capabilities import (
     ACTION_CLUSTER_RESTART,
+    ACTION_UPDATE_CLUSTER_CONFIG,
     ACTION_UPDATE_MANAGER_CONFIG,
     CredentialCapabilities,
 )
@@ -261,7 +262,7 @@ async def test_forward_freshness_refuses_stale_proposal(db: AsyncSession) -> Non
     freshness, _p, _v = get_executor("config_change").build_forward(proposal, ctx)
     ok, reason = await freshness(proposal)
     assert ok is False
-    assert "changed since" in reason
+    assert "has changed in ossec.conf since" in reason
 
 
 @pytest.mark.asyncio
@@ -387,7 +388,7 @@ async def test_block_freshness_refuses_stale_or_appeared_targets(db: AsyncSessio
     )
     ok, reason = await freshness(update)
     assert ok is False
-    assert "changed since" in reason
+    assert "has changed in ossec.conf since" in reason
     # (b) an ADD whose key has appeared since propose → stale (the config changed).
     added = _OSSEC_INTEG.replace("</ossec_config>", f"  {_VT_BLOCK}\n</ossec_config>")
     add = await _proposal(
@@ -465,3 +466,294 @@ async def test_reverse_freshness_refuses_when_already_rolled_back(db: AsyncSessi
     ok, reason = await freshness(reversal)
     assert ok is False
     assert "already been reversed" in reason
+
+
+# ── distributed deployment (6-f.6) ───────────────────────────────────────────
+
+_CLUSTER_CAPS = CredentialCapabilities(
+    policies={
+        ACTION_UPDATE_MANAGER_CONFIG: {"*:*:*": "allow"},
+        ACTION_UPDATE_CLUSTER_CONFIG: {"*:*:*": "allow"},
+        ACTION_CLUSTER_RESTART: {"*:*:*": "allow"},
+    }
+)
+
+_VT = "<integration><name>virustotal</name><api_key>K</api_key></integration>"
+# Master carries sca + virustotal; workers carry only sca (a real divergence —
+# the operator's 3-node cluster looks like this).
+_MASTER_CFG = f"<ossec_config>\n  {_SCA_CURRENT}\n  {_VT}\n</ossec_config>\n"
+_WORKER_CFG = f"<ossec_config>\n  {_SCA_CURRENT}\n</ossec_config>\n"
+
+
+class _ClusterDisk:
+    def __init__(self) -> None:
+        self.nodes: dict[str, str] = {
+            "wazuh-master-node": _MASTER_CFG,
+            "worker-node-1": _WORKER_CFG,
+            "worker-node-2": _WORKER_CFG,
+        }
+
+
+class _ClusterReadApi:
+    def __init__(
+        self, disk: _ClusterDisk, *, clustered: bool = True, validation_ok: bool = True
+    ) -> None:
+        self.disk = disk
+        self.clustered = clustered
+        self.validation_ok = validation_ok
+
+    async def get(self, path: str, *, params: Any = None) -> dict[str, Any]:
+        if path == "/cluster/status":
+            enabled = "yes" if self.clustered else "no"
+            return {"data": {"enabled": enabled, "running": enabled}}
+        if path == "/cluster/nodes":
+            return {
+                "data": {
+                    "affected_items": [
+                        {"name": "wazuh-master-node", "type": "master"},
+                        {"name": "worker-node-1", "type": "worker"},
+                        {"name": "worker-node-2", "type": "worker"},
+                    ]
+                }
+            }
+        if path == "/cluster/configuration/validation":
+            if self.validation_ok:
+                return {
+                    "data": {
+                        "affected_items": [{"name": n, "status": "OK"} for n in self.disk.nodes],
+                        "total_failed_items": 0,
+                    }
+                }
+            return {
+                "data": {
+                    "affected_items": [{"name": "worker-node-1", "status": "ERROR"}],
+                    "total_failed_items": 1,
+                    "failed_items": [{"error": "bad xml"}],
+                }
+            }
+        return {"data": {}}
+
+    async def get_raw(self, path: str, *, params: Any = None) -> str:
+        # /cluster/{node}/configuration
+        node = path.split("/")[2]
+        return self.disk.nodes.get(node, "")
+
+
+class _ClusterActionApi:
+    def __init__(self, disk: _ClusterDisk, *, persist: bool = True) -> None:
+        self.disk = disk
+        self.persist = persist
+        self.writes: list[tuple[str, str]] = []
+        self.restarts = 0
+
+    async def update_node_configuration(
+        self, node_name: str, *, content: str, capabilities: Any
+    ) -> dict[str, Any]:
+        self.writes.append((node_name, content))
+        if self.persist:
+            self.disk.nodes[node_name] = content
+        return {"data": {"affected_items": [node_name]}}
+
+    async def restart_cluster(self, *, capabilities: Any) -> dict[str, Any]:
+        self.restarts += 1
+        return {"data": {"affected_items": list(self.disk.nodes)}}
+
+
+def _cluster_ctx(
+    db: AsyncSession,
+    disk: _ClusterDisk,
+    *,
+    clustered: bool = True,
+    validation_ok: bool = True,
+    persist: bool = True,
+):
+    from wolf_server.gateway.executors import ExecContext
+
+    return ExecContext(
+        read_api=_ClusterReadApi(disk, clustered=clustered, validation_ok=validation_ok),
+        action_api=_ClusterActionApi(disk, persist=persist),
+        capabilities=_CLUSTER_CAPS,
+        db=db,
+    )
+
+
+def _all_nodes_current() -> dict[str, str]:
+    return {
+        "wazuh-master-node": _SCA_CURRENT,
+        "worker-node-1": _SCA_CURRENT,
+        "worker-node-2": _SCA_CURRENT,
+    }
+
+
+@pytest.mark.asyncio
+async def test_distributed_update_section_applies_to_every_node(db: AsyncSession) -> None:
+    # A single-instance section is uniform cluster-wide — all 3 nodes written.
+    proposal = await _proposal(
+        db,
+        action="update_section",
+        parameters={
+            "deployment": "cluster",
+            "section_content": _SCA_NEW,
+            "node_current_contents": _all_nodes_current(),
+        },
+    )
+    disk = _ClusterDisk()
+    ctx = _cluster_ctx(db, disk)
+    freshness, perform, verify = get_executor("config_change").build_forward(proposal, ctx)
+    assert (await freshness(proposal))[0] is True
+
+    res = await perform(proposal)
+    written_nodes = {n for n, _ in ctx.action_api.writes}
+    assert written_nodes == {"wazuh-master-node", "worker-node-1", "worker-node-2"}
+    assert ctx.action_api.restarts == 1  # ONE restart for the whole cluster
+    assert all("<enabled>no</enabled>" in c for c in disk.nodes.values())
+    # prior_state captured PER NODE for the undo.
+    assert proposal.prior_state is not None
+    assert proposal.prior_state["kind"] == "cluster_configuration"
+    assert set(proposal.prior_state["nodes"]) == set(disk.nodes)
+    assert res["deployment"] == "cluster"
+    assert sorted(res["nodes_applied"]) == ["wazuh-master-node", "worker-node-1", "worker-node-2"]
+
+    ok, detail = await verify(proposal, res)
+    assert ok is True
+    assert "3 cluster node(s)" in detail["note"]
+
+
+@pytest.mark.asyncio
+async def test_distributed_upsert_touches_only_nodes_with_the_instance(db: AsyncSession) -> None:
+    # virustotal exists ONLY on the master → only the master is written; the
+    # workers (which never had it) are left untouched (instance locality).
+    new_vt = "<integration><name>virustotal</name><api_key>NEW</api_key></integration>"
+    proposal = await _proposal(
+        db,
+        action="upsert_block",
+        target={"section": "integration", "block_key": "virustotal"},
+        parameters={
+            "deployment": "cluster",
+            "section_content": new_vt,
+            "node_current_contents": {"wazuh-master-node": _VT},
+        },
+    )
+    disk = _ClusterDisk()
+    ctx = _cluster_ctx(db, disk)
+    _f, perform, _v = get_executor("config_change").build_forward(proposal, ctx)
+    res = await perform(proposal)
+    assert [n for n, _ in ctx.action_api.writes] == ["wazuh-master-node"]
+    assert ctx.action_api.restarts == 1
+    assert "NEW" in disk.nodes["wazuh-master-node"]
+    assert "virustotal" not in disk.nodes["worker-node-1"]  # untouched
+    assert res["nodes_applied"] == ["wazuh-master-node"]
+
+
+@pytest.mark.asyncio
+async def test_distributed_validation_failure_restores_all_written_nodes(db: AsyncSession) -> None:
+    proposal = await _proposal(
+        db,
+        action="update_section",
+        parameters={
+            "deployment": "cluster",
+            "section_content": _SCA_NEW,
+            "node_current_contents": _all_nodes_current(),
+        },
+    )
+    disk = _ClusterDisk()
+    ctx = _cluster_ctx(db, disk, validation_ok=False)
+    _f, perform, _v = get_executor("config_change").build_forward(proposal, ctx)
+    with pytest.raises(ConfigValidationError):
+        await perform(proposal)
+    # Every node restored to its own snapshot; NO restart.
+    assert disk.nodes["wazuh-master-node"] == _MASTER_CFG
+    assert disk.nodes["worker-node-1"] == _WORKER_CFG
+    assert disk.nodes["worker-node-2"] == _WORKER_CFG
+    assert ctx.action_api.restarts == 0
+
+
+@pytest.mark.asyncio
+async def test_distributed_freshness_refuses_if_deployment_became_single(db: AsyncSession) -> None:
+    proposal = await _proposal(
+        db,
+        action="update_section",
+        parameters={
+            "deployment": "cluster",
+            "section_content": _SCA_NEW,
+            "node_current_contents": _all_nodes_current(),
+        },
+    )
+    ctx = _cluster_ctx(db, _ClusterDisk(), clustered=False)
+    freshness, _p, _v = get_executor("config_change").build_forward(proposal, ctx)
+    ok, reason = await freshness(proposal)
+    assert ok is False
+    assert "no longer a distributed cluster" in reason
+
+
+@pytest.mark.asyncio
+async def test_distributed_freshness_refuses_without_cluster_update_config(
+    db: AsyncSession,
+) -> None:
+    proposal = await _proposal(
+        db,
+        action="update_section",
+        parameters={
+            "deployment": "cluster",
+            "section_content": _SCA_NEW,
+            "node_current_contents": _all_nodes_current(),
+        },
+    )
+    from wolf_server.gateway.executors import ExecContext
+
+    ctx = ExecContext(
+        read_api=_ClusterReadApi(_ClusterDisk()),
+        action_api=_ClusterActionApi(_ClusterDisk()),
+        capabilities=_CAPS,  # has manager:update_config but NOT cluster:update_config
+        db=db,
+    )
+    freshness, _p, _v = get_executor("config_change").build_forward(proposal, ctx)
+    ok, reason = await freshness(proposal)
+    assert ok is False
+    assert "cluster:update_config" in reason
+
+
+@pytest.mark.asyncio
+async def test_distributed_reverse_restores_each_node_snapshot(db: AsyncSession) -> None:
+    original = await _proposal(
+        db,
+        action="update_section",
+        parameters={
+            "deployment": "cluster",
+            "section_content": _SCA_NEW,
+            "node_current_contents": _all_nodes_current(),
+        },
+    )
+    original.prior_state = {
+        "kind": "cluster_configuration",
+        "nodes": {
+            "wazuh-master-node": {"content": _MASTER_CFG, "sha256": "a"},
+            "worker-node-1": {"content": _WORKER_CFG, "sha256": "b"},
+            "worker-node-2": {"content": _WORKER_CFG, "sha256": "c"},
+        },
+    }
+    await db.flush()
+    reversal = await _proposal(db, action="restore_config", parameters={}, reverses=original.id)
+
+    # Disk currently holds the tuned config on every node.
+    disk = _ClusterDisk()
+    disk.nodes["wazuh-master-node"] = _MASTER_CFG.replace(_SCA_CURRENT, _SCA_NEW)
+    disk.nodes["worker-node-1"] = _WORKER_CFG.replace(_SCA_CURRENT, _SCA_NEW)
+    disk.nodes["worker-node-2"] = _WORKER_CFG.replace(_SCA_CURRENT, _SCA_NEW)
+    ctx = _cluster_ctx(db, disk)
+
+    freshness, perform, verify = get_executor("config_change").build_reverse(reversal, ctx)
+    assert (await freshness(reversal))[0] is True
+    res = await perform(reversal)
+    assert disk.nodes["wazuh-master-node"] == _MASTER_CFG  # each node's own snapshot
+    assert disk.nodes["worker-node-1"] == _WORKER_CFG
+    assert ctx.action_api.restarts == 1
+    assert res["config_restored"] is True
+    ok, detail = await verify(reversal, res)
+    assert ok is True
+    assert detail["reversal_state"] == REVERSAL_STATE_COMPLETED
+    assert sorted(detail["restored_nodes"]) == [
+        "wazuh-master-node",
+        "worker-node-1",
+        "worker-node-2",
+    ]

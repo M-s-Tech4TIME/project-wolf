@@ -26,6 +26,11 @@ ACTION_MODIFY_GROUP = "agent:modify_group"  # add/remove an agent to/from a grou
 ACTION_UPDATE_RULES = "rules:update"  # write a rule file — manager-global (6-e.3)
 ACTION_CLUSTER_RESTART = "cluster:restart"  # restart the cluster to apply a ruleset (6-e.3)
 ACTION_UPDATE_MANAGER_CONFIG = "manager:update_config"  # write ossec.conf (6-e.4)
+# Write ONE cluster node's ossec.conf (PUT /cluster/{node_id}/configuration) —
+# the distributed half of config_change (6-f.6). Probed live 2026-07-06: a
+# distinct RBAC action from manager:update_config; admin (wazuh-wui) holds
+# both on *:*:*.
+ACTION_UPDATE_CLUSTER_CONFIG = "cluster:update_config"
 
 # Resource a rule-file write / restart is checked against (manager-global, not
 # agent-scoped). The admin credential grants these on ``*:*:*`` (matches both);
@@ -92,9 +97,7 @@ class CredentialCapabilities:
                     allowed = True
         return allowed
 
-    def can_on_agent(
-        self, action: str, agent_id: str, agent_groups: Iterable[str]
-    ) -> bool:
+    def can_on_agent(self, action: str, agent_id: str, agent_groups: Iterable[str]) -> bool:
         """True iff the credential is allowed ``action`` on the given agent.
 
         Mirrors how Wazuh RBAC actually evaluates an agent-targeted action: it

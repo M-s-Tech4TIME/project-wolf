@@ -145,6 +145,17 @@ function formatDuration(parameters: Record<string, unknown>): string | null {
   return `${s}s`;
 }
 
+/** Where a config_change landed: "ossec.conf" (all-in-one) or the named
+ * cluster nodes (distributed, 6-f.6). */
+function scopeSummary(result: Record<string, unknown>): string {
+  if (result["deployment"] !== "cluster") return "ossec.conf";
+  const raw = result["nodes_applied"] ?? result["restored_nodes"];
+  const nodes = Array.isArray(raw) ? raw.map(String) : [];
+  return nodes.length > 0
+    ? `${nodes.length} cluster node${nodes.length === 1 ? "" : "s"} (${nodes.join(", ")})`
+    : "the cluster";
+}
+
 /** One-line human summary of the verification-read result (or failure). */
 function resultDetail(result: Record<string, unknown> | null): string | null {
   if (!result) return null;
@@ -169,24 +180,27 @@ function resultDetail(result: Record<string, unknown> | null): string | null {
       ? `rule ${rid} restored: override removed from local_rules.xml + validated + cluster restart issued`
       : `rule ${rid}: restore did NOT remove the override`;
   }
-  // config_change (6-e.4, block ops 6-f.4): forward result carries
-  // section_updated (+ operation/block_key); the snapshot-restore reverse
-  // carries config_restored. Surface the real apply evidence.
+  // config_change (6-e.4, block ops 6-f.4, deployment-aware 6-f.6): forward
+  // result carries section_updated (+ operation/block_key); the snapshot-
+  // restore reverse carries config_restored. A distributed apply also carries
+  // deployment="cluster" + nodes_applied — surface the blast radius.
   if (typeof result["section_updated"] === "boolean") {
     const sec = result["section"];
     const key = typeof result["block_key"] === "string" && result["block_key"] ? ` '${result["block_key"]}'` : "";
+    const where = scopeSummary(result);
     const applied =
       result["operation"] === "remove_block"
-        ? `<${sec}>${key} removed from ossec.conf`
-        : `<${sec}>${key} updated in ossec.conf`;
+        ? `<${sec}>${key} removed from ${where}`
+        : `<${sec}>${key} updated in ${where}`;
     return result["section_updated"]
       ? `${applied} + configuration validated + cluster restart issued (active ~15–30s after restart)`
       : `<${sec}>${key}: change did NOT persist — not applied`;
   }
   if (typeof result["config_restored"] === "boolean") {
     const sec = result["section"];
+    const where = scopeSummary(result);
     return result["config_restored"]
-      ? `ossec.conf restored (<${sec}> reverted) + validated + cluster restart issued`
+      ? `${where} restored (<${sec}> reverted) + validated + cluster restart issued`
       : `<${sec}>: restore did NOT match the prior snapshot`;
   }
   const total = result["total_affected_items"];

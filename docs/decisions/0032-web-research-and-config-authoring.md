@@ -596,6 +596,57 @@ key refusal **enumerates each instance's discriminating fields**
 instruction to re-call with one, so the model self-corrects instead of
 guessing. Truly indistinguishable duplicates remain a hand-fix refusal.
 
+## Addendum (2026-07-06, slice 6-f.6) — deployment-aware config application
+
+The third 6-f.4 web-test directive: a config change must be applied per the
+**deployment type** — an all-in-one manager directly, a distributed cluster
+"carefully across all nodes based on which component it applies to".
+
+**Grounded gap (probed live 2026-07-06 on the operator's 3-node cluster).**
+Wazuh's cluster sync replicates rules/decoders/CDB-lists/agent-groups but NOT
+``ossec.conf``: the three nodes' files genuinely diverge (master 15 318 B / 5
+integrations; workers 13 488 B and 13 079 B / 4 each). ``PUT /manager/configuration``
+writes only the API-serving (master) node — so 6-e.4/6-f.4 left the workers on
+the old config. The per-node endpoints exist and work: ``GET/PUT
+/cluster/{node}/configuration`` (RAW body; RBAC ``cluster:update_config``,
+distinct from ``manager:update_config`` — admin ``wazuh-wui`` holds both), and
+ONE ``GET /cluster/configuration/validation`` validates all nodes with per-node
+statuses. (Per-node ``/cluster/{node}/configuration/validation`` is 404 — the
+cluster-wide call is the validation surface.)
+
+**Design.** New ``wazuh/cluster.py`` detects the deployment
+(``GET /cluster/status`` enabled+running → ``GET /cluster/nodes``, master-first;
+``[]`` = all-in-one; an unusable/invalid inventory RAISES — never a silent
+master-only fallback). Node names are path-validated before any URL use.
+
+- **Propose tool** detects at propose time and, for a cluster, captures +
+  dry-runs against EVERY node's own file, freezing ``deployment="cluster"`` +
+  ``node_current_contents`` (node → per-node diff base) in the proposal. Scope
+  respects **instance locality**: a single-instance section (``update_section``)
+  is uniform cluster-wide (every node in scope; ADD where absent); a repeated
+  instance (``upsert_block``/``remove_block``) touches only the nodes that carry
+  it — EXCEPT an upsert of an instance present nowhere, which is a cluster-wide
+  ADD. The preview summary states the in-scope nodes + the untouched ones.
+  Distributed apply additionally requires ``cluster:update_config`` (fail
+  closed).
+- **Executor** branches on ``deployment``: the cluster path snapshots each
+  in-scope node's whole file (``prior_state.kind = "cluster_configuration"``),
+  applies ``build_candidate`` per node, writes each node, validates the cluster
+  once, proves persistence per node (reformatting-tolerant), then restarts
+  ONCE. **All-or-nothing:** any validation/persistence/transport failure
+  restores every already-written node to its snapshot before raising. Freshness
+  re-detects the cluster (a deployment that became single-node refuses) and
+  re-checks each in-scope node's staleness. Reverse restores each node's
+  snapshot and hash-verifies per node. The all-in-one path is unchanged.
+- **GUI** surfaces the blast radius: "…updated in 3 cluster nodes (master,
+  worker-1, worker-2)" vs "…in ossec.conf".
+
+**Honest boundary (unchanged, stated explicitly).** The wazuh-indexer and
+wazuh-dashboard config files live on OTHER hosts the Wazuh Server API cannot
+write; only the manager cluster's ossec.conf is reachable. Cross-component
+sync (indexer/dashboard) is **wolf-pack** (Phase 12) scope — Wolf states that
+rather than pretending to have synced them.
+
 ## Appendix A — `wolf-search` native-venv install recipe (= the postinst)
 
 **Finalized in 6-f.2 — the canonical, executable recipe is `debian/wolf-search.postinst`**

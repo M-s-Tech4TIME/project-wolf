@@ -31,12 +31,15 @@ from wolf_server.gateway.reversal import (
 from wolf_server.wazuh.active_response import interpret_ar_result
 from wolf_server.wazuh.agent_actions import OP_ASSIGN_GROUP
 from wolf_server.wazuh.capabilities import (
+    ACTION_UPDATE_CLUSTER_CONFIG,
     ACTION_UPDATE_MANAGER_CONFIG,
     ACTION_UPDATE_RULES,
     RESOURCE_ANY,
     RESOURCE_LOCAL_RULES,
+    RESOURCE_NODE_ANY,
     resolve_agent_groups,
 )
+from wolf_server.wazuh.cluster import get_cluster_nodes, node_configuration_path
 from wolf_server.wazuh.config_change import (
     OP_UPDATE_SECTION,
     OP_UPSERT_BLOCK,
@@ -546,26 +549,52 @@ class ConfigValidationError(WolfError):
 
 
 class _ConfigChangeExecutor:
-    """config_change (6-e.4, generalized 6-f.4 / ADR 0032 B): forward applies ONE
-    authored change to the master's ``ossec.conf`` — replace/add a
-    single-instance section (``update_section``) or add/update/remove ONE
-    block-identity-addressed instance of a repeated section (``upsert_block`` /
-    ``remove_block``) — and APPLIES it (validate → cluster restart, with
-    auto-rollback if the edited configuration does not validate); reverse
-    performs a **real undo** by PUTting the captured ``prior_state`` whole-file
-    snapshot back (snapshot-restore, ADR 0029 §2), so a succeeded reverse flips
-    the original to ``rolled_back``.
+    """config_change (6-e.4, generalized 6-f.4 / ADR 0032 B; deployment-aware 6-f.6):
+    forward applies ONE authored change — replace/add a single-instance section
+    (``update_section``) or add/update/remove ONE block-identity-addressed
+    instance of a repeated section (``upsert_block`` / ``remove_block``) — and
+    APPLIES it (validate → cluster restart, with auto-rollback if the edited
+    configuration does not validate); reverse performs a **real undo** by
+    restoring the captured ``prior_state`` whole-file snapshot(s), so a succeeded
+    reverse flips the original to ``rolled_back``.
+
+    **Deployment-aware (6-f.6).** An all-in-one manager takes the change on its
+    single ``ossec.conf`` (``PUT /manager/configuration``). A distributed
+    cluster takes it on EVERY in-scope node's own file
+    (``PUT /cluster/{node}/configuration``) because the cluster does NOT sync
+    ossec.conf — a master-only write would leave workers on the old config
+    (the gap 6-f.6 closes). The proposal's ``parameters['deployment']`` records
+    which; ``node_current_contents`` carries the per-node diff base + scope.
 
     Staleness is real here: the proposal froze the targeted content at propose
-    time (``current_content`` — the approver's diff base; ``""`` when the change
-    ADDS something new); if the live target no longer matches, the config
-    changed under the proposal and freshness refuses (re-propose against the
-    current file)."""
+    time (per node for a cluster); if a live target no longer matches, the
+    config changed under the proposal and freshness refuses (re-propose against
+    the current file)."""
 
     @staticmethod
     async def _read_config(ctx: ExecContext) -> str:
         raw: str = await ctx.read_api.get_raw("/manager/configuration", params={"raw": "true"})
         return raw
+
+    @staticmethod
+    async def _read_node_config(ctx: ExecContext, node_name: str) -> str:
+        raw: str = await ctx.read_api.get_raw(
+            node_configuration_path(node_name), params={"raw": "true"}
+        )
+        return raw
+
+    @staticmethod
+    def _is_cluster(p: ActionProposal) -> bool:
+        params = p.parameters if isinstance(p.parameters, dict) else {}
+        return params.get("deployment") == "cluster"
+
+    @staticmethod
+    def _node_targets(p: ActionProposal) -> dict[str, str]:
+        """The frozen per-node current target contents (node → content) captured
+        at propose time — the in-scope nodes + each one's staleness base."""
+        params = p.parameters if isinstance(p.parameters, dict) else {}
+        raw = params.get("node_current_contents")
+        return {str(k): str(v) for k, v in raw.items()} if isinstance(raw, dict) else {}
 
     @staticmethod
     def _live_target_blocks(raw: str, p: ActionProposal) -> list[str]:
@@ -577,35 +606,43 @@ class _ConfigChangeExecutor:
         return find_identified_blocks(raw, section, str(p.target.get("block_key", "")))
 
     @classmethod
-    def _target_fresh(cls, raw: str, p: ActionProposal) -> tuple[bool, str]:
-        """Frozen-vs-live staleness for any forward op: an ADD (frozen ``""``)
-        needs the target still absent; an update/remove needs exactly one live
-        match still equal to the frozen content."""
+    def _target_fresh_against(
+        cls, raw: str, p: ActionProposal, frozen: str, *, where: str = "ossec.conf"
+    ) -> tuple[bool, str]:
+        """Frozen-vs-live staleness for any forward op against one file: an ADD
+        (frozen ``""``) needs the target still absent; an update/remove needs
+        exactly one live match still equal to the frozen content."""
         section = str(p.target.get("section", ""))
         block_key = str(p.target.get("block_key", ""))
         described = f"<{section}>" + (f" '{block_key}'" if block_key else "")
-        params = p.parameters if isinstance(p.parameters, dict) else {}
-        frozen = str(params.get("current_content", "")).strip()
+        frozen = frozen.strip()
         blocks = cls._live_target_blocks(raw, p)
         if not frozen:
             if blocks:
                 return False, (
-                    f"{described} now exists in ossec.conf but this proposal ADDS it "
+                    f"{described} now exists in {where} but this proposal ADDS it "
                     "— the config changed since it was proposed. Re-propose against "
                     "the current configuration."
                 )
             return True, f"{described} still absent — the add applies cleanly."
         if len(blocks) != 1:
             return False, (
-                f"{described} appears {len(blocks)} time(s) in ossec.conf — it must "
+                f"{described} appears {len(blocks)} time(s) in {where} — it must "
                 "appear exactly once to be edited."
             )
         if blocks[0].strip() != frozen:
             return False, (
-                f"{described} has changed since this was proposed — the approver's "
-                "diff is stale. Re-propose against the current configuration."
+                f"{described} has changed in {where} since this was proposed — the "
+                "approver's diff is stale. Re-propose against the current configuration."
             )
         return True, f"{described} present once and unchanged since proposal."
+
+    @classmethod
+    def _target_fresh(cls, raw: str, p: ActionProposal) -> tuple[bool, str]:
+        """Single-node staleness — the frozen base is ``current_content``."""
+        params = p.parameters if isinstance(p.parameters, dict) else {}
+        frozen = str(params.get("current_content", ""))
+        return cls._target_fresh_against(raw, p, frozen)
 
     @staticmethod
     async def _put_config(ctx: ExecContext, content: str) -> None:
@@ -645,8 +682,123 @@ class _ConfigChangeExecutor:
             return block_persisted(raw, section, block_key, new_block)
         return block_removed(raw, section, block_key)
 
+    async def _cluster_freshness(self, ctx: ExecContext, p: ActionProposal) -> tuple[bool, str]:
+        """Distributed staleness: the deployment must still be a cluster, every
+        in-scope node must still exist, and each node's target must still match
+        its frozen per-node base."""
+        if not ctx.capabilities.can(ACTION_UPDATE_CLUSTER_CONFIG, RESOURCE_NODE_ANY):
+            return False, "Credential no longer holds cluster:update_config (Superuser-scoped)."
+        try:
+            live_nodes = {n.name for n in await get_cluster_nodes(ctx.read_api)}
+        except Exception as exc:  # noqa: BLE001 — surfaced as a refusal
+            return False, f"Could not re-read the cluster node inventory ({exc})."
+        if not live_nodes:
+            return False, (
+                "The deployment is no longer a distributed cluster — re-propose "
+                "against the current all-in-one configuration."
+            )
+        targets = self._node_targets(p)
+        for name, frozen in targets.items():
+            if name not in live_nodes:
+                return False, (
+                    f"Cluster node {name!r} is no longer in the cluster — re-propose "
+                    "against the current topology."
+                )
+            raw = await self._read_node_config(ctx, name)
+            ok, reason = self._target_fresh_against(raw, p, frozen, where=f"node {name!r}")
+            if not ok:
+                return False, reason
+        return True, f"All {len(targets)} in-scope node(s) present and unchanged since proposal."
+
+    async def _cluster_perform(self, ctx: ExecContext, p: ActionProposal) -> dict[str, Any]:
+        """Apply the change to every in-scope node's own ossec.conf, validate the
+        cluster once, prove persistence per node, then restart. Snapshots each
+        node's whole file first; on ANY failure restores every node already
+        written (all-or-nothing) before raising."""
+        section = str(p.target.get("section", ""))
+        block_key = str(p.target.get("block_key", ""))
+        params = p.parameters if isinstance(p.parameters, dict) else {}
+        new_block = str(params.get("section_content", "")).strip()
+        described = f"<{section}>" + (f" '{block_key}'" if block_key else "")
+        targets = self._node_targets(p)
+
+        snapshots: dict[str, str] = {}
+        candidates: dict[str, str] = {}
+        for name in targets:
+            snap = await self._read_node_config(ctx, name)
+            snapshots[name] = snap
+            candidate = build_candidate(snap, p.action, section, block_key, new_block)
+            if candidate is None:
+                raise ConfigValidationError(
+                    f"The change no longer applies cleanly to node {name!r} "
+                    f"({p.action} on {described}); cannot edit. No change applied."
+                )
+            candidates[name] = candidate
+
+        # Snapshot every in-scope node BEFORE any write — the undo restore point.
+        p.prior_state = {
+            "kind": "cluster_configuration",
+            "nodes": {
+                name: {"content": snap, "sha256": _sha256(snap)} for name, snap in snapshots.items()
+            },
+        }
+
+        async def _restore_all(written: list[str]) -> None:
+            for name in written:
+                await ctx.action_api.update_node_configuration(
+                    name, content=snapshots[name], capabilities=ctx.capabilities
+                )
+
+        written: list[str] = []
+        try:
+            for name, candidate in candidates.items():
+                await ctx.action_api.update_node_configuration(
+                    name, content=candidate, capabilities=ctx.capabilities
+                )
+                written.append(name)
+            valid, detail = _validation_ok(
+                await ctx.read_api.get("/cluster/configuration/validation")
+            )
+            if not valid:
+                await _restore_all(written)
+                raise ConfigValidationError(
+                    f"Edited configuration rejected ({detail}); restored the prior "
+                    f"ossec.conf on all {len(written)} node(s). No change applied."
+                )
+            # Authoritative per-node persistence proof (reformatting-tolerant).
+            for name in written:
+                reread = await self._read_node_config(ctx, name)
+                if not self._change_persisted(reread, p, new_block):
+                    await _restore_all(written)
+                    raise ConfigValidationError(
+                        f"Change to {described} did not persist on node {name!r}; "
+                        f"restored the prior file on all {len(written)} node(s). "
+                        "No change applied."
+                    )
+        except ConfigValidationError:
+            raise
+        except Exception:
+            # Any transport failure mid-apply — restore what we wrote, then re-raise.
+            await _restore_all(written)
+            raise
+
+        # Apply: the manager only loads ossec.conf on restart (~18s live).
+        await ctx.action_api.restart_cluster(capabilities=ctx.capabilities)
+        return {
+            "section": section,
+            "block_key": block_key,
+            "operation": p.action,
+            "deployment": "cluster",
+            "nodes_applied": list(candidates),
+            "validation": detail,
+            "restart_issued": True,
+            "section_updated": True,
+        }
+
     def build_forward(self, proposal: ActionProposal, ctx: ExecContext) -> Callables:
         async def _freshness(p: ActionProposal) -> tuple[bool, str]:
+            if self._is_cluster(p):
+                return await self._cluster_freshness(ctx, p)
             if not ctx.capabilities.can(ACTION_UPDATE_MANAGER_CONFIG, RESOURCE_ANY):
                 return False, (
                     "Credential no longer holds manager:update_config (Superuser-scoped)."
@@ -655,6 +807,8 @@ class _ConfigChangeExecutor:
             return self._target_fresh(raw, p)
 
         async def _perform(p: ActionProposal) -> dict[str, Any]:
+            if self._is_cluster(p):
+                return await self._cluster_perform(ctx, p)
             section = str(p.target.get("section", ""))
             block_key = str(p.target.get("block_key", ""))
             params = p.parameters if isinstance(p.parameters, dict) else {}
@@ -708,6 +862,8 @@ class _ConfigChangeExecutor:
                 "section": section,
                 "block_key": block_key,
                 "operation": p.action,
+                "deployment": "single",
+                "nodes_applied": [],
                 "validation": validation,
                 "restart_issued": True,
                 "prior_sha256": snap_hash,
@@ -720,20 +876,27 @@ class _ConfigChangeExecutor:
             # config VALIDATES (it raises + auto-restores otherwise). No re-read here
             # — it would race the restart _perform just issued.
             ok = bool(res.get("section_updated"))
+            nodes_applied = res.get("nodes_applied") or []
+            if res.get("deployment") == "cluster":
+                where = f"{len(nodes_applied)} cluster node(s) ({', '.join(nodes_applied)})"
+            else:
+                where = "ossec.conf (all-in-one manager)"
             detail: dict[str, Any] = {
                 "ok": ok,
                 "section": res.get("section"),
                 "block_key": res.get("block_key"),
                 "operation": res.get("operation"),
+                "deployment": res.get("deployment", "single"),
+                "nodes_applied": nodes_applied,
                 "section_updated": res.get("section_updated"),
                 "validation": res.get("validation"),
                 "restart_issued": res.get("restart_issued", True),
                 "prior_sha256": res.get("prior_sha256"),
                 "new_sha256": res.get("new_sha256"),
                 "note": (
-                    "Change applied to ossec.conf (master node) + configuration "
-                    "validated + cluster restart issued. The change becomes active "
-                    "~15-30s after the restart completes."
+                    f"Change applied to {where} + configuration validated + cluster "
+                    "restart issued. The change becomes active ~15-30s after the "
+                    "restart completes."
                 ),
             }
             return ok, detail
@@ -754,7 +917,13 @@ class _ConfigChangeExecutor:
             if original.state == ProposalState.rolled_back:
                 return False, "The configuration change has already been reversed."
             prior = original.prior_state if isinstance(original.prior_state, dict) else None
-            if not prior or not prior.get("content"):
+            if not prior:
+                return False, "No captured prior_state snapshot to restore."
+            if prior.get("kind") == "cluster_configuration":
+                if not isinstance(prior.get("nodes"), dict) or not prior["nodes"]:
+                    return False, "No captured per-node snapshots to restore."
+                return True, f"Prior per-node snapshots present (original {original.id})."
+            if not prior.get("content"):
                 return False, "No captured prior_state snapshot to restore."
             return True, f"Prior ossec.conf snapshot present (original {original.id})."
 
@@ -765,16 +934,47 @@ class _ConfigChangeExecutor:
                 if original is not None and isinstance(original.prior_state, dict)
                 else {}
             )
-            content = str(prior.get("content", ""))
             section = str(original.target.get("section", "")) if original is not None else ""
+            restored_from = str(original.id) if original is not None else ""
+
+            if prior.get("kind") == "cluster_configuration":
+                nodes = prior.get("nodes", {})
+                restored_nodes: list[str] = []
+                all_ok = True
+                for name, snap in nodes.items():
+                    content = str(snap.get("content", "")) if isinstance(snap, dict) else ""
+                    await ctx.action_api.update_node_configuration(
+                        name, content=content, capabilities=ctx.capabilities
+                    )
+                    reread = await self._read_node_config(ctx, name)
+                    if _sha256(reread) == _sha256(content):
+                        restored_nodes.append(name)
+                    else:
+                        all_ok = False
+                validation_ok, validation = _validation_ok(
+                    await ctx.read_api.get("/cluster/configuration/validation")
+                )
+                await ctx.action_api.restart_cluster(capabilities=ctx.capabilities)
+                return {
+                    "restored_from": restored_from,
+                    "section": section,
+                    "deployment": "cluster",
+                    "restored_nodes": restored_nodes,
+                    "validation": validation,
+                    "restart_issued": True,
+                    "config_restored": all_ok and validation_ok,
+                }
+
+            content = str(prior.get("content", ""))
             validation = await self._write_and_validate(ctx, new_content=content, rollback_to=None)
             # Authoritative: the re-read file must BE the snapshot (hash equality —
             # stronger than a substring check; restore is whole-file).
             restored = _sha256(await self._read_config(ctx)) == _sha256(content)
             await ctx.action_api.restart_cluster(capabilities=ctx.capabilities)
             return {
-                "restored_from": str(original.id) if original is not None else "",
+                "restored_from": restored_from,
                 "section": section,
+                "deployment": "single",
                 "validation": validation,
                 "restart_issued": True,
                 "config_restored": restored,
@@ -785,16 +985,23 @@ class _ConfigChangeExecutor:
             # when the file hash-matches the snapshot) so the API flips the
             # original to rolled_back (reversal.complete_api_reversal).
             ok = bool(res.get("config_restored", False))
+            restored_nodes = res.get("restored_nodes") or []
+            if res.get("deployment") == "cluster":
+                where = f"{len(restored_nodes)} cluster node(s) ({', '.join(restored_nodes)})"
+            else:
+                where = "ossec.conf (all-in-one manager)"
             detail: dict[str, Any] = {
                 "ok": ok,
                 "restored_from": res.get("restored_from"),
                 "section": res.get("section"),
+                "deployment": res.get("deployment", "single"),
+                "restored_nodes": restored_nodes,
                 "config_restored": res.get("config_restored", False),
                 "validation": res.get("validation"),
                 "restart_issued": res.get("restart_issued", True),
                 "reversal_state": REVERSAL_STATE_COMPLETED if ok else "failed",
                 "note": (
-                    "Restored ossec.conf to its pre-change snapshot (hash-verified) + "
+                    f"Restored {where} to its pre-change snapshot (hash-verified) + "
                     "validated + cluster restart issued. The configuration reverts "
                     "~15-30s after the restart completes."
                 ),
