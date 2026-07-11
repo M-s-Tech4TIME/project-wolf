@@ -32,7 +32,7 @@ jobs:
     name: Build, sign, and publish release
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           # The tag's commit is what we ship — not an arbitrary
           # later main. fetch-depth: 0 lets us read the full
