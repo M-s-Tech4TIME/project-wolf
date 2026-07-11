@@ -50,6 +50,31 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-07-12 — embedding_bench: empirical retrieval comparison harness (operator: "which one is the best?")
+
+**Session type:** claude-code
+**Phase:** post-6-f maintenance; seed of the Phase 6.13 calibration harness
+**Branch / commit:** main
+
+### What we did
+- NEW `wolf_server.management.embedding_bench`: known-item retrieval
+  benchmark over the LIVE corpus — seeded stratified gold+distractor
+  sample, LLM-generated analyst questions (cached JSON so re-runs score
+  the same set), per-config corpus embedding (nomic / v2-moe / qwen native
+  4096 / qwen768 derived by client-side MRL truncate+renormalize — one
+  expensive pass serves two widths), scratch table with per-config vector
+  columns + tsvector, rankings via the SAME exact `<=>` scan + the store's
+  exact RRF (k=60, limit 25), Recall@1/5/10 + MRR@10 for vector-only,
+  hybrid (+FTS) and 3-leg combo (+v2-moe) variants, mean query-embed
+  latency per model. Honesty scoping in the module docstring: measures
+  embedding GEOMETRY quality; index effects deliberately excluded.
+- 4 hermetic tests pin the pure helpers (MRL truncate+renormalize,
+  RRF fusion arithmetic vs the store's, known-item metrics, LLM output
+  sanitizer). Results entry lands separately once the bench runs (GPU is
+  busy with the 4096 corpus re-embed).
+
+---
+
 ## 2026-07-12 — Live switch to qwen3-embedding at native 4096 + two root-fixed bugs the switch surfaced
 
 **Session type:** claude-code
@@ -79,6 +104,18 @@ Copy this block and fill in at the start of each session entry:
 - Schema apply re-typed embedding → vector(4096), re-embedded all 5182
   chunks through qwen3-embedding (8B), built the binary-quantized HNSW
   index; verification below in this entry's follow-up notes.
+- **Bug 3 (caught by the live 3-leg probe, root-fixed + pinned):** pgvector
+  HNSW returns at most `hnsw.ef_search` rows (default 40) — the BQ leg's
+  oversampled LIMIT 100 silently came back as 40 candidates (1.6× effective
+  oversample instead of 4×). Fix = `SET LOCAL hnsw.ef_search = <stage-1
+  limit>` (transaction-scoped, capped 1000) inside `_bq_candidates`;
+  re-probe confirmed the full 100-candidate rerank pool AND visibly better
+  top-5 (the on-topic "Rule 1009: Ignoring known false positives" chunk
+  surfaced at #2). Verification battery on the switch: stamps all
+  `ollama:qwen3-embedding:latest`, BQ indexdef exact, real-table EXPLAIN =
+  Index Scan, 3-leg store probe through production code, wolf-server
+  401-healthy. num_ctx tuned 8192→2048 mid-apply (KV cache spilled the 8B
+  embedder 51% to CPU; 2048 covers the largest chunk ~1400 tokens).
 
 ---
 

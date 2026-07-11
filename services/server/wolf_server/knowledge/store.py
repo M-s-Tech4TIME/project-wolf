@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import cast, func, select
+from sqlalchemy import cast, func, select, text
 from sqlalchemy.dialects.postgresql import BIT
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -347,6 +347,15 @@ class PgvectorKnowledgeStore:
         width (e.g. qwen3-embedding's native 4096) stays ANN-indexed with
         exact-cosine final ordering — no fidelity loss, no cap.
         """
+        stage1_limit = RANKER_CANDIDATE_LIMIT * self._bq_oversample
+        # pgvector's HNSW returns at most hnsw.ef_search rows (default 40) —
+        # WITHOUT this, an oversampled LIMIT above 40 is silently capped and
+        # the rerank pool shrinks (caught live: LIMIT 100 returned 40). SET
+        # LOCAL scopes the bump to the current transaction, so pooled
+        # connections don't leak it. Literal int — no injection surface.
+        await self._session.execute(
+            text(f"SET LOCAL hnsw.ef_search = {min(int(stage1_limit), 1000)}")
+        )
         hamming: ColumnElement[Any] = cast(func.binary_quantize(column), BIT(dim)).op("<~>")(
             cast(func.binary_quantize(cast(query_vector, Vector(dim))), BIT(dim))
         )
@@ -357,7 +366,7 @@ class PgvectorKnowledgeStore:
                 | (KnowledgeChunk.organization_id == organization_id)
             )
             .order_by(hamming)
-            .limit(RANKER_CANDIDATE_LIMIT * self._bq_oversample)
+            .limit(stage1_limit)
         )
         if require_not_null:
             stage1 = stage1.where(column.isnot(None))

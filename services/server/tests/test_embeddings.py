@@ -372,8 +372,12 @@ async def test_wide_primary_leg_uses_binary_quantized_two_stage() -> None:
     store, session = _bq_store_and_session()
     ranks = await store._vector_candidates(_uuid.uuid4(), [0.0] * 4096, None, None)
     assert ranks == {}  # stage 1 returned nothing -> empty leg, no stage 2
-    assert len(session.statements) == 1
-    stage1 = session.statements[0]
+    assert len(session.statements) == 2
+    # HNSW returns at most hnsw.ef_search rows (default 40) — the leg must
+    # raise it (transaction-local) to its oversampled limit or the rerank
+    # pool silently shrinks (caught live: LIMIT 100 came back as 40).
+    assert session.statements[0] == "SET LOCAL hnsw.ef_search = 100"  # 25 * oversample 4
+    stage1 = session.statements[1]
     assert "binary_quantize" in stage1
     assert "BIT(4096)" in stage1
     assert "<~>" in stage1  # Hamming distance drives the indexed stage
@@ -386,7 +390,7 @@ async def test_wide_aux_leg_uses_bq_and_keeps_the_not_null_guard() -> None:
     store, session = _bq_store_and_session()
     ranks = await store._vector_aux_candidates(_uuid.uuid4(), [0.0] * 4096, None, None)
     assert ranks == {}
-    stage1 = session.statements[0]
+    stage1 = session.statements[1]  # statements[0] is the ef_search bump
     assert "binary_quantize" in stage1
     assert "embedding_v2 IS NOT NULL" in stage1  # NULL aux rows never rank
 
