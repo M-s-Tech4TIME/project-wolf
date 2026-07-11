@@ -294,13 +294,19 @@ feed them to `bootstrap_organization` (Wazuh), `.env` (DATABASE_URL,
 ## 8. The knowledge graph (graphify)
 
 `graphify-out/` (repo root) holds a code knowledge graph regenerated
-**locally on every commit** by the post-commit hook; it is deliberately
+**locally on every commit** by the post-commit hook; it is normally
 **not committed** (operator decision 2026-06-16 — graph churn polluted
-diffs). After cloning on a new machine, regenerate with the `/graphify`
-skill (`~/.claude/skills/graphify/SKILL.md`) or simply make the first
-commit and let the hook rebuild it. Once `graphify-out/graph.json` exists,
-the graphify-first rule applies: architectural questions go through
-graphify query/path/explain before grep/Read sweeps.
+diffs). **One-time exception at this wrap-up (operator request):** the
+current graph artifacts — `graphify-out/graph.json`, `GRAPH_REPORT.md`,
+`manifest.json` — were force-added once so a fresh clone on a new device
+starts with the graph already present (the daily-snapshot dirs and the
+43 MB rebuild cache stay local-only; they're redundant/regenerable). The
+gitignore rule remains in force — future rebuilds stay uncommitted. On a
+new machine you can also regenerate with the `/graphify` skill
+(`~/.claude/skills/graphify/SKILL.md`) or let the post-commit hook rebuild.
+Once `graphify-out/graph.json` exists, the graphify-first rule applies:
+architectural questions go through graphify query/path/explain before
+grep/Read sweeps.
 
 ---
 
