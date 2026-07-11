@@ -21,20 +21,23 @@ from sqlalchemy import Computed, DateTime, Index, String, Text, Uuid
 from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column
 
-from wolf_server.config import get_settings
+from wolf_server.config import get_embedding_dimensions
 from wolf_server.database import Base
 
 # Vector column widths are SETTINGS-DRIVEN (ADR 0033): EMBEDDING_DIMENSION /
 # EMBEDDING_DIMENSION_AUX in .env decide the ORM-declared width, frozen at
 # import time (SQLAlchemy DDL is static — a dimension change needs a process
-# restart). The BASELINE migrations (0004/0006) create both columns at 768;
-# any other configured width is reconciled by the operator tool
+# restart). Read via the NARROW EmbeddingDimensions loader — the full
+# Settings would run unrelated validators (SECRET_KEY guard) in contexts
+# like CI's alembic-check that have no app secrets. The BASELINE migrations
+# (0004/0006) create both columns at 768; any other configured width is
+# reconciled by the operator tool
 # `python -m wolf_server.management.embedding_schema --apply`, which re-types
 # the live columns, re-embeds every chunk, and rebuilds the HNSW indexes.
 # Until the tool runs, a mismatch fails loudly (Postgres "expected N
 # dimensions") — never silently.
-EMBEDDING_DIMENSION = get_settings().embedding_dimension
-EMBEDDING_DIMENSION_AUX = get_settings().embedding_dimension_aux or EMBEDDING_DIMENSION
+EMBEDDING_DIMENSION = get_embedding_dimensions().embedding_dimension
+EMBEDDING_DIMENSION_AUX = get_embedding_dimensions().embedding_dimension_aux or EMBEDDING_DIMENSION
 
 
 def _now() -> datetime:

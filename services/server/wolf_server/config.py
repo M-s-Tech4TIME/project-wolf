@@ -508,3 +508,25 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+class EmbeddingDimensions(BaseSettings):
+    """The two ints the ORM needs at import time — nothing else.
+
+    `knowledge.models` reads the vector column widths while the module is
+    being imported (SQLAlchemy DDL is static). Importing the FULL Settings
+    there would run every validator — including the SECRET_KEY placeholder
+    guard — in contexts that legitimately have no app secrets, e.g. CI's
+    alembic-check job. This narrow model reads the SAME sources (.env +
+    process env) for just the dimension knobs.
+    """
+
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    embedding_dimension: int = 768
+    embedding_dimension_aux: int = 0
+
+
+@lru_cache
+def get_embedding_dimensions() -> EmbeddingDimensions:
+    return EmbeddingDimensions()

@@ -83,6 +83,16 @@ Copy this block and fill in at the start of each session entry:
   settings, reembed force keyset, schema-tool plan matrix incl. crash-resume
   + live-verified pg_catalog parsing). `alembic check` at defaults: zero
   drift. ADR 0033 written; ADR 0012/0014's fixed-768 contract superseded.
+- **Post-push CI catch (alembic-check red, run 29156482490) fixed at root**:
+  models.py had imported the FULL `Settings` at import time — its
+  SECRET_KEY placeholder guard correctly refuses in secretless contexts
+  (CI's alembic-check exports only DATABASE_URL). Fix = narrow
+  `EmbeddingDimensions` loader in config.py (same .env/env sources, only
+  the two ints) + secretless-import reproduced and verified locally.
+  Also from the live report-mode run: aux NULLs stamped
+  `__unembeddable__` are steady state — the schema tool now EXCLUDES them
+  from planning (idempotent report) and stamps the sentinel itself on aux
+  embed failures, mirroring `reembed --aux`.
 
 ---
 

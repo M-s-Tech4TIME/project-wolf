@@ -64,6 +64,7 @@ from wolf_server.knowledge.embeddings import (
     make_embedding_provider_aux,
 )
 from wolf_server.knowledge.models import KnowledgeChunk
+from wolf_server.management.reembed import AUX_UNEMBEDDABLE_SENTINEL
 
 _TABLE = "knowledge_chunks"
 
@@ -144,8 +145,15 @@ async def read_column_states(session: AsyncSession) -> dict[str, ColumnState]:
                 "The schema tool only manages pgvector columns — inspect the "
                 "database by hand."
             )
+        # Aux NULLs stamped as unembeddable (v2-moe rejected the chunk even
+        # truncated) are a legitimate steady state, not pending work — the
+        # search third leg just skips them. Excluding them keeps the plan
+        # idempotent: a corpus with only sentinel NULLs reports in-sync.
+        null_count_sql = f"SELECT count(*) FROM {_TABLE} WHERE {name} IS NULL"  # noqa: S608
+        if name == "embedding_v2":
+            null_count_sql += " AND embedding_v2_model IS DISTINCT FROM :sentinel"
         null_count_row = await session.execute(
-            text(f"SELECT count(*) FROM {_TABLE} WHERE {name} IS NULL")  # noqa: S608
+            text(null_count_sql), {"sentinel": AUX_UNEMBEDDABLE_SENTINEL}
         )
         states[name] = ColumnState(
             name=name,
@@ -236,9 +244,12 @@ async def _reembed_null_vectors(
     """Fill every NULL vector in `plan.name`; returns (succeeded, failed).
 
     Keyset-paginated by id so a chunk the embedder rejects doesn't loop
-    forever — it stays NULL, is counted as failed, and the caller decides
-    whether NOT NULL can be restored.
+    forever. A primary failure stays NULL and counts as failed (blocking
+    NOT NULL restoration); an aux failure is stamped with the
+    unembeddable sentinel — same contract as `reembed --aux` — so future
+    runs skip it and the plan stays idempotent.
     """
+    is_aux = plan.name == "embedding_v2"
     column = getattr(KnowledgeChunk, plan.name)
     succeeded = 0
     failed = 0
@@ -251,6 +262,10 @@ async def _reembed_null_vectors(
                 .order_by(KnowledgeChunk.id)
                 .limit(batch_size)
             )
+            if is_aux:
+                stmt = stmt.where(
+                    KnowledgeChunk.embedding_v2_model.is_distinct_from(AUX_UNEMBEDDABLE_SENTINEL)
+                )
             if last_id is not None:
                 stmt = stmt.where(KnowledgeChunk.id > last_id)
             rows = list((await session.execute(stmt)).scalars().all())
@@ -261,11 +276,22 @@ async def _reembed_null_vectors(
                 try:
                     vector = (await embedder.embed([row.content]))[0]
                 except Exception as exc:
-                    failed += 1
                     sys.stderr.write(
                         f"  [warn] embed failed for chunk {row.id} "
-                        f"({type(exc).__name__}); leaving NULL\n"
+                        f"({type(exc).__name__}); "
+                        f"{'marking unembeddable' if is_aux else 'leaving NULL'}\n"
                     )
+                    if is_aux:
+                        await session.execute(
+                            update(KnowledgeChunk)
+                            .where(KnowledgeChunk.id == row.id)
+                            .values(
+                                embedding_v2=None,
+                                embedding_v2_model=AUX_UNEMBEDDABLE_SENTINEL,
+                            )
+                        )
+                    else:
+                        failed += 1
                     continue
                 values: dict[str, object] = {
                     plan.name: vector,

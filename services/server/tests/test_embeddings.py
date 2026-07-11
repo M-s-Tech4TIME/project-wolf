@@ -262,12 +262,14 @@ def test_aux_dimension_defaults_to_primary_when_unset(
 def test_knowledge_chunk_columns_follow_configured_dimensions() -> None:
     # The ORM declaration is settings-driven (ADR 0033): whatever the
     # process was configured with at import time IS the declared width.
-    from wolf_server.config import get_settings
+    # Read via the NARROW EmbeddingDimensions loader — full Settings would
+    # run the SECRET_KEY guard in secretless contexts (CI alembic-check).
+    from wolf_server.config import get_embedding_dimensions
     from wolf_server.knowledge.models import KnowledgeChunk
 
-    settings = get_settings()
-    expected_aux = settings.embedding_dimension_aux or settings.embedding_dimension
-    assert KnowledgeChunk.__table__.c.embedding.type.dim == settings.embedding_dimension
+    dims = get_embedding_dimensions()
+    expected_aux = dims.embedding_dimension_aux or dims.embedding_dimension
+    assert KnowledgeChunk.__table__.c.embedding.type.dim == dims.embedding_dimension
     assert KnowledgeChunk.__table__.c.embedding_v2.type.dim == expected_aux
 
 

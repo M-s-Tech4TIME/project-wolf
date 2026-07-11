@@ -150,3 +150,48 @@ async def test_read_column_states_refuses_non_vector_columns() -> None:
 
     with pytest.raises(RuntimeError, match="expected vector"):
         await read_column_states(_Session())  # type: ignore[arg-type]
+
+
+@pytest.mark.asyncio
+async def test_aux_null_count_excludes_unembeddable_sentinel() -> None:
+    # v2-moe legitimately rejects some chunks (sentinel-stamped NULLs).
+    # Those are steady state, not pending work — the plan must stay
+    # idempotent on a corpus whose only aux NULLs are sentinels.
+    captured: list[str] = []
+
+    class _Rows:
+        def __init__(self, rows: list[Any]) -> None:
+            self._rows = rows
+
+        def all(self) -> list[Any]:
+            return self._rows
+
+        def scalar_one(self) -> int:
+            return 0
+
+    class _Session:
+        async def execute(self, stmt: Any, params: Any = None) -> _Rows:
+            sql = str(stmt)
+            if "pg_attribute" in sql:
+                return _Rows(
+                    [
+                        ("embedding", "vector(768)", True),
+                        ("embedding_v2", "vector(768)", False),
+                    ]
+                )
+            if "pg_indexes" in sql:
+                return _Rows(
+                    [
+                        ("ix_knowledge_chunks_embedding_hnsw",),
+                        ("ix_knowledge_chunks_embedding_v2_hnsw",),
+                    ]
+                )
+            captured.append(sql)
+            return _Rows([(0,)])
+
+    states = await read_column_states(_Session())  # type: ignore[arg-type]
+    primary_sql = next(sql for sql in captured if "embedding_v2" not in sql)
+    aux_sql = next(sql for sql in captured if "embedding_v2 IS NULL" in sql)
+    assert "IS DISTINCT FROM" not in primary_sql  # primary NULLs always count
+    assert "embedding_v2_model IS DISTINCT FROM :sentinel" in aux_sql
+    assert states["embedding_v2"].null_vector_count == 0
