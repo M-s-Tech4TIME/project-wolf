@@ -144,6 +144,7 @@ async def chat(
         db,
         make_embedding_provider(_settings),
         embedder_aux=make_embedding_provider_aux(_settings),
+        bq_oversample=_settings.embedding_bq_oversample,
     )
     judge_provider = await get_grounding_judge_model(
         ctx, _settings, secrets, fallback_chat_provider=provider
@@ -248,6 +249,7 @@ async def chat_stream(
         db,
         make_embedding_provider(_settings),
         embedder_aux=make_embedding_provider_aux(_settings),
+        bq_oversample=_settings.embedding_bq_oversample,
     )
     judge_provider = await get_grounding_judge_model(
         ctx, _settings, secrets, fallback_chat_provider=provider

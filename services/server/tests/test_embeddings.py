@@ -324,3 +324,99 @@ def test_reembed_force_selects_every_row_via_keyset() -> None:
     assert "WHERE" not in first  # no stamp filter at all under force
     assert "ORDER BY knowledge_chunks.id" in first
     assert "knowledge_chunks.id >" in second  # keyset cursor advances
+
+
+def _bq_store_and_session() -> "tuple[PgvectorKnowledgeStore, Any]":
+    """A store whose primary embedder declares a 4096-dim column, with a
+    session stub that records every statement and returns no rows."""
+
+    class _Result:
+        def all(self) -> list[Any]:
+            return []
+
+    class _Session:
+        def __init__(self) -> None:
+            self.statements: list[str] = []
+
+        async def execute(self, stmt: Any) -> _Result:
+            # Compile with the REAL postgresql dialect — BIT(n) is a
+            # postgres-specific type the generic compiler renders bare.
+            from sqlalchemy.dialects import postgresql
+
+            self.statements.append(str(stmt.compile(dialect=postgresql.dialect())))
+            return _Result()
+
+    class _WideEmbedder:
+        dimension = 4096
+
+        async def embed(self, texts: list[str]) -> list[list[float]]:
+            return [[0.0] * 4096 for _ in texts]
+
+    session = _Session()
+    store = PgvectorKnowledgeStore(
+        session,  # type: ignore[arg-type]
+        _WideEmbedder(),
+        embedder_aux=_WideEmbedder(),
+        bq_oversample=4,
+    )
+    return store, session
+
+
+@pytest.mark.asyncio
+async def test_wide_primary_leg_uses_binary_quantized_two_stage() -> None:
+    # Columns wider than the 2000-dim HNSW cap must query via the SAME
+    # binary_quantize(...)::bit(N) expression the schema tool indexes
+    # (Hamming stage), oversampled, then rerank by exact cosine.
+    import uuid as _uuid
+
+    store, session = _bq_store_and_session()
+    ranks = await store._vector_candidates(_uuid.uuid4(), [0.0] * 4096, None, None)
+    assert ranks == {}  # stage 1 returned nothing -> empty leg, no stage 2
+    assert len(session.statements) == 1
+    stage1 = session.statements[0]
+    assert "binary_quantize" in stage1
+    assert "BIT(4096)" in stage1
+    assert "<~>" in stage1  # Hamming distance drives the indexed stage
+
+
+@pytest.mark.asyncio
+async def test_wide_aux_leg_uses_bq_and_keeps_the_not_null_guard() -> None:
+    import uuid as _uuid
+
+    store, session = _bq_store_and_session()
+    ranks = await store._vector_aux_candidates(_uuid.uuid4(), [0.0] * 4096, None, None)
+    assert ranks == {}
+    stage1 = session.statements[0]
+    assert "binary_quantize" in stage1
+    assert "embedding_v2 IS NOT NULL" in stage1  # NULL aux rows never rank
+
+
+@pytest.mark.asyncio
+async def test_narrow_embedder_keeps_the_plain_cosine_leg() -> None:
+    # 768-dim (and dimension-less test stubs) stay on the single-stage
+    # cosine query — BQ is strictly for widths above the HNSW cap.
+    import uuid as _uuid
+
+    class _Result:
+        def all(self) -> list[Any]:
+            return []
+
+    class _Session:
+        def __init__(self) -> None:
+            self.statements: list[str] = []
+
+        async def execute(self, stmt: Any) -> _Result:
+            self.statements.append(str(stmt))
+            return _Result()
+
+    class _NarrowEmbedder:
+        dimension = 768
+
+        async def embed(self, texts: list[str]) -> list[list[float]]:
+            return [[0.0] * 768 for _ in texts]
+
+    session = _Session()
+    store = PgvectorKnowledgeStore(session, _NarrowEmbedder())  # type: ignore[arg-type]
+    await store._vector_candidates(_uuid.uuid4(), [0.0] * 768, None, None)
+    assert len(session.statements) == 1
+    assert "binary_quantize" not in session.statements[0]

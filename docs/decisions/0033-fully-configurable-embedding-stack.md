@@ -101,3 +101,32 @@ sound.
   them on an existing corpus requires the `--force` re-embed.
 - CI is untouched: defaults remain 768 end-to-end, so alembic-check and
   the migration baseline stay green with zero special-casing.
+
+---
+
+## Addendum (2026-07-12): no width cap — binary-quantized HNSW + exact rerank
+
+Operator directive: qwen3-embedding's native 4096 dims must be **fully
+utilizable with no restrictions**. §3's "no ANN index above 2000 dims"
+posture is superseded:
+
+- Widths above pgvector's 2000-dim plain-HNSW cap now get a
+  **binary-quantized HNSW expression index** —
+  `CREATE INDEX ... USING hnsw ((binary_quantize(col)::bit(N)) bit_hamming_ops)`
+  (bit vectors index to 64,000 dims) — built automatically by the
+  `embedding_schema` tool (`ColumnPlan.index_kind = "bq"`; wrong-kind
+  indexes are detected via `pg_indexes.indexdef` and rebuilt).
+- The store's vector legs switch to a **two-stage query** when the leg's
+  embedder declares a width above the cap: stage 1 ranks by Hamming
+  distance over the *same* indexed expression, oversampled by
+  `EMBEDDING_BQ_OVERSAMPLE` (default 4); stage 2 reranks those candidates
+  by **exact cosine over the full-fidelity stored vectors** and keeps the
+  usual candidate limit. Quantization only shapes the candidate pool;
+  final ordering is always exact — no fidelity loss at any width.
+- Verified empirically (2026-07-12): a 4096-dim probe table's EXPLAIN
+  shows `Index Scan using ..._hnsw` for the exact SQL shape SQLAlchemy
+  emits (`CAST(binary_quantize(...) AS BIT(4096)) <~> ...`).
+- Trade-off stated honestly: BQ's Hamming stage is an approximation
+  filter; recall is governed by the oversample factor (4 is the
+  community sweet spot for normalized high-dim embeddings like qwen's;
+  raise it if a very large corpus ever shows recall droop).

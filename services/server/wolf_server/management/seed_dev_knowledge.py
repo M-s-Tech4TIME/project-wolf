@@ -184,7 +184,9 @@ async def main() -> int:
             )
             return 3
 
-        store = PgvectorKnowledgeStore(session, embedder)
+        store = PgvectorKnowledgeStore(
+            session, embedder, bq_oversample=settings.embedding_bq_oversample
+        )
         # Shared corpora — organization_id=None.
         shared_inputs = [
             ChunkInput(

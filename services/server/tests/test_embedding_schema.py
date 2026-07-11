@@ -47,13 +47,65 @@ def test_dimension_change_plans_the_full_sequence() -> None:
     assert plan.build_index  # 1024 <= 2000: HNSW comes back
 
 
-def test_above_hnsw_cap_skips_the_index_and_says_so() -> None:
-    # qwen3-embedding native width: storable, searchable (exact scan), but
-    # not ANN-indexable on the vector type.
+def test_above_hnsw_cap_builds_the_binary_quantized_index() -> None:
+    # qwen3-embedding native width (4096): NOT capped — the plan switches
+    # the index kind to binary-quantized HNSW (bit vectors index to 64k
+    # dims); the store pairs it with an exact-cosine rerank.
     plan = build_column_plan(_state(dim=768), 4096, wants_not_null=True, has_embedder=True)
     assert plan.retype
-    assert not plan.build_index
+    assert plan.build_index
+    assert plan.index_kind == "bq"
+    assert any("binary_quantize" in note for note in plan.notes)
     assert any(str(HNSW_MAX_DIMENSION) in note for note in plan.notes)
+
+
+def test_wrong_kind_index_is_rebuilt_without_a_retype() -> None:
+    # Same width, but the live index is plain-cosine while the width wants
+    # BQ (or vice versa) — e.g. hand-created or left by an older tool run.
+    bq_def = (
+        "CREATE INDEX ix_knowledge_chunks_embedding_hnsw ON public.knowledge_chunks "
+        "USING hnsw (((binary_quantize(embedding))::bit(4096)) bit_hamming_ops)"
+    )
+    cosine_def = (
+        "CREATE INDEX ix_knowledge_chunks_embedding_hnsw ON public.knowledge_chunks "
+        "USING hnsw (embedding vector_cosine_ops)"
+    )
+    # cosine index on a 4096 column -> rebuild as BQ
+    state = ColumnState(
+        name="embedding",
+        live_dimension=4096,
+        not_null=True,
+        index_present=True,
+        null_vector_count=0,
+        index_def=cosine_def,
+    )
+    plan = build_column_plan(state, 4096, wants_not_null=True, has_embedder=True)
+    assert not plan.retype
+    assert plan.build_index
+    assert plan.index_kind == "bq"
+    # BQ index on a 768 column -> rebuild as plain cosine
+    state = ColumnState(
+        name="embedding",
+        live_dimension=768,
+        not_null=True,
+        index_present=True,
+        null_vector_count=0,
+        index_def=bq_def,
+    )
+    plan = build_column_plan(state, 768, wants_not_null=True, has_embedder=True)
+    assert not plan.retype
+    assert plan.build_index
+    assert plan.index_kind == "cosine"
+    # Matching kinds stay in sync.
+    state = ColumnState(
+        name="embedding",
+        live_dimension=4096,
+        not_null=True,
+        index_present=True,
+        null_vector_count=0,
+        index_def=bq_def,
+    )
+    assert build_column_plan(state, 4096, wants_not_null=True, has_embedder=True).in_sync
 
 
 def test_resume_after_crash_only_plans_whats_missing() -> None:
@@ -117,7 +169,14 @@ async def test_read_column_states_parses_live_catalog_shapes() -> None:
                     ]
                 )
             if "pg_indexes" in sql:
-                return _Rows([("ix_knowledge_chunks_embedding_hnsw",)])
+                return _Rows(
+                    [
+                        (
+                            "ix_knowledge_chunks_embedding_hnsw",
+                            "CREATE INDEX ... USING hnsw (embedding vector_cosine_ops)",
+                        )
+                    ]
+                )
             # NULL counts — one call per column.
             self.calls += 1
             return _Rows([(0 if self.calls == 1 else 7,)])
@@ -182,8 +241,14 @@ async def test_aux_null_count_excludes_unembeddable_sentinel() -> None:
             if "pg_indexes" in sql:
                 return _Rows(
                     [
-                        ("ix_knowledge_chunks_embedding_hnsw",),
-                        ("ix_knowledge_chunks_embedding_v2_hnsw",),
+                        (
+                            "ix_knowledge_chunks_embedding_hnsw",
+                            "CREATE INDEX ... USING hnsw (embedding vector_cosine_ops)",
+                        ),
+                        (
+                            "ix_knowledge_chunks_embedding_v2_hnsw",
+                            "CREATE INDEX ... USING hnsw (embedding_v2 vector_cosine_ops)",
+                        ),
                     ]
                 )
             captured.append(sql)

@@ -337,13 +337,17 @@ EMBEDDING_NUM_CTX=40960
 EMBEDDING_QUERY_PREFIX="Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery: "
 ```
 
-Dimension guidance: **768/1024** = MRL sweet spot, HNSW stays (recommended);
-**2000** = pgvector's max HNSW-indexable width; **4096** = full native
-fidelity but NO ANN index (HNSW caps at 2000 dims) — search runs exact:
-perfect recall, linear cost, fine at ~5K chunks, revisit at 100K+. Any
-width other than the live one requires `embedding_schema --apply`
-(maintenance window: vector legs are empty until the re-embed finishes;
-BM25 keeps answering).
+Dimension guidance: **768/1024** = MRL sweet spot on a plain cosine HNSW
+(smallest index); **2000** = max plain-HNSW width; **4096** = full native
+fidelity, **still ANN-indexed** — widths above pgvector's 2000-dim
+plain-HNSW cap get a binary-quantized HNSW expression index
+(`binary_quantize(col)::bit(N)` + Hamming, indexable to 64k dims) and the
+store reranks the oversampled candidates (`EMBEDDING_BQ_OVERSAMPLE`,
+default 4) by exact cosine over the full-fidelity vectors. Planner
+verified live: `Index Scan using ..._hnsw` on a 4096-dim probe. No cap at
+any corpus size. Any width other than the live one requires
+`embedding_schema --apply` (maintenance window: vector legs are empty
+until the re-embed finishes; BM25 keeps answering).
 
 Or keep the nomic primary and run qwen as the ADR 0014 third RRF leg
 (`EMBEDDING_MODEL_AUX` + `_AUX` twins, `EMBEDDING_DIMENSION_AUX` may differ

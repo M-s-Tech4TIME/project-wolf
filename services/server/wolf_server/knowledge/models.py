@@ -39,6 +39,15 @@ from wolf_server.database import Base
 EMBEDDING_DIMENSION = get_embedding_dimensions().embedding_dimension
 EMBEDDING_DIMENSION_AUX = get_embedding_dimensions().embedding_dimension_aux or EMBEDDING_DIMENSION
 
+# pgvector's HNSW (and IVFFlat) indexes support at most 2000 dimensions on
+# the raw `vector` type. Wider columns (e.g. qwen3-embedding native 4096)
+# are NOT capped — they get a binary-quantized HNSW expression index
+# (`binary_quantize(col)::bit(N)` + bit_hamming_ops, supported to 64k dims)
+# and the store reranks the oversampled candidates by exact cosine, so
+# full-fidelity vectors stay indexed at any width. Shared by the
+# embedding_schema tool (index DDL) and the store (query shape).
+HNSW_MAX_DIMENSION = 2000
+
 
 def _now() -> datetime:
     return datetime.now(UTC)

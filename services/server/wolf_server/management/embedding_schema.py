@@ -17,10 +17,11 @@ What an apply does, per out-of-sync column:
      batched, per-batch-committed passes (resumable: re-running continues
      where a crash stopped).
   4. Restores NOT NULL (primary; only when every row re-embedded cleanly)
-     and rebuilds the HNSW index — unless the new width exceeds pgvector's
-     HNSW cap (2000 dims), in which case the index is skipped and search
-     runs exact (perfect recall, slower on very large corpora; stated
-     honestly in the output).
+     and rebuilds the ANN index: plain cosine HNSW up to pgvector's
+     2000-dim cap, and beyond it a binary-quantized HNSW expression index
+     (`binary_quantize(col)::bit(N)` + bit_hamming_ops — bit vectors index
+     to 64k dims) that the store pairs with an exact-cosine rerank. Every
+     width stays indexed at full stored fidelity; no cap.
 
 Resumable by design: the plan is computed from the LIVE schema state
 (width, NULL vectors, NOT NULL constraint, index presence), so a re-run
@@ -63,16 +64,10 @@ from wolf_server.knowledge.embeddings import (
     make_embedding_provider,
     make_embedding_provider_aux,
 )
-from wolf_server.knowledge.models import KnowledgeChunk
+from wolf_server.knowledge.models import HNSW_MAX_DIMENSION, KnowledgeChunk
 from wolf_server.management.reembed import AUX_UNEMBEDDABLE_SENTINEL
 
 _TABLE = "knowledge_chunks"
-
-# pgvector's HNSW (and IVFFlat) indexes support at most 2000 dimensions on
-# the `vector` type. Beyond that, queries run as exact scans — correct
-# results, linear cost. (halfvec raises the cap to 4000 but changes the
-# stored type; deliberately out of scope until a corpus actually needs it.)
-HNSW_MAX_DIMENSION = 2000
 
 _INDEX_NAMES = {
     "embedding": "ix_knowledge_chunks_embedding_hnsw",
@@ -95,6 +90,10 @@ class ColumnState:
     not_null: bool
     index_present: bool
     null_vector_count: int
+    # The live CREATE INDEX definition ("" when absent) — lets the plan
+    # detect a KIND mismatch (plain cosine HNSW vs binary-quantized) and
+    # rebuild instead of trusting the name alone.
+    index_def: str = ""
 
 
 @dataclass(frozen=True)
@@ -107,6 +106,10 @@ class ColumnPlan:
     reembed_nulls: bool
     restore_not_null: bool
     build_index: bool
+    # "cosine" (plain HNSW, width <= HNSW_MAX_DIMENSION) or "bq"
+    # (binary-quantized HNSW expression index + exact rerank at query time,
+    # for wider columns — no width cap).
+    index_kind: str = "cosine"
     notes: tuple[str, ...] = field(default_factory=tuple)
 
     @property
@@ -128,10 +131,10 @@ async def read_column_states(session: AsyncSession) -> dict[str, ColumnState]:
         )
     ).all()
     indexes = {
-        row[0]
+        row[0]: row[1]
         for row in (
             await session.execute(
-                text("SELECT indexname FROM pg_indexes WHERE tablename = :table"),
+                text("SELECT indexname, indexdef FROM pg_indexes WHERE tablename = :table"),
                 {"table": _TABLE},
             )
         ).all()
@@ -161,6 +164,7 @@ async def read_column_states(session: AsyncSession) -> dict[str, ColumnState]:
             not_null=bool(not_null),
             index_present=_INDEX_NAMES[name] in indexes,
             null_vector_count=int(null_count_row.scalar_one()),
+            index_def=indexes.get(_INDEX_NAMES[name], ""),
         )
     missing = {"embedding", "embedding_v2"} - states.keys()
     if missing:
@@ -197,13 +201,25 @@ def build_column_plan(
     # finished clean, so a resume run lands here with zero NULLs and just
     # restores the constraint.
     restore_not_null = wants_not_null and (retype or not state.not_null)
-    index_possible = target_dimension <= HNSW_MAX_DIMENSION
-    build_index = index_possible and (retype or not state.index_present)
-    if not index_possible:
+    # No width cap: <= 2000 dims gets the plain cosine HNSW; wider columns
+    # get the binary-quantized expression index (bit vectors index to 64k
+    # dims) that the store pairs with an exact-cosine rerank.
+    index_kind = "bq" if target_dimension > HNSW_MAX_DIMENSION else "cosine"
+    live_is_bq = "binary_quantize" in state.index_def
+    kind_mismatch = state.index_present and live_is_bq != (index_kind == "bq")
+    build_index = retype or not state.index_present or kind_mismatch
+    if index_kind == "bq":
         notes.append(
-            f"{state.name}: {target_dimension} dims exceeds pgvector's HNSW cap "
-            f"({HNSW_MAX_DIMENSION}) — no ANN index; searches run exact "
-            "(perfect recall, linear cost)."
+            f"{state.name}: {target_dimension} dims exceeds pgvector's plain-HNSW "
+            f"cap ({HNSW_MAX_DIMENSION}) — indexing via binary_quantize()::bit"
+            f"({target_dimension}) + Hamming HNSW; the store reranks by exact "
+            "cosine (full fidelity, no cap)."
+        )
+    if kind_mismatch:
+        notes.append(
+            f"{state.name}: existing index is the wrong kind for "
+            f"vector({target_dimension}) — rebuilding as "
+            f"{'binary-quantized' if index_kind == 'bq' else 'plain cosine'} HNSW."
         )
     return ColumnPlan(
         name=state.name,
@@ -212,6 +228,7 @@ def build_column_plan(
         reembed_nulls=reembed_nulls,
         restore_not_null=restore_not_null,
         build_index=build_index,
+        index_kind=index_kind,
         notes=tuple(notes),
     )
 
@@ -317,12 +334,25 @@ async def _finalize_column(session: AsyncSession, plan: ColumnPlan, *, clean: bo
                 "for `embedding`; fix the embedder and re-run this tool.\n"
             )
     if plan.build_index:
-        await session.execute(
-            text(
-                f"CREATE INDEX IF NOT EXISTS {_INDEX_NAMES[plan.name]} "
-                f"ON {_TABLE} USING hnsw ({plan.name} vector_cosine_ops)"
+        # Drop-then-create keeps the rebuild honest when the existing index
+        # is the wrong KIND (name collision, e.g. cosine HNSW left over from
+        # a narrower width). No-op when the retype already dropped it.
+        await session.execute(text(f"DROP INDEX IF EXISTS {_INDEX_NAMES[plan.name]}"))
+        if plan.index_kind == "bq":
+            await session.execute(
+                text(
+                    f"CREATE INDEX {_INDEX_NAMES[plan.name]} ON {_TABLE} USING hnsw "
+                    f"((binary_quantize({plan.name})::bit({plan.target_dimension})) "
+                    "bit_hamming_ops)"
+                )
             )
-        )
+        else:
+            await session.execute(
+                text(
+                    f"CREATE INDEX {_INDEX_NAMES[plan.name]} "
+                    f"ON {_TABLE} USING hnsw ({plan.name} vector_cosine_ops)"
+                )
+            )
     await session.commit()
 
 
@@ -340,7 +370,8 @@ def _describe(plan: ColumnPlan, state: ColumnState) -> str:
     if plan.restore_not_null:
         steps.append("restore NOT NULL")
     if plan.build_index:
-        steps.append("(re)build HNSW index")
+        kind_text = "binary-quantized HNSW" if plan.index_kind == "bq" else "cosine HNSW"
+        steps.append(f"(re)build {kind_text} index")
     return f"{plan.name}: " + "; ".join(steps)
 
 

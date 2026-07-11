@@ -470,6 +470,13 @@ class Settings(BaseSettings):
     # re-embeds all behave identically.
     embedding_char_limit: int = 0
     embedding_char_limit_aux: int = 1800
+    # Candidate oversampling for binary-quantized retrieval. Vector columns
+    # wider than pgvector's 2000-dim HNSW cap are indexed via
+    # binary_quantize(...)::bit(N) + Hamming distance; the store fetches
+    # (candidate_limit x this factor) by Hamming, then reranks by exact
+    # cosine. Higher = better recall, more rerank work. 4 is the
+    # pgvector-community sweet spot; irrelevant for widths <= 2000.
+    embedding_bq_oversample: int = 4
 
     @property
     def is_development(self) -> bool:

@@ -50,6 +50,35 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-07-12 — ADR 0033 addendum: no dimension cap — binary-quantized HNSW + exact rerank
+
+**Session type:** claude-code
+**Phase:** post-6-f maintenance (operator directive: "I don't want to consider any restrictions, any caps")
+**Branch / commit:** main
+
+### What we did
+- Removed the last width restriction: vector columns above pgvector's
+  2000-dim plain-HNSW cap (qwen3-embedding native 4096) are now
+  **ANN-indexed via a binary-quantized HNSW expression index**
+  (`binary_quantize(col)::bit(N)` + bit_hamming_ops — bit vectors index to
+  64k dims). `embedding_schema` builds it automatically
+  (`ColumnPlan.index_kind="bq"`), detects wrong-KIND indexes via
+  `pg_indexes.indexdef`, and rebuilds drop-then-create.
+- `PgvectorKnowledgeStore` vector legs (primary + aux) switch to a
+  **two-stage query** when the leg's embedder width exceeds the cap:
+  Hamming stage over the SAME indexed expression, oversampled by new
+  setting `EMBEDDING_BQ_OVERSAMPLE` (default 4, wired chat + seed), then
+  **exact-cosine rerank over the full-fidelity vectors** — quantization
+  only shapes the candidate pool, final ordering is always exact.
+- Live-verified on the dev DB: 4096-dim probe table EXPLAIN shows
+  `Index Scan using ..._hnsw` for the exact SQLAlchemy-emitted shape
+  (`CAST(binary_quantize(...) AS BIT(4096)) <~>`).
+- Tests 953 → 958 / 0 skips (BQ SQL shapes incl. aux NOT-NULL guard +
+  narrow-stays-cosine, plan kind matrix incl. wrong-kind rebuild); docs
+  (.env.example, tuning guide, ADR 0033 addendum) updated.
+
+---
+
 ## 2026-07-11 — ADR 0033: fully configurable embedding stack (dimension-aware schema switching)
 
 **Session type:** claude-code

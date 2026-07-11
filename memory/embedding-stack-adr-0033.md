@@ -28,8 +28,11 @@ adapter-level so upsert/seed/re-embed truncate identically).
   steady state, excluded from planning.
 - `reembed --apply --force` (keyset-paginated) for GEOMETRY changes that
   don't change model_id (prefixes / MRL width / num_ctx).
-- pgvector HNSW caps at **2000 dims** (halfvec 4000, unused): qwen native
-  4096 = storable + exact-scan searchable, NO ANN index — fine ~5K chunks.
+- NO width cap (2026-07-12 addendum): >2000 dims = binary-quantized HNSW
+  expression index (`binary_quantize(col)::bit(N)` + bit_hamming_ops, to
+  64k dims) built by the schema tool + store two-stage query (Hamming
+  oversample `EMBEDDING_BQ_OVERSAMPLE`=4 -> exact-cosine rerank, full
+  fidelity); planner verified live (Index Scan at 4096).
 - Two first-class recipes in .env.example + tuning guide: **nomic combo**
   (nomic-embed-text + v2-moe, official `search_document: `/`search_query: `
   prefixes — LIVE on the dev box since 2026-07-11, corpus force-re-embedded)

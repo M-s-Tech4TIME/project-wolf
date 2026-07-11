@@ -17,12 +17,18 @@ Visibility rules:
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
-from sqlalchemy import func, select
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import cast, func, select
+from sqlalchemy.dialects.postgresql import BIT
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from wolf_server.knowledge.models import KnowledgeChunk
+if TYPE_CHECKING:
+    from sqlalchemy.orm import InstrumentedAttribute
+    from sqlalchemy.sql.elements import ColumnElement
+
+from wolf_server.knowledge.models import HNSW_MAX_DIMENSION, KnowledgeChunk
 
 # Reciprocal Rank Fusion constant — Cormack et al. 2009 found k=60 robust
 # across many domains and rerankers. Single tunable knob if we ever need
@@ -114,12 +120,25 @@ class PgvectorKnowledgeStore:
         embedder: Any,
         *,
         embedder_aux: Any | None = None,
+        bq_oversample: int = 4,
     ) -> None:
         # `embedder` is typed Any to avoid a circular import; in practice
         # it implements the EmbeddingProvider protocol.
         self._session = session
         self._embedder = embedder
         self._embedder_aux = embedder_aux
+        # Hamming-stage oversampling for wide (> HNSW_MAX_DIMENSION) vector
+        # columns — see _bq_candidates. Wired from EMBEDDING_BQ_OVERSAMPLE.
+        self._bq_oversample = bq_oversample
+
+    @staticmethod
+    def _embedder_dimension(embedder: Any) -> int:
+        """The embedder's column width, 0 when it doesn't declare one
+        (test stubs) — 0 always takes the plain cosine path."""
+        try:
+            return int(getattr(embedder, "dimension", 0) or 0)
+        except (TypeError, ValueError):
+            return 0
 
     @staticmethod
     async def _embed_query(embedder: Any, query_text: str) -> list[float]:
@@ -282,6 +301,17 @@ class PgvectorKnowledgeStore:
         metadata_filters: dict[str, Any] | None,
     ) -> dict[uuid.UUID, int]:
         """Top-N vector candidates with their 1-indexed rank."""
+        dim = self._embedder_dimension(self._embedder)
+        if dim > HNSW_MAX_DIMENSION:
+            return await self._bq_candidates(
+                KnowledgeChunk.embedding,
+                query_vector,
+                dim,
+                organization_id,
+                source_types,
+                metadata_filters,
+                require_not_null=False,
+            )
         stmt = (
             select(KnowledgeChunk.id)
             .where(
@@ -293,6 +323,55 @@ class PgvectorKnowledgeStore:
         )
         stmt = self._apply_metadata_filters(stmt, source_types, metadata_filters)
         result = await self._session.execute(stmt)
+        return {chunk_id: rank for rank, (chunk_id,) in enumerate(result.all(), start=1)}
+
+    async def _bq_candidates(
+        self,
+        column: "InstrumentedAttribute[Any]",
+        query_vector: list[float],
+        dim: int,
+        organization_id: uuid.UUID,
+        source_types: Sequence[str] | None,
+        metadata_filters: dict[str, Any] | None,
+        *,
+        require_not_null: bool,
+    ) -> dict[uuid.UUID, int]:
+        """Two-stage ANN for columns wider than pgvector's 2000-dim HNSW cap.
+
+        Stage 1 (indexed): rank by Hamming distance over the SAME
+        `binary_quantize(col)::bit(N)` expression the embedding_schema tool
+        indexes, oversampling by `bq_oversample` so quantization error can't
+        push a true neighbour out of reach. Stage 2 (exact): rerank the
+        oversampled candidates by exact cosine over the full-fidelity
+        vectors and keep the usual RANKER_CANDIDATE_LIMIT. Net effect: any
+        width (e.g. qwen3-embedding's native 4096) stays ANN-indexed with
+        exact-cosine final ordering — no fidelity loss, no cap.
+        """
+        hamming: ColumnElement[Any] = cast(func.binary_quantize(column), BIT(dim)).op("<~>")(
+            cast(func.binary_quantize(cast(query_vector, Vector(dim))), BIT(dim))
+        )
+        stage1 = (
+            select(KnowledgeChunk.id)
+            .where(
+                (KnowledgeChunk.organization_id.is_(None))
+                | (KnowledgeChunk.organization_id == organization_id)
+            )
+            .order_by(hamming)
+            .limit(RANKER_CANDIDATE_LIMIT * self._bq_oversample)
+        )
+        if require_not_null:
+            stage1 = stage1.where(column.isnot(None))
+        stage1 = self._apply_metadata_filters(stage1, source_types, metadata_filters)
+        candidate_ids = [chunk_id for (chunk_id,) in (await self._session.execute(stage1)).all()]
+        if not candidate_ids:
+            return {}
+        stage2 = (
+            select(KnowledgeChunk.id)
+            .where(KnowledgeChunk.id.in_(candidate_ids))
+            .order_by(column.cosine_distance(query_vector))
+            .limit(RANKER_CANDIDATE_LIMIT)
+        )
+        result = await self._session.execute(stage2)
         return {chunk_id: rank for rank, (chunk_id,) in enumerate(result.all(), start=1)}
 
     async def _vector_aux_candidates(
@@ -310,6 +389,17 @@ class PgvectorKnowledgeStore:
         zero-vector. Organization scoping clause is identical to the primary
         vector leg.
         """
+        dim = self._embedder_dimension(self._embedder_aux)
+        if dim > HNSW_MAX_DIMENSION:
+            return await self._bq_candidates(
+                KnowledgeChunk.embedding_v2,
+                query_vector,
+                dim,
+                organization_id,
+                source_types,
+                metadata_filters,
+                require_not_null=True,
+            )
         stmt = (
             select(KnowledgeChunk.id)
             .where(KnowledgeChunk.embedding_v2.isnot(None))
