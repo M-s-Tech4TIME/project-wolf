@@ -773,7 +773,7 @@ Status legend: ✅ working, 🟡 partial, ❌ broken/disabled, ⏳ planned only.
 - ⏳ `seed_knowledge/`: stub only (Phase 3 RAG work)
 
 ### Infrastructure
-- ✅ Postgres 17 + pgvector on `localhost:5432`
+- ✅ Postgres + pgvector on `localhost:5432` (baseline is PostgreSQL 18 since 2026-07-11, ADR 0008 addendum; the live dev cluster is still 17/main — `pg_upgradecluster` runbook pending, privileged)
 - ✅ Ollama on `localhost:11434` with `llama3.2:latest` (3B, Q4_K_M, ~2 GB)
 - ✅ User's real Wazuh on `192.168.76.129` (Indexer :9200, Server API :55000,
       self-signed TLS)
@@ -793,7 +793,7 @@ Status legend: ✅ working, 🟡 partial, ❌ broken/disabled, ⏳ planned only.
   — Profile B tight-end per `docs/13`. All four pre-pulled models confirmed
   100% GPU offload via `ollama ps`; qwen3:8b at 85% GPU / 15% CPU spillover
   (tight fit; see ADR 0010).
-- OS: Ubuntu 24.04 (system Postgres 17 + pgvector via PostgreSQL APT repo)
+- OS: Ubuntu 24.04 (system Postgres via PostgreSQL APT repo; PG18 baseline since 2026-07-11 — live cluster upgrade 17→18 pending, privileged runbook)
 - Python: 3.13.13 (pinned in `.python-version`, managed via `uv` 0.11.16)
 - Node: 24.16.0 LTS, npm 11.13.0
 - Ollama: 0.24.0 — pulled models: qwen3:4b, qwen3.5:4b, qwen3:8b, gemma3:4b, llama3.2:3b
@@ -831,7 +831,7 @@ Status legend: ✅ working, 🟡 partial, ❌ broken/disabled, ⏳ planned only.
   (vs ~76s cold on previous CPU-only VM — the GPU win materialized).
 
 **Dev environment posture (per ADR 0008):** native is Wolf's primary
-delivery channel; the dev environment uses system Postgres 17 +
+delivery channel; the dev environment uses system Postgres 18 +
 pgvector (apt-installed, systemd-managed) to match the production
 install path operators will use. Docker remains a supplementary
 alternative for dev Postgres (documented in `ONBOARDING.md` §3.4)
