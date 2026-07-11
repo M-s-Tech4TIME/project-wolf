@@ -50,6 +50,30 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-07-12 — Live dev cluster upgraded to PostgreSQL 18.4 (PG17 removed)
+
+**Session type:** mixed (operator granted temporary scoped sudo; removed + verified after)
+**Phase:** post-6-f maintenance
+**Branch / commit:** main
+
+### What we did
+- Installed `postgresql-18-pgvector` (0.8.5) BEFORE the upgrade so the
+  vector extension objects could restore, stopped wolf-server, ran
+  `pg_upgradecluster 17 main` → 18/main online on the default 5432.
+- Verified: server 18.4, pgvector 0.8.5 (up from 17's 0.8.2), corpus
+  5182/5182/5182 vectors byte-count identical to the pre-upgrade snapshot,
+  both HNSW indexes present, `embedding_schema` reports in-sync, live
+  retrieval probe sharp (0.267 top-hit cosine), wolf-server 401-healthy,
+  wolf-dashboard + wolf-search active.
+- Cleanup: `pg_dropcluster 17 main`, removed postgresql-17 /
+  -17-pgvector / -client-17 (only 18.x packages remain), removed the
+  temporary sudo grant and VERIFIED sudo prompts again.
+- Port posture confirmed on operator question: wolf-database and the live
+  DB use PostgreSQL's default 5432 everywhere; `17860` exists ONLY in the
+  CI smoke (collision-avoidance test isolation), not in any real path.
+
+---
+
 ## 2026-07-12 — ADR 0033 addendum: no dimension cap — binary-quantized HNSW + exact rerank
 
 **Session type:** claude-code

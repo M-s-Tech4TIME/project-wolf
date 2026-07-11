@@ -1,6 +1,6 @@
 ---
 name: postgres-18-baseline
-description: "PostgreSQL 18 fully replaced 17 (2026-07-11, operator decision): wolf-database gate REJECTS 17, packaging/CI/docs all 18; live dev cluster upgrade is a privileged operator runbook (pg_upgradecluster)"
+description: "PostgreSQL 18 fully replaced 17: gate REJECTS 17, packaging/CI/docs all 18; live dev cluster UPGRADED 2026-07-12 (18.4 + pgvector 0.8.5 on :5432, PG17 removed); default port 5432 everywhere (17860 = CI smoke only)"
 metadata:
   type: project
 ---
@@ -17,11 +17,10 @@ uses `pgvector/pgvector:pg18` service images + pgdg-18 smoke installs.
 Wolf as its components, replacing 17 fully"), ahead of docs/13's original
 wait-a-year pacing.
 
-**How to apply:** dev-host reality — the live dev DB is the SYSTEM cluster
-`17/main` on :5432 (`wolf` DB, user `wolf`), NOT a wolf-database-managed
-cluster. Upgrading it is privileged (operator runs):
-`sudo apt install postgresql-18-pgvector` FIRST (extension objects must
-exist for the restore), stop wolf-server, `sudo pg_upgradecluster 17 main`,
-verify (`pg_lsclusters`, `SELECT extversion FROM pg_extension WHERE
-extname='vector'`), restart wolf-server, then `sudo pg_dropcluster 17 main`
-+ remove the 17 packages. Related: [[embedding-stack-adr-0033]].
+**How to apply:** DONE on the dev host 2026-07-12 under an announced
+temporary sudo grant (removed + verified after): pgvector-18 installed
+FIRST, `pg_upgradecluster 17 main` → 18.4 + pgvector 0.8.5 live on :5432,
+corpus verified identical (5182/5182/5182), 17 cluster dropped + packages
+removed. The live dev DB remains the SYSTEM cluster (`wolf` DB, user
+`wolf`), NOT wolf-database-managed. Ports: default 5432 everywhere;
+`17860` appears ONLY in the CI smoke for collision avoidance. Related: [[embedding-stack-adr-0033]].
