@@ -7,6 +7,12 @@
 >
 > **Read this file end-to-end before doing anything else.** Then read
 > the documents it points you at, in the order it specifies.
+>
+> **Resuming after the 2026-07-12 development pause?** Read
+> [`docs/HANDOVER.md`](docs/HANDOVER.md) first — the wrap-up snapshot
+> (state, queue, standing rules, credentials) — then come back here for
+> the environment setup. Claude Code sessions: paste
+> [`docs/CLAUDE-RESUME-PROMPT.md`](docs/CLAUDE-RESUME-PROMPT.md).
 
 **Last verified:** 2026-06-03 against `origin/main` after Phase 5.5
 (component-renaming refactor — frontend → wolf-dashboard,
@@ -352,6 +358,18 @@ ollama serve &     # or use systemctl on systems that have a service unit
 
 # Pull the project's steady-state default (Apache 2.0, see ADR 0004)
 ollama pull qwen3:4b
+
+# Chat/judge model used on the dev machine (and the FALLBACK_MODEL_ID
+# safety net when a hosted primary is configured — ADR 0031)
+ollama pull qwen3:8b
+
+# Embedding models — REQUIRED for the RAG layer. Pull the set matching
+# the .env recipe you chose (.env.example, ADR 0033):
+#   Recipe A (nomic combo):  nomic-embed-text + nomic-embed-text-v2-moe
+#   Recipe B (qwen):         qwen3-embedding (+ optionally v2-moe as aux)
+ollama pull nomic-embed-text
+ollama pull nomic-embed-text-v2-moe
+ollama pull qwen3-embedding:latest
 ```
 
 For the broader supported-model matrix, see

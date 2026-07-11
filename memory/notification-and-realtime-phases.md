@@ -1,8 +1,10 @@
 ---
 name: notification-and-realtime-phases
 description: Operator-requested future phases (2026-06-15) — in-app Notification infrastructure (Phase 6.7) then SSE/WebSocket real-time push (Phase 6.8); notifications STRICTLY isolated from audit/logs
-metadata:
+metadata: 
+  node_type: memory
   type: project
+  originSessionId: 5cd03513-6614-4694-a862-5bd7c8534b36
 ---
 
 Operator request (2026-06-15, during 6.5-f web-test) for two dedicated future

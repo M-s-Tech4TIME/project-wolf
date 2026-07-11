@@ -50,6 +50,49 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-07-12 — Project wrap-up: development paused, full handover shipped
+
+**Session type:** claude-code
+**Phase:** wrap-up (operator's subscription ending; development paused indefinitely)
+**Branch / commit:** main
+
+### What we did
+- **NEW `docs/HANDOVER.md`** — the wrap-up snapshot: what Wolf is, exactly
+  where the build stands (everything through Phase 6-f + ADR 0033 + PG18
+  shipped and CI-green), the resume queue in order (6-f.4 virustotal
+  web-test → Nemotron eval → 6.9/6.7/6.8 → 6.10 → 6.11/6.12 → 6.13 → 7+),
+  the full standing-rules digest, the ADR map, dev-environment rebuild
+  pointer, credentials guide, graphify regeneration.
+- **NEW `docs/CLAUDE-RESUME-PROMPT.md`** — a ready-to-paste prompt that
+  boots a fresh Claude Code session: orient (HANDOVER → PROGRESS → memory
+  index → roadmap) → verify environment → prove gates → resume the queue,
+  with the immediately-relevant standing rules inlined.
+- **NEW `credentials.example/`** (tracked) — placeholder templates of all
+  four credential files the project needs (wazuh / postgresql / openrouter /
+  wolf), every value `CHANGE_ME` with fill-in provenance annotated; real
+  `credentials/` stays gitignored (repo is public). gitleaks allowlist
+  extended with the template path.
+- ONBOARDING.md: resume-pointer to HANDOVER at the top; §3.8 now pulls the
+  embedding models too (nomic pair + qwen3-embedding + qwen3:8b) — the RAG
+  layer was un-runnable from a literal reading before.
+- Memory hygiene: MEMORY.md index trimmed back under its load limit (detail
+  already lives in the per-topic files); wrap-up memory added; repo ↔
+  ~/.claude mirrors kept byte-identical.
+- Re-proved the gates fresh at wrap-up: ruff clean, mypy --strict clean
+  (117 files), **963 backend tests passed / 0 skips**.
+
+### Decisions
+- Real credentials are NOT committed despite operator dispensation — the
+  repo is public; the placeholder-template option (also operator-offered)
+  is the safe equivalent. Real files remain on the dev machine.
+- No second setup document: ONBOARDING.md stays the single canonical
+  dev-environment guide; HANDOVER points into it (no drift-prone duplicate).
+
+### Next actions
+- Resume via `docs/CLAUDE-RESUME-PROMPT.md`; queue order in HANDOVER §3.
+
+---
+
 ## 2026-07-12 — embedding_bench: empirical retrieval comparison harness (operator: "which one is the best?")
 
 **Session type:** claude-code
