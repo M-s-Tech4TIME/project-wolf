@@ -1,7 +1,7 @@
 """Shared pytest fixtures for wolf-server tests.
 
 Uses an in-process SQLite database (via aiosqlite) so tests run without a
-real Postgres instance.  CI uses a real Postgres 17 + pgvector service
+real Postgres instance.  CI uses a real Postgres 18 + pgvector service
 (see .github/workflows/ci.yml).
 
 Override DATABASE_URL to point at a real Postgres for deeper integration tests.

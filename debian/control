@@ -22,15 +22,15 @@ Architecture: any
 Depends:
  ${shlibs:Depends},
  ${misc:Depends},
- postgresql-17,
- postgresql-17-pgvector,
+ postgresql-18,
+ postgresql-18-pgvector,
  python3.13,
  python3.13-venv,
  adduser,
 Description: Wolf bundled-Postgres component
- wolf-database wraps system-installed PostgreSQL 17 + pgvector with
+ wolf-database wraps system-installed PostgreSQL 18 + pgvector with
  Wolf-owned config, data dir, socket, and systemd lifecycle. The
- Postgres binaries come from postgresql-17; this package adds the
+ Postgres binaries come from postgresql-18; this package adds the
  wolf-database CLI + the systemd unit + the dedicated service user
  + FHS-canonical paths under /var/lib/wolf-database/.
  .

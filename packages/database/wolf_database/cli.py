@@ -127,8 +127,8 @@ def cmd_init(args: argparse.Namespace) -> int:
                 "wolf-database requires the pgvector extension. The "
                 f"running Postgres at {layout.socket_dir} reports it is "
                 "NOT available.\n"
-                "  Install: `apt install postgresql-17-pgvector` "
-                "(Debian/Ubuntu) or `dnf install pgvector_17` "
+                "  Install: `apt install postgresql-18-pgvector` "
+                "(Debian/Ubuntu) or `dnf install pgvector_18` "
                 "(RHEL/Fedora).\n"
                 "  Then re-run `wolf-database init`.",
             )

@@ -99,7 +99,7 @@ them costs you more time than reading them.
 - **Node.js 24 LTS** — pinned in [`.nvmrc`](.nvmrc). Any 24.x works.
 - **`uv`** — Python project / dependency manager. Install: `curl -LsSf https://astral.sh/uv/install.sh | sh`.
 - **`npm`** (ships with Node 24) — used to install the dashboard's dependencies in [`services/dashboard/`](services/dashboard/).
-- **PostgreSQL 17 + pgvector** — installed natively via your distro's package manager. Recommended dev path; matches the production install per [ADR 0008](docs/decisions/0008-native-primary-docker-supplementary.md). See §3.4 for install steps. (Docker Postgres is a supported alternative — also documented in §3.4.)
+- **PostgreSQL 18 + pgvector** — installed natively via your distro's package manager. Recommended dev path; matches the production install per [ADR 0008](docs/decisions/0008-native-primary-docker-supplementary.md). See §3.4 for install steps. (Docker Postgres is a supported alternative — also documented in §3.4.)
 - **Ollama** — local model runtime. Install: `curl -fsSL https://ollama.com/install.sh | sh`. https://ollama.com.
 
 ### Optional
@@ -115,7 +115,7 @@ them costs you more time than reading them.
 | 7860 | wolf-server (FastAPI) | 0.0.0.0 | LAN-reachable for browser access |
 | 8001 | wolf-gateway (FastAPI) | 0.0.0.0 | Stub today; will be needed Phase 6+ |
 | 3000 | wolf-dashboard (Next.js dev) | 0.0.0.0 | LAN-reachable |
-| 5432 | wolf-database (Postgres 17 + pgvector; system Postgres pre-Phase 5.7) | 127.0.0.1 | System Postgres default (Docker alternative binds 0.0.0.0); becomes wolf-database in 5.7 |
+| 5432 | wolf-database (Postgres 18 + pgvector; system Postgres pre-Phase 5.7) | 127.0.0.1 | System Postgres default (Docker alternative binds 0.0.0.0); becomes wolf-database in 5.7 |
 | 11434 | Ollama | 127.0.0.1 | Local only by default |
 
 ---
@@ -153,7 +153,7 @@ npm install
 cd ..
 ```
 
-### 3.4 Install and start Postgres 17 + pgvector
+### 3.4 Install and start Postgres 18 + pgvector
 
 Three supported paths. All three end in a working `wolf` database
 with the `vector` extension installed; `DATABASE_URL` in `.env` is
@@ -173,7 +173,7 @@ between Path A and "just works."
 
 ```bash
 # 1. Install the Postgres binaries from the official PostgreSQL
-#    APT repo (Ubuntu ships 16, not 17).
+#    APT repo (Ubuntu ships 16, not 18).
 sudo install -d /usr/share/postgresql-common/pgdg
 sudo curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
     -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
@@ -181,7 +181,7 @@ echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] \
     https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | \
     sudo tee /etc/apt/sources.list.d/pgdg.list
 sudo apt update
-sudo apt install -y postgresql-17 postgresql-17-pgvector
+sudo apt install -y postgresql-18 postgresql-18-pgvector
 
 # 2. (One-time) STOP and DISABLE the system Postgres unit so it
 #    doesn't fight wolf-database for port 5432. Debian/Ubuntu's
@@ -216,8 +216,8 @@ systemctl --user start wolf-database       # start
 journalctl --user -u wolf-database --follow  # live log
 ```
 
-On RHEL/Fedora replace `apt install postgresql-17
-postgresql-17-pgvector` with `dnf install postgresql17 pgvector_17`
+On RHEL/Fedora replace `apt install postgresql-18
+postgresql-18-pgvector` with `dnf install postgresql18 pgvector_18`
 from the PostgreSQL YUM repo; everything after step 1 is
 distro-independent.
 
@@ -227,8 +227,8 @@ When you're ready to deploy wolf-database on a real server (vs
 your dev box), the production parity path is:
 
 ```bash
-# 1. Same binary install as step 1 above (postgresql-17 +
-#    postgresql-17-pgvector). Then stop + disable system Postgres
+# 1. Same binary install as step 1 above (postgresql-18 +
+#    postgresql-18-pgvector). Then stop + disable system Postgres
 #    as in step 2.
 
 # 2. Create system users + group + FHS dirs. Idempotent.
@@ -275,8 +275,8 @@ approach for new installs; Path B is here so existing setups
 keep working.
 
 ```bash
-# Same install as Path A step 1 (postgresql-17 +
-# postgresql-17-pgvector). DON'T disable postgresql.service.
+# Same install as Path A step 1 (postgresql-18 +
+# postgresql-18-pgvector). DON'T disable postgresql.service.
 
 # Create the wolf role and DB by hand
 sudo -u postgres psql <<EOF

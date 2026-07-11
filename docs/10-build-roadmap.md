@@ -215,8 +215,8 @@ Four sub-slices:
   `PostgresqlConfOptions` + `PgHbaOptions` templates,
   `connection_url()`.
 - **5.7-b** — `wolf-database` CLI (init/start/stop/status/
-  reconfigure). Wraps system-installed `postgresql-17` +
-  `postgresql-17-pgvector` binaries with Wolf-owned config +
+  reconfigure). Wraps system-installed `postgresql-18` +
+  `postgresql-18-pgvector` binaries with Wolf-owned config +
   lifecycle.
 - **5.7-c** — Makefile wrappers + `.env.example` rewrite +
   ONBOARDING §3.4 three-path comparison.
@@ -244,7 +244,7 @@ sub-slices:
 ### Phase 5.9 — APT packaging — pending
 
 `.deb` package that wraps the deployment chain:
-- `Depends: postgresql-17, postgresql-17-pgvector, nodejs`.
+- `Depends: postgresql-18, postgresql-18-pgvector, nodejs`.
 - Post-install hook invokes `install-users.sh` + `install.sh`.
 - Creates the Python venvs at `/usr/lib/wolf-{database,server}/.venv/`
   via `python -m venv` + `pip install` the workspace packages.

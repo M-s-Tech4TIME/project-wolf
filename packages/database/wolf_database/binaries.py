@@ -2,16 +2,16 @@
 
 Per the 5.7 architecture decision (use system Postgres + Wolf-owned
 config + data, NOT bundle binaries), wolf-database expects
-postgresql-17 and postgresql-17-pgvector to be installed via apt /
+postgresql-18 and postgresql-18-pgvector to be installed via apt /
 dnf. This module finds the relevant binaries (`pg_ctl`, `initdb`,
 `psql`, `postgres`) and reports their version + provenance, so the
-CLI in 5.7-b can surface clear "you need to install postgresql-17"
+CLI in 5.7-b can surface clear "you need to install postgresql-18"
 errors instead of cryptic FileNotFoundErrors.
 
 Lookup order for each tool:
   1. The corresponding env var (e.g. `WOLF_DATABASE_PG_CTL`).
-  2. Distro-specific known paths (`/usr/lib/postgresql/17/bin/...`
-     on Debian/Ubuntu, `/usr/pgsql-17/bin/...` on RHEL/Fedora).
+  2. Distro-specific known paths (`/usr/lib/postgresql/18/bin/...`
+     on Debian/Ubuntu, `/usr/pgsql-18/bin/...` on RHEL/Fedora).
   3. `shutil.which()` on the bare tool name (catches unusual
      installs where Postgres is on PATH).
 
@@ -30,7 +30,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-REQUIRED_MAJOR_VERSION = 17
+REQUIRED_MAJOR_VERSION = 18
 
 
 class PostgresBinaryNotFoundError(RuntimeError):
@@ -38,7 +38,7 @@ class PostgresBinaryNotFoundError(RuntimeError):
 
     Carries the binary name + the list of paths that were searched so
     the operator-facing CLI can surface a useful error message
-    ("install postgresql-17") rather than a cryptic FileNotFoundError.
+    ("install postgresql-18") rather than a cryptic FileNotFoundError.
     """
 
     def __init__(self, tool: str, searched: list[Path]) -> None:
@@ -47,15 +47,15 @@ class PostgresBinaryNotFoundError(RuntimeError):
         msg = (
             f"wolf-database could not find `{tool}`. Searched:\n  - "
             + "\n  - ".join(str(p) for p in searched)
-            + "\nInstall PostgreSQL 17 + pgvector via your distro's "
-            "package manager (e.g. `apt install postgresql-17 "
-            "postgresql-17-pgvector` on Debian/Ubuntu) or set "
+            + "\nInstall PostgreSQL 18 + pgvector via your distro's "
+            "package manager (e.g. `apt install postgresql-18 "
+            "postgresql-18-pgvector` on Debian/Ubuntu) or set "
             f"WOLF_DATABASE_{tool.upper()} to the absolute path."
         )
         super().__init__(msg)
 
 
-# Distro-specific known prefixes where Postgres 17 lives. Ordered:
+# Distro-specific known prefixes where Postgres 18 lives. Ordered:
 # Debian-family first (most common Wolf dev target per ADR 0008),
 # then RHEL-family. Each entry is the directory containing the
 # binaries — we append the tool name when searching.
@@ -159,8 +159,8 @@ def postgres_major_version(postgres: Path) -> int:
 def verify_postgres_supported(binaries: PostgresBinaries) -> None:
     """Check that the system Postgres is the required major version.
 
-    Wolf depends on Postgres 17+ features (per ADR 0008's pgvector
-    + Postgres 17 commitment). Running against an older major is a
+    Wolf depends on Postgres 18+ features (per ADR 0008's pgvector
+    + Postgres 18 commitment). Running against an older major is a
     silent footgun — alembic might "work" but the schema would diverge
     from what wolf-server expects. Verify upfront and fail loudly.
     """

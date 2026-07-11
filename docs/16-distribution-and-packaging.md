@@ -69,7 +69,7 @@ The script:
 3. Adds the required prerequisite repositories:
    - Python 3.13 (deadsnakes PPA on Ubuntu; equivalent on others).
    - Node 24 (NodeSource repo).
-   - PostgreSQL 17 + pgvector (PostgreSQL APT/YUM repo).
+   - PostgreSQL 18 + pgvector (PostgreSQL APT/YUM repo).
 4. Adds the Wolf APT/YUM repo (signed; key bootstrapped by the
    script).
 5. Installs the `wolf` metapackage (which pulls in
@@ -138,7 +138,7 @@ Per Debian / RPM convention.
 | `wolf-frontend` | Next.js production build, Node runtime hooks, systemd unit | `nodejs-24` |
 | `wolf-common-libs` | The three workspace packages (`wolf-common`, `wolf-secrets`, `wolf-schema`) shared between orchestrator and gateway | `python3.13` |
 | `wolf-cli` | The `wolf` CLI wrapper | `wolf-common-libs` |
-| `wolf` | **Metapackage** — pulls in all of the above plus Postgres 17, pgvector, and the prerequisite repos | All of the above + `postgresql-17`, `postgresql-17-pgvector` |
+| `wolf` | **Metapackage** — pulls in all of the above plus Postgres 18, pgvector, and the prerequisite repos | All of the above + `postgresql-18`, `postgresql-18-pgvector` |
 
 The metapackage is what operators install. The individual packages
 are available for advanced operators who want partial installs
@@ -278,7 +278,7 @@ decided when the work is queued (post-Phase 4).
 
 Per [ADR 0008](decisions/0008-native-primary-docker-supplementary.md),
 the **development environment uses the same Postgres install path
-operators will use** — system Postgres 17 + pgvector installed via the
+operators will use** — system Postgres 18 + pgvector installed via the
 PostgreSQL APT repo (or distro equivalent), managed by systemd. This is
 deliberate: dev/prod parity for the native channel catches install-time
 issues (file permissions, FHS layout, systemd integration, distro quirks)

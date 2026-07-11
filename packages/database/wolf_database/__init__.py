@@ -1,10 +1,10 @@
 """wolf-database — Wolf's bundled-Postgres component (Phase 5.7).
 
 Per ADR 0016, wolf-database is the third deployable component. It
-wraps a system-installed Postgres 17 + pgvector with Wolf-owned
+wraps a system-installed Postgres 18 + pgvector with Wolf-owned
 config, data dir, and lifecycle scripts. The actual Postgres binaries
-come from the OS package manager (postgresql-17 +
-postgresql-17-pgvector) so the security-update path stays apt/dnf;
+come from the OS package manager (postgresql-18 +
+postgresql-18-pgvector) so the security-update path stays apt/dnf;
 Wolf owns everything *around* the binaries.
 
 This package ships the substrate (Phase 5.7-a): paths, constants,

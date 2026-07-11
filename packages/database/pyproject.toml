@@ -1,7 +1,7 @@
 [project]
 name = "wolf-database"
 version = "0.1.0"
-description = "Wolf's bundled-Postgres component — wraps system Postgres 17 + pgvector with Wolf-owned config + data dir (Phase 5.7)"
+description = "Wolf's bundled-Postgres component — wraps system Postgres 18 + pgvector with Wolf-owned config + data dir (Phase 5.7)"
 requires-python = ">=3.13"
 dependencies = []
 

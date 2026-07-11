@@ -294,7 +294,7 @@ For a small single-org deployment:
 - One VM with 16-32 GB RAM, 4-8 CPU cores, ~100 GB disk.
 - A 7-13B local model via Ollama is viable on this hardware (CPU-only is
   slow but functional; a modest consumer GPU is a substantial improvement).
-- Postgres 17, pgvector, Keycloak, OpenBao, Wolf — all fit comfortably.
+- Postgres 18, pgvector, Keycloak, OpenBao, Wolf — all fit comfortably.
 - **Total ongoing software cost: zero.**
 
 For an MSSP with many organizations or detection-engineering-heavy use:

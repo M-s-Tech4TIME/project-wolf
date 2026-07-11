@@ -24,7 +24,7 @@ Ollama occasionally to verify the local-model path.
 - 100+ GB free SSD
 - Same OS list
 
-Concurrently the dev environment runs: orchestrator, gateway, Postgres 17,
+Concurrently the dev environment runs: orchestrator, gateway, Postgres 18,
 Keycloak, OpenBao (or file-backed secrets), optionally Ollama with a small
 model, the Next.js dev server, IDE, browser. 16 GB is doable; 32 GB is
 genuinely comfortable.
@@ -124,7 +124,7 @@ Container images for:
 | `wolf/gateway` | The Approval & Action Gateway (FastAPI). |
 | `wolf/frontend` | Next.js 16 app, server-side rendered. |
 | `postgres:17` | Relational store. |
-| `pgvector/pgvector:pg17` | Postgres + pgvector. (Same image, vector-enabled.) |
+| `pgvector/pgvector:pg18` | Postgres + pgvector. (Same image, vector-enabled.) |
 | `quay.io/keycloak/keycloak:latest` | OIDC IdP. |
 | `openbao/openbao:latest` | Secrets manager (or file-backed for trivial deploys). |
 | `ollama/ollama:latest` | Local model runtime (optional). |
@@ -154,8 +154,9 @@ orchestrator API port. The gateway should not be exposed externally.
   confirmed across `sentence-transformers`, `torch`, and the LLM SDKs. CI
   should run a "next-Python" matrix.
 - **Node 24 → 26** — once Node 26 enters LTS (Oct 2026).
-- **PostgreSQL 17 → 18** — once PG 18 has at least a year of production-broad
-  deployment. Migration is `pg_upgrade`-supported.
+- **PostgreSQL 17 → 18** — DONE 2026-07-11 (operator decision, ahead of the
+  original "wait a year" pacing): baseline is now PostgreSQL 18 everywhere
+  (ADR 0008 addendum). Existing clusters migrate via `pg_upgradecluster`.
 - **Next.js 16 → 17** — when the next Next LTS lands.
 
 All upgrades are tested via CI's next-major matrix before being adopted.

@@ -21,6 +21,7 @@
 
 ---
 
+
 ## Entry template
 
 Copy this block and fill in at the start of each session entry:
@@ -49,6 +50,34 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-07-11 — PostgreSQL 18: full platform replacement of 17
+
+**Session type:** claude-code
+**Phase:** post-6-f maintenance (operator-directed platform bump)
+**Branch / commit:** main
+
+### What we did
+- Moved Wolf's Postgres baseline from 17 to **PostgreSQL 18 + pgvector,
+  fully replacing 17** (operator decision — ahead of docs/13's original
+  "wait a year" pacing; ADR 0008 addendum records it).
+- `wolf_database.binaries.REQUIRED_MAJOR_VERSION = 18`: binary discovery
+  now searches `/usr/lib/postgresql/18/bin` + `/usr/pgsql-18/bin`, and the
+  version gate REJECTS a PG17 install with the guided upgrade error — new
+  test `test_verify_postgres_supported_rejects_postgres_17` pins the
+  replacement (73 wolf-database tests green).
+- Packaging: `debian/control` wolf-database Depends → `postgresql-18` +
+  `postgresql-18-pgvector` (pgdg noble ships 18-pgvector 0.8.4 — verified).
+- CI: server-test + alembic-check services → `pgvector/pgvector:pg18`
+  (tag verified on Docker Hub, updated 2026-07-08); smoke-database +
+  smoke-deb jobs install postgresql-18 from pgdg.
+- Docs/templates: ONBOARDING §3.4, docs/09, docs/10, docs/13 (upgrade
+  line marked DONE), docs/16, packaging/README, ADR 0016 component table,
+  `.env.example`, `docker-compose.yml` (pgvector:pg18), conftest comment.
+- Live-host note: PG18.4 installed; `postgresql-18-pgvector` + the
+  cluster upgrade (`pg_upgradecluster 17 main`) are privileged operator
+  steps — runbook handed over separately.
+
+---
 ## 2026-07-11 — qwen3-embedding wired as a configurable embedding option (MRL dims + instruction-aware queries)
 
 **Session type:** claude-code

@@ -23,7 +23,7 @@ def _no_known_bin_dirs(monkeypatch: pytest.MonkeyPatch) -> None:
     """Stub out the distro-known Postgres directories.
 
     The CI runner + dev hosts may have a real Postgres installed
-    under /usr/lib/postgresql/17/bin or /usr/pgsql-17/bin, which
+    under /usr/lib/postgresql/18/bin or /usr/pgsql-18/bin, which
     would short-circuit the discovery before the test fixture PATH
     can take effect. Make every test see an empty distro list so
     only env-override + PATH matter. The tests that EXPLICITLY
@@ -65,7 +65,7 @@ def test_find_one_falls_through_to_path_when_no_known_dir(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """No env override + no /usr/lib/postgresql/17/... → uses PATH."""
+    """No env override + no /usr/lib/postgresql/18/... → uses PATH."""
     fake = _make_fake_executable(tmp_path / "psql")
     monkeypatch.setenv("PATH", str(tmp_path))
     monkeypatch.delenv("WOLF_DATABASE_PSQL", raising=False)
@@ -87,7 +87,7 @@ def test_find_one_raises_when_nothing_resolves(
 
     assert "pg_ctl" in str(exc.value)
     # The error names the install hint so operators see a fix path.
-    assert "postgresql-17" in str(exc.value)
+    assert "postgresql-18" in str(exc.value)
 
 
 def test_find_one_env_override_pointing_at_nonexistent_path_still_searches(
@@ -144,7 +144,7 @@ def test_postgres_major_version_raises_on_unexpected_output(
 def test_verify_postgres_supported_passes_for_correct_major(
     tmp_path: Path,
 ) -> None:
-    """A Postgres 17.x install passes the version gate."""
+    """A Postgres install at the required major passes the version gate."""
     pg = _make_fake_executable(
         tmp_path / "postgres",
         body=f'echo "postgres (PostgreSQL) {REQUIRED_MAJOR_VERSION}.0"',
@@ -161,6 +161,23 @@ def test_verify_postgres_supported_rejects_older_major(
     pg = _make_fake_executable(
         tmp_path / "postgres",
         body='echo "postgres (PostgreSQL) 15.4"',
+    )
+    bins = PostgresBinaries(pg_ctl=pg, initdb=pg, psql=pg, postgres=pg)
+    with pytest.raises(RuntimeError, match=f"requires PostgreSQL {REQUIRED_MAJOR_VERSION}+"):
+        verify_postgres_supported(bins)
+
+
+def test_verify_postgres_supported_rejects_postgres_17(
+    tmp_path: Path,
+) -> None:
+    """PG17 no longer passes — Wolf moved fully to PostgreSQL 18.
+
+    Pins the 17 -> 18 platform replacement: a host still on the old
+    postgresql-17 install gets the guided upgrade error, not a
+    silently mismatched cluster."""
+    pg = _make_fake_executable(
+        tmp_path / "postgres",
+        body='echo "postgres (PostgreSQL) 17.10 (Ubuntu 17.10-1.pgdg24.04+1)"',
     )
     bins = PostgresBinaries(pg_ctl=pg, initdb=pg, psql=pg, postgres=pg)
     with pytest.raises(RuntimeError, match=f"requires PostgreSQL {REQUIRED_MAJOR_VERSION}+"):

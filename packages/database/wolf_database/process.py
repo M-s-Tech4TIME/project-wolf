@@ -278,7 +278,7 @@ def is_pgvector_installed(
     *,
     port: int = 5432,
 ) -> bool:
-    """Check whether the postgresql-17-pgvector package is available.
+    """Check whether the postgresql-18-pgvector package is available.
 
     Queries `pg_available_extensions` for 'vector'. The cluster must
     be running for this to work — typically called between `start`

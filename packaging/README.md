@@ -9,7 +9,7 @@ fills in across slices 5.9-b (wolf-database), 5.9-c (wolf-server),
 
 | Package | What ships | Depends |
 |---|---|---|
-| `wolf-database` | wolf_database CLI + venv + systemd unit + service user | postgresql-17, postgresql-17-pgvector |
+| `wolf-database` | wolf_database CLI + venv + systemd unit + service user | postgresql-18, postgresql-18-pgvector |
 | `wolf-server` | wolf_server + wolf_cert + wolf_common venv + systemd unit + service user | python3.13, python3-venv |
 | `wolf-dashboard` | Next.js standalone build + systemd unit + service user | nodejs (>= 20) |
 | `wolf` (meta) | nothing of its own | wolf-database + wolf-server + wolf-dashboard |

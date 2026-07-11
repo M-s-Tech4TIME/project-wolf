@@ -313,7 +313,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: pgvector/pgvector:pg17
+        image: pgvector/pgvector:pg18
         env:
           POSTGRES_USER: wolf
           POSTGRES_PASSWORD: wolf_test
@@ -392,7 +392,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: pgvector/pgvector:pg17
+        image: pgvector/pgvector:pg18
         env:
           POSTGRES_USER: wolf
           POSTGRES_PASSWORD: wolf_test
@@ -489,7 +489,7 @@ jobs:
           python-version: "3.13"
       - name: Add PostgreSQL APT repo
         # Wolf's wheel build doesn't itself need Postgres, but the
-        # .deb's Depends references postgresql-17 + pgvector
+        # .deb's Depends references postgresql-18 + pgvector
         # availability. Adding the repo here makes the .debs
         # apt-installable end-to-end (and is harmless if not used).
         run: |
@@ -643,7 +643,7 @@ jobs:
         with:
           name: wolf-debs
           path: ./debs
-      - name: Add PostgreSQL APT repo (for postgresql-17 + pgvector deps)
+      - name: Add PostgreSQL APT repo (for postgresql-18 + pgvector deps)
         run: |
           sudo install -d /usr/share/postgresql-common/pgdg
           sudo curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
@@ -847,7 +847,7 @@ jobs:
         run: make smoke-systemd
 
   # Phase 5.7-d: end-to-end smoke for wolf-database (the bundled
-  # Postgres component). Installs postgresql-17 + postgresql-17-pgvector
+  # Postgres component). Installs postgresql-18 + postgresql-18-pgvector
   # via apt, then runs `make smoke-database` which exercises the full
   # CLI lifecycle: status (empty) → init → start → status (running) →
   # stop → status (stopped). Catches regressions in the CLI's
@@ -861,8 +861,8 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           python-version: "3.13"
-      - name: Add PostgreSQL APT repo + install postgresql-17 + pgvector
-        # Ubuntu 24.04's default repos ship Postgres 16; we need 17
+      - name: Add PostgreSQL APT repo + install postgresql-18 + pgvector
+        # Ubuntu 24.04's default repos ship Postgres 16; we need 18
         # to match the version wolf-database enforces.
         run: |
           sudo install -d /usr/share/postgresql-common/pgdg
@@ -872,7 +872,7 @@ jobs:
               https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | \
               sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt update
-          sudo apt install -y postgresql-17 postgresql-17-pgvector
+          sudo apt install -y postgresql-18 postgresql-18-pgvector
           # Stop the system Postgres unit Debian/Ubuntu auto-starts
           # post-install; we don't want it fighting wolf-database for
           # port 5432 (though the smoke uses 17860 anyway).

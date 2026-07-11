@@ -75,7 +75,7 @@ is mTLS-authenticated end to end.
 |---|---|---|
 | **`wolf-dashboard`** | Next.js edge process. The ONLY Wolf origin the browser sees. Serves the UI and mounts `/api/v1/*` reverse-proxy routes that forward to `wolf-server` over mTLS. | Renames the current `frontend/` |
 | **`wolf-server`** | FastAPI brain. Auth, agent loop, tools, audit, model dispatch. Binds `127.0.0.1` in all-in-one and `0.0.0.0` with mTLS-required in distributed. | Renames the current `services/orchestrator/` |
-| **`wolf-database`** | Postgres 17 + pgvector wrapped in a Wolf-managed systemd unit (Wazuh-indexer pattern). Data dir, configs, migrations, backup tooling all under Wolf's control. | New — bundled |
+| **`wolf-database`** | Postgres 18 (17 at decision time; 18 since 2026-07-11, ADR 0008 addendum) + pgvector wrapped in a Wolf-managed systemd unit (Wazuh-indexer pattern). Data dir, configs, migrations, backup tooling all under Wolf's control. | New — bundled |
 | **`wolf-gateway`** | Phase 6 propose/execute service. Separate systemd unit, disabled by default pre-Phase-6. | Renames the current `services/gateway/` |
 
 Two operator CLIs ship today: `wolf-cert` (cert lifecycle).

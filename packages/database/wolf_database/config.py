@@ -1,6 +1,6 @@
 """Render the postgresql.conf and pg_hba.conf wolf-database uses.
 
-Wolf doesn't tune Postgres aggressively — the defaults Postgres 17
+Wolf doesn't tune Postgres aggressively — the defaults Postgres 18
 ships with are reasonable for Wolf's mixed workload (low-volume
 audit + organization chats + pgvector retrieval). We override only the
 settings we genuinely need:
@@ -89,7 +89,7 @@ class PgHbaRule:
     """One row of the pg_hba.conf access-control table.
 
     Fields map 1:1 to Postgres's pg_hba.conf format:
-    https://www.postgresql.org/docs/17/auth-pg-hba-conf.html
+    https://www.postgresql.org/docs/18/auth-pg-hba-conf.html
     """
 
     connection_type: str  # `local`, `host`, `hostssl`, `hostnossl`

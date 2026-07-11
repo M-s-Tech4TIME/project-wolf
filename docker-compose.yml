@@ -14,7 +14,7 @@ services:
   # ─── Data layer ─────────────────────────────────────────────────────────────
 
   postgres:
-    image: pgvector/pgvector:pg17
+    image: pgvector/pgvector:pg18
     container_name: wolf-postgres
     restart: unless-stopped
     environment:

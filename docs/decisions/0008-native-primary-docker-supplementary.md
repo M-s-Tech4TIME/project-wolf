@@ -195,3 +195,27 @@ The codebase already honors all of these; new code must not regress:
   ADR can supersede this one. The underlying Wolf code is the
   same in either case; the rollback is a documentation-and-posture
   change, not a code change.
+
+---
+
+## Addendum (2026-07-11): platform baseline moved to PostgreSQL 18
+
+Operator decision: Wolf's Postgres baseline is now **PostgreSQL 18 +
+pgvector**, fully replacing 17 (not a dual-support window). Applied
+across the stack in one slice:
+
+- `wolf_database.binaries.REQUIRED_MAJOR_VERSION = 18` — the version
+  gate now **rejects** a 17 install with the guided upgrade error
+  (pinned by test), and binary discovery searches
+  `/usr/lib/postgresql/18/bin` / `/usr/pgsql-18/bin`.
+- `debian/control`: `wolf-database` Depends `postgresql-18` +
+  `postgresql-18-pgvector` (pgdg ships 18-pgvector 0.8.4 for noble).
+- CI: server test + alembic-check jobs run `pgvector/pgvector:pg18`;
+  the wolf-database smoke installs `postgresql-18` from pgdg.
+- Docs (`ONBOARDING.md` §3.4, docs/16, packaging/README) and the
+  `.env.example` template say 18 everywhere.
+
+Existing 17 clusters upgrade via the standard Debian tooling
+(`pg_upgradecluster 17 main`) with `postgresql-18-pgvector` installed
+first so the `vector` extension objects restore. Everything else in
+this ADR (native-primary posture, install channels) is unchanged.

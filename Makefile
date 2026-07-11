@@ -14,7 +14,7 @@
 # - Container-channel targets (build/run the supplementary stack):
 #     up, down, dev, logs, migrate, revision
 #
-# Native dev assumes system Postgres 17 + pgvector (see ONBOARDING.md §3.4).
+# Native dev assumes system Postgres 18 + pgvector (see ONBOARDING.md §3.4).
 
 # ─── Docker (supplementary container channel) ────────────────────────────────
 
@@ -298,7 +298,7 @@ smoke-systemd: ## End-to-end systemd + shim smoke (Phase 5.8-d)
 # doesn't disturb the operator's real `.local/` cluster. Verifies the
 # full lifecycle: status (empty data dir) → init (port 17860 to avoid
 # the common 5432 collision) → status (running) → stop → status
-# (stopped). Detects the postgresql-17-pgvector-missing case and
+# (stopped). Detects the postgresql-18-pgvector-missing case and
 # reports it as an environmental prerequisite rather than a smoke
 # failure (operators on hosts without pgvector still see that the
 # CLI behaves correctly up to that gate).
@@ -330,10 +330,10 @@ smoke-database: ## End-to-end smoke for the wolf-database CLI lifecycle (Phase 5
 		init_rc=$${init_rc:-0}; \
 		if [ "$$init_rc" -ne 0 ]; then \
 			if echo "$$init_out" | grep -q "pgvector"; then \
-				echo "    SKIP: postgresql-17-pgvector not installed on this host."; \
+				echo "    SKIP: postgresql-18-pgvector not installed on this host."; \
 				echo "    The CLI failed gracefully with the install hint, as designed."; \
 				echo "    Install pgvector and re-run to validate the full chain:"; \
-				echo "      sudo apt install postgresql-17-pgvector"; \
+				echo "      sudo apt install postgresql-18-pgvector"; \
 				echo ""; \
 				echo "=== smoke-database: PARTIAL PASS (pgvector required for full smoke) ==="; \
 				exit 0; \
