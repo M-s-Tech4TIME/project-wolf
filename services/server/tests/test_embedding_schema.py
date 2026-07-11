@@ -260,3 +260,59 @@ async def test_aux_null_count_excludes_unembeddable_sentinel() -> None:
     assert "IS DISTINCT FROM" not in primary_sql  # primary NULLs always count
     assert "embedding_v2_model IS DISTINCT FROM :sentinel" in aux_sql
     assert states["embedding_v2"].null_vector_count == 0
+
+
+@pytest.mark.asyncio
+async def test_retype_resets_primary_stamp_with_sentinel_not_null() -> None:
+    # embedding_model is NOT NULL in the schema — resetting it to NULL blows
+    # up mid-transaction (caught live on the first 768->4096 apply; the
+    # all-or-nothing transaction rolled back cleanly). The primary reset
+    # must use the RETYPED_STAMP sentinel; the nullable aux stamp keeps its
+    # established NULL semantics.
+    from wolf_server.management.embedding_schema import (
+        RETYPED_STAMP,
+        ColumnPlan,
+        _retype_column,
+    )
+
+    class _Session:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, Any]] = []
+
+        async def execute(self, stmt: Any, params: Any = None) -> None:
+            self.calls.append((str(stmt), params))
+
+        async def commit(self) -> None:
+            pass
+
+    primary_plan = ColumnPlan(
+        name="embedding",
+        target_dimension=4096,
+        retype=True,
+        reembed_nulls=True,
+        restore_not_null=True,
+        build_index=True,
+        index_kind="bq",
+    )
+    session = _Session()
+    await _retype_column(session, primary_plan)  # type: ignore[arg-type]
+    stamp_updates = [c for c in session.calls if "SET embedding_model" in c[0]]
+    assert len(stamp_updates) == 1
+    sql, params = stamp_updates[0]
+    assert "= :marker" in sql and params == {"marker": RETYPED_STAMP}
+    assert "= NULL" not in sql
+
+    aux_plan = ColumnPlan(
+        name="embedding_v2",
+        target_dimension=768,
+        retype=True,
+        reembed_nulls=True,
+        restore_not_null=False,
+        build_index=True,
+        index_kind="cosine",
+    )
+    session = _Session()
+    await _retype_column(session, aux_plan)  # type: ignore[arg-type]
+    aux_updates = [c for c in session.calls if "SET embedding_v2_model" in c[0]]
+    assert len(aux_updates) == 1
+    assert "= NULL" in aux_updates[0][0]

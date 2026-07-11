@@ -487,6 +487,29 @@ class Settings(BaseSettings):
         return self.environment == "test"
 
     @model_validator(mode="after")
+    def _decode_prefix_escapes(self) -> "Settings":
+        """Normalize literal ``\\n`` in embedding task prefixes to newlines.
+
+        The qwen3-embedding instruct prefix ends "...query\\nQuery: " with a
+        REAL newline. Whether the backslash-n survives as two characters
+        depends on the load path: python-dotenv decodes it in double-quoted
+        .env values, but `set -a; source .env` (bash) and systemd's
+        `EnvironmentFile=` (how wolf-server actually runs) both keep it
+        literal. Normalizing here makes every path yield the same prefix —
+        no prompt prefix legitimately contains a literal backslash-n.
+        """
+        for attr in (
+            "embedding_query_prefix",
+            "embedding_query_prefix_aux",
+            "embedding_document_prefix",
+            "embedding_document_prefix_aux",
+        ):
+            value: str = getattr(self, attr)
+            if "\\n" in value:
+                object.__setattr__(self, attr, value.replace("\\n", "\n"))
+        return self
+
+    @model_validator(mode="after")
     def _validate_secret_key(self) -> "Settings":
         """Fail closed on an insecure JWT signing key.
 

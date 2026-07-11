@@ -50,6 +50,38 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-07-12 — Live switch to qwen3-embedding at native 4096 + two root-fixed bugs the switch surfaced
+
+**Session type:** claude-code
+**Phase:** post-6-f maintenance (operator: "Run it")
+**Branch / commit:** main
+
+### What we did
+- **Live .env switched** to ADR 0033 Recipe B at FULL native width:
+  qwen3-embedding:latest primary, `EMBEDDING_DIMENSION=4096` (no MRL
+  truncation), instruct query prefix, num_ctx 8192 (ample for Wolf chunk
+  sizes on the 6 GB GPU; model supports 40960); aux stays
+  nomic-embed-text-v2-moe at ITS native 768 (`EMBEDDING_DIMENSION_AUX=768`)
+  — the mixed-width design exercised for real.
+- **Bug 1 (caught by the first live apply, root-fixed + pinned):**
+  `embedding_schema`'s re-type reset the primary model stamp to NULL, but
+  `embedding_model` is NOT NULL → NotNullViolation; the all-or-nothing
+  transaction rolled back leaving the DB untouched (verified: still
+  vector(768), all 5182 vectors, index intact). Fix = `RETYPED_STAMP`
+  sentinel for the primary stamp (nullable aux stamp keeps NULL semantics);
+  test asserts the exact UPDATE shapes.
+- **Bug 2 (caught pre-apply, root-fixed + pinned):** the qwen instruct
+  prefix's `\n` stays a literal backslash-n via `source .env` and
+  systemd `EnvironmentFile=` (only python-dotenv decodes it) — wolf-server
+  would have run with a subtly wrong prefix. Fix = Settings
+  `_decode_prefix_escapes` model_validator normalizing all four prefix
+  fields on every load path; test pins it.
+- Schema apply re-typed embedding → vector(4096), re-embedded all 5182
+  chunks through qwen3-embedding (8B), built the binary-quantized HNSW
+  index; verification below in this entry's follow-up notes.
+
+---
+
 ## 2026-07-12 — Live dev cluster upgraded to PostgreSQL 18.4 (PG17 removed)
 
 **Session type:** mixed (operator granted temporary scoped sudo; removed + verified after)

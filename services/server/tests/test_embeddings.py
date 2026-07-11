@@ -420,3 +420,16 @@ async def test_narrow_embedder_keeps_the_plain_cosine_leg() -> None:
     await store._vector_candidates(_uuid.uuid4(), [0.0] * 768, None, None)
     assert len(session.statements) == 1
     assert "binary_quantize" not in session.statements[0]
+
+
+def test_prefix_literal_backslash_n_is_decoded_on_every_load_path() -> None:
+    # bash `source .env` and systemd EnvironmentFile= deliver "\\n" as two
+    # literal characters (only python-dotenv decodes it) — the Settings
+    # normalizer must yield a REAL newline either way, or qwen's official
+    # instruct prefix would be subtly wrong depending on how Wolf was started.
+    settings = Settings(
+        embedding_query_prefix="Instruct: retrieve\\nQuery: ",
+        embedding_document_prefix_aux="search_document: ",
+    )
+    assert settings.embedding_query_prefix == "Instruct: retrieve\nQuery: "
+    assert settings.embedding_document_prefix_aux == "search_document: "  # untouched

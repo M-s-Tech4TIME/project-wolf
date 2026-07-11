@@ -80,6 +80,13 @@ _MODEL_STAMP_COLUMNS = {
 
 _VECTOR_TYPE_RE = re.compile(r"^vector\((\d+)\)$")
 
+# Stamp written to embedding_model when a re-type clears the primary
+# vectors. The column is NOT NULL (unlike the nullable aux stamp), so the
+# reset can't use NULL — any value distinct from a real provider model_id
+# keeps `reembed`'s mismatch detection honest until the re-embed pass
+# overwrites it with the active model.
+RETYPED_STAMP = "__retyped__"
+
 
 @dataclass(frozen=True)
 class ColumnState:
@@ -245,11 +252,22 @@ async def _retype_column(session: AsyncSession, plan: ColumnPlan) -> None:
             f"TYPE vector({plan.target_dimension}) USING NULL"
         )
     )
-    # Clearing the stamp keeps `reembed`'s model-mismatch detection honest:
+    # Resetting the stamp keeps `reembed`'s model-mismatch detection honest:
     # a NULL vector must never look "already embedded by the active model".
-    await session.execute(
-        text(f"UPDATE {_TABLE} SET {stamp} = NULL WHERE {plan.name} IS NULL")  # noqa: S608
-    )
+    # The primary stamp column is NOT NULL, so it takes the RETYPED_STAMP
+    # sentinel; the nullable aux stamp keeps its established NULL semantics
+    # ("never embedded with the aux model").
+    if plan.name == "embedding":
+        await session.execute(
+            text(
+                f"UPDATE {_TABLE} SET {stamp} = :marker WHERE {plan.name} IS NULL"  # noqa: S608
+            ),
+            {"marker": RETYPED_STAMP},
+        )
+    else:
+        await session.execute(
+            text(f"UPDATE {_TABLE} SET {stamp} = NULL WHERE {plan.name} IS NULL")  # noqa: S608
+        )
     await session.commit()
 
 
