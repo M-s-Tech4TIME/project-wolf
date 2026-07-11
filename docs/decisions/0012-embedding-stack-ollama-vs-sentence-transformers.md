@@ -233,3 +233,51 @@ documented here so the gap is recorded.
   be removed in a future ADR by deleting the class + the env
   branch in `make_embedding_provider`. The protocol absorbs the
   change.
+
+## Addendum (2026-07-11) — MRL dimensions + instruction-aware queries (qwen3-embedding wiring)
+
+The operator pulled `qwen3-embedding:latest` (the 8B build) and asked for it
+as a configurable option. Capability check before wiring (`ollama show` +
+live probes):
+
+- **Native dimension 4096** — 5.3× the fixed 768-dim pgvector column; but the
+  Qwen3-Embedding family is **MRL-trained** (Matryoshka), officially
+  supporting user-defined output dimensions with truncate+renormalize.
+- **Context 40960 tokens** — no chunk-length failure mode (contrast the aux
+  v2-moe's 512-token window that forced the best-effort NULL-v2 path).
+- **Instruction-aware asymmetric retrieval** — queries want an instruct
+  prefix; documents embed raw (~1–5% retrieval quality loss without it per
+  the model card).
+- **Probed live**: Ollama's modern `/api/embed` honours `dimensions: 768`
+  (returns 768-dim L2-normalized vectors) and batched `input`; the legacy
+  single-input `/api/embeddings` Wolf used until now always returns the
+  native 4096 and cannot truncate.
+
+Decision — wire the CAPABILITY, not the model:
+
+1. **`OllamaEmbeddingAdapter` moves to `/api/embed`** (the docstring's
+   "once Ollama exposes one" future arrived): batched input with a 32-input
+   sub-batch cap (bounds single-request latency on slow embedders),
+   injectable transport for hermetic tests.
+2. **`EMBEDDING_REQUEST_DIMENSIONS[_AUX]`** (default 0 = never sent): opt-in
+   server-side MRL truncation. Explicitly opt-in because blind truncation of
+   a NON-MRL model corrupts the geometry — the dimension-mismatch refusal
+   names the knob for the MRL case. sentence-transformers path maps it to
+   the library's own `truncate_dim`.
+3. **`EMBEDDING_QUERY_PREFIX[_AUX]`** (default "") + `embed_query` on the
+   provider protocol: queries prefixed, passages raw. The store's `search()`
+   now routes queries through `embed_query` — which also ACTIVATES the ST
+   adapter's existing BGE prefix that was previously dead code (search()
+   always called plain `embed`).
+4. Primary and aux each carry their own knobs (a native-768 nomic primary
+   next to an MRL qwen3-embedding aux is a valid 3-leg config).
+
+Cosine distance everywhere (HNSW `vector_cosine_ops`) makes normalization
+moot for ranking; Ollama returns unit vectors anyway (probed). The
+`embedding_model` per-chunk stamp + `management/reembed.py` (`--apply`,
+`--aux`) remain the planned-re-embed contract — flipping the primary model
+without a re-embed still degrades exactly as this ADR always warned.
+
+Defaults unchanged (nomic-embed-text, no knobs). Recipes + the 6 GB-GPU VRAM
+trade-off (the 8B embedder cannot sit resident next to qwen3:8b chat) are in
+`.env.example` and `docs/reference/model-performance-tuning.md`.

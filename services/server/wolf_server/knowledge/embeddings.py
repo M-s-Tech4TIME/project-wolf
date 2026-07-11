@@ -39,17 +39,33 @@ class EmbeddingProvider(Protocol):
         """Vector dimension; must match the DB column width."""
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
-        """Embed a batch of texts. Output order matches input order."""
+        """Embed a batch of PASSAGES (raw, no prefix). Output order matches input."""
+
+    async def embed_query(self, query: str) -> list[float]:
+        """Embed a QUERY — instruction-aware providers apply their query
+        prefix here (asymmetric retrieval); symmetric providers just embed."""
+
+
+# One /api/embed request carries at most this many inputs — bounds a single
+# request's latency (an 8B embedder on a 6 GB GPU takes noticeable time per
+# text) so a large seed/re-embed batch cannot outlive the HTTP timeout.
+_OLLAMA_EMBED_BATCH_MAX = 32
 
 
 class OllamaEmbeddingAdapter:
-    """Calls Ollama's /api/embeddings endpoint per text in the batch.
+    """Calls Ollama's /api/embed endpoint (batched `input`, note: NOT the
+    legacy single-input /api/embeddings).
 
-    Ollama's embedding endpoint is single-input; batching is sequential on
-    the client side. For Phase 3 dev workloads this is fine — a ~10-chunk
-    seed takes well under a second on the RTX 4050. If batch sizes ever
-    grow into the thousands, swap to a /api/embed (note: plural) endpoint
-    once Ollama exposes one, or move to a true batching adapter.
+    The modern endpoint matters for two reasons beyond batching:
+      - It honours a `dimensions` field for MRL-trained models
+        (qwen3-embedding: native 4096 → server-side truncate+renormalize to
+        the requested width; probed live 2026-07-11). The legacy endpoint
+        always returns the native dimension.
+      - Batched input amortises per-request overhead for seeding/re-embeds.
+
+    ``query_prefix`` implements instruction-aware asymmetric retrieval:
+    queries get the prefix, passages never do (qwen3-embedding's official
+    usage; empty for symmetric models like nomic-embed-text).
     """
 
     def __init__(
@@ -58,12 +74,19 @@ class OllamaEmbeddingAdapter:
         model: str = "nomic-embed-text",
         *,
         dimension: int = 768,
-        timeout: float = 30.0,
+        timeout: float = 60.0,
+        request_dimensions: int = 0,
+        query_prefix: str = "",
+        transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._model = model
         self._dimension = dimension
         self._timeout = timeout
+        self._request_dimensions = request_dimensions
+        self._query_prefix = query_prefix
+        # Injectable for hermetic tests (httpx.MockTransport); None = real HTTP.
+        self._transport = transport
 
     @property
     def model_id(self) -> str:
@@ -76,24 +99,39 @@ class OllamaEmbeddingAdapter:
     async def embed(self, texts: list[str]) -> list[list[float]]:
         if not texts:
             return []
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with httpx.AsyncClient(timeout=self._timeout, transport=self._transport) as client:
             vectors: list[list[float]] = []
-            for text in texts:
-                response = await client.post(
-                    f"{self._base_url}/api/embeddings",
-                    json={"model": self._model, "prompt": text},
-                )
+            for start in range(0, len(texts), _OLLAMA_EMBED_BATCH_MAX):
+                batch = texts[start : start + _OLLAMA_EMBED_BATCH_MAX]
+                body: dict[str, Any] = {"model": self._model, "input": batch}
+                if self._request_dimensions > 0:
+                    body["dimensions"] = self._request_dimensions
+                response = await client.post(f"{self._base_url}/api/embed", json=body)
                 response.raise_for_status()
                 payload = response.json()
-                vector = payload["embedding"]
-                if len(vector) != self._dimension:
+                batch_vectors = payload["embeddings"]
+                if len(batch_vectors) != len(batch):
                     raise ValueError(
-                        f"Ollama returned dim={len(vector)}, expected "
-                        f"{self._dimension}. Adjust EMBEDDING_DIMENSION or "
-                        f"pick a different model."
+                        f"Ollama returned {len(batch_vectors)} embeddings for a "
+                        f"batch of {len(batch)} inputs."
                     )
-                vectors.append(vector)
+                for vector in batch_vectors:
+                    if len(vector) != self._dimension:
+                        raise ValueError(
+                            f"Ollama returned dim={len(vector)} for {self._model!r}, "
+                            f"expected {self._dimension}. For an MRL-trained model "
+                            "with a larger native dimension (e.g. qwen3-embedding, "
+                            "native 4096), set EMBEDDING_REQUEST_DIMENSIONS="
+                            f"{self._dimension}; otherwise pick a model whose "
+                            f"native dimension is {self._dimension}."
+                        )
+                    vectors.append(vector)
             return vectors
+
+    async def embed_query(self, query: str) -> list[float]:
+        """Embed a query, applying the instruction prefix when configured."""
+        [vector] = await self.embed([self._query_prefix + query])
+        return vector
 
 
 class SentenceTransformersEmbeddingAdapter:
@@ -115,7 +153,14 @@ class SentenceTransformersEmbeddingAdapter:
 
     BGE_QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
 
-    def __init__(self, model_name: str, *, dimension: int = 768) -> None:
+    def __init__(
+        self,
+        model_name: str,
+        *,
+        dimension: int = 768,
+        request_dimensions: int = 0,
+        query_prefix: str = "",
+    ) -> None:
         # Lazy import — keeps the module importable when the optional extra
         # isn't installed. A clear error surface lands in the constructor
         # rather than at module load.
@@ -141,7 +186,15 @@ class SentenceTransformersEmbeddingAdapter:
 
         self._model_name = model_name
         self._dimension = dimension
-        self._model: Any = SentenceTransformer(model_name, device=device)
+        self._query_prefix = query_prefix
+        # MRL truncation via the library's own truncate_dim (the same
+        # officially supported truncate+renormalize the Ollama path requests
+        # server-side). 0 = model-native output.
+        self._model: Any = (
+            SentenceTransformer(model_name, device=device, truncate_dim=request_dimensions)
+            if request_dimensions > 0
+            else SentenceTransformer(model_name, device=device)
+        )
         self._device = device
 
     @property
@@ -161,9 +214,13 @@ class SentenceTransformersEmbeddingAdapter:
         return await self._encode(texts)
 
     async def embed_query(self, query: str) -> list[float]:
-        """Embed a query (BGE asymmetric prefix applied automatically)."""
-        is_bge = "bge" in self._model_name.lower()
-        prepared = self.BGE_QUERY_PREFIX + query if is_bge else query
+        """Embed a query — an explicit configured prefix wins; otherwise the
+        BGE asymmetric prefix is applied automatically for BGE models."""
+        if self._query_prefix:
+            prepared = self._query_prefix + query
+        else:
+            is_bge = "bge" in self._model_name.lower()
+            prepared = self.BGE_QUERY_PREFIX + query if is_bge else query
         vectors = await self._encode([prepared])
         return vectors[0]
 
@@ -195,11 +252,17 @@ def _build_provider(
     provider_name: str,
     model_id: str,
     settings: "Settings",
+    *,
+    request_dimensions: int,
+    query_prefix: str,
 ) -> EmbeddingProvider:
     """Shared factory body — builds an EmbeddingProvider from a name + model.
 
     Pulled out so the primary and auxiliary factories share the same
-    branch logic (and the same future runtimes).
+    branch logic (and the same future runtimes). ``request_dimensions`` /
+    ``query_prefix`` are per-embedder (primary and aux each carry their
+    own — e.g. an MRL qwen3-embedding aux next to a native-768 nomic
+    primary).
     """
     name = provider_name.lower()
     if name == "ollama":
@@ -207,11 +270,15 @@ def _build_provider(
             settings.ollama_base_url,
             model=model_id,
             dimension=settings.embedding_dimension,
+            request_dimensions=request_dimensions,
+            query_prefix=query_prefix,
         )
     if name in {"sentence-transformers", "st", "sentence_transformers"}:
         return SentenceTransformersEmbeddingAdapter(
             model_id,
             dimension=settings.embedding_dimension,
+            request_dimensions=request_dimensions,
+            query_prefix=query_prefix,
         )
     raise ValueError(
         f"Unknown embedding_provider {provider_name!r}; expected 'ollama' or "
@@ -227,7 +294,13 @@ def make_embedding_provider(settings: "Settings") -> EmbeddingProvider:
     requires `uv sync --extra embeddings-local` (torch is not a default
     runtime dep per ADR 0007).
     """
-    return _build_provider(settings.embedding_provider, settings.embedding_model, settings)
+    return _build_provider(
+        settings.embedding_provider,
+        settings.embedding_model,
+        settings,
+        request_dimensions=settings.embedding_request_dimensions,
+        query_prefix=settings.embedding_query_prefix,
+    )
 
 
 def make_embedding_provider_aux(
@@ -243,4 +316,10 @@ def make_embedding_provider_aux(
     if not settings.embedding_model_aux:
         return None
     provider_name = settings.embedding_provider_aux or settings.embedding_provider
-    return _build_provider(provider_name, settings.embedding_model_aux, settings)
+    return _build_provider(
+        provider_name,
+        settings.embedding_model_aux,
+        settings,
+        request_dimensions=settings.embedding_request_dimensions_aux,
+        query_prefix=settings.embedding_query_prefix_aux,
+    )

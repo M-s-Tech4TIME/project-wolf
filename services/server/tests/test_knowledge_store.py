@@ -475,9 +475,18 @@ def test_factory_accepts_sentence_transformers_aliases(
     class _StubSTAdapter:
         """Stand-in for SentenceTransformersEmbeddingAdapter — no model load."""
 
-        def __init__(self, model_id: str, *, dimension: int) -> None:
+        def __init__(
+            self,
+            model_id: str,
+            *,
+            dimension: int,
+            request_dimensions: int = 0,
+            query_prefix: str = "",
+        ) -> None:
             self._model_id = model_id
             self.dimension = dimension
+            self.request_dimensions = request_dimensions
+            self.query_prefix = query_prefix
 
         @property
         def model_id(self) -> str:

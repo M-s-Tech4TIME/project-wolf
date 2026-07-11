@@ -411,6 +411,26 @@ class Settings(BaseSettings):
     embedding_model_aux: str = ""
     # Provider for the aux embedder. Empty = same as embedding_provider.
     embedding_provider_aux: str = ""
+    # MRL (Matryoshka) output truncation. 0 (default) = don't request — the
+    # model's NATIVE dimension must equal embedding_dimension (nomic: 768).
+    # Set to embedding_dimension for an MRL-trained model whose native
+    # dimension is larger — e.g. qwen3-embedding (native 4096) — so it fits
+    # the fixed pgvector column with the officially supported
+    # truncate+renormalize behaviour. Ollama applies it server-side via
+    # /api/embed's `dimensions` field (probed live 2026-07-11: returns
+    # 768-dim L2-normalized vectors); sentence-transformers via the
+    # library's `truncate_dim`. ONLY valid for MRL-trained models — blind
+    # truncation of a non-MRL model corrupts the embedding geometry.
+    embedding_request_dimensions: int = 0
+    embedding_request_dimensions_aux: int = 0
+    # Instruction prefix applied to QUERIES ONLY (documents always embed
+    # raw) for instruction-aware asymmetric retrieval models.
+    # qwen3-embedding's official recipe:
+    #   "Instruct: Given a web search query, retrieve relevant passages
+    #    that answer the query\nQuery: "
+    # Empty (default) = symmetric embedding (correct for nomic-embed-text).
+    embedding_query_prefix: str = ""
+    embedding_query_prefix_aux: str = ""
 
     @property
     def is_development(self) -> bool:

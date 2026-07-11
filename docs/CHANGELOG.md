@@ -49,6 +49,50 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-07-11 — qwen3-embedding wired as a configurable embedding option (MRL dims + instruction-aware queries)
+
+**Session type:** claude-code
+**Phase:** knowledge/retrieval (ADR 0012 addendum 2026-07-11; operator request)
+**Branch / commit:** main
+
+### What we did
+- **Capability-checked the model BEFORE designing** (`ollama show` + live
+  probes): `qwen3-embedding:latest` = the 8B build — native **4096-dim**
+  (vs Wolf's fixed 768-dim pgvector column), context **40960**, MRL-trained
+  (official truncate+renormalize to user dims), instruction-aware asymmetric
+  retrieval (queries want an instruct prefix, documents raw). Probed live:
+  Ollama's modern `/api/embed` honours `dimensions: 768` (768-dim
+  L2-normalized out) and batched `input`; the legacy `/api/embeddings` Wolf
+  used cannot truncate (always 4096).
+- **`OllamaEmbeddingAdapter` upgraded to `/api/embed`**: batched input
+  (32-input sub-batches bound single-request latency), optional
+  `request_dimensions` (sent only when configured — blind truncation of a
+  non-MRL model corrupts geometry, so it's opt-in and the dim-mismatch
+  refusal names the knob), `query_prefix` + `embed_query`, injectable
+  transport for hermetic tests.
+- **4 new settings** (primary + aux each carry their own):
+  `EMBEDDING_REQUEST_DIMENSIONS[_AUX]`, `EMBEDDING_QUERY_PREFIX[_AUX]`.
+  sentence-transformers maps dims to the library's `truncate_dim` and
+  honours an explicit query prefix over its BGE heuristic.
+- **Store `search()` now routes queries through `embed_query`** (passages
+  still embed raw) — this also activates the ST adapter's BGE prefix that
+  was dead code (search always called plain `embed`).
+- Recipes documented in `.env.example` + the tuning guide: swap primary
+  (then `reembed --apply`) OR run as the ADR 0014 aux third leg (then
+  `reembed --aux --apply`). Defaults unchanged (nomic). **VRAM honesty**:
+  the 8B embedder (~4.7 GB) can't sit resident next to qwen3:8b chat on the
+  6 GB dev GPU — Ollama swaps per request; small-GPU guidance = nomic or
+  `qwen3-embedding:0.6b` with the same knobs.
+- **Live-validated through the real adapter**: 768-dim unit vectors, and the
+  instructed query ranked the relevant passage 0.75 vs 0.39 for the
+  irrelevant one; nomic default path green on the new endpoint.
+- Tests: `tests/test_embeddings.py` (7 new — batched endpoint, dims sent
+  only when configured, sub-batching, guided mismatch refusal, query-prefix
+  asymmetry, per-embedder factory knobs, store embed_query preference +
+  fallback). 937 passed / 0 skips.
+
+---
+
 ## 2026-07-11 — Code-block indent normalization + markdown renderer hardening (web-test polish)
 
 **Session type:** claude-code

@@ -121,6 +121,19 @@ class PgvectorKnowledgeStore:
         self._embedder = embedder
         self._embedder_aux = embedder_aux
 
+    @staticmethod
+    async def _embed_query(embedder: Any, query_text: str) -> list[float]:
+        """Query-side embedding: prefer the provider's `embed_query` (which
+        applies an instruction prefix on asymmetric models); fall back to a
+        plain `embed` for embedder objects that only implement the batch
+        method (older adapters, test stubs)."""
+        embed_query = getattr(embedder, "embed_query", None)
+        if embed_query is not None:
+            vector: list[float] = await embed_query(query_text)
+            return vector
+        [fallback] = await embedder.embed([query_text])
+        return list(fallback)
+
     async def upsert(self, chunks: Sequence[ChunkInput]) -> list[uuid.UUID]:
         if not chunks:
             return []
@@ -199,10 +212,14 @@ class PgvectorKnowledgeStore:
                 if st not in ALL_SOURCE_TYPES:
                     raise ValueError(f"Unknown source_type: {st!r}")
 
-        [query_vector] = await self._embedder.embed([query_text])
+        # Queries embed via embed_query — instruction-aware models (BGE,
+        # qwen3-embedding) apply their query prefix there, while passages
+        # (upsert) always embed raw. Symmetric models behave identically
+        # on both paths.
+        query_vector = await self._embed_query(self._embedder, query_text)
         query_vector_aux: list[float] | None = None
         if self._embedder_aux is not None:
-            [query_vector_aux] = await self._embedder_aux.embed([query_text])
+            query_vector_aux = await self._embed_query(self._embedder_aux, query_text)
 
         vector_ranks = await self._vector_candidates(
             organization_id, query_vector, source_types, metadata_filters

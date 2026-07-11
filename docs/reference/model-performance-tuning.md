@@ -298,6 +298,40 @@ Nothing in Wolf's *architecture* changes — that is by design (model
 abstraction ADR 0030; app-layer concurrency unbounded, ADR 0026 addendum).
 Post-6.10 these become Wolf config-plane entries (GUI/CLI/file), no rituals.
 
+## Embedding model (knowledge retrieval)
+
+The retrieval embedder is a separate lever from chat/judge (ADR 0012
+addendum 2026-07-11). Default: `nomic-embed-text` — 274 MB, native 768-dim,
+effectively always resident, zero knobs.
+
+**qwen3-embedding recipe** (MRL-trained; native 4096-dim, context 40960,
+instruction-aware — both knobs required, verified live):
+
+```bash
+EMBEDDING_MODEL=qwen3-embedding:latest
+EMBEDDING_REQUEST_DIMENSIONS=768      # server-side MRL truncate+renormalize
+EMBEDDING_QUERY_PREFIX="Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery: "
+```
+
+Then re-embed the existing corpus (per-chunk `embedding_model` stamps make
+this a planned, idempotent operation):
+
+```bash
+cd services/server && set -a && source ../../.env && set +a
+uv run python -m wolf_server.management.reembed --apply
+```
+
+Or keep nomic primary and add it as the ADR 0014 third RRF leg
+(`EMBEDDING_MODEL_AUX` + the `_AUX` twins; backfill with `reembed --aux
+--apply`) — no primary re-embed.
+
+**VRAM trade-off**: `qwen3-embedding:latest` is the 8B build (~4.7 GB). On a
+6 GB card it cannot sit resident next to `qwen3:8b` chat (~5.2 GB) — Ollama
+swaps models per request, so every chat→search→chat cycle pays a model
+reload (seconds). Small-GPU guidance: stay on nomic, or pull a smaller MRL
+variant (`qwen3-embedding:0.6b` ≈ 639 MB) with the same two knobs. On ≥12 GB
+both stay resident and the swap cost disappears.
+
 ## Quick decision guide
 
 - **Streaming feels slow + you're VRAM-tight** → KV-cache `q8_0` first; then
