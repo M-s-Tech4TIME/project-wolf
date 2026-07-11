@@ -18,7 +18,7 @@ deploy/bin/bootstrap_superuser  usr/bin/
 # Bundle of wheels — the workspace packages (wolf_server,
 # wolf_cert, wolf_common, wolf_secrets, wolf_schema) plus every
 # transitive production dependency (fastapi, sqlalchemy, asyncpg,
-# alembic, pgvector, bcrypt, python-jose[cryptography], httpx,
+# alembic, pgvector, bcrypt, pyjwt, httpx,
 # authlib, pydantic, pydantic-settings, uvicorn[standard], and the
 # wheels each of those pull in transitively).
 #

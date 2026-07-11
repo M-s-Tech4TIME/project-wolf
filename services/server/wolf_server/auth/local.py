@@ -18,7 +18,8 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import bcrypt
-from jose import JWTError, jwt
+import jwt
+from jwt import ExpiredSignatureError, InvalidTokenError
 from wolf_common.errors import AuthenticationError, SessionExpiredError
 
 from wolf_server.config import get_settings
@@ -46,11 +47,7 @@ def _make_token(data: dict[str, Any], expires_delta: timedelta) -> str:
     payload = data.copy()
     payload["exp"] = datetime.now(UTC) + expires_delta
     payload["iat"] = datetime.now(UTC)
-    # `jose` ships no PEP-561 stubs (see root pyproject's mypy overrides),
-    # so `jwt.encode` is typed as `Any`. Cast at the boundary so the `Any`
-    # does not leak into call sites.
-    encoded: str = jwt.encode(payload, _settings.secret_key, algorithm=_settings.jwt_algorithm)
-    return encoded
+    return jwt.encode(payload, _settings.secret_key, algorithm=_settings.jwt_algorithm)
 
 
 def create_access_token(
@@ -88,10 +85,10 @@ def decode_access_token(token: str) -> dict[str, Any]:
         payload: dict[str, Any] = jwt.decode(
             token, _settings.secret_key, algorithms=[_settings.jwt_algorithm]
         )
-        if payload.get("token_type") != "access":
-            raise AuthenticationError("Not an access token")
-        return payload
-    except JWTError as exc:
-        if "expired" in str(exc).lower():
-            raise SessionExpiredError("Access token has expired") from exc
+    except ExpiredSignatureError as exc:
+        raise SessionExpiredError("Access token has expired") from exc
+    except InvalidTokenError as exc:
         raise AuthenticationError("Invalid access token") from exc
+    if payload.get("token_type") != "access":
+        raise AuthenticationError("Not an access token")
+    return payload

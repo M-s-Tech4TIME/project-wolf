@@ -92,6 +92,20 @@ Copy this block and fill in at the start of each session entry:
   extraction boundary fixes every surface at once (chat preview, actions queue,
   model echo) for every language.
 
+### What broke / what we discovered
+- The commit's CI run failed on the **pip-audit gate only** (everything else
+  green): a brand-new advisory PYSEC-2026-1325 (Minerva P-256 timing attack)
+  landed against `ecdsa 0.19.2` with **no fix version** ("side channel attacks
+  out of scope" upstream). `ecdsa` reached us solely via `python-jose`, and
+  Wolf signs JWTs with **HS256 only** — the asymmetric path was dead weight.
+  Root fix (never an ignore-list): **replaced python-jose with PyJWT** in
+  `auth/local.py` (the entire jose surface — encode/decode/JWTError in one
+  file). Bonus corrections: expiry now caught via the typed
+  `ExpiredSignatureError` instead of string-sniffing the message, PyJWT is
+  PEP-561-typed so the `jose` mypy override + encode-boundary cast are gone,
+  and `python-jose`/`ecdsa`/`rsa`/`six` all left the lockfile (`cryptography`
+  stays via wolf-secrets). CI-equivalent `pip-audit --desc` exits 0 locally.
+
 ---
 
 ## 2026-07-07 — 6-f.6: deployment-aware config application (all-in-one vs distributed cluster)

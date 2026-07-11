@@ -79,7 +79,6 @@ warn_unused_configs = false
 [[tool.mypy.overrides]]
 module = [
     "structlog.*",   # used across all services for logging
-    "jose",          # python-jose, used in app.auth.local for JWT
     "pgvector.*",    # pgvector, used by app.knowledge.models
 ]
 ignore_missing_imports = true
