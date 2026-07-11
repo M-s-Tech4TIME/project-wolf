@@ -14,11 +14,12 @@
 > the environment setup. Claude Code sessions: paste
 > [`docs/CLAUDE-RESUME-PROMPT.md`](docs/CLAUDE-RESUME-PROMPT.md).
 
-**Last verified:** 2026-06-03 against `origin/main` after Phase 5.5
-(component-renaming refactor — frontend → wolf-dashboard,
-orchestrator → wolf-server, app/ → wolf_server/ + wolf_gateway/).
-The repo is moving; if commands here drift from reality, trust the
-code, then fix this file in your first commit.
+**Last verified:** 2026-07-12 at the project wrap-up (sections updated
+continuously through Phase 6-f + the PostgreSQL 18 migration + ADR 0033;
+the setup-critical sections — requirements, wolf-database, .env, model
+pulls, wolf-search — match the live dev machine at pause). The repo is
+moving; if commands here drift from reality, trust the code, then fix
+this file in your first commit.
 
 ---
 

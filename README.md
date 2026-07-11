@@ -11,6 +11,12 @@ This bundle is written to be **fed directly to Claude Code** (or any capable cod
 agent) as the authoritative source of truth for building the system. Every document
 here is intended to be read, referenced, and implemented against.
 
+> **Project status (2026-07-12):** active development is **paused**; everything
+> through Phase 6-f is shipped and CI-green. Resuming? Start at
+> [`docs/HANDOVER.md`](docs/HANDOVER.md) (state, queue, rules), then
+> [`ONBOARDING.md`](ONBOARDING.md) (environment setup). Claude Code sessions:
+> paste [`docs/CLAUDE-RESUME-PROMPT.md`](docs/CLAUDE-RESUME-PROMPT.md).
+
 ---
 
 ## What this project is
