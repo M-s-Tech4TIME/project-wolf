@@ -1,6 +1,13 @@
 "use client";
 
-import { AlertTriangle, Check, Copy, Info, MessageCircle } from "lucide-react";
+import {
+  AlertTriangle,
+  Check,
+  Copy,
+  ImageIcon,
+  Info,
+  MessageCircle,
+} from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 import { Children, Fragment, isValidElement, useCallback, useState } from "react";
 import ReactMarkdown from "react-markdown";
@@ -135,6 +142,18 @@ export function Markdown({
         "[&_h1]:mb-2 [&_h1]:mt-3 [&_h1]:text-base [&_h1]:font-semibold",
         "[&_h2]:mb-2 [&_h2]:mt-3 [&_h2]:text-sm [&_h2]:font-semibold",
         "[&_h3]:mb-1 [&_h3]:mt-2 [&_h3]:text-sm [&_h3]:font-semibold",
+        // h4–h6 previously fell through unstyled (browser defaults render h5/h6
+        // SMALLER than body text inside a text-sm container — deep outlines
+        // looked broken). Step down deliberately instead.
+        "[&_h4]:mb-1 [&_h4]:mt-2 [&_h4]:text-sm [&_h4]:font-medium",
+        "[&_h5]:mb-1 [&_h5]:mt-2 [&_h5]:text-xs [&_h5]:font-semibold [&_h5]:uppercase [&_h5]:tracking-wide",
+        "[&_h6]:mb-1 [&_h6]:mt-2 [&_h6]:text-xs [&_h6]:font-medium [&_h6]:uppercase [&_h6]:tracking-wide [&_h6]:text-muted-foreground",
+        // GFM strikethrough reads as "retracted", not emphasized.
+        "[&_del]:text-muted-foreground [&_del]:line-through",
+        // GFM task lists: remark-gfm tags the list `contains-task-list` and
+        // renders a checkbox per item — drop the disc so items aren't
+        // double-marked (bullet + checkbox).
+        "[&_ul.contains-task-list]:list-none [&_ul.contains-task-list]:pl-1",
         "[&_blockquote]:my-2 [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground",
         // Table itself fills the width; the horizontal-scroll wrapper is
         // applied by the `table` component override below so a wide table
@@ -184,6 +203,59 @@ export function Markdown({
           blockquote: ({ children }) => (
             <blockquote>{decorate(children)}</blockquote>
           ),
+          // A grounding marker can land INSIDE emphasis (e.g. a bolded
+          // sentence followed by its verdict) — the walker doesn't recurse
+          // into elements, so these need their own decoration pass.
+          strong: ({ children }) => <strong>{decorate(children)}</strong>,
+          em: ({ children }) => <em>{decorate(children)}</em>,
+          // External links leave the app in a NEW tab — a chat answer must
+          // never navigate the analyst's conversation away. Relative/anchor
+          // links (rare) keep default behaviour.
+          a: ({ href, children, ...rest }) => {
+            const external =
+              typeof href === "string" && /^https?:\/\//i.test(href);
+            return (
+              <a
+                href={href}
+                {...(external
+                  ? { target: "_blank", rel: "noopener noreferrer" }
+                  : {})}
+                {...rest}
+              >
+                {children}
+              </a>
+            );
+          },
+          // NEVER auto-fetch a remote image: answer text can quote content
+          // that arrived from the open web (web_search / web_fetch), and a
+          // markdown image would make every viewer's browser call an
+          // attacker-chosen URL on render (a tracking/exfiltration beacon).
+          // Render an explicit link the analyst can choose to open instead.
+          img: ({ src, alt }) => {
+            const href = typeof src === "string" ? src : "";
+            return (
+              <a
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex max-w-full items-center gap-1 align-baseline"
+                title={href}
+              >
+                <ImageIcon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                <span className="truncate">{alt || href || "image"}</span>
+              </a>
+            );
+          },
+          // GFM task-list checkboxes (read-only state markers).
+          input: (props) =>
+            props.type === "checkbox" ? (
+              <input
+                {...props}
+                className="mr-1.5 h-3.5 w-3.5 translate-y-[2px] accent-[var(--palette-steel-blue)]"
+              />
+            ) : (
+              <input {...props} />
+            ),
         }}
       >
         {children}
@@ -317,7 +389,7 @@ function FencedCodeBlock({
           )}
         </button>
       </div>
-      <pre className="overflow-x-auto p-3 text-xs">
+      <pre className="overflow-x-auto p-3 text-xs [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-foreground/30 hover:[&::-webkit-scrollbar-thumb]:bg-foreground/50">
         <code className="font-mono leading-relaxed" {...codeProps}>
           {children}
         </code>

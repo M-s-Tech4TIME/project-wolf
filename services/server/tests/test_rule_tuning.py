@@ -68,6 +68,18 @@ def test_extract_rule_block_found_and_missing() -> None:
     assert extract_rule_block(_SAMPLE, "999999") is None
 
 
+def test_extract_rule_block_is_indent_aligned() -> None:
+    # The match starts AT '<rule' — the first line loses the source file's
+    # 2-space indent the tail keeps. The extraction is indent-normalized so
+    # opening and closing tags align when the block is quoted or written.
+    block = extract_rule_block(_SAMPLE, "100001")
+    assert block is not None
+    lines = block.splitlines()
+    assert lines[0].startswith("<rule ")
+    assert lines[-1] == "</rule>"
+    assert lines[1].startswith("  <")
+
+
 def test_build_override_block_preserves_conditions_and_sets_overwrite() -> None:
     block = extract_rule_block(_SAMPLE, "100001")
     assert block is not None
@@ -139,7 +151,9 @@ def test_strip_tuning_block_removes_only_wolf_block() -> None:
 
 def test_validate_disable_rule_ok() -> None:
     v = validate_proposal(
-        action_class="rule_tuning", target={"rule_id": "100001"}, action="disable_rule",
+        action_class="rule_tuning",
+        target={"rule_id": "100001"},
+        action="disable_rule",
         parameters={"level": 0},
     )
     assert v.ok
@@ -147,7 +161,9 @@ def test_validate_disable_rule_ok() -> None:
 
 def test_validate_adjust_level_ok() -> None:
     v = validate_proposal(
-        action_class="rule_tuning", target={"rule_id": "100001"}, action="adjust_level",
+        action_class="rule_tuning",
+        target={"rule_id": "100001"},
+        action="adjust_level",
         parameters={"level": 3},
     )
     assert v.ok
@@ -155,7 +171,9 @@ def test_validate_adjust_level_ok() -> None:
 
 def test_validate_adjust_level_requires_valid_level() -> None:
     v = validate_proposal(
-        action_class="rule_tuning", target={"rule_id": "100001"}, action="adjust_level",
+        action_class="rule_tuning",
+        target={"rule_id": "100001"},
+        action="adjust_level",
         parameters={"level": 99},
     )
     assert not v.ok
@@ -164,7 +182,10 @@ def test_validate_adjust_level_requires_valid_level() -> None:
 
 def test_validate_unresolved_rule_id_refused() -> None:
     v = validate_proposal(
-        action_class="rule_tuning", target={}, action="disable_rule", parameters={},
+        action_class="rule_tuning",
+        target={},
+        action="disable_rule",
+        parameters={},
     )
     assert not v.ok
     assert "rule id" in v.reason.lower()
@@ -172,7 +193,9 @@ def test_validate_unresolved_rule_id_refused() -> None:
 
 def test_validate_invalid_rule_id_refused() -> None:
     v = validate_proposal(
-        action_class="rule_tuning", target={"rule_id": "nope"}, action="disable_rule",
+        action_class="rule_tuning",
+        target={"rule_id": "nope"},
+        action="disable_rule",
         parameters={},
     )
     assert not v.ok
@@ -180,7 +203,9 @@ def test_validate_invalid_rule_id_refused() -> None:
 
 def test_validate_unknown_op_refused() -> None:
     v = validate_proposal(
-        action_class="rule_tuning", target={"rule_id": "100001"}, action="delete_rule",
+        action_class="rule_tuning",
+        target={"rule_id": "100001"},
+        action="delete_rule",
         parameters={},
     )
     assert not v.ok
@@ -190,7 +215,9 @@ def test_validate_restore_is_not_a_forward_op() -> None:
     # restore_rules is reversal-only (created via create_reversal_proposal, which
     # bypasses the validator) — a *forward* restore must be refused.
     v = validate_proposal(
-        action_class="rule_tuning", target={"rule_id": "100001"}, action="restore_rules",
+        action_class="rule_tuning",
+        target={"rule_id": "100001"},
+        action="restore_rules",
         parameters={},
     )
     assert not v.ok

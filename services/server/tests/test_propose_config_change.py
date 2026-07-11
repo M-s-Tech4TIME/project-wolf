@@ -120,6 +120,29 @@ async def test_unconfirmed_call_returns_a_preview_and_queues_nothing(
 
 
 @pytest.mark.asyncio
+async def test_preview_current_content_is_indent_aligned(
+    db: AsyncSession, seed_organization_and_user: dict[str, Any]
+) -> None:
+    # The extraction starts AT '<sca>' — without normalization the first line
+    # sits at column 0 while '</sca>' keeps the file's 2-space indent, so the
+    # quoted preview misaligns in the chat code fence (the 6-f web-test
+    # observation). The captured content is the canonical aligned form.
+    ctx = _ctx(seed_organization_and_user)
+    out = await ProposeConfigChangeTool().run(
+        _exec_ctx(db, ctx, _ALLOW_CONFIG),
+        ProposeConfigChangeInput(
+            section="sca",
+            operation="update_section",
+            section_content="<sca><enabled>no</enabled></sca>",
+        ),
+    )
+    lines = out.current_content.splitlines()
+    assert lines[0] == "<sca>"
+    assert lines[-1] == "</sca>"
+    assert lines[1] == "  <enabled>yes</enabled>"
+
+
+@pytest.mark.asyncio
 async def test_update_section_queues_pending_with_diff_base(
     db: AsyncSession, seed_organization_and_user: dict[str, Any]
 ) -> None:

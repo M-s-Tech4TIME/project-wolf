@@ -250,6 +250,24 @@ async def test_forward_fails_honestly_if_change_does_not_persist(db: AsyncSessio
 
 
 @pytest.mark.asyncio
+async def test_forward_freshness_tolerates_the_old_skewed_frozen_form(db: AsyncSession) -> None:
+    # _SCA_CURRENT is frozen here in the pre-normalization extraction shape
+    # (first line at column 0, tail carrying the file indent). Freshness
+    # normalizes BOTH sides, so a proposal captured before the indent fix — or
+    # a purely cosmetic re-indent — still compares as unchanged.
+    proposal = await _proposal(
+        db,
+        action="update_section",
+        parameters={"section_content": _SCA_NEW, "current_content": _SCA_CURRENT},
+    )
+    ctx = _ctx(db, _Disk(_OSSEC))  # file untouched since capture
+    freshness, _p, _v = get_executor("config_change").build_forward(proposal, ctx)
+    ok, reason = await freshness(proposal)
+    assert ok is True
+    assert "unchanged" in reason
+
+
+@pytest.mark.asyncio
 async def test_forward_freshness_refuses_stale_proposal(db: AsyncSession) -> None:
     # The live section no longer matches what the approver reviewed → stale.
     proposal = await _proposal(

@@ -27,6 +27,8 @@ from __future__ import annotations
 
 import re
 
+from wolf_server.wazuh.config_change import normalize_block_indent
+
 # Operations.
 OP_DISABLE_RULE = "disable_rule"  # silence a rule (set level 0)
 OP_ADJUST_LEVEL = "adjust_level"  # change a rule's alert level
@@ -92,9 +94,12 @@ def extract_rule_block(xml_text: str, rule_id: str) -> str | None:
     """The first ``<rule id="X">…</rule>`` block in ``xml_text`` (or ``None``).
 
     Used to copy a rule's exact body from its source file so the override
-    preserves its matching conditions."""
+    preserves its matching conditions.  Indent-normalized: the match starts AT
+    ``<rule`` (the first line loses the source file's leading whitespace while
+    the tail keeps it), so the raw match misaligns when quoted or written —
+    normalize_block_indent re-aligns it without touching the body."""
     match = _rule_block_re(rule_id).search(xml_text or "")
-    return match.group(0) if match else None
+    return normalize_block_indent(match.group(0)) if match else None
 
 
 def build_override_block(rule_block: str, *, level: int) -> str:
@@ -136,7 +141,7 @@ def _marker(rule_id: str) -> str:
 
 def _tuning_block_re(rule_id: str) -> re.Pattern[str]:
     return re.compile(
-        rf'\n*{re.escape(_marker(rule_id))}\s*'
+        rf"\n*{re.escape(_marker(rule_id))}\s*"
         rf'<group name="{re.escape(WOLF_TUNING_GROUP)}">.*?</group>',
         re.DOTALL,
     )

@@ -49,6 +49,51 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-07-11 — Code-block indent normalization + markdown renderer hardening (web-test polish)
+
+**Session type:** claude-code
+**Phase:** 6-f polish (operator feedback from the PASSED 6-f.5/6-f.6 web-test)
+**Branch / commit:** main
+
+### What we did
+- **Root-caused the misaligned `<integration>` code blocks** the operator saw in
+  every config preview: a block regex match starts AT `<section`, so the
+  extracted FIRST line loses the file's leading indentation while every other
+  line keeps it — quoted verbatim into a code fence, the opening and closing
+  tags misalign. Not a CSS/renderer bug; the content itself was skewed.
+- **`normalize_block_indent`** (`wazuh/config_change.py`): canonical form — line
+  1 at column 0, tail dedented by its own common leading whitespace (relative
+  structure preserved; idempotent). Applied at every extraction boundary:
+  config-change captures (`_capture_current` + `_capture_cluster`, single-node
+  AND per-node) and rule_tuning's `extract_rule_block`.
+- **Freshness stays symmetric**: `_target_fresh_against` normalizes BOTH the
+  frozen and the live side, so proposals frozen before this fix (or a purely
+  cosmetic re-indent) still compare as unchanged — pinned by a dedicated
+  backward-compat test. Persistence proofs were already reformatting-tolerant.
+- **Markdown renderer audit** (`components/markdown.tsx`), operator-requested
+  "every aspect" pass: h4–h6 now styled (browser defaults rendered them SMALLER
+  than body text); GFM task lists no longer double-marked (disc + checkbox) and
+  checkboxes styled in Steel Blue; GFM strikethrough styled as retracted text;
+  grounding chips now render inside `**bold**`/`*italic*` (the marker walker
+  didn't recurse); external links open in a new tab (`noopener noreferrer`) so
+  an answer never navigates the conversation away; **remote images never
+  auto-fetch** — rendered as an explicit link, because answer text can quote
+  open-web content (6-f.3) and a markdown image would beacon every viewer's
+  browser to an attacker-chosen URL on render; code-block `pre` got the same
+  thin-scrollbar treatment tables have.
+- Tests: 930 passed / 0 skips (+6: normalize unit ×3, aligned preview capture,
+  old-frozen-form freshness compat, rule-block alignment). mypy --strict 117
+  files, ruff, dashboard tsc + eslint.
+
+### What we decided
+- Fix the skew at the CONTENT source, not in the renderer: a display-side
+  re-indent heuristic would have to guess (and would corrupt copied
+  indentation-significant code, e.g. Python), while normalizing at the
+  extraction boundary fixes every surface at once (chat preview, actions queue,
+  model echo) for every language.
+
+---
+
 ## 2026-07-07 — 6-f.6: deployment-aware config application (all-in-one vs distributed cluster)
 
 **Session type:** claude-code

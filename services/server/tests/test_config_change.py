@@ -27,6 +27,7 @@ from wolf_server.wazuh.config_change import (
     insert_section_block,
     is_valid_section_block,
     is_valid_section_name,
+    normalize_block_indent,
     remove_identified_block,
     replace_section_block,
     section_persisted,
@@ -295,6 +296,39 @@ def test_build_candidate_is_the_single_shared_transformation() -> None:
     assert out is not None and "hooks.example.invalid" not in out
     # unknown op → no transformation
     assert build_candidate(_OSSEC, "explode", "sca", "", "<sca></sca>") is None
+
+
+# ── indent normalization (extraction skew fix) ────────────────────────────────
+
+
+def test_normalize_block_indent_realigns_an_extracted_block() -> None:
+    # An extraction starts AT '<integration>' — the first line lost the file's
+    # 2-space indent while the tail kept it (children at 4, closing at 2), so
+    # the raw match misaligns when quoted. Normalized: opening AND closing at
+    # column 0, children keep their relative indent.
+    out = normalize_block_indent(_VT_BLOCK)
+    lines = out.splitlines()
+    assert lines[0] == "<integration>"
+    assert lines[-1] == "</integration>"
+    assert lines[1] == "  <name>virustotal</name>"
+
+
+def test_normalize_block_indent_aligns_a_live_extraction() -> None:
+    block = find_section_blocks(_OSSEC, "sca")[0]
+    lines = normalize_block_indent(block).splitlines()
+    assert lines[0] == "<sca>"
+    assert lines[-1] == "</sca>"
+    assert lines[1] == "  <enabled>yes</enabled>"
+
+
+def test_normalize_block_indent_is_idempotent_and_handles_edge_shapes() -> None:
+    once = normalize_block_indent(_VT_BLOCK)
+    assert normalize_block_indent(once) == once  # idempotent
+    # single-line + surrounding whitespace → just stripped
+    assert normalize_block_indent("  <sca><enabled>yes</enabled></sca>  ") == (
+        "<sca><enabled>yes</enabled></sca>"
+    )
+    assert normalize_block_indent("") == ""
 
 
 # ── persist verification (reformatting-tolerant, 6-e.4 fix) ──────────────────

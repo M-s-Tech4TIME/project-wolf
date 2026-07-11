@@ -48,6 +48,7 @@ from wolf_server.wazuh.config_change import (
     build_candidate,
     find_identified_blocks,
     find_section_blocks,
+    normalize_block_indent,
     section_persisted,
 )
 from wolf_server.wazuh.rule_tuning import (
@@ -615,7 +616,11 @@ class _ConfigChangeExecutor:
         section = str(p.target.get("section", ""))
         block_key = str(p.target.get("block_key", ""))
         described = f"<{section}>" + (f" '{block_key}'" if block_key else "")
-        frozen = frozen.strip()
+        # Both sides in the canonical indent form: cosmetic indentation (the
+        # extraction skew normalize_block_indent corrects, or a manager
+        # re-indent) never flunks — or fakes — freshness. Also keeps proposals
+        # frozen before the normalization existed comparing cleanly.
+        frozen = normalize_block_indent(frozen)
         blocks = cls._live_target_blocks(raw, p)
         if not frozen:
             if blocks:
@@ -630,7 +635,7 @@ class _ConfigChangeExecutor:
                 f"{described} appears {len(blocks)} time(s) in {where} — it must "
                 "appear exactly once to be edited."
             )
-        if blocks[0].strip() != frozen:
+        if normalize_block_indent(blocks[0]) != frozen:
             return False, (
                 f"{described} has changed in {where} since this was proposed — the "
                 "approver's diff is stale. Re-propose against the current configuration."
@@ -850,7 +855,11 @@ class _ConfigChangeExecutor:
             if not self._change_persisted(reread, p, new_block):
                 await self._put_config(ctx, snapshot)
                 live = self._live_target_blocks(reread, p)
-                seen = live[0].strip()[:300] if len(live) == 1 else f"{len(live)} occurrence(s)"
+                seen = (
+                    normalize_block_indent(live[0])[:300]
+                    if len(live) == 1
+                    else f"{len(live)} occurrence(s)"
+                )
                 raise ConfigValidationError(
                     f"Change to {described} did not persist to ossec.conf; restored "
                     f"the prior file. No change applied. (Target read back: {seen})"

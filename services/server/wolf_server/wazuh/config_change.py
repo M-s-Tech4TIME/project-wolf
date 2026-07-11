@@ -47,6 +47,7 @@ never ElementTree.  Correctness is gated at execution time by
 from __future__ import annotations
 
 import re
+import textwrap
 
 # Operations.
 OP_UPDATE_SECTION = "update_section"  # replace (or add) one single-instance section
@@ -113,6 +114,24 @@ def find_section_blocks(raw: str, section: str) -> list[str]:
     ``>1`` → ambiguous under merge semantics (both refused with guided
     messages)."""
     return _section_block_re(section).findall(raw or "")
+
+
+def normalize_block_indent(block: str) -> str:
+    """The canonical display/comparison form of one extracted XML snippet.
+
+    A block regex match starts AT ``<section``, so the extracted first line
+    carries no leading whitespace while every following line keeps its file
+    indentation — quoted verbatim (previews, code fences) the opening and
+    closing tags misalign.  Keep line 1 at column 0 and dedent the tail by
+    ITS OWN common leading whitespace, preserving the relative structure.
+    Idempotent.  Also the equality form for frozen-vs-live staleness, so a
+    purely cosmetic indentation difference can never flunk (or fake) a
+    freshness check."""
+    text = (block or "").strip()
+    first, sep, rest = text.partition("\n")
+    if not sep:
+        return first
+    return first + "\n" + textwrap.dedent(rest)
 
 
 def replace_section_block(raw: str, section: str, new_block: str) -> str | None:

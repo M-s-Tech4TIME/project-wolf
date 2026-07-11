@@ -77,6 +77,7 @@ from wolf_server.wazuh.config_change import (
     describe_instances,
     find_identified_blocks,
     find_section_blocks,
+    normalize_block_indent,
 )
 
 _ACTION_CLASS = "config_change"
@@ -431,7 +432,7 @@ class ProposeConfigChangeTool(ProposeTool):
                     "semantics." + hint,
                     f"Not proposed — <{section}> appears more than once.",
                 )
-            return blocks[0].strip() if blocks else ""
+            return normalize_block_indent(blocks[0]) if blocks else ""
         matches = find_identified_blocks(raw, section, block_key)
         if len(matches) > 1:
             discriminators = describe_instances(matches)
@@ -459,7 +460,7 @@ class ProposeConfigChangeTool(ProposeTool):
                 "nothing to remove.",
                 f"Not proposed — no <{section}> block matches '{block_key}'.",
             )
-        return matches[0].strip() if matches else ""
+        return normalize_block_indent(matches[0]) if matches else ""
 
     async def _capture_cluster(
         self,
@@ -510,7 +511,7 @@ class ProposeConfigChangeTool(ProposeTool):
                         "'upsert_block' with a unique field value.",
                         f"Not proposed — <{section}> appears more than once on {name!r}.",
                     )
-                targets[name] = blocks[0].strip() if blocks else ""
+                targets[name] = normalize_block_indent(blocks[0]) if blocks else ""
         else:
             per_node: dict[str, list[str]] = {}
             for name, raw in node_raw.items():
@@ -543,7 +544,7 @@ class ProposeConfigChangeTool(ProposeTool):
                 targets = dict.fromkeys(node_raw, "")
             else:
                 # Update/remove touches only the nodes that carry the instance.
-                targets = {name: m[0].strip() for name, m in per_node.items() if m}
+                targets = {name: normalize_block_indent(m[0]) for name, m in per_node.items() if m}
 
         for name in targets:
             if build_candidate(node_raw[name], op, section, block_key, new_block) is None:

@@ -59,6 +59,22 @@ undermines trust in Wolf's answers.
     inline span to a fenced block so a weak model still renders cleanly.
   - Verified PASS on BOTH nemotron (OpenRouter) and qwen3:8b (Ollama) via a
     direct-adapter acceptance test (mech doc §6).
+- **Misaligned quoted code = skewed CONTENT, not CSS (fixed 2026-07-11).** A
+  block regex match starts AT `<section`, so the extracted first line loses the
+  file's leading indent while the tail keeps it → opening/closing tags misalign
+  in every code fence. Fix at the extraction boundary, NEVER a display-side
+  re-indent heuristic (it would corrupt copied indentation-significant code):
+  `normalize_block_indent` in `wazuh/config_change.py` (line 1 at col 0, tail
+  dedented by ITS common indent; idempotent), applied in config captures +
+  `extract_rule_block`; executor freshness normalizes BOTH frozen and live so
+  pre-fix proposals still compare unchanged. Reuse it for any future
+  file-snippet extraction.
+- **Markdown hardening (2026-07-11):** h4–h6 styled; GFM task lists de-double-
+  marked + styled checkboxes; `del` styled; grounding chips decorate inside
+  `strong`/`em` too; external links `target=_blank rel=noopener noreferrer`;
+  **`img` NEVER auto-fetches** (rendered as an explicit link — open-web content
+  in answers means a markdown image is a render-time beacon to an
+  attacker-chosen URL); `pre` carries the thin-scrollbar treatment.
 
 Source of truth for the shipped fixes: `services/dashboard/components/`
 (`citations-panel.tsx`, `chat-sidebar.tsx`, `message-thread.tsx`, `markdown.tsx`),
