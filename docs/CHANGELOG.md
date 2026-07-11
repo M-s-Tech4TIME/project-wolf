@@ -72,6 +72,30 @@ Copy this block and fill in at the start of each session entry:
   RRF fusion arithmetic vs the store's, known-item metrics, LLM output
   sanitizer). Results entry lands separately once the bench runs (GPU is
   busy with the 4096 corpus re-embed).
+- **RESULTS (run on the live corpus, seed 1307, 100 LLM-generated analyst
+  questions, 1100-chunk eval corpus, exact-scan ranking):**
+
+  | configuration | R@1 | R@5 | R@10 | MRR@10 |
+  |---|---|---|---|---|
+  | **qwen4096+moe+FTS (combo — the LIVE config)** | **0.940** | **0.990** | 0.990 | **0.963** |
+  | qwen4096 (vector only) | 0.940 | 0.980 | 0.990 | 0.956 |
+  | qwen4096+FTS (hybrid) | 0.940 | 0.980 | 0.990 | 0.956 |
+  | qwen768 MRL (vector only) | 0.930 | 0.980 | 0.980 | 0.947 |
+  | qwen768+FTS (hybrid) | 0.930 | 0.980 | 0.980 | 0.947 |
+  | nomic+moe+FTS (combo — previous live) | 0.670 | 0.880 | 0.980 | 0.766 |
+  | nomic (vector only) | 0.560 | 0.700 | 0.720 | 0.628 |
+  | nomic+FTS (hybrid) | 0.560 | 0.700 | 0.720 | 0.628 |
+
+  **Verdict: qwen3-embedding is decisively better on Wolf's corpus**
+  (R@1 0.94 vs 0.56 solo; the live qwen4096+v2-moe+FTS combo is the
+  best measured configuration, MRR 0.963 vs the previous live combo's
+  0.766). Native 4096 buys ~1 MRR point over MRL-768 (0.956 vs 0.947)
+  — real but small; the big jump is the MODEL. Latency caveat stated
+  honestly: the bench's per-query embed latencies (nomic 1120ms /
+  moe 1700ms / qwen 7143ms) are SWAP-dominated (three models rotating
+  through a 6 GB GPU per query); steady-state qwen query embeds run
+  ~1.4s on this card, nomic ~40ms when resident — the quality/latency
+  trade-off to weigh on small GPUs.
 
 ---
 

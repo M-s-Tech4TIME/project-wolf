@@ -319,6 +319,16 @@ uv run python -m wolf_server.management.reembed --apply           # + --aux
 uv run python -m wolf_server.management.reembed --apply --force   # + --aux
 ```
 
+**Measured on Wolf's corpus** (embedding_bench, 2026-07-12, 100 known-item
+queries): qwen3-embedding decisively beats the nomic family here — R@1
+0.94 vs 0.56 (solo vector legs), MRR@10 0.963 for the qwen4096+v2-moe+FTS
+combo vs 0.766 for the nomic combo. Native 4096 adds ~1 MRR point over
+MRL-768 on the same model. Cost: on a ≤6 GB GPU the 8B embedder swaps
+against an 8B chat model (~seconds per chat→search cycle) and a query
+embed runs ~1.4 s steady-state vs nomic's ~40 ms. Quality-first: qwen at
+4096 (the live default since 2026-07-12). Latency-first small-GPU: qwen
+at MRL-768, or the nomic combo (fastest, measurably weakest).
+
 **Recipe A — nomic combo** (the default shape: `nomic-embed-text` primary +
 `nomic-embed-text-v2-moe` aux, 768-dim, HNSW-indexed). Both nomic models
 train with task prefixes — set `EMBEDDING_DOCUMENT_PREFIX="search_document: "`

@@ -130,3 +130,20 @@ posture is superseded:
   filter; recall is governed by the oversample factor (4 is the
   community sweet spot for normalized high-dim embeddings like qwen's;
   raise it if a very large corpus ever shows recall droop).
+
+---
+
+## Addendum 2 (2026-07-12): measured — qwen3-embedding wins on Wolf's corpus
+
+`wolf_server.management.embedding_bench` (known-item retrieval over the
+live corpus; seed 1307, 100 LLM-generated analyst questions, 1,100-chunk
+eval corpus, exact-scan ranking, the store's exact RRF): the live
+**qwen4096 + v2-moe + FTS combo scores MRR@10 0.963 / R@1 0.940** vs the
+previous nomic+v2-moe+FTS combo's 0.766 / 0.670 (nomic solo 0.628 / 0.560).
+Native 4096 vs MRL-768 on the same model: 0.956 vs 0.947 MRR — the model
+choice dominates, the width adds ~1 point. Trade-off on ≤6 GB GPUs: the
+8B embedder can't stay resident beside an 8B chat model (swap seconds per
+chat→search cycle); quality-first deployments accept it, latency-first
+ones use qwen768-MRL (keeps most of the win) or nomic (fastest, weakest).
+Full report: `.local/embedding_bench_report.txt`; queries cached in
+`.local/embedding_bench_queries.json` for reproducible re-runs.

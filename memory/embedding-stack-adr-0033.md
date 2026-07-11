@@ -33,11 +33,18 @@ adapter-level so upsert/seed/re-embed truncate identically).
   64k dims) built by the schema tool + store two-stage query (Hamming
   oversample `EMBEDDING_BQ_OVERSAMPLE`=4 -> exact-cosine rerank, full
   fidelity); planner verified live (Index Scan at 4096).
-- Two first-class recipes in .env.example + tuning guide: **nomic combo**
-  (nomic-embed-text + v2-moe, official `search_document: `/`search_query: `
-  prefixes — LIVE on the dev box since 2026-07-11, corpus force-re-embedded)
-  and **qwen3-embedding** (768/1024/2000/4096 width guidance; 8B ~4.7 GB
-  won't sit beside qwen3:8b chat on a 6 GB GPU).
+- Two first-class recipes in .env.example + tuning guide; **LIVE since
+  2026-07-12 = qwen3-embedding at NATIVE 4096** primary + v2-moe 768 aux
+  (mixed widths) — **BENCHMARKED BEST** (`embedding_bench`, 100 known-item
+  queries: combo MRR@10 0.963 / R@1 0.94 vs nomic combo 0.766 / 0.67;
+  4096 vs MRL-768 ≈ +1 MRR point — the MODEL dominates). Trade-off: 8B
+  embedder swaps against 8B chat on 6 GB (query embed ~1.4s vs nomic
+  ~40ms). Bench = seed of Phase 6.13 calibration harness; queries cached
+  .local/embedding_bench_queries.json.
+- Ops bugs the switch surfaced (all root-fixed + pinned): NOT NULL primary
+  stamp → RETYPED_STAMP sentinel; prefix literal `\n` → Settings
+  normalizer (EnvironmentFile= never decodes); BQ stage-1 silently capped
+  at hnsw.ef_search=40 → SET LOCAL ef_search = stage-1 limit.
 - Live-probed facts: qwen3-embedding native 4096/ctx 40960; v2-moe 768/ctx
   512, MRL (honors dimensions=256); Ollama `/api/embed` honors `dimensions`
   + `options.num_ctx`; legacy `/api/embeddings` does neither.
