@@ -46,6 +46,9 @@ paths = [
     '''README\.md''',
     # Environment file template — operator-visible example values
     '''\.env\.example''',
+    # Credential-file templates — every value is a CHANGE_ME placeholder
+    # (the real, gitignored credentials/ dir is copied from these)
+    '''credentials\.example/.*''',
     # The published GPG public key file — a public key isn't a secret
     '''security/wolf-maintainers\.gpg''',
     # The graphify-generated graph artifacts include source-file snippets
