@@ -73,7 +73,7 @@ Copy this block and fill in at the start of each session entry:
 - Live-verified on the dev DB: 4096-dim probe table EXPLAIN shows
   `Index Scan using ..._hnsw` for the exact SQLAlchemy-emitted shape
   (`CAST(binary_quantize(...) AS BIT(4096)) <~>`).
-- Tests 953 → 958 / 0 skips (BQ SQL shapes incl. aux NOT-NULL guard +
+- Tests 953 → 957 / 0 skips (BQ SQL shapes incl. aux NOT-NULL guard +
   narrow-stays-cosine, plan kind matrix incl. wrong-kind rebuild); docs
   (.env.example, tuning guide, ADR 0033 addendum) updated.
 
