@@ -21,11 +21,20 @@ from sqlalchemy import Computed, DateTime, Index, String, Text, Uuid
 from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column
 
+from wolf_server.config import get_settings
 from wolf_server.database import Base
 
-# nomic-embed-text returns 768-dim vectors. Locked into the schema; changing
-# this requires migration 0005+ plus a full re-embed of every chunk.
-EMBEDDING_DIMENSION = 768
+# Vector column widths are SETTINGS-DRIVEN (ADR 0033): EMBEDDING_DIMENSION /
+# EMBEDDING_DIMENSION_AUX in .env decide the ORM-declared width, frozen at
+# import time (SQLAlchemy DDL is static — a dimension change needs a process
+# restart). The BASELINE migrations (0004/0006) create both columns at 768;
+# any other configured width is reconciled by the operator tool
+# `python -m wolf_server.management.embedding_schema --apply`, which re-types
+# the live columns, re-embeds every chunk, and rebuilds the HNSW indexes.
+# Until the tool runs, a mismatch fails loudly (Postgres "expected N
+# dimensions") — never silently.
+EMBEDDING_DIMENSION = get_settings().embedding_dimension
+EMBEDDING_DIMENSION_AUX = get_settings().embedding_dimension_aux or EMBEDDING_DIMENSION
 
 
 def _now() -> datetime:
@@ -69,7 +78,7 @@ class KnowledgeChunk(Base):
     # hasn't configured a secondary embedder; the store's search() then
     # silently drops to the existing 2-leg flow.
     embedding_v2: Mapped[list[float] | None] = mapped_column(
-        Vector(EMBEDDING_DIMENSION), nullable=True
+        Vector(EMBEDDING_DIMENSION_AUX), nullable=True
     )
     embedding_v2_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
     # Generated lexical-search column — Postgres populates it from `content`

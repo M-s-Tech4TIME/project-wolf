@@ -50,6 +50,42 @@ Copy this block and fill in at the start of each session entry:
 
 ---
 
+## 2026-07-11 — ADR 0033: fully configurable embedding stack (dimension-aware schema switching)
+
+**Session type:** claude-code
+**Phase:** post-6-f maintenance (operator directive: "fully configurable... even if it means redesigning the vector, the database, everything")
+**Branch / commit:** main
+
+### What we did
+- **Every embedding knob is now a per-embedder setting** (primary + `_AUX`
+  twins): model/provider, **column dimension** (`EMBEDDING_DIMENSION` /
+  `EMBEDDING_DIMENSION_AUX` — independent widths), MRL request dimensions,
+  query prefix, NEW document prefix (nomic-family `search_document: `),
+  NEW `EMBEDDING_NUM_CTX` (Ollama options.num_ctx per embed call), NEW
+  `EMBEDDING_CHAR_LIMIT` (v2-moe's 1800-char cap moved from a reembed
+  hardcode into the adapter so upsert/seed/re-embed truncate identically,
+  BEFORE prefixing so task markers survive).
+- **The pgvector schema follows settings**: `knowledge_chunks.embedding` /
+  `embedding_v2` widths are ORM-declared from settings; NEW operator tool
+  `wolf_server.management.embedding_schema` reconciles the live DB (drop
+  HNSW → re-type `vector(N)` → reset stamps → batched re-embed → restore
+  NOT NULL when clean → rebuild HNSW). Resumable: the plan derives from
+  live catalog state. HNSW cap honesty: >2000 dims = no ANN index, exact
+  scan, stated in output (qwen native 4096 storable + searchable).
+- `reembed --force`: re-embed despite matching model stamps (geometry
+  changes — prefixes/MRL width/num_ctx — don't change model ids);
+  keyset-paginated.
+- Two first-class recipes documented (.env.example + tuning guide):
+  **nomic combo** (nomic-embed-text + v2-moe, now with their official task
+  prefixes) and **qwen3-embedding** (768/1024/2000/4096 width guidance).
+- Tests 937 → 952 / 0 skips (adapter prefix/num_ctx/char-limit contracts,
+  per-embedder factory knobs incl. independent aux dimension, ORM-follows-
+  settings, reembed force keyset, schema-tool plan matrix incl. crash-resume
+  + live-verified pg_catalog parsing). `alembic check` at defaults: zero
+  drift. ADR 0033 written; ADR 0012/0014's fixed-768 contract superseded.
+
+---
+
 ## 2026-07-11 — PostgreSQL 18: full platform replacement of 17
 
 **Session type:** claude-code

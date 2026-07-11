@@ -32,6 +32,7 @@ import asyncio
 import json
 import os
 import sys
+import uuid
 
 import structlog
 from sqlalchemy import select, update
@@ -57,6 +58,8 @@ async def _fetch_mismatched(
     *,
     is_aux: bool,
     limit: int | None = None,
+    force: bool = False,
+    after_id: uuid.UUID | None = None,
 ) -> list[KnowledgeChunk]:
     """Rows whose embedding model on the targeted column doesn't match.
 
@@ -68,8 +71,21 @@ async def _fetch_mismatched(
     differs OR is NULL — i.e. rows that have never been embedded with
     the aux model OR were embedded with a different aux model. This
     is the path for "populate v2 vectors for the existing corpus."
+
+    `force=True` drops the model-stamp filter and selects EVERY row in
+    scope — required when the embedding GEOMETRY changed without the
+    model id changing (a new document/query prefix, a different MRL
+    request dimension, a num_ctx bump that stops truncation). Because a
+    force pass rewrites rows to the same stamp, the batch loop can't use
+    the stamp to detect progress — keyset pagination via `after_id`
+    (rows ordered by id, strictly greater than the last processed one)
+    advances instead.
     """
-    if is_aux:
+    if force:
+        stmt = select(KnowledgeChunk).order_by(KnowledgeChunk.id)
+        if after_id is not None:
+            stmt = stmt.where(KnowledgeChunk.id > after_id)
+    elif is_aux:
         # NULL or != active aux model. SQLAlchemy: IS DISTINCT FROM
         # treats NULL as a value, so it's the right operator here.
         stmt = select(KnowledgeChunk).where(
@@ -94,12 +110,10 @@ async def _fetch_mismatched(
 # search() treats embedding_v2 IS NULL as "skip this leg," so the chunk
 # is still retrievable via the primary vector + FTS legs (the whole
 # point of the multi-embedding chained design).
+# Input truncation for small-window aux models lives at the ADAPTER now
+# (EMBEDDING_CHAR_LIMIT_AUX, default 1800 — the cap this module used to
+# hardcode) so upsert, seeding, and re-embeds all truncate identically.
 AUX_UNEMBEDDABLE_SENTINEL = "__unembeddable__"
-
-# Conservative truncation cap for aux embedders with smaller context.
-# v2-moe's nominal limit is 512 tokens ≈ 2048 chars BPE; 1800 gives
-# safety margin without losing too much detail.
-AUX_CHAR_LIMIT = 1800
 
 
 async def _reembed_batch(
@@ -111,28 +125,24 @@ async def _reembed_batch(
 ) -> int:
     """Re-embed `rows` and write the new vectors back. Returns row count.
 
-    Primary mode: updates `embedding` + `embedding_model`. No truncation
-    (primary model is expected to handle every chunk's content).
+    Primary mode: updates `embedding` + `embedding_model`.
 
-    Aux mode: updates `embedding_v2` + `embedding_v2_model`. Truncates
-    inputs at AUX_CHAR_LIMIT to avoid the 'unexpected EOF' Ollama
-    returns for inputs that exceed v2-moe's 512-token window. If the
-    aux model still rejects a chunk after truncation, that chunk is
-    stamped with AUX_UNEMBEDDABLE_SENTINEL so future runs skip it.
+    Aux mode: updates `embedding_v2` + `embedding_v2_model`. If the aux
+    model rejects a chunk (even after the adapter's char-limit
+    truncation), that chunk is stamped with AUX_UNEMBEDDABLE_SENTINEL so
+    future runs skip it.
 
-    Either way, the chunk's content + metadata + primary vector are
-    untouched. Each batch is its own commit so partial failure leaves
-    a consistent state.
+    Truncation itself happens inside the adapter (EMBEDDING_CHAR_LIMIT /
+    _AUX), so this module hands over raw content. The chunk's content +
+    metadata + the untargeted vector are untouched. Each batch is its
+    own commit so partial failure leaves a consistent state.
     """
     if not rows:
         return 0
     succeeded = 0
     for row in rows:
-        embed_input = row.content
-        if is_aux and len(embed_input) > AUX_CHAR_LIMIT:
-            embed_input = embed_input[:AUX_CHAR_LIMIT]
         try:
-            vector = (await embedder.embed([embed_input]))[0]
+            vector = (await embedder.embed([row.content]))[0]
         except Exception as exc:
             sys.stderr.write(
                 f"  [warn] {'aux' if is_aux else 'primary'} embed failed for "
@@ -185,6 +195,17 @@ async def main() -> int:
             "after enabling ADR 0014's multi-embedding retrieval — "
             "the operator first sets EMBEDDING_MODEL_AUX in .env, then "
             "runs `reembed --aux --apply` to fill the new column."
+        ),
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help=(
+            "Re-embed EVERY chunk in scope, even when its model stamp "
+            "already matches. Required after a change that alters the "
+            "embedding geometry without changing the model id: a new "
+            "EMBEDDING_DOCUMENT_PREFIX / EMBEDDING_QUERY_PREFIX, a "
+            "different EMBEDDING_REQUEST_DIMENSIONS, or a num_ctx bump."
         ),
     )
     parser.add_argument(
@@ -254,12 +275,16 @@ async def main() -> int:
     mode_text = "APPLY (will re-embed)" if args.apply else "REPORT-ONLY (use --apply to write)"
     sys.stdout.write(f"Active embedder: {active_model_id}\n")
     sys.stdout.write(f"Scope: {scope_text}\n")
-    sys.stdout.write(f"Mode:  {mode_text}\n\n")
+    sys.stdout.write(f"Mode:  {mode_text}\n")
+    if args.force:
+        sys.stdout.write("Force: EVERY chunk in scope (model-stamp filter OFF)\n")
+    sys.stdout.write("\n")
 
     column_label = "embedding_v2" if args.aux else "embedding"
     sys.stdout.write(f"Column: {column_label}\n\n")
 
     total_processed = 0
+    last_id: uuid.UUID | None = None
     while True:
         async with db_session() as session:
             batch = await _fetch_mismatched(
@@ -268,6 +293,8 @@ async def main() -> int:
                 organization_filter,
                 is_aux=args.aux,
                 limit=args.batch_size,
+                force=args.force,
+                after_id=last_id,
             )
             if not batch:
                 break
@@ -300,6 +327,8 @@ async def main() -> int:
 
             count = await _reembed_batch(session, batch, embedder, is_aux=args.aux)
             total_processed += count
+            if args.force:
+                last_id = batch[-1].id
             sys.stdout.write(f"  re-embedded batch of {count} (total so far: {total_processed})\n")
             if args.limit is not None and total_processed >= args.limit:
                 sys.stdout.write(f"  --limit {args.limit} reached; stopping\n")

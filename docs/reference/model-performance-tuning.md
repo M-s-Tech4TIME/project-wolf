@@ -300,37 +300,63 @@ Post-6.10 these become Wolf config-plane entries (GUI/CLI/file), no rituals.
 
 ## Embedding model (knowledge retrieval)
 
-The retrieval embedder is a separate lever from chat/judge (ADR 0012
-addendum 2026-07-11). Default: `nomic-embed-text` — 274 MB, native 768-dim,
-effectively always resident, zero knobs.
-
-**qwen3-embedding recipe** (MRL-trained; native 4096-dim, context 40960,
-instruction-aware — both knobs required, verified live):
-
-```bash
-EMBEDDING_MODEL=qwen3-embedding:latest
-EMBEDDING_REQUEST_DIMENSIONS=768      # server-side MRL truncate+renormalize
-EMBEDDING_QUERY_PREFIX="Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery: "
-```
-
-Then re-embed the existing corpus (per-chunk `embedding_model` stamps make
-this a planned, idempotent operation):
+The retrieval embedder is a separate lever from chat/judge, and since
+ADR 0033 (2026-07-11) it is FULLY configurable — model, provider, **column
+dimension**, MRL truncation, task prefixes (document + query), context
+window, and input char cap, each independently for the primary and the
+optional aux embedder. The pgvector columns follow `EMBEDDING_DIMENSION` /
+`EMBEDDING_DIMENSION_AUX`; two operator tools keep everything consistent:
 
 ```bash
 cd services/server && set -a && source ../../.env && set +a
-uv run python -m wolf_server.management.reembed --apply
+# After a WIDTH change — re-types the columns, re-embeds, rebuilds HNSW
+# (report-only without --apply; resumable after a crash):
+uv run python -m wolf_server.management.embedding_schema --apply
+# After a MODEL change (stamp-mismatch detection, idempotent):
+uv run python -m wolf_server.management.reembed --apply           # + --aux
+# After a GEOMETRY-only change (new prefix / MRL width / num_ctx —
+# model id unchanged):
+uv run python -m wolf_server.management.reembed --apply --force   # + --aux
 ```
 
-Or keep nomic primary and add it as the ADR 0014 third RRF leg
-(`EMBEDDING_MODEL_AUX` + the `_AUX` twins; backfill with `reembed --aux
---apply`) — no primary re-embed.
+**Recipe A — nomic combo** (the default shape: `nomic-embed-text` primary +
+`nomic-embed-text-v2-moe` aux, 768-dim, HNSW-indexed). Both nomic models
+train with task prefixes — set `EMBEDDING_DOCUMENT_PREFIX="search_document: "`
+and `EMBEDDING_QUERY_PREFIX="search_query: "` (+ the `_AUX` twins) for best
+retrieval, then `reembed --apply --force` (+ `--aux --force`). v2-moe's
+512-token window is guarded by the 1800-char aux cap (default).
+
+**Recipe B — qwen3-embedding** (MRL-trained; native 4096-dim, context 40960,
+instruction-aware — probed live):
+
+```bash
+EMBEDDING_MODEL=qwen3-embedding:latest
+EMBEDDING_DIMENSION=768               # or 1024 / 2000 / 4096 — see below
+EMBEDDING_REQUEST_DIMENSIONS=768      # server-side MRL truncate+renormalize
+EMBEDDING_NUM_CTX=40960
+EMBEDDING_QUERY_PREFIX="Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery: "
+```
+
+Dimension guidance: **768/1024** = MRL sweet spot, HNSW stays (recommended);
+**2000** = pgvector's max HNSW-indexable width; **4096** = full native
+fidelity but NO ANN index (HNSW caps at 2000 dims) — search runs exact:
+perfect recall, linear cost, fine at ~5K chunks, revisit at 100K+. Any
+width other than the live one requires `embedding_schema --apply`
+(maintenance window: vector legs are empty until the re-embed finishes;
+BM25 keeps answering).
+
+Or keep the nomic primary and run qwen as the ADR 0014 third RRF leg
+(`EMBEDDING_MODEL_AUX` + `_AUX` twins, `EMBEDDING_DIMENSION_AUX` may differ
+from the primary width; backfill with `reembed --aux --apply`) — no primary
+re-embed.
 
 **VRAM trade-off**: `qwen3-embedding:latest` is the 8B build (~4.7 GB). On a
 6 GB card it cannot sit resident next to `qwen3:8b` chat (~5.2 GB) — Ollama
 swaps models per request, so every chat→search→chat cycle pays a model
-reload (seconds). Small-GPU guidance: stay on nomic, or pull a smaller MRL
-variant (`qwen3-embedding:0.6b` ≈ 639 MB) with the same two knobs. On ≥12 GB
-both stay resident and the swap cost disappears.
+reload (seconds). Small-GPU guidance: stay on the nomic combo (274 MB +
+957 MB), or pull a smaller MRL variant (`qwen3-embedding:0.6b` ≈ 639 MB)
+with the same knobs. On ≥12 GB both stay resident and the swap cost
+disappears.
 
 ## Quick decision guide
 

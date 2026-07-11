@@ -158,3 +158,167 @@ async def test_store_prefers_embed_query_for_the_query_side() -> None:
     # stubs) via the batch method.
     fallback = await PgvectorKnowledgeStore._embed_query(_BatchOnly(), "q")
     assert fallback == [2.0] * _DIM
+
+
+@pytest.mark.asyncio
+async def test_adapter_document_prefix_applies_to_passages_only() -> None:
+    # nomic-family task prefixes: documents get "search_document: ",
+    # queries "search_query: " — never crossed, never doubled.
+    captured: list[dict[str, Any]] = []
+    adapter = _adapter_with_capture(
+        captured,
+        document_prefix="search_document: ",
+        query_prefix="search_query: ",
+    )
+    await adapter.embed(["a passage"])
+    await adapter.embed_query("a question")
+    assert captured[0]["body"]["input"] == ["search_document: a passage"]
+    assert captured[1]["body"]["input"] == ["search_query: a question"]
+
+
+@pytest.mark.asyncio
+async def test_adapter_num_ctx_forwarded_as_ollama_options() -> None:
+    # The embedding model's context window is a per-request Ollama option;
+    # without it Ollama truncates at the loaded default.
+    captured: list[dict[str, Any]] = []
+    adapter = _adapter_with_capture(captured, num_ctx=40960)
+    await adapter.embed(["alpha"])
+    assert captured[0]["body"]["options"] == {"num_ctx": 40960}
+    # And absent when unset — the model's own default stays in charge.
+    captured.clear()
+    plain = _adapter_with_capture(captured)
+    await plain.embed(["alpha"])
+    assert "options" not in captured[0]["body"]
+
+
+@pytest.mark.asyncio
+async def test_adapter_char_limit_truncates_before_the_prefix() -> None:
+    # The cap guards small-window models (v2-moe: 512 tokens). It must cut
+    # the CONTENT, never the task prefix.
+    captured: list[dict[str, Any]] = []
+    adapter = _adapter_with_capture(
+        captured, max_input_chars=5, document_prefix="search_document: "
+    )
+    await adapter.embed(["abcdefghij"])
+    assert captured[0]["body"]["input"] == ["search_document: abcde"]
+
+
+def test_factory_passes_dimension_and_new_knobs_per_embedder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # ADR 0033: EVERY knob is per-embedder — including the column width.
+    # A 4096-dim qwen primary can sit next to a 768-dim v2-moe aux.
+    built: list[dict[str, Any]] = []
+
+    class _Recorder:
+        def __init__(self, base_url: str, *, model: str, **kwargs: Any) -> None:
+            built.append({"model": model, **kwargs})
+
+    monkeypatch.setattr(embeddings, "OllamaEmbeddingAdapter", _Recorder)
+    settings = Settings(
+        embedding_provider="ollama",
+        embedding_model="qwen3-embedding:latest",
+        embedding_dimension=4096,
+        embedding_num_ctx=40960,
+        embedding_model_aux="nomic-embed-text-v2-moe",
+        embedding_dimension_aux=768,
+        embedding_document_prefix_aux="search_document: ",
+        embedding_query_prefix_aux="search_query: ",
+        embedding_char_limit_aux=1800,
+        embedding_num_ctx_aux=512,
+    )
+    embeddings.make_embedding_provider(settings)
+    embeddings.make_embedding_provider_aux(settings)
+    assert built[0]["dimension"] == 4096
+    assert built[0]["num_ctx"] == 40960
+    assert built[0]["document_prefix"] == ""
+    assert built[1]["dimension"] == 768
+    assert built[1]["document_prefix"] == "search_document: "
+    assert built[1]["query_prefix"] == "search_query: "
+    assert built[1]["max_input_chars"] == 1800
+    assert built[1]["num_ctx"] == 512
+
+
+def test_aux_dimension_defaults_to_primary_when_unset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    built: list[dict[str, Any]] = []
+
+    class _Recorder:
+        def __init__(self, base_url: str, *, model: str, **kwargs: Any) -> None:
+            built.append({"model": model, **kwargs})
+
+    monkeypatch.setattr(embeddings, "OllamaEmbeddingAdapter", _Recorder)
+    settings = Settings(
+        embedding_provider="ollama",
+        embedding_dimension=1024,
+        embedding_model_aux="nomic-embed-text-v2-moe",
+        embedding_dimension_aux=0,
+    )
+    embeddings.make_embedding_provider_aux(settings)
+    assert built[0]["dimension"] == 1024
+
+
+def test_knowledge_chunk_columns_follow_configured_dimensions() -> None:
+    # The ORM declaration is settings-driven (ADR 0033): whatever the
+    # process was configured with at import time IS the declared width.
+    from wolf_server.config import get_settings
+    from wolf_server.knowledge.models import KnowledgeChunk
+
+    settings = get_settings()
+    expected_aux = settings.embedding_dimension_aux or settings.embedding_dimension
+    assert KnowledgeChunk.__table__.c.embedding.type.dim == settings.embedding_dimension
+    assert KnowledgeChunk.__table__.c.embedding_v2.type.dim == expected_aux
+
+
+def test_reembed_force_selects_every_row_via_keyset() -> None:
+    # --force drops the model-stamp filter (prefix/MRL changes alter the
+    # geometry without changing model_id) and paginates by id so rewritten
+    # rows can't be picked up twice.
+    import uuid as _uuid
+
+    from wolf_server.management import reembed as reembed_module
+
+    class _Result:
+        def scalars(self) -> "_Result":
+            return self
+
+        def all(self) -> list[Any]:
+            return []
+
+    class _Session:
+        def __init__(self) -> None:
+            self.statements: list[Any] = []
+
+        async def execute(self, stmt: Any) -> _Result:
+            self.statements.append(stmt)
+            return _Result()
+
+    async def _run() -> tuple[str, str]:
+        session = _Session()
+        await reembed_module._fetch_mismatched(
+            session,  # type: ignore[arg-type]
+            "ollama:nomic-embed-text",
+            None,
+            is_aux=False,
+            force=True,
+            after_id=None,
+        )
+        first = str(session.statements[0])
+        await reembed_module._fetch_mismatched(
+            session,  # type: ignore[arg-type]
+            "ollama:nomic-embed-text",
+            None,
+            is_aux=False,
+            force=True,
+            after_id=_uuid.uuid4(),
+        )
+        second = str(session.statements[1])
+        return first, second
+
+    import asyncio as _asyncio
+
+    first, second = _asyncio.run(_run())
+    assert "WHERE" not in first  # no stamp filter at all under force
+    assert "ORDER BY knowledge_chunks.id" in first
+    assert "knowledge_chunks.id >" in second  # keyset cursor advances

@@ -399,23 +399,36 @@ class Settings(BaseSettings):
     # Both default to a 768-dim model so the knowledge_chunks.embedding
     # column width is honored without a migration.
     embedding_model: str = "nomic-embed-text"
-    # Hard contract — must match knowledge_chunks.embedding column width.
+    # PRIMARY vector column width (knowledge_chunks.embedding). Fully
+    # configurable (ADR 0033): the SQLAlchemy model reads this at import
+    # time, and the live pgvector column is reconciled by the operator
+    # tool `python -m wolf_server.management.embedding_schema --apply`
+    # (drops the HNSW index, re-types the column, re-embeds every chunk,
+    # rebuilds the index). Changing the value WITHOUT running the tool
+    # leaves the DB at the old width — inserts then fail loudly with
+    # Postgres's "expected N dimensions" error, never silently.
+    # pgvector constraint: HNSW indexes cap at 2000 dims; above that the
+    # schema tool skips ANN indexing and search runs exact (perfect
+    # recall, slower on very large corpora).
     embedding_dimension: int = 768
     # ADR 0014 — optional secondary embedding model for multi-embedding
     # retrieval. When set, the agent loop's RAG path fuses three rankers
     # via RRF (BM25 + primary vector + secondary vector). Empty default
     # = single-leg behaviour (backward compat). Typical value:
-    # `nomic-embed-text-v2-moe`. Must produce vectors of the same
-    # dimension as embedding_dimension (the secondary column shares the
-    # primary column's pgvector width).
+    # `nomic-embed-text-v2-moe`.
     embedding_model_aux: str = ""
     # Provider for the aux embedder. Empty = same as embedding_provider.
     embedding_provider_aux: str = ""
+    # AUX vector column width (knowledge_chunks.embedding_v2). 0 (default)
+    # = same as embedding_dimension. Independent so e.g. a 4096-dim
+    # primary can sit next to a 768-dim aux; reconciled by the same
+    # embedding_schema tool.
+    embedding_dimension_aux: int = 0
     # MRL (Matryoshka) output truncation. 0 (default) = don't request — the
-    # model's NATIVE dimension must equal embedding_dimension (nomic: 768).
-    # Set to embedding_dimension for an MRL-trained model whose native
-    # dimension is larger — e.g. qwen3-embedding (native 4096) — so it fits
-    # the fixed pgvector column with the officially supported
+    # model's NATIVE dimension must equal its column width (nomic: 768).
+    # Set below the native dimension for an MRL-trained model — e.g.
+    # qwen3-embedding (native 4096) at 768/1024/2000 — so it fits a
+    # narrower pgvector column with the officially supported
     # truncate+renormalize behaviour. Ollama applies it server-side via
     # /api/embed's `dimensions` field (probed live 2026-07-11: returns
     # 768-dim L2-normalized vectors); sentence-transformers via the
@@ -431,6 +444,32 @@ class Settings(BaseSettings):
     # Empty (default) = symmetric embedding (correct for nomic-embed-text).
     embedding_query_prefix: str = ""
     embedding_query_prefix_aux: str = ""
+    # Task prefix applied to PASSAGES/DOCUMENTS at embed time (upsert,
+    # seeding, re-embeds). The nomic family is trained with task prefixes
+    # on BOTH sides: documents want "search_document: " and queries
+    # "search_query: " (nomic-embed-text v1.5 AND v2-moe). Empty default
+    # = raw passages (backward compatible). Changing a prefix changes the
+    # embedding geometry — re-run `reembed --apply --force` (and/or
+    # `--aux`) so stored vectors match.
+    embedding_document_prefix: str = ""
+    embedding_document_prefix_aux: str = ""
+    # Context window for the EMBEDDING model, passed as Ollama
+    # options.num_ctx per /api/embed call (0 = the model's own default).
+    # qwen3-embedding supports 40960; nomic-embed-text 8192 (2048 loaded
+    # default); v2-moe is hard-capped at 512. Ollama silently truncates
+    # inputs beyond the loaded window, so raising this is how long chunks
+    # keep full fidelity. Ignored by sentence-transformers (in-process
+    # models use their native max_seq_length).
+    embedding_num_ctx: int = 0
+    embedding_num_ctx_aux: int = 0
+    # Hard character cap applied to each input BEFORE embedding
+    # (0 = uncapped). Guards models whose context cannot absorb Wolf's
+    # largest chunks — v2-moe's 512-token window ≈ 1800 chars with safety
+    # margin (the aux default, preserving the previous hardcoded
+    # behaviour). Truncation is at the adapter so upsert, seeding and
+    # re-embeds all behave identically.
+    embedding_char_limit: int = 0
+    embedding_char_limit_aux: int = 1800
 
     @property
     def is_development(self) -> bool:

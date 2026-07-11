@@ -3,8 +3,9 @@
 The protocol hides the runtime (Ollama HTTP, sentence-transformers in-process,
 fastembed/ONNX tomorrow). The contract is: embed a batch of texts, return a
 list of fixed-dimension vectors in the same order. Dimension is reported via
-`dimension` and must equal `app.knowledge.models.EMBEDDING_DIMENSION` for
-the active adapter.
+`dimension` and must equal the embedder's own pgvector column width
+(settings-driven per ADR 0033: `EMBEDDING_DIMENSION` for the primary,
+`EMBEDDING_DIMENSION_AUX` for the aux column).
 
 Per doc 06, "tie chunk records to embedding-model identity, so changing the
 embedding model triggers a planned re-embedding rather than silent
@@ -39,7 +40,8 @@ class EmbeddingProvider(Protocol):
         """Vector dimension; must match the DB column width."""
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
-        """Embed a batch of PASSAGES (raw, no prefix). Output order matches input."""
+        """Embed a batch of PASSAGES (the document prefix, when configured,
+        applies). Output order matches input."""
 
     async def embed_query(self, query: str) -> list[float]:
         """Embed a QUERY — instruction-aware providers apply their query
@@ -63,9 +65,17 @@ class OllamaEmbeddingAdapter:
         always returns the native dimension.
       - Batched input amortises per-request overhead for seeding/re-embeds.
 
-    ``query_prefix`` implements instruction-aware asymmetric retrieval:
-    queries get the prefix, passages never do (qwen3-embedding's official
-    usage; empty for symmetric models like nomic-embed-text).
+    Prefixes implement task-aware asymmetric retrieval (applied AFTER the
+    char-limit truncation so the task marker is never cut off):
+      - ``query_prefix`` — queries only (qwen3-embedding's instruction,
+        nomic's "search_query: "). Empty for symmetric models.
+      - ``document_prefix`` — passages only (nomic v1.5/v2-moe train with
+        "search_document: "). Empty = raw passages (backward compatible).
+
+    ``num_ctx`` forwards Ollama's per-request options.num_ctx so embedding
+    models run at their real context window (Ollama otherwise truncates at
+    the loaded default). ``max_input_chars`` hard-caps each input before
+    embedding — guards small-window models like v2-moe (512 tokens).
     """
 
     def __init__(
@@ -77,6 +87,9 @@ class OllamaEmbeddingAdapter:
         timeout: float = 60.0,
         request_dimensions: int = 0,
         query_prefix: str = "",
+        document_prefix: str = "",
+        num_ctx: int = 0,
+        max_input_chars: int = 0,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._base_url = base_url.rstrip("/")
@@ -85,6 +98,9 @@ class OllamaEmbeddingAdapter:
         self._timeout = timeout
         self._request_dimensions = request_dimensions
         self._query_prefix = query_prefix
+        self._document_prefix = document_prefix
+        self._num_ctx = num_ctx
+        self._max_input_chars = max_input_chars
         # Injectable for hermetic tests (httpx.MockTransport); None = real HTTP.
         self._transport = transport
 
@@ -96,7 +112,22 @@ class OllamaEmbeddingAdapter:
     def dimension(self) -> int:
         return self._dimension
 
+    def _prepare(self, text: str, prefix: str) -> str:
+        """Truncate to the char cap, then prepend the task prefix."""
+        if self._max_input_chars > 0:
+            text = text[: self._max_input_chars]
+        return prefix + text
+
     async def embed(self, texts: list[str]) -> list[list[float]]:
+        """Embed PASSAGES — the document prefix (when configured) applies."""
+        return await self._embed_raw([self._prepare(text, self._document_prefix) for text in texts])
+
+    async def embed_query(self, query: str) -> list[float]:
+        """Embed a query, applying the instruction prefix when configured."""
+        [vector] = await self._embed_raw([self._prepare(query, self._query_prefix)])
+        return vector
+
+    async def _embed_raw(self, texts: list[str]) -> list[list[float]]:
         if not texts:
             return []
         async with httpx.AsyncClient(timeout=self._timeout, transport=self._transport) as client:
@@ -106,6 +137,8 @@ class OllamaEmbeddingAdapter:
                 body: dict[str, Any] = {"model": self._model, "input": batch}
                 if self._request_dimensions > 0:
                     body["dimensions"] = self._request_dimensions
+                if self._num_ctx > 0:
+                    body["options"] = {"num_ctx": self._num_ctx}
                 response = await client.post(f"{self._base_url}/api/embed", json=body)
                 response.raise_for_status()
                 payload = response.json()
@@ -119,19 +152,16 @@ class OllamaEmbeddingAdapter:
                     if len(vector) != self._dimension:
                         raise ValueError(
                             f"Ollama returned dim={len(vector)} for {self._model!r}, "
-                            f"expected {self._dimension}. For an MRL-trained model "
-                            "with a larger native dimension (e.g. qwen3-embedding, "
-                            "native 4096), set EMBEDDING_REQUEST_DIMENSIONS="
-                            f"{self._dimension}; otherwise pick a model whose "
-                            f"native dimension is {self._dimension}."
+                            f"expected {self._dimension}. Either set "
+                            f"EMBEDDING_REQUEST_DIMENSIONS={self._dimension} (MRL-"
+                            "trained models only — e.g. qwen3-embedding, native "
+                            "4096), or set EMBEDDING_DIMENSION to the model's "
+                            "native dimension and reconcile the DB via "
+                            "`python -m wolf_server.management.embedding_schema "
+                            "--apply`."
                         )
                     vectors.append(vector)
             return vectors
-
-    async def embed_query(self, query: str) -> list[float]:
-        """Embed a query, applying the instruction prefix when configured."""
-        [vector] = await self.embed([self._query_prefix + query])
-        return vector
 
 
 class SentenceTransformersEmbeddingAdapter:
@@ -160,6 +190,8 @@ class SentenceTransformersEmbeddingAdapter:
         dimension: int = 768,
         request_dimensions: int = 0,
         query_prefix: str = "",
+        document_prefix: str = "",
+        max_input_chars: int = 0,
     ) -> None:
         # Lazy import — keeps the module importable when the optional extra
         # isn't installed. A clear error surface lands in the constructor
@@ -187,6 +219,8 @@ class SentenceTransformersEmbeddingAdapter:
         self._model_name = model_name
         self._dimension = dimension
         self._query_prefix = query_prefix
+        self._document_prefix = document_prefix
+        self._max_input_chars = max_input_chars
         # MRL truncation via the library's own truncate_dim (the same
         # officially supported truncate+renormalize the Ollama path requests
         # server-side). 0 = model-native output.
@@ -209,18 +243,25 @@ class SentenceTransformersEmbeddingAdapter:
     def device(self) -> str:
         return self._device
 
+    def _truncate(self, text: str) -> str:
+        if self._max_input_chars > 0:
+            return text[: self._max_input_chars]
+        return text
+
     async def embed(self, texts: list[str]) -> list[list[float]]:
-        """Embed passages (no query prefix)."""
-        return await self._encode(texts)
+        """Embed passages — the document prefix (when configured) applies,
+        after the char-limit truncation so the task marker survives."""
+        return await self._encode([self._document_prefix + self._truncate(text) for text in texts])
 
     async def embed_query(self, query: str) -> list[float]:
         """Embed a query — an explicit configured prefix wins; otherwise the
         BGE asymmetric prefix is applied automatically for BGE models."""
         if self._query_prefix:
-            prepared = self._query_prefix + query
+            prepared = self._query_prefix + self._truncate(query)
         else:
             is_bge = "bge" in self._model_name.lower()
-            prepared = self.BGE_QUERY_PREFIX + query if is_bge else query
+            truncated = self._truncate(query)
+            prepared = self.BGE_QUERY_PREFIX + truncated if is_bge else truncated
         vectors = await self._encode([prepared])
         return vectors[0]
 
@@ -253,32 +294,41 @@ def _build_provider(
     model_id: str,
     settings: "Settings",
     *,
+    dimension: int,
     request_dimensions: int,
     query_prefix: str,
+    document_prefix: str,
+    num_ctx: int,
+    max_input_chars: int,
 ) -> EmbeddingProvider:
     """Shared factory body — builds an EmbeddingProvider from a name + model.
 
     Pulled out so the primary and auxiliary factories share the same
-    branch logic (and the same future runtimes). ``request_dimensions`` /
-    ``query_prefix`` are per-embedder (primary and aux each carry their
-    own — e.g. an MRL qwen3-embedding aux next to a native-768 nomic
-    primary).
+    branch logic (and the same future runtimes). EVERY knob is
+    per-embedder (ADR 0033): the primary and aux each carry their own
+    dimension, MRL truncation, prefixes, context window, and char cap —
+    e.g. a 4096-dim qwen3-embedding primary next to a 768-dim v2-moe aux.
     """
     name = provider_name.lower()
     if name == "ollama":
         return OllamaEmbeddingAdapter(
             settings.ollama_base_url,
             model=model_id,
-            dimension=settings.embedding_dimension,
+            dimension=dimension,
             request_dimensions=request_dimensions,
             query_prefix=query_prefix,
+            document_prefix=document_prefix,
+            num_ctx=num_ctx,
+            max_input_chars=max_input_chars,
         )
     if name in {"sentence-transformers", "st", "sentence_transformers"}:
         return SentenceTransformersEmbeddingAdapter(
             model_id,
-            dimension=settings.embedding_dimension,
+            dimension=dimension,
             request_dimensions=request_dimensions,
             query_prefix=query_prefix,
+            document_prefix=document_prefix,
+            max_input_chars=max_input_chars,
         )
     raise ValueError(
         f"Unknown embedding_provider {provider_name!r}; expected 'ollama' or "
@@ -298,8 +348,12 @@ def make_embedding_provider(settings: "Settings") -> EmbeddingProvider:
         settings.embedding_provider,
         settings.embedding_model,
         settings,
+        dimension=settings.embedding_dimension,
         request_dimensions=settings.embedding_request_dimensions,
         query_prefix=settings.embedding_query_prefix,
+        document_prefix=settings.embedding_document_prefix,
+        num_ctx=settings.embedding_num_ctx,
+        max_input_chars=settings.embedding_char_limit,
     )
 
 
@@ -320,6 +374,10 @@ def make_embedding_provider_aux(
         provider_name,
         settings.embedding_model_aux,
         settings,
+        dimension=settings.embedding_dimension_aux or settings.embedding_dimension,
         request_dimensions=settings.embedding_request_dimensions_aux,
         query_prefix=settings.embedding_query_prefix_aux,
+        document_prefix=settings.embedding_document_prefix_aux,
+        num_ctx=settings.embedding_num_ctx_aux,
+        max_input_chars=settings.embedding_char_limit_aux,
     )

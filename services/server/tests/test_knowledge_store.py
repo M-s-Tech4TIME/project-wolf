@@ -482,11 +482,15 @@ def test_factory_accepts_sentence_transformers_aliases(
             dimension: int,
             request_dimensions: int = 0,
             query_prefix: str = "",
+            document_prefix: str = "",
+            max_input_chars: int = 0,
         ) -> None:
             self._model_id = model_id
             self.dimension = dimension
             self.request_dimensions = request_dimensions
             self.query_prefix = query_prefix
+            self.document_prefix = document_prefix
+            self.max_input_chars = max_input_chars
 
         @property
         def model_id(self) -> str:
