@@ -5,7 +5,7 @@ description = "Shared logging, tracing, and error taxonomy for Wolf services"
 requires-python = ">=3.13"
 dependencies = [
     "structlog>=24.0",
-    "opentelemetry-api>=1.26",
+    "opentelemetry-api>=1.43.0",
     "opentelemetry-sdk>=1.26",
     "opentelemetry-exporter-otlp-proto-grpc>=1.26",
     "opentelemetry-instrumentation-fastapi>=0.47b0",
