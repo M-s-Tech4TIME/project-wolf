@@ -65,7 +65,7 @@ dependencies = [
 # Ollama-hosted adapter which has no extra Python deps.
 embeddings-local = [
     "sentence-transformers>=3.0",
-    "torch>=2.4",
+    "torch>=2.13.0",
 ]
 
 [tool.uv.sources]
