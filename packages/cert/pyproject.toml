@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Self-signed CA + leaf cert primitives for Wolf (Phase 5.4)"
 requires-python = ">=3.13"
 dependencies = [
-    "cryptography>=42.0",
+    "cryptography>=50.0.0",
 ]
 
 [project.optional-dependencies]
