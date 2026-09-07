@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Canonical types shared across all Wolf services and tools"
 requires-python = ">=3.13"
 dependencies = [
-    "pydantic>=2.0",
+    "pydantic>=2.13.5",
 ]
 
 [build-system]
